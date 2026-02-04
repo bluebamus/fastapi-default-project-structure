@@ -12,6 +12,8 @@ Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템�
 - [핵심 패턴](#핵심-패턴)
 - [시작하기](#시작하기)
 - [환경 설정](#환경-설정)
+- [로깅 시스템](#로깅-시스템)
+- [접속 로그 미들웨어](#접속-로그-미들웨어)
 - [신규 모듈 개발 가이드](#신규-모듈-개발-가이드)
 - [API 문서](#api-문서)
 
@@ -506,6 +508,365 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | API 문서 (/docs) | 활성화 | 비활성화 |
 | OpenAPI 스키마 | 활성화 | 비활성화 |
 | Uvicorn reload | 활성화 | 비활성화 |
+
+---
+
+## 로깅 시스템
+
+이 프로젝트는 Django 스타일의 구조화된 로깅 시스템을 제공합니다.
+
+### 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Application Code                        │
+│                   logger.info("message")                     │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                        get_logger()                          │
+│              app/utils/logger.py (캐싱된 로거 반환)            │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+              ┌───────────────┴───────────────┐
+              ↓                               ↓
+┌─────────────────────────┐     ┌─────────────────────────┐
+│    Console Handler       │     │     File Handlers        │
+│  (stdout, 색상 지원)      │     │  (Rotating, 자동 분리)    │
+└─────────────────────────┘     └─────────────────────────┘
+              ↓                               ↓
+         터미널 출력               ┌──────────┴──────────┐
+                                  ↓                     ↓
+                         logs/{date}_app.log    logs/{date}_error.log
+                            (INFO+)                (ERROR+)
+```
+
+### 환경 변수 설정
+
+| 환경변수 | 기본값 | 설명 |
+|---------|--------|------|
+| `LOG_CONSOLE_ENABLED` | `true` | 콘솔(터미널) 로그 출력 활성화 |
+| `LOG_FILE_ENABLED` | `true` | 파일 로그 출력 활성화 |
+| `LOG_LEVEL` | - | 전역 로그 레벨 (미설정 시 DEBUG 모드에 따라 자동 결정) |
+| `LOG_CONSOLE_LEVEL` | - | 콘솔 로그 레벨 (미설정 시 자동 결정) |
+| `LOG_FILE_LEVEL` | `INFO` | 파일 로그 레벨 |
+| `LOG_DIR` | `logs` | 로그 파일 저장 디렉토리 |
+| `LOG_APP_FILENAME` | `{date}_app.log` | 일반 로그 파일명 패턴 |
+| `LOG_ERROR_FILENAME` | `{date}_error.log` | 에러 로그 파일명 패턴 |
+| `LOG_MAX_SIZE_MB` | `10` | 단일 로그 파일 최대 크기 (MB) |
+| `LOG_BACKUP_COUNT` | `5` | 보관할 백업 로그 파일 개수 |
+
+### 자동 로그 레벨 결정
+
+`LOG_LEVEL`을 설정하지 않으면 `DEBUG` 설정에 따라 자동 결정됩니다:
+
+```
+DEBUG=true  → 로그 레벨: DEBUG (모든 로그 출력)
+DEBUG=false → 로그 레벨: INFO (INFO 이상만 출력)
+```
+
+### 사용 방법
+
+#### 1. 기본 사용법
+
+```python
+from app.utils.logger import get_logger
+
+# 모듈별 로거 생성 (이름으로 로그 출처 구분)
+logger = get_logger("my_module")
+
+# 로그 레벨별 출력
+logger.debug("디버깅 정보")           # 개발 시 상세 정보
+logger.info("일반 정보")              # 정상 동작 정보
+logger.warning("경고 메시지")         # 잠재적 문제
+logger.error("에러 발생")             # 오류 상황
+logger.critical("심각한 오류")        # 시스템 중단 수준 오류
+```
+
+#### 2. 추가 정보와 함께 로깅
+
+```python
+# extra 파라미터로 추가 정보 포함
+logger.error(
+    "데이터베이스 연결 실패",
+    extra={
+        "host": "localhost",
+        "port": 3306,
+        "error_code": "CONNECTION_REFUSED"
+    }
+)
+
+# 예외 정보 포함
+try:
+    result = some_operation()
+except Exception as e:
+    logger.exception("작업 실패", exc_info=True)  # 스택 트레이스 포함
+```
+
+#### 3. 서비스별 로거 활용
+
+```python
+# 각 서비스/모듈에서 고유 이름으로 로거 생성
+# 이렇게 하면 로그에서 어떤 모듈에서 발생했는지 쉽게 구분 가능
+
+# app/product/services/product_service.py
+logger = get_logger("product_service")
+logger.info(f"상품 생성 완료: {product.id}")
+
+# app/user/services/user_service.py
+logger = get_logger("user_service")
+logger.info(f"사용자 로그인: {user.email}")
+
+# 출력 예시:
+# [2024-01-15 10:30:00] INFO     [product_service:create:45] 상품 생성 완료: abc123
+# [2024-01-15 10:30:01] INFO     [user_service:login:78] 사용자 로그인: user@example.com
+```
+
+### 로그 파일 구조
+
+```
+logs/
+├── 2024-01-15_app.log      # 일반 로그 (INFO 이상)
+├── 2024-01-15_app.log.1    # 로테이션된 백업 파일
+├── 2024-01-15_app.log.2
+├── 2024-01-15_error.log    # 에러 로그 (ERROR 이상)
+└── 2024-01-15_error.log.1
+```
+
+### 로그 포맷
+
+기본 로그 포맷:
+```
+[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}
+```
+
+출력 예시:
+```
+[2024-01-15 10:30:00] INFO     [main:startup:45] 애플리케이션 시작
+[2024-01-15 10:30:01] DEBUG    [product_service:create:78] 상품 생성 시작: iPhone 15
+[2024-01-15 10:30:02] ERROR    [database:connect:23] 연결 실패: timeout
+```
+
+### 미리 정의된 로거 상수
+
+```python
+# app/utils/logger.py에 정의된 상수
+from app.utils.logger import (
+    HOME_LOGGER,      # "home"
+    LYRIC_LOGGER,     # "lyric"
+    SONG_LOGGER,      # "song"
+    VIDEO_LOGGER,     # "video"
+    CELERY_LOGGER,    # "celery"
+    APP_LOGGER,       # "app"
+)
+
+logger = get_logger(HOME_LOGGER)
+```
+
+---
+
+## 접속 로그 미들웨어
+
+모든 API 요청의 접속 정보를 자동으로 수집하고 데이터베이스에 저장하는 미들웨어입니다.
+
+### 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        HTTP Request                          │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   UserInfoMiddleware                         │
+│  1. 요청 시작 시간 기록                                        │
+│  2. User-Agent 파싱 (OS, 브라우저, 디바이스)                    │
+│  3. IP 주소 추출 (프록시 환경 지원)                             │
+│  4. 요청 정보 수집                                             │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      API 처리 (Router)                       │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   UserInfoMiddleware                         │
+│  5. 응답 시간 계산                                             │
+│  6. 백그라운드 태스크로 DB 저장 (Non-blocking)                  │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                       HTTP Response                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 환경 변수 설정
+
+| 환경변수 | 기본값 | 설명 |
+|---------|--------|------|
+| `ACCESS_LOG_ENABLED` | `true` | 접속 로그 수집 활성화 |
+| `ACCESS_LOG_EXCLUDE_PATHS` | `["/health", ...]` | 로그 수집 제외 경로 (JSON 배열) |
+| `ACCESS_LOG_EXCLUDE_EXTENSIONS` | `[".css", ...]` | 로그 수집 제외 확장자 (JSON 배열) |
+
+### 기본 제외 경로 및 확장자
+
+```python
+# 기본 제외 경로
+ACCESS_LOG_EXCLUDE_PATHS = [
+    "/health",           # 헬스체크
+    "/docs",             # API 문서
+    "/redoc",            # ReDoc
+    "/openapi.json",     # OpenAPI 스키마
+    "/favicon.ico",      # 파비콘
+]
+
+# 기본 제외 확장자
+ACCESS_LOG_EXCLUDE_EXTENSIONS = [
+    ".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"
+]
+```
+
+### 커스텀 제외 설정
+
+`.env` 파일에서 JSON 배열 형식으로 설정:
+
+```bash
+# 제외 경로 추가
+ACCESS_LOG_EXCLUDE_PATHS=["/health", "/docs", "/admin", "/metrics", "/internal"]
+
+# 제외 확장자 추가
+ACCESS_LOG_EXCLUDE_EXTENSIONS=[".css", ".js", ".ico", ".png", ".woff2", ".map"]
+```
+
+### 수집 정보
+
+#### 네트워크 정보
+
+| 필드 | 설명 |
+|------|------|
+| `ip_address` | 클라이언트 IP 주소 |
+| `forwarded_for` | X-Forwarded-For 헤더 (프록시 경유 시) |
+| `real_ip` | X-Real-IP 헤더 (Nginx 등) |
+
+#### User-Agent 파싱 정보
+
+| 필드 | 설명 | 예시 |
+|------|------|------|
+| `user_agent` | 원본 User-Agent 문자열 | `Mozilla/5.0 (Windows NT 10.0...)` |
+| `os_name` | 운영체제 이름 | `Windows`, `iOS`, `Android` |
+| `os_version` | 운영체제 버전 | `10.0`, `17.2`, `14` |
+| `browser_name` | 브라우저 이름 | `Chrome`, `Safari`, `Firefox` |
+| `browser_version` | 브라우저 버전 | `120.0.0`, `17.2` |
+| `device_type` | 장치 유형 | `desktop`, `mobile`, `tablet` |
+| `device_brand` | 장치 제조사 | `Apple`, `Samsung` |
+| `device_model` | 장치 모델 | `iPhone`, `Galaxy S24` |
+| `is_bot` | 봇 여부 | `true`, `false` |
+
+#### 요청/응답 정보
+
+| 필드 | 설명 |
+|------|------|
+| `request_path` | 요청 경로 (`/api/v1/products`) |
+| `request_method` | HTTP 메서드 (`GET`, `POST`, ...) |
+| `query_string` | 쿼리 스트링 (`?page=1&limit=10`) |
+| `referer` | Referer 헤더 |
+| `response_status` | HTTP 응답 상태 코드 |
+| `response_time_ms` | 응답 시간 (밀리초) |
+
+#### 사용자 정보
+
+| 필드 | 설명 |
+|------|------|
+| `session_id` | 세션 ID (쿠키에서 추출) |
+| `user_id` | 인증된 사용자 ID |
+| `accept_language` | Accept-Language 헤더 |
+
+### 데이터베이스 모델
+
+`user_access_logs` 테이블에 저장되며, 다음 인덱스가 설정되어 있습니다:
+
+```python
+# 인덱스 설정 (검색 최적화)
+- ip_address        # IP별 조회
+- created_at        # 시간별 조회
+- device_type       # 장치 유형별 통계
+- os_name          # OS별 통계
+- browser_name     # 브라우저별 통계
+- session_id       # 세션별 조회
+- user_id          # 사용자별 조회
+```
+
+### API 엔드포인트
+
+접속 로그 조회 API가 제공됩니다:
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | `/api/v1/access-logs` | 접속 로그 목록 (페이지네이션) |
+| GET | `/api/v1/access-logs/recent` | 최근 접속 로그 |
+| GET | `/api/v1/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
+| GET | `/api/v1/access-logs/stats` | 접속 통계 (장치, OS, 브라우저별) |
+
+### 활용 예시
+
+#### 통계 대시보드 구현
+
+```python
+# 접속 통계 조회
+stats = await service.get_stats()
+
+# 응답 예시
+{
+    "total_count": 15420,
+    "device_types": [
+        {"type": "desktop", "count": 8500, "percentage": 55.1},
+        {"type": "mobile", "count": 6200, "percentage": 40.2},
+        {"type": "tablet", "count": 720, "percentage": 4.7}
+    ],
+    "os_list": [
+        {"name": "Windows", "count": 6000},
+        {"name": "iOS", "count": 4500},
+        {"name": "Android", "count": 3200}
+    ],
+    "browser_list": [
+        {"name": "Chrome", "count": 9000},
+        {"name": "Safari", "count": 4000}
+    ]
+}
+```
+
+#### IP 기반 접속 추적
+
+```python
+# 특정 IP의 접속 기록 조회
+logs = await service.get_by_ip("192.168.1.100")
+
+# 의심스러운 활동 감지
+suspicious = [log for log in logs if log.is_bot and log.response_status == 403]
+```
+
+### 성능 고려사항
+
+1. **Non-blocking 저장**: 접속 로그는 백그라운드 태스크로 저장되어 API 응답 시간에 영향을 주지 않습니다.
+
+2. **제외 설정 최적화**: 헬스체크, 정적 파일 등 빈번한 요청은 기본적으로 제외됩니다.
+
+3. **인덱스 활용**: 자주 조회되는 필드에 인덱스가 설정되어 있습니다.
+
+```python
+# 미들웨어 내부 동작
+async def dispatch(self, request: Request, call_next: Callable):
+    # 제외 경로 체크 (빠른 반환)
+    if self._should_skip(request.url.path):
+        return await call_next(request)
+
+    # 요청 처리
+    response = await call_next(request)
+
+    # 백그라운드에서 비동기 저장 (응답 지연 없음)
+    response.background = BackgroundTask(self._save_access_log, data)
+    return response
+```
 
 ---
 
