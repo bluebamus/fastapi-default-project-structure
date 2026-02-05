@@ -15,7 +15,7 @@ from app.database.session import (
     create_db_tables,
     dispose_engine,
 )
-from app.database.unit_of_work import UnitOfWork, BackgroundUnitOfWork
+from app.database.unit_of_work import BaseUnitOfWork, BaseBackgroundUnitOfWork
 
 __all__ = [
     "Base",
@@ -27,6 +27,6 @@ __all__ = [
     "get_background_session",
     "create_db_tables",
     "dispose_engine",
-    "UnitOfWork",
-    "BackgroundUnitOfWork",
+    "BaseUnitOfWork",
+    "BaseBackgroundUnitOfWork",
 ]

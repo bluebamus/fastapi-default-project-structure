@@ -802,11 +802,14 @@ class BaseRepository(Generic[ModelType]):
                 update(self.model)
                 .where(self.model.id == id)
                 .values(**data)
-                .returning(self.model)
             )
             result = await self.session.execute(stmt)
             await self.session.flush()
-            return result.scalar_one_or_none()
+
+            if result.rowcount == 0:
+                return None
+
+            return await self.get_by_id(id)
         except IntegrityError as e:
             logger.error(f"[UPDATE] 무결성 제약 조건 위반: {e}")
             raise DuplicateException(

@@ -10,6 +10,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse
+from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -38,7 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         - 데이터베이스 엔진 리소스 정리
     """
     # 시작 시
-    logger.info(f"[Startup] 애플리케이션 시작 (DEBUG={app_settings.DEBUG})")
+    logger.info("[Startup] 애플리케이션 시작 (DEBUG=%s)", app_settings.DEBUG)
 
     # DEBUG 모드일 때만 테이블 자동 생성
     # 운영 환경에서는 Alembic 마이그레이션 사용 권장
@@ -47,7 +48,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await create_db_tables()
             logger.info("[Startup] 데이터베이스 테이블 생성 완료 (DEBUG 모드)")
         except Exception as e:
-            logger.error(f"[Startup] 데이터베이스 테이블 생성 실패: {e}")
+            logger.error("[Startup] 데이터베이스 테이블 생성 실패: %s", e)
+            raise
     else:
         logger.info("[Startup] 테이블 자동 생성 건너뜀 (DEBUG=False, Alembic 사용)")
 
@@ -107,7 +109,9 @@ async def app_exception_handler(request: Request, exc: AppException) -> ORJSONRe
     AppException 및 하위 예외들을 처리하여 일관된 에러 응답을 반환합니다.
     """
     logger.error(
-        f"[AppException] {exc.error_code}: {exc.message}",
+        "[AppException] %s: %s",
+        exc.error_code,
+        exc.message,
         extra={
             "path": request.url.path,
             "method": request.method,
@@ -140,7 +144,7 @@ async def validation_exception_handler(
         for error in errors
     ]
     logger.warning(
-        f"[ValidationError] 요청 유효성 검증 실패",
+        "[ValidationError] 요청 유효성 검증 실패",
         extra={
             "path": request.url.path,
             "method": request.method,
@@ -167,7 +171,9 @@ async def http_exception_handler(
     FastAPI/Starlette의 기본 HTTP 예외를 일관된 형식으로 변환합니다.
     """
     logger.warning(
-        f"[HTTPException] {exc.status_code}: {exc.detail}",
+        "[HTTPException] %s: %s",
+        exc.status_code,
+        exc.detail,
         extra={
             "path": request.url.path,
             "method": request.method,
@@ -193,14 +199,15 @@ async def general_exception_handler(request: Request, exc: Exception) -> ORJSONR
     운영 환경에서는 상세 정보를 숨깁니다.
     """
     logger.exception(
-        f"[UnhandledException] {type(exc).__name__}: {exc}",
+        "[UnhandledException] %s",
+        type(exc).__name__,
         extra={
             "path": request.url.path,
             "method": request.method,
             "exception_type": type(exc).__name__,
         },
     )
-    # DEBUG 모드에서만 상세 정보 노출
+    # DEBUG 모드에서만 상세 정보 노출 (운영 환경에서는 민감 정보 유출 방지)
     detail = str(exc) if app_settings.DEBUG else None
     return ORJSONResponse(
         status_code=500,
@@ -231,26 +238,32 @@ app.include_router(home_router, prefix="/api")
 # =============================================================================
 # 헬스체크 엔드포인트
 # =============================================================================
+class HealthResponse(BaseModel):
+    """헬스체크 응답 스키마"""
+
+    status: str
+    version: str
+
+
 @app.get(
     "/health",
+    response_model=HealthResponse,
     tags=["Health"],
     summary="헬스체크",
     description="서버의 정상 동작 여부를 확인합니다.",
     operation_id="healthCheck",
 )
-async def health_check() -> dict:
+async def health_check() -> HealthResponse:
     """
     헬스체크 엔드포인트
 
     Returns:
         서버 상태 정보
     """
-    return {
-        "status": "healthy",
-        "version": app_settings.VERSION,
-        "environment": app_settings.ENV,
-        "debug": app_settings.DEBUG,
-    }
+    return HealthResponse(
+        status="healthy",
+        version=app_settings.VERSION,
+    )
 
 
 # =============================================================================

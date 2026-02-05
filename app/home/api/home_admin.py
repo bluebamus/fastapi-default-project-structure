@@ -13,8 +13,9 @@ SQLAdmin을 사용한 UserAccessLog 모델의 관리자 인터페이스를 정�
     admin.add_view(UserAccessLogAdmin)
 
 Note:
-    SQLAdmin은 DEBUG 모드에서만 활성화되어야 합니다.
-    운영 환경에서는 보안상 비활성화를 권장합니다.
+    SQLAdmin은 ADMIN 설정으로 제어됩니다 (DEBUG와 독립적).
+    ADMIN=True: /admin 접근 가능, ADMIN=False: /admin 접근 차단
+    운영 환경에서는 보안상 ADMIN=False 설정을 권장합니다.
 """
 
 from sqladmin import ModelView
