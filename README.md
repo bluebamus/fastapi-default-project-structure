@@ -1,6 +1,6 @@
 # FastAPI Default Project Structure
 
-Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.
+Repository 패턴과 도메인별 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.
 
 ## 목차
 
@@ -26,6 +26,7 @@ Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템�
 ### 주요 특징
 
 - **계층 분리 아키텍처**: Router → Service → Repository → Database
+- **도메인별 UnitOfWork**: 각 도메인이 독립적인 UnitOfWork를 가지며, 기존 코드 수정 없이 확장 가능
 - **트랜잭션 관리**: Unit of Work 패턴으로 일관된 트랜잭션 처리
 - **N+1 문제 해결**: Eager Loading 전략 내장 (selectin, joined, subquery)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
@@ -86,19 +87,30 @@ Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Unit of Work 패턴
+### 도메인별 Unit of Work 패턴
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                        UnitOfWork                              │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐   │
-│  │   Repository A  │  │   Repository B  │  │  Repository C │   │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘   │
-│                              ↑                                 │
-│                         AsyncSession                           │
-│                      (트랜잭션 경계 관리)                         │
-└───────────────────────────────────────────────────────────────┘
+                    app/database/
+                    ┌─────────────────────────────┐
+                    │ BaseUnitOfWork              │  세션 관리, 트랜잭션 제어
+                    │ BaseBackgroundUnitOfWork    │  백그라운드 전용 세션
+                    │ BaseRepository              │  제네릭 CRUD
+                    └─────────────────────────────┘
+                              ^
+                              │ 상속
+                              │
+    ┌─────────────────────────┼─────────────────────────┐
+    │                         │                         │
+    v                         v                         v
+app/home/               app/user/               app/blog/
+┌───────────────┐       ┌───────────────┐       ┌───────────────┐
+│HomeUnitOfWork │       │UserUnitOfWork │       │BlogUnitOfWork │
+│  - user_      │       │  - users      │       │  - posts      │
+│    access_logs│       │  - profiles   │       │  - comments   │
+└───────────────┘       └───────────────┘       └───────────────┘
 ```
+
+각 도메인은 자신만의 UnitOfWork를 가지며, 해당 도메인의 Repository만 포함합니다. 새로운 도메인 추가 시 기존 코드를 수정할 필요가 없습니다.
 
 ---
 
@@ -108,12 +120,13 @@ Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템�
 fastapi-default-project-structure/
 ├── main.py                      # FastAPI 앱 진입점
 ├── config.py                    # 환경 설정 (Pydantic Settings)
-├── .env.example                 # 환경 변수 템플릿
+├── .env.sample                  # 환경 변수 샘플
 ├── pyproject.toml               # 의존성 및 도구 설정
 │
 ├── app/
 │   ├── core/                    # 핵심 인프라
 │   │   ├── exception.py         # 커스텀 예외 클래스
+│   │   ├── base_service.py      # 제네릭 기본 Service 클래스
 │   │   ├── tags_metadata.py     # OpenAPI 태그 메타데이터
 │   │   └── middlewares/         # 미들웨어
 │   │       ├── cors_middleware.py
@@ -121,7 +134,7 @@ fastapi-default-project-structure/
 │   │
 │   ├── database/                # 데이터베이스 인프라
 │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀
-│   │   ├── unit_of_work.py      # Unit of Work 패턴
+│   │   ├── unit_of_work.py      # BaseUnitOfWork (기반 클래스)
 │   │   ├── redis.py             # Redis 연결
 │   │   └── repositories/
 │   │       └── base.py          # 제네릭 기본 Repository (40+ 메서드)
@@ -131,20 +144,22 @@ fastapi-default-project-structure/
 │   │
 │   ├── utils/                   # 유틸리티
 │   │   ├── logger.py            # 로깅 시스템
-│   │   ├── cors.py              # CORS 유틸리티
 │   │   └── pagination.py        # 페이지네이션 유틸리티
 │   │
 │   └── [module]/                # 기능 모듈 (home, user, blog 등)
 │       ├── models/              # SQLAlchemy ORM 모델
-│       │   ├── base.py          # 모듈 베이스 모델
 │       │   └── models.py        # 엔티티 모델
 │       │
 │       ├── repositories/        # 데이터 접근 계층
 │       │   └── *_repository.py  # Repository 클래스
 │       │
+│       ├── unit_of_work/        # 도메인별 Unit of Work
+│       │   └── [module]_unit_of_work.py  # 도메인별 UnitOfWork
+│       │
 │       ├── services/            # 비즈니스 로직 계층
-│       │   ├── base.py          # 베이스 서비스
 │       │   └── *_service.py     # Service 클래스
+│       │
+│       ├── [module]_exception.py  # 도메인별 예외 (에러 코드 Enum, 커스텀 예외)
 │       │
 │       ├── schemas/             # Pydantic 스키마
 │       │   └── *_schema.py      # 요청/응답 스키마
@@ -159,10 +174,8 @@ fastapi-default-project-structure/
 │       ├── worker/              # 백그라운드 태스크
 │       │   └── *_task.py        # Celery 태스크
 │       │
-│       ├── tests/               # 테스트
-│       │   └── conftest.py      # pytest 픽스처
-│       │
-│       └── dependency.py        # 모듈 의존성
+│       └── tests/               # 테스트
+│           └── conftest.py      # pytest 픽스처
 │
 ├── migrations/                  # Alembic 마이그레이션
 ├── logs/                        # 로그 파일
@@ -177,10 +190,13 @@ fastapi-default-project-structure/
 | `config.py` | Pydantic Settings 기반 환경 설정 관리 |
 | `main.py` | FastAPI 앱 생성, 미들웨어, 예외 핸들러, 라우터 등록 |
 | `app/database/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀 설정 |
-| `app/database/unit_of_work.py` | 트랜잭션 경계 관리, Repository 통합 |
+| `app/database/unit_of_work.py` | BaseUnitOfWork 기반 클래스 (세션 관리, 트랜잭션 제어) |
 | `app/database/repositories/base.py` | 제네릭 CRUD 및 N+1 해결 메서드 제공 |
+| `app/core/base_service.py` | 제네릭 기본 Service 클래스 (모든 도메인 공유) |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
 | `app/utils/logger.py` | 구조화된 로깅 시스템 (콘솔, 파일, 로테이션) |
+| `app/home/unit_of_work/home_unit_of_work.py` | Home 도메인 전용 UnitOfWork |
+| `app/home/home_exception.py` | Home 도메인 예외 (에러 코드 Enum, 커스텀 예외) |
 
 ---
 
@@ -201,9 +217,9 @@ fastapi-default-project-structure/
    - Pydantic 스키마 유효성 검사
    - 세션 의존성 주입 (Depends(get_session))
        ↓
-4. UnitOfWork 생성
+4. 도메인별 UnitOfWork 생성
    - 트랜잭션 경계 시작
-   - Repository 인스턴스 초기화
+   - 해당 도메인의 Repository 인스턴스 초기화
        ↓
 5. Service 호출
    - 비즈니스 로직 실행
@@ -223,42 +239,38 @@ fastapi-default-project-structure/
 
 ```python
 # Router (API Layer)
+from app.home.unit_of_work import HomeUnitOfWork
+
 @router.get("/access-logs")
 async def get_access_logs(
     skip: int = 0,
     limit: int = 50,
     session: AsyncSession = Depends(get_session),
 ):
-    # 1. UnitOfWork 생성 (트랜잭션 시작)
-    async with UnitOfWork(session) as uow:
+    # 1. 도메인별 UnitOfWork 생성 (트랜잭션 시작)
+    async with HomeUnitOfWork(session) as uow:
         # 2. Service 생성 (Repository 주입)
         service = UserAccessLogService(uow.user_access_logs)
 
         # 3. 비즈니스 로직 실행
         logs, total = await service.get_access_logs(skip, limit)
 
-        # 4. 응답 반환
-        return UserAccessLogListResponse(
-            items=logs,
-            total=total,
-            skip=skip,
-            limit=limit,
-        )
+    # 4. 응답 반환
+    return UserAccessLogListResponse(
+        items=[UserAccessLogResponse.model_validate(log) for log in logs],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 ```
 
 ### 트랜잭션 관리
 
 ```python
-# 단일 트랜잭션 내 여러 작업
-async with UnitOfWork() as uow:
-    # 작업 1
-    user = await uow.users.create({"name": "John"})
-
-    # 작업 2
-    profile = await uow.profiles.create({"user_id": user.id})
-
-    # 작업 3
-    log = await uow.access_logs.create({"user_id": user.id})
+# 단일 트랜잭션 내 여러 작업 (도메인별 UnitOfWork 사용)
+async with HomeUnitOfWork(session) as uow:
+    # Repository를 통한 데이터 조작
+    log = await uow.user_access_logs.create({"ip_address": "127.0.0.1", ...})
 
     # 모든 작업 커밋 (원자적)
     await uow.commit()
@@ -267,10 +279,10 @@ async with UnitOfWork() as uow:
 ### 예외 발생 시 자동 롤백
 
 ```python
-async with UnitOfWork() as uow:
-    await uow.users.create({"name": "John"})
+async with HomeUnitOfWork(session) as uow:
+    await uow.user_access_logs.create({"ip_address": "127.0.0.1", ...})
 
-    # 예외 발생 시 자동 롤백
+    # 예외 발생 시 __aexit__에서 자동 롤백
     raise BusinessException("처리 실패")
 
     # 이 코드는 실행되지 않음
@@ -315,6 +327,8 @@ class BaseRepository(Generic[ModelType]):
 class UserAccessLogRepository(BaseRepository[UserAccessLog]):
     """접속 로그 Repository"""
 
+    model = UserAccessLog
+
     async def get_by_ip(self, ip_address: str) -> Sequence[UserAccessLog]:
         """IP 주소로 조회"""
         stmt = select(UserAccessLog).where(
@@ -333,13 +347,14 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         return {row[0]: row[1] for row in result.all()}
 ```
 
-### 2. Unit of Work 패턴
+### 2. Unit of Work 패턴 (도메인별 분리)
 
-트랜잭션 경계를 관리하고 여러 Repository를 통합합니다.
+인프라 계층에는 세션 관리만 담당하는 기반 클래스를 두고, 각 도메인에서 이를 상속하여 자신만의 Repository를 정의합니다.
 
 ```python
-class UnitOfWork:
-    """트랜잭션 경계 관리"""
+# app/database/unit_of_work.py - 기반 클래스 (세션 관리만 담당)
+class BaseUnitOfWork:
+    """세션 관리와 트랜잭션 제어만 담당하는 기반 클래스"""
 
     def __init__(self, session: AsyncSession | None = None):
         self._session = session
@@ -348,40 +363,74 @@ class UnitOfWork:
     async def __aenter__(self) -> Self:
         if self._owns_session:
             self._session = AsyncSessionLocal()
-        self._init_repositories()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         if exc_type is not None:
             await self.rollback()  # 예외 시 자동 롤백
-        if self._owns_session:
+        if self._owns_session and self._session:
             await self._session.close()
-
-    def _init_repositories(self) -> None:
-        """Repository 인스턴스 초기화"""
-        self.user_access_logs = UserAccessLogRepository(self._session)
-        self.users = UserRepository(self._session)
-        # 새 모듈 추가 시 여기에 Repository 등록
 
     async def commit(self) -> None:
         await self.session.commit()
 
     async def rollback(self) -> None:
         await self.session.rollback()
+
+
+class BaseBackgroundUnitOfWork(BaseUnitOfWork):
+    """백그라운드 태스크용 (분리된 커넥션 풀 사용)"""
+
+    async def __aenter__(self) -> Self:
+        if self._owns_session:
+            self._session = BackgroundSessionLocal()
+        return self
 ```
+
+```python
+# app/home/unit_of_work/home_unit_of_work.py - 도메인별 UnitOfWork
+class HomeUnitOfWork(BaseUnitOfWork):
+    """Home 도메인 전용 UnitOfWork"""
+
+    user_access_logs: UserAccessLogRepository
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()
+        self.user_access_logs = UserAccessLogRepository(self._session)
+        return self
+
+
+class HomeBackgroundUnitOfWork(BaseBackgroundUnitOfWork):
+    """Home 도메인 백그라운드 전용 UnitOfWork"""
+
+    user_access_logs: UserAccessLogRepository
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()
+        self.user_access_logs = UserAccessLogRepository(self._session)
+        return self
+```
+
+이 설계의 핵심 장점:
+
+- **의존성 방향 정상화**: 인프라(database)는 도메인을 모르고, 도메인이 인프라를 사용
+- **도메인 독립성**: 각 도메인은 자신만의 Repository만 포함
+- **확장성**: 새 도메인 추가 시 기존 코드 수정 불필요
 
 ### 3. Service 패턴
 
 비즈니스 로직을 캡슐화하고 Repository를 조율합니다.
 
 ```python
+# app/core/base_service.py - 공통 기반 클래스
 class BaseService(Generic[R]):
-    """제네릭 기본 Service"""
+    """제네릭 기본 Service (모든 도메인에서 공유)"""
 
     def __init__(self, repository: R):
         self.repository = repository
 
 
+# app/home/services/user_access_log_service.py - 도메인 Service
 class UserAccessLogService(BaseService[UserAccessLogRepository]):
     """접속 로그 비즈니스 로직"""
 
@@ -389,7 +438,7 @@ class UserAccessLogService(BaseService[UserAccessLogRepository]):
         self, skip: int = 0, limit: int = 50
     ) -> tuple[Sequence[UserAccessLog], int]:
         """접속 로그 목록 조회"""
-        logs = await self.repository.get_many(skip=skip, limit=limit)
+        logs = await self.repository.get_all(skip=skip, limit=limit)
         total = await self.repository.count()
         return logs, total
 
@@ -402,9 +451,9 @@ class UserAccessLogService(BaseService[UserAccessLogRepository]):
 
         return AccessLogStats(
             total_count=total,
-            device_types=[...],
-            os_list=[...],
-            browser_list=[...],
+            device_types=[DeviceTypeStats(device_type=k, count=v) for k, v in device_stats.items()],
+            os_list=[OSStats(os_name=k, count=v) for k, v in os_stats.items()],
+            browsers=[BrowserStats(browser_name=k, count=v) for k, v in browser_stats.items()],
         )
 ```
 
@@ -453,7 +502,7 @@ pip install -e .
 ### 3. 환경 변수 설정
 
 ```bash
-cp .env.example .env
+cp .env.sample .env
 # .env 파일 수정
 ```
 
@@ -691,7 +740,7 @@ logger = get_logger(HOME_LOGGER)
 ┌─────────────────────────────────────────────────────────────┐
 │                   UserInfoMiddleware                         │
 │  5. 응답 시간 계산                                             │
-│  6. 백그라운드 태스크로 DB 저장 (Non-blocking)                  │
+│  6. asyncio.create_task로 DB 저장 (Non-blocking)              │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -765,7 +814,7 @@ ACCESS_LOG_EXCLUDE_EXTENSIONS=[".css", ".js", ".ico", ".png", ".woff2", ".map"]
 
 | 필드 | 설명 |
 |------|------|
-| `request_path` | 요청 경로 (`/api/v1/products`) |
+| `request_path` | 요청 경로 (`/api/v1/home/access-logs`) |
 | `request_method` | HTTP 메서드 (`GET`, `POST`, ...) |
 | `query_string` | 쿼리 스트링 (`?page=1&limit=10`) |
 | `referer` | Referer 헤더 |
@@ -801,11 +850,11 @@ ACCESS_LOG_EXCLUDE_EXTENSIONS=[".css", ".js", ".ico", ".png", ".woff2", ".map"]
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| GET | `/api/v1/access-logs` | 접속 로그 목록 (페이지네이션) |
-| GET | `/api/v1/access-logs/recent` | 최근 접속 로그 |
-| GET | `/api/v1/access-logs/by-ip/{ip}` | IP별 접속 로그 |
-| GET | `/api/v1/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
-| GET | `/api/v1/access-logs/stats` | 접속 통계 (장치, OS, 브라우저별) |
+| GET | `/api/v1/home/access-logs` | 접속 로그 목록 (페이지네이션) |
+| GET | `/api/v1/home/access-logs/recent` | 최근 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
+| GET | `/api/v1/home/access-logs/stats` | 접속 통계 (장치, OS, 브라우저별) |
 
 ### 활용 예시
 
@@ -819,18 +868,18 @@ stats = await service.get_stats()
 {
     "total_count": 15420,
     "device_types": [
-        {"type": "desktop", "count": 8500, "percentage": 55.1},
-        {"type": "mobile", "count": 6200, "percentage": 40.2},
-        {"type": "tablet", "count": 720, "percentage": 4.7}
+        {"device_type": "desktop", "count": 8500},
+        {"device_type": "mobile", "count": 6200},
+        {"device_type": "tablet", "count": 720}
     ],
     "os_list": [
-        {"name": "Windows", "count": 6000},
-        {"name": "iOS", "count": 4500},
-        {"name": "Android", "count": 3200}
+        {"os_name": "Windows", "count": 6000},
+        {"os_name": "iOS", "count": 4500},
+        {"os_name": "Android", "count": 3200}
     ],
-    "browser_list": [
-        {"name": "Chrome", "count": 9000},
-        {"name": "Safari", "count": 4000}
+    "browsers": [
+        {"browser_name": "Chrome", "count": 9000},
+        {"browser_name": "Safari", "count": 4000}
     ]
 }
 ```
@@ -839,7 +888,7 @@ stats = await service.get_stats()
 
 ```python
 # 특정 IP의 접속 기록 조회
-logs = await service.get_by_ip("192.168.1.100")
+logs = await service.get_logs_by_ip("192.168.1.100")
 
 # 의심스러운 활동 감지
 suspicious = [log for log in logs if log.is_bot and log.response_status == 403]
@@ -847,11 +896,13 @@ suspicious = [log for log in logs if log.is_bot and log.response_status == 403]
 
 ### 성능 고려사항
 
-1. **Non-blocking 저장**: 접속 로그는 백그라운드 태스크로 저장되어 API 응답 시간에 영향을 주지 않습니다.
+1. **Non-blocking 저장**: 접속 로그는 `asyncio.create_task()`로 백그라운드에서 저장되어 API 응답 시간에 영향을 주지 않습니다.
 
-2. **제외 설정 최적화**: 헬스체크, 정적 파일 등 빈번한 요청은 기본적으로 제외됩니다.
+2. **분리된 커넥션 풀**: `HomeBackgroundUnitOfWork`는 메인 API 풀과 분리된 백그라운드 풀을 사용하여 풀 고갈을 방지합니다.
 
-3. **인덱스 활용**: 자주 조회되는 필드에 인덱스가 설정되어 있습니다.
+3. **제외 설정 최적화**: 헬스체크, 정적 파일 등 빈번한 요청은 기본적으로 제외됩니다.
+
+4. **인덱스 활용**: 자주 조회되는 필드에 인덱스가 설정되어 있습니다.
 
 ```python
 # 미들웨어 내부 동작
@@ -864,7 +915,10 @@ async def dispatch(self, request: Request, call_next: Callable):
     response = await call_next(request)
 
     # 백그라운드에서 비동기 저장 (응답 지연 없음)
-    response.background = BackgroundTask(self._save_access_log, data)
+    # 태스크 참조를 유지하여 GC에 의한 소실 방지
+    task = asyncio.create_task(self._save_access_log(data))
+    self._background_tasks.add(task)
+    task.add_done_callback(self._background_tasks.discard)
     return response
 ```
 
@@ -913,28 +967,24 @@ class Product(Base):
 
     __tablename__ = "products"
 
-    # 기본키
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid4()),
     )
 
-    # 상품 정보
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     stock: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # 카테고리 (외래키 관계 예시)
     category_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("categories.id"),
         nullable=True,
     )
 
-    # 타임스탬프
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: timezone_settings.now(),
@@ -944,9 +994,6 @@ class Product(Base):
         nullable=True,
         onupdate=lambda: timezone_settings.now(),
     )
-
-    # 관계 정의 (Lazy Loading 기본)
-    # category: Mapped["Category"] = relationship(back_populates="products")
 
     def __repr__(self) -> str:
         return f"<Product(id={self.id}, name={self.name})>"
@@ -961,7 +1008,7 @@ class Product(Base):
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from app.database.repositories.base import BaseRepository
 from app.product.models.models import Product
@@ -970,7 +1017,6 @@ from app.product.models.models import Product
 class ProductRepository(BaseRepository[Product]):
     """상품 데이터 접근 Repository"""
 
-    # 모델 클래스 지정 (BaseRepository에서 사용)
     model = Product
 
     async def get_active_products(
@@ -987,14 +1033,6 @@ class ProductRepository(BaseRepository[Product]):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def get_by_category(
-        self, category_id: str
-    ) -> Sequence[Product]:
-        """카테고리별 상품 조회"""
-        stmt = select(Product).where(Product.category_id == category_id)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
-
     async def get_by_price_range(
         self, min_price: Decimal, max_price: Decimal
     ) -> Sequence[Product]:
@@ -1005,25 +1043,40 @@ class ProductRepository(BaseRepository[Product]):
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
-
-    async def update_stock(self, product_id: str, quantity: int) -> bool:
-        """재고 수량 업데이트"""
-        product = await self.get_by_id(product_id)
-        if not product:
-            return False
-        product.stock += quantity
-        return True
 ```
 
-#### 4단계: Service 정의
+#### 4단계: 도메인 UnitOfWork 정의
+
+```python
+# app/product/unit_of_work/product_unit_of_work.py
+"""Product 도메인 전용 UnitOfWork"""
+
+from typing import Self
+
+from app.database.unit_of_work import BaseUnitOfWork
+from app.product.repositories.product_repository import ProductRepository
+
+
+class ProductUnitOfWork(BaseUnitOfWork):
+    """Product 도메인 전용 UnitOfWork"""
+
+    products: ProductRepository
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()
+        self.products = ProductRepository(self._session)
+        return self
+```
+
+#### 5단계: Service 정의
 
 ```python
 # app/product/services/product_service.py
 """Product 비즈니스 로직"""
 
-from decimal import Decimal
 from typing import Sequence
 
+from app.core.base_service import BaseService
 from app.core.exception import NotFoundException, BadRequestException
 from app.product.models.models import Product
 from app.product.repositories.product_repository import ProductRepository
@@ -1033,15 +1086,11 @@ from app.utils.logger import get_logger
 logger = get_logger("product")
 
 
-class ProductService:
+class ProductService(BaseService[ProductRepository]):
     """상품 비즈니스 로직 서비스"""
-
-    def __init__(self, repository: ProductRepository):
-        self.repository = repository
 
     async def create_product(self, data: ProductCreate) -> Product:
         """상품 생성"""
-        # 비즈니스 규칙 검증
         if data.price < 0:
             raise BadRequestException("가격은 0 이상이어야 합니다.")
 
@@ -1063,44 +1112,9 @@ class ProductService:
         products = await self.repository.get_active_products(skip, limit)
         total = await self.repository.count()
         return products, total
-
-    async def update_product(
-        self, product_id: str, data: ProductUpdate
-    ) -> Product:
-        """상품 수정"""
-        product = await self.repository.update(
-            product_id,
-            data.model_dump(exclude_unset=True)
-        )
-        if not product:
-            raise NotFoundException(f"상품을 찾을 수 없습니다: {product_id}")
-        logger.info(f"상품 수정 완료: {product_id}")
-        return product
-
-    async def delete_product(self, product_id: str) -> bool:
-        """상품 삭제"""
-        success = await self.repository.delete(product_id)
-        if not success:
-            raise NotFoundException(f"상품을 찾을 수 없습니다: {product_id}")
-        logger.info(f"상품 삭제 완료: {product_id}")
-        return True
-
-    async def update_stock(
-        self, product_id: str, quantity: int
-    ) -> Product:
-        """재고 수정"""
-        product = await self.get_product(product_id)
-
-        new_stock = product.stock + quantity
-        if new_stock < 0:
-            raise BadRequestException("재고가 부족합니다.")
-
-        await self.repository.update_stock(product_id, quantity)
-        logger.info(f"재고 수정: {product_id}, 변경량: {quantity}")
-        return product
 ```
 
-#### 5단계: Schema 정의
+#### 6단계: Schema 정의
 
 ```python
 # app/product/schemas/product_schema.py
@@ -1155,7 +1169,7 @@ class ProductListResponse(BaseModel):
     limit: int
 ```
 
-#### 6단계: Router 정의
+#### 7단계: Router 정의
 
 ```python
 # app/product/api/routers/v1/product.py
@@ -1166,16 +1180,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exception import ErrorResponse
 from app.database.session import get_session
-from app.database.unit_of_work import UnitOfWork
+from app.product.unit_of_work.product_unit_of_work import ProductUnitOfWork
 from app.product.schemas.product_schema import (
     ProductCreate,
-    ProductUpdate,
     ProductResponse,
     ProductListResponse,
 )
 from app.product.services.product_service import ProductService
 
-router = APIRouter(prefix="/products", tags=["Product"])
+router = APIRouter()
 
 
 @router.get(
@@ -1189,15 +1202,16 @@ async def get_products(
     session: AsyncSession = Depends(get_session),
 ):
     """상품 목록을 페이지네이션하여 조회합니다."""
-    async with UnitOfWork(session) as uow:
+    async with ProductUnitOfWork(session) as uow:
         service = ProductService(uow.products)
         products, total = await service.get_products(skip, limit)
-        return ProductListResponse(
-            items=products,
-            total=total,
-            skip=skip,
-            limit=limit,
-        )
+
+    return ProductListResponse(
+        items=[ProductResponse.model_validate(p) for p in products],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.post(
@@ -1211,80 +1225,11 @@ async def create_product(
     session: AsyncSession = Depends(get_session),
 ):
     """새 상품을 생성합니다."""
-    async with UnitOfWork(session) as uow:
+    async with ProductUnitOfWork(session) as uow:
         service = ProductService(uow.products)
         product = await service.create_product(data)
         await uow.commit()
         return product
-
-
-@router.get(
-    "/{product_id}",
-    response_model=ProductResponse,
-    responses={404: {"model": ErrorResponse}},
-    summary="상품 상세 조회",
-)
-async def get_product(
-    product_id: str = Path(..., description="상품 ID"),
-    session: AsyncSession = Depends(get_session),
-):
-    """상품 상세 정보를 조회합니다."""
-    async with UnitOfWork(session) as uow:
-        service = ProductService(uow.products)
-        return await service.get_product(product_id)
-
-
-@router.put(
-    "/{product_id}",
-    response_model=ProductResponse,
-    responses={404: {"model": ErrorResponse}},
-    summary="상품 수정",
-)
-async def update_product(
-    product_id: str,
-    data: ProductUpdate,
-    session: AsyncSession = Depends(get_session),
-):
-    """상품 정보를 수정합니다."""
-    async with UnitOfWork(session) as uow:
-        service = ProductService(uow.products)
-        product = await service.update_product(product_id, data)
-        await uow.commit()
-        return product
-
-
-@router.delete(
-    "/{product_id}",
-    status_code=204,
-    responses={404: {"model": ErrorResponse}},
-    summary="상품 삭제",
-)
-async def delete_product(
-    product_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    """상품을 삭제합니다."""
-    async with UnitOfWork(session) as uow:
-        service = ProductService(uow.products)
-        await service.delete_product(product_id)
-        await uow.commit()
-```
-
-#### 7단계: UnitOfWork에 Repository 등록
-
-```python
-# app/database/unit_of_work.py
-def _init_repositories(self) -> None:
-    """Repository 인스턴스 초기화"""
-    from app.home.repositories.user_access_log_repository import (
-        UserAccessLogRepository,
-    )
-    from app.product.repositories.product_repository import (
-        ProductRepository,  # 추가
-    )
-
-    self.user_access_logs = UserAccessLogRepository(self._session)
-    self.products = ProductRepository(self._session)  # 추가
 ```
 
 #### 8단계: 라우터 등록
@@ -1296,7 +1241,7 @@ from fastapi import APIRouter
 from app.product.api.routers.v1 import product
 
 product_router = APIRouter()
-product_router.include_router(product.router, prefix="/v1")
+product_router.include_router(product.router, prefix="/v1/product", tags=["Product"])
 ```
 
 ```python
@@ -1361,10 +1306,11 @@ admin.add_view(ProductAdmin)
 
 - [ ] 모델 정의 (`models/models.py`)
 - [ ] Repository 구현 (`repositories/*_repository.py`)
+- [ ] 도메인 UnitOfWork 정의 (`unit_of_work/[module]_unit_of_work.py`)
 - [ ] Service 구현 (`services/*_service.py`)
+- [ ] 도메인 예외 정의 (`[module]_exception.py`)
 - [ ] Schema 정의 (`schemas/*_schema.py`)
 - [ ] Router 구현 (`api/routers/v1/*.py`)
-- [ ] UnitOfWork에 Repository 등록 (`database/unit_of_work.py`)
 - [ ] 메인 라우터에 등록 (`main.py`)
 - [ ] 테이블 생성 등록 (`database/session.py`)
 - [ ] Admin 뷰 추가 (선택)
@@ -1390,11 +1336,11 @@ admin.add_view(ProductAdmin)
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| GET | `/api/v1/access-logs` | 접속 로그 목록 (페이지네이션) |
-| GET | `/api/v1/access-logs/recent` | 최근 접속 로그 |
-| GET | `/api/v1/access-logs/by-ip/{ip}` | IP별 접속 로그 |
-| GET | `/api/v1/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
-| GET | `/api/v1/access-logs/stats` | 접속 통계 |
+| GET | `/api/v1/home/access-logs` | 접속 로그 목록 (페이지네이션) |
+| GET | `/api/v1/home/access-logs/recent` | 최근 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
+| GET | `/api/v1/home/access-logs/stats` | 접속 통계 |
 
 ---
 

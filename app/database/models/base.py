@@ -16,8 +16,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from config import timezone_settings
@@ -59,11 +58,12 @@ class UUIDMixin:
     """
     UUID 기본키 믹스인
 
-    UUID 타입의 id 필드를 자동으로 추가합니다.
+    String(36) 타입의 UUID id 필드를 자동으로 추가합니다.
+    MySQL, PostgreSQL 모두 호환됩니다.
     """
 
-    id: Mapped[uuid4] = mapped_column(
-        UUID(as_uuid=True),
+    id: Mapped[str] = mapped_column(
+        String(36),
         primary_key=True,
-        default=uuid4,
+        default=lambda: str(uuid4()),
     )
