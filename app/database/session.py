@@ -33,28 +33,12 @@ import time
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
 
+from app.database.models.base import Base  # noqa: F401 - re-export
 from app.utils.logger import get_logger
 from config import db_settings
 
 logger = get_logger("database")
-
-
-class Base(DeclarativeBase):
-    """
-    SQLAlchemy 선언적 베이스 클래스
-
-    모든 ORM 모델은 이 클래스를 상속해야 합니다.
-
-    Example:
-        class User(Base):
-            __tablename__ = "users"
-            id: Mapped[str] = mapped_column(String(36), primary_key=True)
-            name: Mapped[str] = mapped_column(String(100))
-    """
-
-    pass
 
 
 # =============================================================================

@@ -13,8 +13,8 @@ Home v1 API 엔드포인트
 사용 패턴:
     모든 엔드포인트는 다음 패턴을 따릅니다:
     1. session을 Depends로 주입받음
-    2. UnitOfWork 컨텍스트 내에서 Service 생성
-    3. Repository가 UoW에서 자동 주입됨
+    2. HomeUnitOfWork 컨텍스트 내에서 Service 생성
+    3. Repository가 HomeUnitOfWork에서 자동 주입됨
     4. Service 메서드 호출로 비즈니스 로직 실행
 """
 
@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exception import ErrorResponse
 from app.database.session import get_session
-from app.database.unit_of_work import UnitOfWork
+from app.home.unit_of_work import HomeUnitOfWork
 from app.home.schemas.user_access_log_schema import (
     UserAccessLogListResponse,
     UserAccessLogResponse,
@@ -92,7 +92,7 @@ async def get_access_logs(
     """
     logger.debug(f"[1/2] 접속 로그 목록 조회 요청: skip={skip}, limit={limit}")
 
-    async with UnitOfWork(session) as uow:
+    async with HomeUnitOfWork(session) as uow:
         service = UserAccessLogService(uow.user_access_logs)
         logs, total = await service.get_access_logs(skip=skip, limit=limit)
 
@@ -146,7 +146,7 @@ async def get_recent_access_logs(
     """
     logger.debug(f"[1/2] 최근 접속 로그 조회 요청: limit={limit}")
 
-    async with UnitOfWork(session) as uow:
+    async with HomeUnitOfWork(session) as uow:
         service = UserAccessLogService(uow.user_access_logs)
         logs = await service.get_recent_logs(limit=limit)
 
@@ -211,7 +211,7 @@ async def get_access_logs_by_ip(
     """
     logger.debug(f"[1/2] IP별 접속 로그 조회 요청: ip={ip_address}")
 
-    async with UnitOfWork(session) as uow:
+    async with HomeUnitOfWork(session) as uow:
         service = UserAccessLogService(uow.user_access_logs)
         logs = await service.get_logs_by_ip(
             ip_address=ip_address, skip=skip, limit=limit
@@ -278,7 +278,7 @@ async def get_access_logs_by_user(
     """
     logger.debug(f"[1/2] 사용자별 접속 로그 조회 요청: user_id={user_id}")
 
-    async with UnitOfWork(session) as uow:
+    async with HomeUnitOfWork(session) as uow:
         service = UserAccessLogService(uow.user_access_logs)
         logs = await service.get_logs_by_user(
             user_id=user_id, skip=skip, limit=limit
@@ -330,7 +330,7 @@ async def get_access_log_stats(
     """
     logger.debug("[1/2] 접속 로그 통계 조회 요청")
 
-    async with UnitOfWork(session) as uow:
+    async with HomeUnitOfWork(session) as uow:
         service = UserAccessLogService(uow.user_access_logs)
         stats = await service.get_stats()
 

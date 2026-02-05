@@ -237,8 +237,10 @@ class CORSSettings(BaseSettings):
     )
 
     # 자격 증명 허용 여부 (쿠키, Authorization 헤더)
+    # 주의: allow_origins=["*"]와 allow_credentials=True는 CORS 스펙상
+    #       유효하지 않은 조합이다. credentials를 사용하려면 구체적인 Origin을 지정해야 한다.
     CORS_ALLOW_CREDENTIALS: bool = Field(
-        default=True,
+        default=False,
         description="자격 증명 허용 여부",
     )
 

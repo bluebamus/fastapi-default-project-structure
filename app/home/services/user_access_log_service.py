@@ -7,7 +7,7 @@ UserAccessLog Service
 from datetime import datetime
 from typing import Any, Sequence
 
-from app.core.exception import BadRequestException
+from app.home.home_exception import InvalidDateRangeException
 from app.home.models.models import UserAccessLog
 from app.home.repositories.user_access_log_repository import UserAccessLogRepository
 from app.home.schemas.user_access_log_schema import (
@@ -17,7 +17,7 @@ from app.home.schemas.user_access_log_schema import (
     OSStats,
     BrowserStats,
 )
-from app.home.services.base import BaseService
+from app.core.base_service import BaseService
 from app.utils.logger import get_logger
 
 logger = get_logger("user_access_log_service")
@@ -193,8 +193,7 @@ class UserAccessLogService(BaseService[UserAccessLogRepository]):
         # 날짜 범위 유효성 검증
         if start_date > end_date:
             logger.warning(f"[VALIDATION] 잘못된 날짜 범위: start={start_date}, end={end_date}")
-            raise BadRequestException(
-                message="시작 날짜는 종료 날짜보다 이전이어야 합니다.",
+            raise InvalidDateRangeException(
                 detail={"start_date": str(start_date), "end_date": str(end_date)},
             )
 

@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from user_agents import parse as parse_user_agent
 
-from app.database.unit_of_work import BackgroundUnitOfWork
+from app.home.unit_of_work import HomeBackgroundUnitOfWork
 from app.home.services.user_access_log_service import UserAccessLogService
 from app.utils.logger import get_logger
 from config import middleware_settings
@@ -45,6 +45,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         self.enabled = middleware_settings.ACCESS_LOG_ENABLED
         self.exclude_paths = set(middleware_settings.ACCESS_LOG_EXCLUDE_PATHS)
         self.exclude_extensions = set(middleware_settings.ACCESS_LOG_EXCLUDE_EXTENSIONS)
+        self._background_tasks: set[asyncio.Task] = set()
 
     def _should_skip(self, path: str) -> bool:
         """
@@ -190,7 +191,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             data: 저장할 접속 로그 데이터
         """
         try:
-            async with BackgroundUnitOfWork() as uow:
+            async with HomeBackgroundUnitOfWork() as uow:
                 # Repository를 주입받아 Service 생성
                 service = UserAccessLogService(uow.user_access_logs)
                 await service.create_access_log(data)
@@ -244,7 +245,9 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         )
 
         # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음)
-        asyncio.create_task(self._save_access_log(request_info))
+        task = asyncio.create_task(self._save_access_log(request_info))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
         return response
 
