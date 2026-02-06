@@ -12,3 +12,13 @@ __pycache__/
 
 # Logs
 logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+.fseventsd
