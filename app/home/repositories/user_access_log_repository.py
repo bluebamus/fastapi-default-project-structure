@@ -10,7 +10,7 @@ from typing import Sequence
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.repositories.base import BaseRepository
+from app.core.repositories.repository_base import BaseRepository
 from app.home.models.models import UserAccessLog
 from app.utils.logger import get_logger
 

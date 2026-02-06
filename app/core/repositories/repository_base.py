@@ -18,7 +18,9 @@ CRUD 작업과 N+1 문제 해결을 위한 Eager Loading 메서드를 제공합�
     users = await repo.get_all_with(relations=["posts"])
 """
 
-from typing import Any, Generic, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import Any
+
 from uuid import uuid4
 
 from sqlalchemy import select, update, delete, func
@@ -35,16 +37,13 @@ from sqlalchemy.orm import (
 from sqlalchemy.sql import Select
 
 from app.core.exception import DatabaseException, DuplicateException, NotFoundException
-from app.database.session import Base
+from app.core.repositories.crud_base import CRUDBase, ModelType
 from app.utils.logger import get_logger
 
 logger = get_logger("repository")
 
-# Generic 타입 변수: Base를 상속한 모든 SQLAlchemy 모델을 받을 수 있음
-ModelType = TypeVar("ModelType", bound=Base)
 
-
-class BaseRepository(Generic[ModelType]):
+class BaseRepository(CRUDBase[ModelType]):
     """
     기본 Repository 클래스
 
@@ -75,7 +74,7 @@ class BaseRepository(Generic[ModelType]):
         Args:
             session: 비동기 데이터베이스 세션 (AsyncSession)
         """
-        self.session = session
+        super().__init__(session)
 
     # ========================================================================
     # LOADING STRATEGY HELPERS (내부 헬퍼 메서드)
@@ -183,10 +182,7 @@ class BaseRepository(Generic[ModelType]):
 
         try:
             instance = self.model(**data)
-            self.session.add(instance)
-            await self.session.flush()
-            await self.session.refresh(instance)
-            return instance
+            return await self._add(instance)  # CRUDBase 메서드 활용
         except IntegrityError as e:
             logger.error(f"[CREATE] 중복 데이터 오류: {e}")
             raise DuplicateException(
@@ -264,9 +260,7 @@ class BaseRepository(Generic[ModelType]):
         Example:
             user = await repo.get_by_id("550e8400-e29b-41d4-a716-446655440000")
         """
-        stmt = select(self.model).where(self.model.id == id)
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        return await self._get(id)  # CRUDBase 메서드 활용
 
     async def get_by_id_or_raise(self, id: str) -> ModelType:
         """
@@ -1020,8 +1014,7 @@ class BaseRepository(Generic[ModelType]):
         if instance:
             for key, value in (defaults or {}).items():
                 setattr(instance, key, value)
-            await self.session.flush()
-            await self.session.refresh(instance)
+            await self._update(instance)  # CRUDBase 메서드 활용
             return instance, False
 
         data = {**filters, **(defaults or {})}

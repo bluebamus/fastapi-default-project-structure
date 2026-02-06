@@ -10,16 +10,15 @@ Home 도메인은 사용자 접속 로그와 관련된 기능을 담당한다.
     - 다른 도메인의 Repository는 알지 못한다
 
 사용 예시:
-    # API 엔드포인트에서
+    # API 엔드포인트에서 (UoW를 Service에 주입)
     async with HomeUnitOfWork(session) as uow:
-        service = UserAccessLogService(uow.user_access_logs)
+        service = UserAccessLogService(uow)
         logs = await service.get_recent_logs(limit=50)
 
     # 백그라운드 태스크에서
     async with HomeBackgroundUnitOfWork() as uow:
-        service = UserAccessLogService(uow.user_access_logs)
-        await service.create_access_log(data)
-        await uow.commit()
+        service = UserAccessLogService(uow)
+        await service.create_access_log(data)  # auto_commit=True (기본값)
 """
 
 from typing import Self
@@ -95,9 +94,8 @@ class HomeBackgroundUnitOfWork(BaseBackgroundUnitOfWork):
         # 미들웨어에서 백그라운드로 로그 저장
         async def _save_access_log(data: dict) -> None:
             async with HomeBackgroundUnitOfWork() as uow:
-                service = UserAccessLogService(uow.user_access_logs)
-                await service.create_access_log(data)
-                await uow.commit()
+                service = UserAccessLogService(uow)
+                await service.create_access_log(data)  # auto_commit=True (기본값)
     """
 
     user_access_logs: UserAccessLogRepository

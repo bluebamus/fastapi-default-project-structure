@@ -5,7 +5,7 @@ SQLAlchemy Base 클래스
 이 파일은 모든 도메인 모듈에서 공통으로 사용됩니다.
 
 사용법:
-    from app.database.models.base import Base, TimestampMixin, UUIDMixin
+    from app.core.models.models_base import Base, TimestampMixin, UUIDMixin
 
     class MyModel(Base, TimestampMixin):
         __tablename__ = "my_table"
