@@ -14,7 +14,7 @@ Home v1 API 엔드포인트
     모든 엔드포인트는 다음 패턴을 따릅니다:
     1. session을 Depends로 주입받음
     2. HomeUnitOfWork 컨텍스트 내에서 Service 생성
-    3. Repository가 HomeUnitOfWork에서 자동 주입됨
+    3. Service가 UoW를 주입받아 트랜잭션 제어
     4. Service 메서드 호출로 비즈니스 로직 실행
 """
 
@@ -93,7 +93,7 @@ async def get_access_logs(
     logger.debug(f"[1/2] 접속 로그 목록 조회 요청: skip={skip}, limit={limit}")
 
     async with HomeUnitOfWork(session) as uow:
-        service = UserAccessLogService(uow.user_access_logs)
+        service = UserAccessLogService(uow)
         logs, total = await service.get_access_logs(skip=skip, limit=limit)
 
     logger.debug(f"[2/2] 접속 로그 목록 조회 완료: count={len(logs)}, total={total}")
@@ -147,7 +147,7 @@ async def get_recent_access_logs(
     logger.debug(f"[1/2] 최근 접속 로그 조회 요청: limit={limit}")
 
     async with HomeUnitOfWork(session) as uow:
-        service = UserAccessLogService(uow.user_access_logs)
+        service = UserAccessLogService(uow)
         logs = await service.get_recent_logs(limit=limit)
 
     logger.debug(f"[2/2] 최근 접속 로그 조회 완료: count={len(logs)}")
@@ -212,7 +212,7 @@ async def get_access_logs_by_ip(
     logger.debug(f"[1/2] IP별 접속 로그 조회 요청: ip={ip_address}")
 
     async with HomeUnitOfWork(session) as uow:
-        service = UserAccessLogService(uow.user_access_logs)
+        service = UserAccessLogService(uow)
         logs = await service.get_logs_by_ip(
             ip_address=ip_address, skip=skip, limit=limit
         )
@@ -279,7 +279,7 @@ async def get_access_logs_by_user(
     logger.debug(f"[1/2] 사용자별 접속 로그 조회 요청: user_id={user_id}")
 
     async with HomeUnitOfWork(session) as uow:
-        service = UserAccessLogService(uow.user_access_logs)
+        service = UserAccessLogService(uow)
         logs = await service.get_logs_by_user(
             user_id=user_id, skip=skip, limit=limit
         )
@@ -331,7 +331,7 @@ async def get_access_log_stats(
     logger.debug("[1/2] 접속 로그 통계 조회 요청")
 
     async with HomeUnitOfWork(session) as uow:
-        service = UserAccessLogService(uow.user_access_logs)
+        service = UserAccessLogService(uow)
         stats = await service.get_stats()
 
     logger.debug("[2/2] 접속 로그 통계 조회 완료")
