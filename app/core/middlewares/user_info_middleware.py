@@ -192,10 +192,9 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         """
         try:
             async with HomeBackgroundUnitOfWork() as uow:
-                # Repository를 주입받아 Service 생성
-                service = UserAccessLogService(uow.user_access_logs)
-                await service.create_access_log(data)
-                await uow.commit()
+                # UoW를 주입받아 Service 생성
+                service = UserAccessLogService(uow)
+                await service.create_access_log(data)  # auto_commit=True (기본값)
         except Exception as e:
             # 로그 저장 실패가 요청 처리에 영향을 주지 않도록 함
             logger.error(f"접속 로그 저장 실패: {e}", exc_info=True)

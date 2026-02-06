@@ -2,14 +2,14 @@
 UserAccessLog Service
 
 접속 로그 관련 비즈니스 로직을 처리합니다.
+UnitOfWork 패턴을 사용하여 트랜잭션을 관리합니다.
 """
 
 from datetime import datetime
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from app.home.home_exception import InvalidDateRangeException
 from app.home.models.models import UserAccessLog
-from app.home.repositories.user_access_log_repository import UserAccessLogRepository
 from app.home.schemas.user_access_log_schema import (
     UserAccessLogCreate,
     AccessLogStats,
@@ -17,47 +17,59 @@ from app.home.schemas.user_access_log_schema import (
     OSStats,
     BrowserStats,
 )
-from app.core.base_service import BaseService
+from app.core.services.services_base import BaseService
 from app.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from app.home.unit_of_work.home_unit_of_work import HomeUnitOfWork
 
 logger = get_logger("user_access_log_service")
 
 
-class UserAccessLogService(BaseService[UserAccessLogRepository]):
+class UserAccessLogService(BaseService["HomeUnitOfWork"]):
     """
     UserAccessLog Service
 
     접속 로그 관련 비즈니스 로직을 처리합니다.
-    BaseService를 상속받아 Repository 패턴을 사용합니다.
+    BaseService를 상속받아 UoW 패턴을 사용합니다.
 
     Attributes:
-        repository: UserAccessLogRepository 인스턴스
+        uow: HomeUnitOfWork 인스턴스
+
+    Example:
+        async with HomeUnitOfWork(session) as uow:
+            service = UserAccessLogService(uow)
+            log = await service.create_access_log(data)
+            # commit은 Service 내부에서 또는 명시적으로 호출
     """
 
-    def __init__(self, repository: UserAccessLogRepository) -> None:
+    @property
+    def repository(self):
         """
-        UserAccessLogService 초기화
+        UserAccessLogRepository에 대한 편의 프로퍼티
 
-        Args:
-            repository: UserAccessLogRepository 인스턴스
+        Returns:
+            UserAccessLogRepository 인스턴스
         """
-        super().__init__(repository)
+        return self.uow.user_access_logs
 
     async def create_access_log(
         self,
         data: UserAccessLogCreate | dict[str, Any],
+        auto_commit: bool = True,
     ) -> UserAccessLog:
         """
         접속 로그를 생성합니다.
 
         Args:
             data: 생성할 접속 로그 데이터
+            auto_commit: 자동 커밋 여부 (기본값: True)
 
         Returns:
             생성된 UserAccessLog
         """
         request_path = data.get("request_path") if isinstance(data, dict) else data.request_path
-        logger.debug(f"[1/2] 접속 로그 생성 시작: path={request_path}")
+        logger.debug(f"[1/3] 접속 로그 생성 시작: path={request_path}")
 
         if isinstance(data, UserAccessLogCreate):
             data_dict = data.model_dump()
@@ -65,8 +77,12 @@ class UserAccessLogService(BaseService[UserAccessLogRepository]):
             data_dict = data
 
         log = await self.repository.create(data_dict)
+        logger.debug(f"[2/3] 접속 로그 생성 완료: id={log.id}")
 
-        logger.debug(f"[2/2] 접속 로그 생성 완료: id={log.id}")
+        if auto_commit:
+            await self.commit()
+            logger.debug("[3/3] 트랜잭션 커밋 완료")
+
         return log
 
     async def get_access_logs(
@@ -188,7 +204,7 @@ class UserAccessLogService(BaseService[UserAccessLogRepository]):
             UserAccessLog 리스트
 
         Raises:
-            BadRequestException: 시작 날짜가 종료 날짜보다 늦은 경우
+            InvalidDateRangeException: 시작 날짜가 종료 날짜보다 늦은 경우
         """
         # 날짜 범위 유효성 검증
         if start_date > end_date:
@@ -252,16 +268,3 @@ class UserAccessLogService(BaseService[UserAccessLogRepository]):
             os_list=os_list,
             browsers=browsers,
         )
-
-
-def get_user_access_log_service(repository: UserAccessLogRepository) -> UserAccessLogService:
-    """
-    UserAccessLogService 팩토리 함수
-
-    Args:
-        repository: UserAccessLogRepository 인스턴스
-
-    Returns:
-        UserAccessLogService 인스턴스
-    """
-    return UserAccessLogService(repository)
