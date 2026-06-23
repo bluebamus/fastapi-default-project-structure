@@ -130,7 +130,7 @@ create_app() 호출
     └─ registry.install_admin()   → admin_views() 결과를 SQLAdmin에 등록
 ```
 
-### 2.3 main.py는 단 5줄
+### 2.3 main.py의 핵심은 `app = create_app()` 한 줄
 
 ```python
 """FastAPI 진입점. 모든 조립은 create_app() 안에서 레지스트리가 수행한다."""
@@ -138,7 +138,18 @@ from app.core.bootstrap import create_app
 from config import app_settings
 
 app = create_app()
+
+if __name__ == "__main__":
+    import uvicorn
+    from app.shared.logging import setup_uvicorn_logging
+
+    uvicorn.run(
+        "main:app", host="0.0.0.0", port=8000,
+        reload=app_settings.DEBUG, log_config=setup_uvicorn_logging(),
+    )
 ```
+
+라우터·예외 핸들러·미들웨어·Admin 등록은 전부 `create_app()`(= 레지스트리) 안에서 일어납니다.
 
 ---
 
