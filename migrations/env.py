@@ -1,10 +1,8 @@
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -16,16 +14,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # ---------------------------------------------------------------------------
-# Import Base and populate metadata via the AppRegistry so that autogenerate
-# discovers ALL domain models without manual imports.
+# Import Base and populate metadata via app/apps.py explicit registration so
+# that autogenerate discovers ALL domain models.
 # ---------------------------------------------------------------------------
+from app.apps import register_models  # noqa: E402
 from app.core.db.session import Base  # noqa: E402
-from app.core.registry import AppRegistry  # noqa: E402
 from config import db_settings  # noqa: E402
 
-_reg = AppRegistry()
-_reg.discover()
-_reg.import_models()
+register_models()
 
 target_metadata = Base.metadata
 

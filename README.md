@@ -125,9 +125,9 @@ fastapi-default-project-structure/
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
 │
 ├── app/
-│   ├── domains/                 # 기능 단위 앱 (레지스트리 자동 발견)
+│   ├── apps.py                  # 앱 수동 등록 SSOT (routers/모델/admin/celery)
+│   ├── domains/                 # 기능 단위 앱 (app/apps.py에 수동 등록)
 │   │   └── <name>/              # 각 앱 디렉토리
-│   │       ├── config.py        # AppConfig 서브클래스 (레지스트리 진입점)
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
 │   │       ├── models/          # SQLAlchemy ORM 모델
 │   │       ├── schemas/         # Pydantic 스키마
@@ -139,7 +139,6 @@ fastapi-default-project-structure/
 │   │       └── tests/           # 테스트
 │   │
 │   ├── core/                    # 프레임워크 인프라 (도메인이 의존)
-│   │   ├── registry.py          # AppConfig / AppRegistry (자동 발견)
 │   │   ├── bootstrap.py         # create_app() 팩토리
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── db/                  # 세션, BaseUnitOfWork, Redis
@@ -153,7 +152,7 @@ fastapi-default-project-structure/
 │       ├── logging/             # 구조화 로깅
 │       └── pagination/          # 페이지네이션 헬퍼
 │
-├── migrations/                  # Alembic (env.py가 레지스트리로 메타데이터 수집)
+├── migrations/                  # Alembic (env.py가 register_models()로 메타데이터 수집)
 └── docs/
     ├── ARCHITECTURE.md          # 아키텍처 공식 문서
     └── proposer/index.html      # 설계 결정 근거
@@ -163,13 +162,13 @@ fastapi-default-project-structure/
 
 | 파일 | 설명 |
 |------|------|
-| `main.py` | `create_app()` 호출 한 줄 — 모든 조립은 레지스트리가 수행 |
-| `app/core/registry.py` | `AppConfig` 계약 + `AppRegistry` 자동 발견 엔진 |
-| `app/core/bootstrap.py` | `create_app()` — discover → import_models → install_routers → install_admin |
+| `main.py` | `create_app()` 호출 한 줄 — 모든 조립은 `create_app()`이 수행 |
+| `app/apps.py` | 앱 수동 등록 SSOT — `routers()`/`register_models()`/`admin_views()`/`CELERY_TASK_MODULES` |
+| `app/core/bootstrap.py` | `create_app()` — register_models → routers → admin_views 등록 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀 |
 | `app/core/db/unit_of_work.py` | `BaseUnitOfWork` (세션 관리·트랜잭션만, 도메인 무관) |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
-| `migrations/env.py` | AppRegistry로 모든 도메인 모델을 자동 수집 → Alembic autogenerate |
+| `migrations/env.py` | `register_models()`로 모든 도메인 모델 수집 → Alembic autogenerate |
 
 ---
 
@@ -893,44 +892,46 @@ async def dispatch(self, request: Request, call_next: Callable):
 
 > 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
 
-새 앱을 추가할 때 **main.py, migrations/env.py, celery/app.py 등 어떤 중앙 파일도 수정할 필요가 없습니다.**
-레지스트리가 부팅 시 `app/domains/<name>/config.py`를 자동으로 발견합니다.
+새 앱은 스캐폴딩으로 디렉토리/파일을 생성한 뒤 **`app/apps.py`에 수동으로 등록**합니다.
+자동 발견은 사용하지 않으므로 등록을 빠뜨리면 라우터/모델/Admin/태스크가 연결되지 않습니다.
 
 ### 스캐폴딩 생성기 사용 (권장)
 
 ```bash
-# 기본 구조 생성 (config + router + unit_of_work)
+# 기본 구조 생성 (router + unit_of_work)
 uv run python -m scripts.new_app <name>
 
 # Celery 워커 + SQLAdmin 포함
 uv run python -m scripts.new_app <name> --with-worker --with-admin
 ```
 
-### 최소 수동 절차 (3단계)
+### 최소 절차 (3단계)
 
-**1. `app/domains/<name>/config.py` 생성 — 레지스트리 진입점**
+**1. 스캐폴딩 생성 + 도메인 코드 작성** (`models/`, `schemas/`, `repositories/`, `services/`, `api/routers/`)
+
+**2. `app/apps.py`에 등록**
 
 ```python
-from fastapi import APIRouter
-from app.core.registry import AppConfig
+# routers()
+return [
+    RouterSpec(router=home_router, prefix="/api"),
+    RouterSpec(router=<name>_router, prefix="/api"),   # ← 추가
+]
 
+# register_models()
+_MODEL_MODULES = [
+    "app.domains.home.models.models",
+    "app.domains.<name>.models.models",                # ← 추가
+]
 
-class <Name>Config(AppConfig):
-    name = "<name>"
-    prefix = "/api"
-
-    def router(self) -> APIRouter:
-        from app.domains.<name>.api.routers.router import <name>_router
-        return <name>_router
+# 선택: admin_views() 에 ModelView 추가, CELERY_TASK_MODULES 에 "app.domains.<name>.worker.tasks" 추가
 ```
 
-**2. 도메인 코드 작성** (`models/`, `schemas/`, `repositories/`, `services/`, `api/routers/`)
-
-**3. 서버 재시작** — config.py가 감지되면 라우터가 자동 등록됩니다.
+**3. 서버 재시작** — `app/apps.py`에 등록된 라우터가 마운트됩니다.
 
 ### 개발 체크리스트
 
-- [ ] `config.py` — AppConfig 서브클래스 (name 유일, router() 훅)
+- [ ] `app/apps.py` 등록 — `routers()` / `_MODEL_MODULES` (+ 선택: admin/celery)
 - [ ] `models/` — SQLAlchemy ORM 모델
 - [ ] `repositories/` — BaseRepository 확장
 - [ ] `unit_of_work/` — BaseUnitOfWork 선언형 repositories 맵

@@ -4,10 +4,10 @@ UserAccessLog Repository
 접속 로그 데이터 접근 로직을 캡슐화합니다.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Sequence
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.repositories.repository_base import BaseRepository

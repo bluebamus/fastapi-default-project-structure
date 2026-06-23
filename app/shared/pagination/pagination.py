@@ -23,7 +23,8 @@ Pagination Module
 """
 
 import math
-from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -61,7 +62,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
         }
     """
 
-    items: List[T] = Field(..., description="데이터 목록")
+    items: list[T] = Field(..., description="데이터 목록")
     total: int = Field(..., description="전체 데이터 수")
     page: int = Field(..., description="현재 페이지 (1부터 시작)")
     page_size: int = Field(..., description="페이지당 데이터 수")
@@ -72,7 +73,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     @classmethod
     def create(
         cls,
-        items: List[T],
+        items: list[T],
         total: int,
         page: int,
         page_size: int,
@@ -106,15 +107,15 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 async def get_paginated(
     session: AsyncSession,
-    model: Type[ModelT],
-    item_schema: Type[T],
+    model: type[ModelT],
+    item_schema: type[T],
     page: int = 1,
     page_size: int = 20,
     max_page_size: int = 100,
-    filters: Optional[Dict[str, Any]] = None,
-    order_by: Optional[str] = "created_at",
+    filters: dict[str, Any] | None = None,
+    order_by: str | None = "created_at",
     order_desc: bool = True,
-    transform_fn: Optional[Callable[[ModelT], T]] = None,
+    transform_fn: Callable[[ModelT], T] | None = None,
 ) -> PaginatedResponse[T]:
     """범용 페이지네이션 조회 함수
 

@@ -5,10 +5,9 @@ Home 모듈 데이터베이스 모델
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String, Text, Integer, Boolean, Index
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db.session import Base
@@ -74,50 +73,50 @@ class UserAccessLog(Base):
         String(45),  # IPv6 지원
         nullable=False,
     )
-    forwarded_for: Mapped[Optional[str]] = mapped_column(
+    forwarded_for: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="X-Forwarded-For 헤더 값",
     )
-    real_ip: Mapped[Optional[str]] = mapped_column(
+    real_ip: Mapped[str | None] = mapped_column(
         String(45),
         nullable=True,
         comment="X-Real-IP 헤더 값",
     )
 
     # User-Agent 정보
-    user_agent: Mapped[Optional[str]] = mapped_column(
+    user_agent: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
-    os_name: Mapped[Optional[str]] = mapped_column(
+    os_name: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
     )
-    os_version: Mapped[Optional[str]] = mapped_column(
+    os_version: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
     )
-    browser_name: Mapped[Optional[str]] = mapped_column(
+    browser_name: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
     )
-    browser_version: Mapped[Optional[str]] = mapped_column(
+    browser_version: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
     )
 
     # 장치 정보
-    device_type: Mapped[Optional[str]] = mapped_column(
+    device_type: Mapped[str | None] = mapped_column(
         String(20),
         nullable=True,
         comment="desktop, mobile, tablet",
     )
-    device_brand: Mapped[Optional[str]] = mapped_column(
+    device_brand: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
     )
-    device_model: Mapped[Optional[str]] = mapped_column(
+    device_model: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
     )
@@ -128,21 +127,21 @@ class UserAccessLog(Base):
     )
 
     # 위치 정보
-    country: Mapped[Optional[str]] = mapped_column(
+    country: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
     )
-    country_code: Mapped[Optional[str]] = mapped_column(
+    country_code: Mapped[str | None] = mapped_column(
         String(3),
         nullable=True,
     )
-    city: Mapped[Optional[str]] = mapped_column(
+    city: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
     )
 
     # 요청 정보
-    referer: Mapped[Optional[str]] = mapped_column(
+    referer: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
@@ -154,34 +153,34 @@ class UserAccessLog(Base):
         String(10),
         nullable=False,
     )
-    query_string: Mapped[Optional[str]] = mapped_column(
+    query_string: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
 
     # 응답 정보
-    response_status: Mapped[Optional[int]] = mapped_column(
+    response_status: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
     )
-    response_time_ms: Mapped[Optional[int]] = mapped_column(
+    response_time_ms: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="응답 시간 (밀리초)",
     )
 
     # 사용자 정보
-    session_id: Mapped[Optional[str]] = mapped_column(
+    session_id: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
     )
-    user_id: Mapped[Optional[str]] = mapped_column(
+    user_id: Mapped[str | None] = mapped_column(
         String(36),
         nullable=True,
     )
 
     # 추가 헤더 정보
-    accept_language: Mapped[Optional[str]] = mapped_column(
+    accept_language: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
     )
