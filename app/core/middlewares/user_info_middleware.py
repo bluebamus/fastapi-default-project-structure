@@ -12,8 +12,7 @@ from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from user_agents import parse as parse_user_agent
 
-from app.home.unit_of_work import HomeBackgroundUnitOfWork
-from app.home.services.user_access_log_service import UserAccessLogService
+from app.core.middlewares.access_log_sink import get_access_log_sink
 from app.utils.logger import get_logger
 from config import middleware_settings
 
@@ -191,10 +190,10 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             data: 저장할 접속 로그 데이터
         """
         try:
-            async with HomeBackgroundUnitOfWork() as uow:
-                # UoW를 주입받아 Service 생성
-                service = UserAccessLogService(uow)
-                await service.create_access_log(data)  # auto_commit=True (기본값)
+            sink = get_access_log_sink()
+            if sink is None:
+                return
+            await sink.save(data)
         except Exception as e:
             # 로그 저장 실패가 요청 처리에 영향을 주지 않도록 함
             logger.error(f"접속 로그 저장 실패: {e}", exc_info=True)
