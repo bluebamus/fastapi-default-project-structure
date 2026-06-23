@@ -6,6 +6,10 @@ AppRegistry가 부팅 시 app/domains 하위를 재귀 스캔하여 발견한 Ap
 """
 from __future__ import annotations
 
+import importlib
+import inspect
+import pkgutil
+
 from fastapi import APIRouter
 
 
@@ -35,3 +39,41 @@ class AppConfig:
     def beat_schedule(self) -> dict:
         """Celery beat 스케줄 조각. 레지스트리가 병합한다."""
         return {}
+
+
+class AppRegistry:
+    """도메인 앱 자동발견 레지스트리."""
+
+    def __init__(self) -> None:
+        self._apps: list[AppConfig] = []
+
+    @property
+    def enabled_apps(self) -> list[AppConfig]:
+        """마지막 discover() 호출 결과(활성화된 앱 목록)."""
+        return self._apps
+
+    def discover(self, package: str = "app.domains") -> list[AppConfig]:
+        """패키지 하위를 재귀 스캔하여 AppConfig 서브클래스를 수집한다.
+
+        각 config.py 모듈에서 AppConfig의 직접·간접 하위 클래스를 찾고,
+        enabled=True인 것만 (order, name) 순으로 정렬하여 반환한다.
+        이름 중복 시 RuntimeError를 발생시킨다.
+        """
+        root = importlib.import_module(package)
+        found: dict[str, AppConfig] = {}
+
+        for mod_info in pkgutil.walk_packages(root.__path__, prefix=f"{package}."):
+            if not mod_info.name.endswith(".config"):
+                continue
+            module = importlib.import_module(mod_info.name)
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, AppConfig) and obj is not AppConfig and obj.__module__ == mod_info.name:
+                    cfg = obj()
+                    if not cfg.enabled:
+                        continue
+                    if cfg.name in found:
+                        raise RuntimeError(f"중복된 앱 이름: {cfg.name}")
+                    found[cfg.name] = cfg
+
+        self._apps = sorted(found.values(), key=lambda c: (c.order, c.name))
+        return self._apps
