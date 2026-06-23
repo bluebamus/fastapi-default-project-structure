@@ -79,3 +79,16 @@ def test_generator_no_worker_by_default(tmp_path, monkeypatch):
     scaffold("widget", root=tmp_path)
 
     assert not (tmp_path / "app/domains/widget/worker").exists()
+
+
+def test_generator_multiword_pascal_case(tmp_path, monkeypatch):
+    """Multi-word snake_case names are converted to proper PascalCase class names."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app" / "domains").mkdir(parents=True)
+    from scripts.new_app import scaffold
+
+    scaffold("user_profile", root=tmp_path, category="domain")
+
+    config_text = (tmp_path / "app/domains/user_profile/config.py").read_text(encoding="utf-8")
+    assert "class UserProfileConfig(AppConfig)" in config_text
+    assert 'name = "user_profile"' in config_text

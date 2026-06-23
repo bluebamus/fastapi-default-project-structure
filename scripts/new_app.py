@@ -83,11 +83,15 @@ Register tasks here and expose them via the app config\'s beat_schedule()
 hook if recurring schedules are needed.
 """
 
-# from celery import shared_task
-#
-# @shared_task
-# def example_task() -> None:
-#     pass
+from app.core.celery.app import celery_app
+from app.core.celery.task import run_async
+
+
+@celery_app.task(name="{name}.example_task")
+def example_task() -> dict:
+    async def _run() -> dict:
+        return {{"ok": True}}
+    return run_async(_run())
 '''
 
 _ADMIN_TMPL = '''\
@@ -96,13 +100,16 @@ _ADMIN_TMPL = '''\
 
 Register ModelView subclasses here and return them from the app config\'s
 admin_views() hook so the registry mounts them automatically.
+
+To activate, uncomment and replace the placeholder with a real model:
+    from sqladmin import ModelView
+    from app.domains.{name}.models.models import {Class}Model
+
+    class {Class}Admin(ModelView, model={Class}Model):
+        column_list = "__all__"
 """
 
-# from sqladmin import ModelAdmin
-# from app.domains.{name}.models.{name}_model import {Class}Model
-#
-# class {Class}Admin(ModelAdmin, model={Class}Model):
-#     column_list = "__all__"
+# No views registered yet — add ModelView subclasses above.
 '''
 
 # ---------------------------------------------------------------------------
@@ -140,7 +147,7 @@ def scaffold(
         with_worker: If True, create ``worker/tasks.py``.
         with_admin: If True, create ``admin.py``.
     """
-    class_name = name.capitalize()
+    class_name = "".join(part.capitalize() for part in name.split("_"))
     base = root / "app" / "domains" / name
 
     # Create required directory tree; each leaf gets an __init__.py, and so

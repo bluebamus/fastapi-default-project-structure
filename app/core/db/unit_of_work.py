@@ -186,10 +186,3 @@ class BaseUnitOfWork:
         트랜잭션 커밋 전에 조회할 수 있다.
         """
         await self.session.flush()
-
-
-class BaseBackgroundUnitOfWork(BaseUnitOfWork):
-    """백그라운드 풀을 강제하는 얇은 하위 클래스. BaseUnitOfWork(background=True) 사용을 권장하며, Phase 8에서 제거 예정."""
-
-    def __init__(self, session: AsyncSession | None = None) -> None:
-        super().__init__(session, background=True)
