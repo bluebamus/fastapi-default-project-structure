@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from user_agents import parse as parse_user_agent
 
 from app.core.middlewares.access_log_sink import get_access_log_sink
-from app.utils.logger import get_logger
+from app.shared.logging import get_logger
 from config import middleware_settings
 
 logger = get_logger("user_info_middleware")

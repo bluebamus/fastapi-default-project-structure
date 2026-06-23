@@ -8,7 +8,7 @@ DEBUG 모드에 따른 로그 레벨:
     - DEBUG=False: INFO 레벨 로그만 출력
 
 사용 예시:
-    from app.utils.logger import get_logger
+    from app.shared.logging import get_logger
 
     logger = get_logger("song")
     logger.info("노래 생성 완료")
@@ -212,7 +212,7 @@ def setup_uvicorn_logging() -> dict:
 
         # run.py 또는 main.py 하단
         import uvicorn
-        from app.utils.logger import setup_uvicorn_logging
+        from app.shared.logging import setup_uvicorn_logging
 
         if __name__ == "__main__":
             uvicorn.run(
