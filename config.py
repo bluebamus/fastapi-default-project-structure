@@ -153,7 +153,7 @@ class AppSettings(BaseSettings):
     )
 
     # 실행 환경 (헬스체크 응답에 포함)
-    ENV: Literal["development", "staging", "production"] = Field(
+    ENV: Literal["development", "staging", "production", "test"] = Field(
         default="development",
         description="실행 환경",
     )
