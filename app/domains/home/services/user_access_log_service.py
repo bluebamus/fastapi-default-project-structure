@@ -5,23 +5,24 @@ UserAccessLog Service
 UnitOfWork 패턴을 사용하여 트랜잭션을 관리합니다.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
 
+from app.core.services.services_base import BaseService
 from app.domains.home.exceptions import InvalidDateRangeException
 from app.domains.home.models.models import UserAccessLog
 from app.domains.home.schemas.user_access_log_schema import (
-    UserAccessLogCreate,
     AccessLogStats,
+    BrowserStats,
     DeviceTypeStats,
     OSStats,
-    BrowserStats,
+    UserAccessLogCreate,
 )
-from app.core.services.services_base import BaseService
 from app.shared.logging import get_logger
 
 if TYPE_CHECKING:
-    from app.domains.home.unit_of_work.home_unit_of_work import HomeUnitOfWork
+    pass
 
 logger = get_logger("user_access_log_service")
 

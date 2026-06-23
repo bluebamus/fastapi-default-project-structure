@@ -7,7 +7,8 @@ Celery workers run in a synchronous context. This module provides
 """
 
 import asyncio
-from typing import Any, Coroutine
+from collections.abc import Coroutine
+from typing import Any
 
 
 def run_async(coro: Coroutine[Any, Any, Any]) -> Any:

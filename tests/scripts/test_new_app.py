@@ -1,6 +1,5 @@
 """Tests for scripts/new_app.py scaffolding generator."""
 
-import pathlib
 
 
 def test_generator_creates_bootable_app(tmp_path, monkeypatch):
@@ -11,21 +10,32 @@ def test_generator_creates_bootable_app(tmp_path, monkeypatch):
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    assert (tmp_path / "app/domains/widget/config.py").exists()
     assert (tmp_path / "app/domains/widget/api/routers/router.py").exists()
 
 
-def test_generator_config_is_parameterized(tmp_path, monkeypatch):
-    """Generated config.py must contain the correct class name and app name."""
+def test_generator_does_not_create_config(tmp_path, monkeypatch):
+    """No config.py is generated; apps are registered manually in app/apps.py."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "app" / "domains").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    config_text = (tmp_path / "app/domains/widget/config.py").read_text(encoding="utf-8")
-    assert "class WidgetConfig(AppConfig)" in config_text
-    assert 'name = "widget"' in config_text
+    assert not (tmp_path / "app/domains/widget/config.py").exists()
+
+
+def test_generator_router_is_parameterized(tmp_path, monkeypatch):
+    """Generated router.py must contain the correct router variable name."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app" / "domains").mkdir(parents=True)
+    from scripts.new_app import scaffold
+
+    scaffold("widget", root=tmp_path, category="domain")
+
+    router_text = (tmp_path / "app/domains/widget/api/routers/router.py").read_text(
+        encoding="utf-8"
+    )
+    assert "widget_router = APIRouter()" in router_text
 
 
 def test_generator_creates_all_required_dirs(tmp_path, monkeypatch):
@@ -87,8 +97,12 @@ def test_generator_multiword_pascal_case(tmp_path, monkeypatch):
     (tmp_path / "app" / "domains").mkdir(parents=True)
     from scripts.new_app import scaffold
 
-    scaffold("user_profile", root=tmp_path, category="domain")
+    scaffold("user_profile", root=tmp_path, category="domain", with_admin=True)
 
-    config_text = (tmp_path / "app/domains/user_profile/config.py").read_text(encoding="utf-8")
-    assert "class UserProfileConfig(AppConfig)" in config_text
-    assert 'name = "user_profile"' in config_text
+    admin_text = (tmp_path / "app/domains/user_profile/admin.py").read_text(encoding="utf-8")
+    assert "UserProfileModel" in admin_text
+    assert "UserProfileAdmin" in admin_text
+    router_text = (tmp_path / "app/domains/user_profile/api/routers/router.py").read_text(
+        encoding="utf-8"
+    )
+    assert "user_profile_router = APIRouter()" in router_text

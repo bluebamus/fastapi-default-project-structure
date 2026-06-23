@@ -3,6 +3,7 @@ Tests for HomeUnitOfWork declarative repository wiring.
 """
 
 import pytest
+
 from app.domains.home.unit_of_work import HomeUnitOfWork
 
 

@@ -2,8 +2,8 @@
 scripts/new_app.py — FastAPI app scaffolding generator.
 
 Django-style ``startapp`` equivalent for a uv-based FastAPI project that uses
-registry auto-discovery (each app exposes a ``config.py`` with an
-``AppConfig`` subclass).
+explicit (manual) app registration. Each new app must be wired up by hand in
+``app/apps.py`` (router, models, admin views, Celery package).
 
 Usage (CLI):
     python -m scripts.new_app <name> [--category domain] [--with-worker] [--with-admin]
@@ -22,22 +22,6 @@ import pathlib
 # ---------------------------------------------------------------------------
 # Template constants
 # ---------------------------------------------------------------------------
-
-_CONFIG_TMPL = '''\
-from fastapi import APIRouter
-from app.core.registry import AppConfig
-
-
-class {Class}Config(AppConfig):
-    name = "{name}"
-    category = "{category}"
-    prefix = "/api"
-    order = 100
-
-    def router(self) -> APIRouter:
-        from app.domains.{name}.api.routers.router import {name}_router
-        return {name}_router
-'''
 
 _ROUTER_TMPL = '''\
 """
@@ -79,8 +63,8 @@ _TASKS_TMPL = '''\
 """
 {Class} domain Celery tasks.
 
-Register tasks here and expose them via the app config\'s beat_schedule()
-hook if recurring schedules are needed.
+Register tasks here. For recurring schedules, add entries to BEAT_SCHEDULE
+in app/apps.py.
 """
 
 from app.core.celery.app import celery_app
@@ -98,8 +82,8 @@ _ADMIN_TMPL = '''\
 """
 {Class} domain SQLAdmin views.
 
-Register ModelView subclasses here and return them from the app config\'s
-admin_views() hook so the registry mounts them automatically.
+Register ModelView subclasses here and add them to admin_views() in
+app/apps.py so the app mounts them.
 
 To activate, uncomment and replace the placeholder with a real model:
     from sqladmin import ModelView
@@ -143,10 +127,15 @@ def scaffold(
     Args:
         name: Snake-case app name (e.g. ``"orders"``).
         root: Project root directory (the one containing ``app/``).
-        category: AppConfig category value (default ``"domain"``).
+        category: Reserved for compatibility; no longer affects output.
         with_worker: If True, create ``worker/tasks.py``.
         with_admin: If True, create ``admin.py``.
+
+    Note:
+        The generated app is NOT auto-discovered. After scaffolding, register
+        it manually in ``app/apps.py`` (router, models, admin, Celery package).
     """
+    del category  # reserved for backward compatibility; unused
     class_name = "".join(part.capitalize() for part in name.split("_"))
     base = root / "app" / "domains" / name
 
@@ -162,10 +151,6 @@ def scaffold(
     (base / "__init__.py").touch()
 
     # Core files
-    (base / "config.py").write_text(
-        _CONFIG_TMPL.format(name=name, Class=class_name, category=category),
-        encoding="utf-8",
-    )
     (base / "api" / "routers" / "router.py").write_text(
         _ROUTER_TMPL.format(name=name, Class=class_name),
         encoding="utf-8",
@@ -220,7 +205,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Scaffold a new FastAPI domain app.",
     )
     p.add_argument("name", help="Snake-case app name (e.g. orders)")
-    p.add_argument("--category", default="domain", help="AppConfig category (default: domain)")
+    p.add_argument("--category", default="domain", help="Reserved (unused; kept for compatibility)")
     p.add_argument("--with-worker", action="store_true", help="Create worker/tasks.py")
     p.add_argument("--with-admin", action="store_true", help="Create admin.py")
     return p
@@ -235,4 +220,13 @@ if __name__ == "__main__":
         with_worker=args.with_worker,
         with_admin=args.with_admin,
     )
-    print(f"created app/domains/{args.name}")
+    name = args.name
+    print(f"created app/domains/{name}")
+    print()
+    print("다음 단계: app/apps.py 에 이 앱을 수동으로 등록하세요.")
+    print(f"  - routers(): app.domains.{name}.api.routers.router 의 {name}_router 를 RouterSpec 으로 추가")
+    print(f"  - register_models(): _MODEL_MODULES 에 \"app.domains.{name}.models.models\" 추가")
+    if args.with_admin:
+        print(f"  - admin_views(): app.domains.{name}.admin 의 ModelView 클래스 추가")
+    if args.with_worker:
+        print(f"  - CELERY_TASK_MODULES: \"app.domains.{name}.worker.tasks\" 추가 (필요 시 BEAT_SCHEDULE 도)")

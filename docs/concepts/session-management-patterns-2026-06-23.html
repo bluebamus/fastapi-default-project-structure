@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>세션 관리 패턴 — AsyncGenerator vs Context Manager · 2026-06-23</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose', flowchart: { curve: 'basis' } });</script>
+<style>
+  :root{--bg:#f6f8fb;--panel:#fff;--ink:#1d2433;--muted:#5a6473;--line:#e4e8f0;--brand:#2f6df6;--brand-d:#1b4fc4;
+    --add:#1a7f37;--add-bg:#e7f5ec;--del:#b32424;--del-bg:#fbe9e7;--chg:#9a6700;--chg-bg:#fff6d8;
+    --crit:#b32424;--high:#d2691e;--mid:#9a6700;--code-bg:#0f1623;--code-ink:#d7e0f0;}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Segoe UI",system-ui,sans-serif;line-height:1.75;font-size:16px}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px 120px}
+  header.cover{background:linear-gradient(135deg,#143a96 0%,#2f6df6 60%,#4f93ff 100%);color:#fff;padding:60px 24px 52px;text-align:center}
+  header.cover h1{font-size:2.05rem;margin:0 0 12px;letter-spacing:-0.02em}
+  header.cover p{margin:4px 0;opacity:.95}
+  .badges{margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .badge{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);padding:6px 14px;border-radius:999px;font-size:.85rem}
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 28px;margin:34px 0;columns:2;column-gap:40px}
+  nav.toc h2{column-span:all;margin:0 0 12px;font-size:1.1rem;color:var(--brand-d)}
+  nav.toc a{color:var(--ink);text-decoration:none;display:block;padding:4px 0;border-bottom:1px dashed transparent}
+  nav.toc a:hover{color:var(--brand);border-bottom-color:var(--brand)}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:30px 34px;margin:24px 0;box-shadow:0 1px 2px rgba(20,30,60,.03)}
+  h2.sec{font-size:1.5rem;margin:0 0 6px;color:var(--brand-d);letter-spacing:-0.01em}
+  h2.sec .num{color:var(--brand);font-weight:800;margin-right:10px}
+  h3{font-size:1.18rem;margin:28px 0 10px;padding-left:12px;border-left:4px solid var(--brand)}
+  h4{font-size:1.02rem;margin:20px 0 8px;color:var(--brand-d)}
+  p{margin:10px 0}.lead{font-size:1.05rem;color:var(--muted)}
+  .callout{border-radius:10px;padding:14px 18px;margin:16px 0;border-left:5px solid}
+  .callout.goal{background:#eef3ff;border-color:var(--brand)}
+  .callout.warn{background:var(--chg-bg);border-color:var(--chg)}
+  .callout.bad{background:var(--del-bg);border-color:var(--del)}
+  .callout.good{background:var(--add-bg);border-color:var(--add)}
+  .callout b{color:var(--brand-d)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92rem}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:#eef1f6;color:var(--brand-d);font-weight:700}
+  tbody tr:nth-child(even){background:#fafbfd}
+  code{background:#eef1f6;padding:1.5px 6px;border-radius:5px;font-size:.88em;font-family:"JetBrains Mono","D2Coding",Consolas,monospace;color:#b3306b}
+  pre.code{background:var(--code-bg);color:var(--code-ink);border-radius:10px;padding:18px 20px;overflow-x:auto;font-size:.84rem;line-height:1.6;font-family:"JetBrains Mono","D2Coding",Consolas,monospace}
+  pre.code .c{color:#6f7e9b}pre.code .k{color:#79b8ff}pre.code .s{color:#9ecbff}pre.code .f{color:#b392f0}pre.code .del{color:#ff9a8d}pre.code .add{color:#7ee787}
+  .mermaid{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px;margin:18px 0;text-align:center}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:18px 0}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}nav.toc{columns:1}}
+  .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0}
+  @media(max-width:900px){.kpi{grid-template-columns:1fr 1fr}}
+  .kpi .card{background:#f4f7ff;border:1px solid #d8e2ff;border-radius:10px;padding:14px;text-align:center}
+  .kpi .n{font-size:1.4rem;font-weight:800;color:var(--brand-d)}.kpi .l{font-size:.78rem;color:var(--muted)}
+  .pool{font-family:"JetBrains Mono","D2Coding",Consolas,monospace;font-size:.95rem;letter-spacing:2px;background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .pool .used{color:var(--del);font-weight:700}.pool .free{color:#b6c2d4}
+  .anchor{display:block;position:relative;top:-20px;visibility:hidden}
+  footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0}
+</style>
+</head>
+<body>
+<header class="cover">
+  <h1>세션 관리 패턴</h1>
+  <p>AsyncGenerator(<code style="color:#dce6ff">yield</code>) vs Context Manager(<code style="color:#dce6ff">UnitOfWork</code>)</p>
+  <p style="font-size:.9rem;opacity:.85">같은 목적, 두 가지 메커니즘 — 언제 무엇을 쓰는가</p>
+  <div class="badges">
+    <span class="badge">작성일 2026-06-23</span>
+    <span class="badge">분류 · 개념/기술 심화</span>
+    <span class="badge">app/core/db/session.py · unit_of_work.py</span>
+  </div>
+</header>
+<div class="wrap">
+
+<nav class="toc">
+  <h2>목차</h2>
+  <a href="#why">1. 왜 세션 관리가 중요한가</a>
+  <a href="#overview">2. 두 패턴을 한 장의 그림으로</a>
+  <a href="#a">3. 패턴 A · AsyncGenerator</a>
+  <a href="#b">4. 패턴 B · Context Manager(UnitOfWork)</a>
+  <a href="#repo">5. Repository는 패턴에 무관하다</a>
+  <a href="#nogen">6. AsyncGenerator를 안 쓰면?</a>
+  <a href="#guide">7. 권장 사용 패턴 (의사결정)</a>
+  <a href="#conclusion">8. 결론</a>
+</nav>
+
+<!-- 1 WHY -->
+<span class="anchor" id="why"></span>
+<section>
+  <h2 class="sec"><span class="num">1</span>왜 "세션 관리"가 따로 다룰 만큼 중요한가</h2>
+  <p class="lead">데이터베이스 세션은 <b>빌린 자원</b>입니다. 커넥션 풀에서 연결 하나를 빌려와 쓰고, 끝나면 <b>반드시 돌려줘야</b> 합니다. 돌려주지 않으면 풀이 고갈되어 모든 요청이 멈춥니다.</p>
+
+  <div class="pool">
+    커넥션 풀 (pool_size=20, max_overflow=20 → 최대 40)<br>
+    [ <span class="used">● ● ● ● ●</span> <span class="free">○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○</span> ]<br>
+    <span style="font-size:.8rem;color:var(--muted)">● 사용 중(빌려감) · ○ 대기(반납됨) — 안 돌려주면 ●가 쌓여 고갈 → 장애</span>
+  </div>
+
+  <p>그래서 <b>"빌렸으면 무슨 일이 있어도(예외가 나도) 닫는다"</b>가 철칙입니다. 파이썬에는 이 <i>열고 → 쓰고 → 반드시 닫고</i>를 자동 보장하는 두 장치가 있고, 본 프로젝트는 상황에 따라 <b>둘 다</b> 씁니다.</p>
+
+  <table><thead><tr><th>장치</th><th>핵심 문법</th><th>본 프로젝트에서의 역할</th></tr></thead><tbody>
+    <tr><td><b>AsyncGenerator</b></td><td><code>yield session</code></td><td>FastAPI <code>Depends()</code> 의존성 주입 (요청 단위)</td></tr>
+    <tr><td><b>Context Manager</b></td><td><code>async with UoW() as uow</code></td><td>서비스 로직 · 백그라운드 태스크 (명시적 트랜잭션)</td></tr>
+  </tbody></table>
+
+  <div class="kpi">
+    <div class="card"><div class="n">20+20</div><div class="l">메인 풀<br>pool + overflow</div></div>
+    <div class="card"><div class="n">10+10</div><div class="l">백그라운드 풀<br>(분리)</div></div>
+    <div class="card"><div class="n">2</div><div class="l">세션 관리<br>메커니즘</div></div>
+    <div class="card"><div class="n">1</div><div class="l">공유<br>Repository 계층</div></div>
+  </div>
+</section>
+
+<!-- 2 OVERVIEW -->
+<span class="anchor" id="overview"></span>
+<section>
+  <h2 class="sec"><span class="num">2</span>두 패턴을 한 장의 그림으로</h2>
+  <div class="mermaid">
+flowchart TB
+    subgraph A["패턴 A · AsyncGenerator (FastAPI Depends)"]
+        direction TB
+        A1["FastAPI Route<br/>session = Depends(get_session)"]
+        A2["get_session()<br/>async with AsyncSessionLocal() as s:<br/>yield s"]
+        A3["Route 핸들러 실행<br/>Repository(session) 사용"]
+        A4["요청 종료 → 세션 자동 close<br/>예외 시 rollback"]
+        A1 -->|"의존성 주입"| A2 -->|"세션 yield"| A3 --> A4
+    end
+    subgraph B["패턴 B · Context Manager (UnitOfWork)"]
+        direction TB
+        B1["Service / Background Task"]
+        B2["async with HomeUnitOfWork() as uow:"]
+        B3["__aenter__<br/>세션 생성 + Repository 자동 초기화"]
+        B4["uow.user_access_logs.create(...)<br/>uow.commit()"]
+        B5["__aexit__<br/>예외 시 rollback · 세션 close"]
+        B1 --> B2 --> B3 --> B4 --> B5
+    end
+    A3 -.->|"같은 Repository, 같은 session.execute()"| B4
+  </div>
+  <div class="callout goal"><b>핵심은 점선</b> — 세션을 <i>어떻게 만들었는지</i>(yield냐 <code>async with</code>냐)와 무관하게, 그 안에서 일하는 <b>Repository는 완전히 동일</b>합니다. Repository는 세션을 주입받아 쓸 뿐, 세션의 '출생 신고서'를 보지 않습니다.</div>
+</section>
+
+<!-- 3 PATTERN A -->
+<span class="anchor" id="a"></span>
+<section>
+  <h2 class="sec"><span class="num">3</span>패턴 A · AsyncGenerator (<code>get_session</code>)</h2>
+
+  <h3>3.1 실제 코드 — <code>session.py:133</code></h3>
+  <pre class="code"><span class="k">from</span> typing <span class="k">import</span> AsyncGenerator
+
+<span class="k">async def</span> <span class="f">get_session</span>() -> AsyncGenerator[AsyncSession, None]:
+    <span class="k">async with</span> AsyncSessionLocal() <span class="k">as</span> session:
+        <span class="k">try</span>:
+            <span class="k">yield</span> session          <span class="c"># ← yield 가 있으니 '비동기 제너레이터'</span>
+        <span class="k">except</span> Exception <span class="k">as</span> e:
+            <span class="k">await</span> session.rollback()
+            <span class="k">raise</span> e
+        <span class="c"># async with 블록이 끝나며 세션 자동 close</span></pre>
+
+  <h3>3.2 왜 타입이 <code>AsyncGenerator[AsyncSession, None]</code> 인가</h3>
+  <p>함수 본문에 <code>yield</code>가 <b>하나라도</b> 있으면, 그 함수는 "값을 <code>return</code>하는 함수"가 아니라 <b>"값을 차례로 내보내는 제너레이터"</b>가 됩니다. 비동기 함수에서 <code>yield</code>를 쓰면 정체는 <b><code>AsyncGenerator</code></b>이고, 타입 힌트도 이를 따라야 합니다.</p>
+  <pre class="code">AsyncGenerator[ <span class="s">YieldType</span> , <span class="s">SendType</span> ]
+                    │           └ .asend() 로 받는 타입 (안 쓰면 None)
+                    └ yield 로 내보내는 값 = AsyncSession</pre>
+  <div class="callout good"><b>한 줄 요약</b> — <code>yield</code>를 쓰는 순간 <code>AsyncGenerator</code> 타입은 <b>선택이 아니라 필수</b>입니다.</div>
+
+  <h3>3.3 FastAPI는 이 제너레이터를 어떻게 운전하나</h3>
+  <div class="mermaid">
+sequenceDiagram
+    participant FA as FastAPI
+    participant GS as get_session()
+    participant H as Route 핸들러
+    FA->>GS: 요청 도착, yield 직전까지 실행(세션 생성)
+    GS-->>FA: session 을 yield
+    FA->>H: session 주입
+    alt 정상 종료
+        H-->>FA: 응답
+        FA->>GS: 제너레이터 재개 → async with 종료(close)
+    else 예외 발생
+        H-->>GS: 예외 전파
+        GS->>GS: except → rollback → 재전파
+        GS->>GS: 그 뒤 close
+    end
+  </div>
+  <p>요청 1건 = 세션 1개 = 트랜잭션 경계 1개. <b>암묵적</b>이고 간결합니다.</p>
+  <pre class="code"><span class="c"># router.py</span>
+<span class="f">@router.get</span>(<span class="s">"/logs"</span>)
+<span class="k">async def</span> <span class="f">get_logs</span>(session: AsyncSession = <span class="f">Depends</span>(get_session)):
+    repo = UserAccessLogRepository(session)
+    <span class="k">return await</span> repo.get_recent_logs()</pre>
+</section>
+
+<!-- 4 PATTERN B -->
+<span class="anchor" id="b"></span>
+<section>
+  <h2 class="sec"><span class="num">4</span>패턴 B · Context Manager (<code>BaseUnitOfWork</code>)</h2>
+  <p class="lead">본 프로젝트의 <code>BaseUnitOfWork</code>는 초기 스케치보다 한 단계 진화해 있습니다. <b>세션 주입/자동생성, 일반/백그라운드 풀, Repository 자동 초기화</b>를 한 클래스가 모두 담당합니다 (과거의 <code>Background…UnitOfWork</code> 쌍둥이 클래스는 제거됨).</p>
+
+  <h3>4.1 실제 코드 — <code>unit_of_work.py:41</code></h3>
+  <pre class="code"><span class="k">class</span> <span class="f">BaseUnitOfWork</span>:
+    repositories: dict[str, type] = {}        <span class="c"># 선언만 하면 자동 초기화</span>
+
+    <span class="k">def</span> <span class="f">__init__</span>(self, session: AsyncSession | None = None, *, background: bool = False):
+        self._session = session
+        self._owns_session = session <span class="k">is</span> None  <span class="c"># 내가 만들었으면 내가 닫는다</span>
+        self._background = background          <span class="c"># 백그라운드 풀 사용 여부</span>
+
+    <span class="k">async def</span> <span class="f">__aenter__</span>(self) -> Self:
+        <span class="k">if</span> self._owns_session:                <span class="c"># 주입 안 받았으면 직접 생성</span>
+            factory = BackgroundSessionLocal <span class="k">if</span> self._background <span class="k">else</span> AsyncSessionLocal
+            self._session = factory()
+        <span class="k">for</span> attr, repo_cls <span class="k">in</span> self.repositories.items():  <span class="c"># Repository 자동 결선</span>
+            setattr(self, attr, repo_cls(self._session))
+        <span class="k">return</span> self
+
+    <span class="k">async def</span> <span class="f">__aexit__</span>(self, exc_type, exc_val, exc_tb) -> None:
+        <span class="k">if</span> exc_type <span class="k">is not</span> None:
+            <span class="k">await</span> self.rollback()             <span class="c"># 예외 시 자동 롤백</span>
+        <span class="k">if</span> self._owns_session <span class="k">and</span> self._session:
+            <span class="k">await</span> self._session.close()       <span class="c"># 내가 만든 세션만 내가 닫는다</span></pre>
+
+  <p>도메인 하위 클래스는 <b>Repository 목록만 선언</b>하면 됩니다.</p>
+  <pre class="code"><span class="c"># app/domains/home/unit_of_work.py</span>
+<span class="k">class</span> <span class="f">HomeUnitOfWork</span>(BaseUnitOfWork):
+    user_access_logs: UserAccessLogRepository
+    repositories = {<span class="s">"user_access_logs"</span>: UserAccessLogRepository}</pre>
+
+  <h3>4.2 <code>yield</code>가 없으므로 <code>AsyncGenerator</code>도 없다</h3>
+  <p>패턴 B는 <code>yield</code>를 한 번도 쓰지 않습니다. 대신 <code>__aenter__</code>(진입)와 <code>__aexit__</code>(종료) <b>매직 메서드</b>가 "열고/닫고"를 담당합니다. 따라서 <code>from typing import AsyncGenerator</code> import 자체가 <b>불필요</b>합니다.</p>
+  <div class="mermaid">
+sequenceDiagram
+    participant Caller as 호출부 (async with)
+    participant UoW as HomeUnitOfWork
+    participant Repo as Repository
+    participant DB as DB 세션/풀
+    Caller->>UoW: async with HomeUnitOfWork()
+    UoW->>DB: __aenter__ → 세션 생성(owns=True)
+    UoW->>Repo: repositories 맵으로 자동 초기화
+    Caller->>Repo: uow.user_access_logs.create(data)
+    Caller->>UoW: uow.commit()
+    UoW->>DB: session.commit()
+    Note over UoW,DB: 블록 종료
+    UoW->>DB: __aexit__ → 예외면 rollback, owns면 close
+  </div>
+
+  <h3>4.3 사용 예</h3>
+  <pre class="code"><span class="c"># 서비스 / 백그라운드 태스크</span>
+<span class="k">async def</span> <span class="f">save_access_log</span>(data: dict):
+    <span class="k">async with</span> HomeUnitOfWork() <span class="k">as</span> uow:        <span class="c"># 세션 자동 생성</span>
+        <span class="k">await</span> uow.user_access_logs.create(data)
+        <span class="k">await</span> uow.commit()                     <span class="c"># 트랜잭션 경계가 '명시적'</span>
+
+<span class="c"># 백그라운드 전용 풀 — 클래스 교체 없이 플래그만</span>
+<span class="k">async def</span> <span class="f">save_in_background</span>(data: dict):
+    <span class="k">async with</span> HomeUnitOfWork(background=True) <span class="k">as</span> uow:
+        <span class="k">await</span> uow.user_access_logs.create(data)
+        <span class="k">await</span> uow.commit()</pre>
+
+  <div class="callout warn"><b>세션 소유권(ownership)</b> — UoW가 외부에서 세션을 <i>주입받으면</i>(<code>_owns_session=False</code>) 닫지 <b>않습니다</b>. FastAPI가 준 세션을 UoW가 멋대로 닫아버리는 사고를 막는 안전장치입니다. 덕분에 패턴 A의 세션을 패턴 B로 그대로 넘겨 재사용할 수 있습니다 — <code>async with HomeUnitOfWork(session) as uow:</code></div>
+</section>
+
+<!-- 5 REPO -->
+<span class="anchor" id="repo"></span>
+<section>
+  <h2 class="sec"><span class="num">5</span>Repository는 두 패턴 모두에 무관하다</h2>
+  <pre class="code"><span class="c"># user_access_log_repository.py</span>
+<span class="k">class</span> <span class="f">UserAccessLogRepository</span>(BaseRepository[UserAccessLog]):
+    <span class="k">def</span> <span class="f">__init__</span>(self, session: AsyncSession) -> None:
+        super().__init__(session)
+    <span class="c"># 내부는 항상 self.session.execute(...) — 세션의 출신을 묻지 않는다</span></pre>
+
+  <table><thead><tr><th>구분</th><th>패턴 A · AsyncGenerator</th><th>패턴 B · UnitOfWork</th></tr></thead><tbody>
+    <tr><td>세션 공급원</td><td><code>get_session()</code> 이 <code>yield</code></td><td><code>UoW.__aenter__</code> 가 생성/주입</td></tr>
+    <tr><td>Repository 초기화</td><td>핸들러에서 직접 <code>Repo(session)</code></td><td><code>repositories</code> 맵이 자동 결선</td></tr>
+    <tr><td>세션 사용</td><td><code>self.session.execute()</code></td><td><code>self.session.execute()</code> (동일)</td></tr>
+    <tr><td>트랜잭션 커밋</td><td>보통 암묵적/요청 단위</td><td><code>uow.commit()</code> 명시적</td></tr>
+  </tbody></table>
+  <div class="callout good"><b>공존의 비결</b> — Repository는 세션을 주입받아 쓸 뿐, 어떻게 태어났는지 알 필요가 없습니다. 그래서 두 패턴이 충돌 없이 한 코드베이스에 공존합니다.</div>
+</section>
+
+<!-- 6 NO GEN -->
+<span class="anchor" id="nogen"></span>
+<section>
+  <h2 class="sec"><span class="num">6</span>"AsyncGenerator를 안 쓰면?" — 가능/불가능 정리</h2>
+  <div class="mermaid">
+flowchart LR
+    Q{"함수 본문에<br/>yield 가 있는가?"}
+    Q -->|"예"| Y["반드시 AsyncGenerator<br/>타입 필요 (피할 수 없음)"]
+    Q -->|"아니오"| N["클래스 + __aenter__/__aexit__<br/>= Context Manager<br/>AsyncGenerator 불필요"]
+    N --> U["이 프로젝트의<br/>BaseUnitOfWork 가 바로 이 방식"]
+  </div>
+  <ul>
+    <li><code>yield</code>를 쓰는 한 <code>AsyncGenerator</code>는 <b>회피 불가</b> — 둘은 한 몸.</li>
+    <li>정말 쓰기 싫다면 → <b>클래스 기반 컨텍스트 매니저</b>로 전환.</li>
+    <li>본 프로젝트엔 이미 그 전환의 결과물(<code>BaseUnitOfWork</code>)이 존재. 즉 <b>둘 다 보유</b>가 의도된 설계.</li>
+  </ul>
+
+  <h3>두 패턴 비교 요약</h3>
+  <table><thead><tr><th>항목</th><th>AsyncGenerator (<code>yield</code>)</th><th>Context Manager (UnitOfWork)</th></tr></thead><tbody>
+    <tr><td>타입 import</td><td><code>from typing import AsyncGenerator</code></td><td>불필요</td></tr>
+    <tr><td>세션 생성</td><td><code>yield session</code></td><td><code>factory()</code> 또는 주입</td></tr>
+    <tr><td>FastAPI <code>Depends</code></td><td>직접 지원</td><td>직접은 불가 (래퍼/주입 필요)</td></tr>
+    <tr><td>트랜잭션 경계</td><td>요청 단위(암묵적)</td><td><code>commit()</code> 명시 호출</td></tr>
+    <tr><td>다중 Repository</td><td>각각 따로 주입</td><td>UoW가 한 번에 통합 결선</td></tr>
+    <tr><td>백그라운드 풀</td><td><code>get_background_session()</code></td><td><code>UnitOfWork(background=True)</code></td></tr>
+    <tr><td>세션 소유권 제어</td><td>없음(항상 자기 것)</td><td><code>_owns_session</code> 으로 정밀 제어</td></tr>
+  </tbody></table>
+</section>
+
+<!-- 7 GUIDE -->
+<span class="anchor" id="guide"></span>
+<section>
+  <h2 class="sec"><span class="num">7</span>권장 사용 패턴 (의사결정 가이드)</h2>
+  <div class="mermaid">
+flowchart TD
+    S(["새 DB 작업을 짤 때"]) --> Q1{"FastAPI 요청<br/>핸들러 안인가?"}
+    Q1 -->|"예"| Q2{"여러 Repository를<br/>한 트랜잭션으로<br/>묶어야 하나?"}
+    Q1 -->|"아니오 (서비스/태스크)"| Q3{"메인 API 풀과<br/>분리해야 하나?"}
+    Q2 -->|"아니오 · 단순 조회"| P1["패턴 A<br/>Depends(get_session)"]
+    Q2 -->|"예 · 복합 쓰기"| P2["패턴 B<br/>UnitOfWork(주입 세션)"]
+    Q3 -->|"아니오"| P3["패턴 B<br/>UnitOfWork()"]
+    Q3 -->|"예 · 로그 저장 등"| P4["패턴 B<br/>UnitOfWork(background=True)"]
+  </div>
+  <table><thead><tr><th>시나리오</th><th>권장</th><th>이유</th></tr></thead><tbody>
+    <tr><td>단순 조회 API</td><td>패턴 A <code>Depends(get_session)</code></td><td>간결, FastAPI와 자연 통합</td></tr>
+    <tr><td>복합 비즈니스 로직(다중 Repo·명시 트랜잭션)</td><td>패턴 B <code>UnitOfWork()</code></td><td>트랜잭션 경계 명확, Repo 통합 관리</td></tr>
+    <tr><td>백그라운드 태스크(로그 저장 등)</td><td>패턴 B <code>UnitOfWork(background=True)</code></td><td>메인 풀과 분리된 커넥션 풀</td></tr>
+    <tr><td>요청 세션을 서비스로 넘겨 재사용</td><td>패턴 B <code>UnitOfWork(session)</code></td><td>세션 소유권 분리로 이중 close 방지</td></tr>
+  </tbody></table>
+</section>
+
+<!-- 8 CONCLUSION -->
+<span class="anchor" id="conclusion"></span>
+<section>
+  <h2 class="sec"><span class="num">8</span>결론</h2>
+  <ol>
+    <li><code>AsyncGenerator</code>는 <b><code>yield</code>를 쓰는 비동기 함수의 타입 힌트</b>로 필수 — FastAPI <code>Depends</code>와 가장 잘 맞습니다.</li>
+    <li>피하려면 <code>__aenter__</code>/<code>__aexit__</code>를 구현한 <b>클래스 기반 컨텍스트 매니저</b>를 쓰면 됩니다 — 본 프로젝트의 <code>BaseUnitOfWork</code>가 그것.</li>
+    <li>두 패턴은 <b>경쟁이 아니라 분업</b>입니다. 요청 단위 간결함은 A가, 명시적 트랜잭션·다중 Repository·백그라운드 분리는 B가 담당.</li>
+    <li>어느 쪽이든 <b>Repository는 세션을 주입받아 동일하게 동작</b>하므로, 패턴 선택이 데이터 접근 코드에 영향을 주지 않습니다.</li>
+  </ol>
+  <div class="callout goal"><b>단일 진실 소스</b> — 코드와 문서가 다르면 <b>코드가 정답</b>입니다. 이 문서를 갱신하세요. 텍스트/링크 버전은 <code>session-management-patterns-2026-06-23.md</code> 참조.</div>
+</section>
+
+<footer>
+  세션 관리 패턴 · 작성일 2026-06-23 · 근거 코드: app/core/db/session.py · app/core/db/unit_of_work.py
+</footer>
+</div>
+</body>
+</html>

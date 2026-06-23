@@ -22,8 +22,8 @@ def test_middleware_does_not_import_home():
 async def test_sink_registration_roundtrip():
     """set_access_log_sink / get_access_log_sink roundtrip works and delegates calls."""
     from app.core.middlewares.access_log_sink import (
-        set_access_log_sink,
         get_access_log_sink,
+        set_access_log_sink,
     )
 
     original = get_access_log_sink()
