@@ -1,9 +1,6 @@
-# Shim: re-exports everything from the new canonical location.
-# Old importers using `app.utils.logger` continue to work unchanged.
 from app.shared.logging.logger import *          # noqa: F401,F403
+from app.shared.logging.logger import get_logger, setup_uvicorn_logging  # noqa: F401
 from app.shared.logging.logger import (  # noqa: F401
-    get_logger,
-    setup_uvicorn_logging,
     HOME_LOGGER,
     LYRIC_LOGGER,
     SONG_LOGGER,
