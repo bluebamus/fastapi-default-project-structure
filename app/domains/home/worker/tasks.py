@@ -6,7 +6,7 @@ Home 도메인 Celery 태스크.
 
 from app.core.celery.app import celery_app
 from app.core.celery.task import run_async
-from app.domains.home.unit_of_work import HomeBackgroundUnitOfWork
+from app.domains.home.unit_of_work import HomeUnitOfWork
 from app.domains.home.services.user_access_log_service import UserAccessLogService
 
 
@@ -15,7 +15,7 @@ def aggregate_access_stats() -> dict:
     """접속 로그 통계를 집계하여 반환한다."""
 
     async def _run() -> dict:
-        async with HomeBackgroundUnitOfWork() as uow:
+        async with HomeUnitOfWork(background=True) as uow:
             stats = await UserAccessLogService(uow).get_stats()
             return {"total": stats.total_count}
 
