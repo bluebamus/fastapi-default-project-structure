@@ -24,7 +24,7 @@ Home 도메인은 사용자 접속 로그와 관련된 기능을 담당한다.
 from typing import Self
 
 from app.database.unit_of_work import BaseUnitOfWork, BaseBackgroundUnitOfWork
-from app.home.repositories.user_access_log_repository import UserAccessLogRepository
+from app.domains.home.repositories.user_access_log_repository import UserAccessLogRepository
 from app.utils.logger import get_logger
 
 logger = get_logger("home_uow")
