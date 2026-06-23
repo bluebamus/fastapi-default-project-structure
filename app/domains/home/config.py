@@ -17,5 +17,5 @@ class HomeConfig(AppConfig):
         return home_router
 
     def admin_views(self) -> list[type]:
-        from app.domains.home.api.home_admin import UserAccessLogAdmin
+        from app.domains.home.admin import UserAccessLogAdmin
         return [UserAccessLogAdmin]

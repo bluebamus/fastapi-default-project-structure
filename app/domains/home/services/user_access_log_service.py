@@ -8,7 +8,7 @@ UnitOfWork 패턴을 사용하여 트랜잭션을 관리합니다.
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Sequence
 
-from app.domains.home.home_exception import InvalidDateRangeException
+from app.domains.home.exceptions import InvalidDateRangeException
 from app.domains.home.models.models import UserAccessLog
 from app.domains.home.schemas.user_access_log_schema import (
     UserAccessLogCreate,
