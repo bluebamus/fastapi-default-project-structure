@@ -23,6 +23,7 @@ dependencies = [
     "python-json-logger (>=2.0.0,<3.0.0)",
     "python-dotenv (>=1.0.0,<2.0.0)",
     "tzdata>=2026.2",
+    "celery[redis]>=5.4,<6.0",
 ]
 
 [dependency-groups]
