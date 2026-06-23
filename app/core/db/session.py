@@ -30,7 +30,7 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
 """
 
 import time
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -109,19 +109,18 @@ async def create_db_tables() -> None:
     데이터베이스 테이블을 생성합니다.
 
     애플리케이션 시작 시 lifespan에서 호출됩니다.
-    AppRegistry를 통해 모든 앱의 모델을 자동으로 발견하고
+    app/apps.py 의 명시 등록(register_models)을 통해 모든 앱의 모델을
     Base.metadata에 등록한 후 테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱을 추가할 때는 AppRegistry가 자동으로 발견합니다.
-        수동으로 모델 import를 추가할 필요가 없습니다.
+        새로운 도메인 앱을 추가할 때는 app/apps.py 의 _MODEL_MODULES 에
+        모델 모듈 경로를 직접 추가합니다.
     """
     import asyncio
-    from app.core.registry import AppRegistry
 
-    registry = AppRegistry()
-    registry.discover()
-    registry.import_models()   # imports every app's models package -> Base.metadata
+    from app.apps import register_models
+
+    register_models()   # imports every app's models module -> Base.metadata
 
     logger.info("Creating database tables...")
 
