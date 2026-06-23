@@ -109,32 +109,25 @@ async def create_db_tables() -> None:
     데이터베이스 테이블을 생성합니다.
 
     애플리케이션 시작 시 lifespan에서 호출됩니다.
-    모델 클래스를 import하여 메타데이터에 등록한 후 테이블을 생성합니다.
+    AppRegistry를 통해 모든 앱의 모델을 자동으로 발견하고
+    Base.metadata에 등록한 후 테이블을 생성합니다.
 
     Note:
-        새로운 모델을 추가할 때는 아래 import 목록에 추가해야 합니다.
+        새로운 도메인 앱을 추가할 때는 AppRegistry가 자동으로 발견합니다.
+        수동으로 모델 import를 추가할 필요가 없습니다.
     """
     import asyncio
+    from app.core.registry import AppRegistry
 
-    # =========================================================================
-    # 모델 import (테이블 메타데이터 등록)
-    # 새로운 모델 추가 시 여기에 import 추가
-    # =========================================================================
-    from app.home.models.models import UserAccessLog  # noqa: F401
-
-    # 생성할 테이블 목록
-    tables_to_create = [
-        UserAccessLog.__table__,
-        # 새 테이블 추가 시 여기에 추가
-    ]
+    registry = AppRegistry()
+    registry.discover()
+    registry.import_models()   # imports every app's models package -> Base.metadata
 
     logger.info("Creating database tables...")
 
-    async with asyncio.timeout(10):  # 10초 타임아웃
+    async with asyncio.timeout(30):
         async with engine.begin() as connection:
-            await connection.run_sync(
-                lambda conn: Base.metadata.create_all(conn, tables=tables_to_create)
-            )
+            await connection.run_sync(Base.metadata.create_all)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
