@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FastAPI 프로젝트 구조 재설계 제안서</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose', flowchart: { curve: 'basis' } });
+</script>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1f2430; --muted: #5b6472;
+    --line: #e3e7ee; --brand: #2f6df6; --brand-d: #1b4fc4;
+    --add: #1a7f37; --add-bg: #e6f4ea; --del: #b32424; --del-bg: #fbe9e7;
+    --chg: #9a6700; --chg-bg: #fff5d6; --keep: #5b6472;
+    --crit: #b32424; --high: #d2691e; --mid: #9a6700;
+    --code-bg: #0f1623; --code-ink: #d7e0f0;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Pretendard","Apple SD Gothic Neo","Malgun Gothic","Segoe UI",system-ui,sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 120px; }
+  header.cover {
+    background: linear-gradient(135deg, #1b4fc4 0%, #2f6df6 55%, #4f93ff 100%);
+    color: #fff; padding: 64px 24px 56px; text-align: center;
+  }
+  header.cover h1 { font-size: 2.3rem; margin: 0 0 12px; letter-spacing: -0.02em; }
+  header.cover p { margin: 4px 0; opacity: 0.95; }
+  .badges { margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
+    padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; }
+  nav.toc {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 28px; margin: 36px 0; columns: 2; column-gap: 40px;
+  }
+  nav.toc h2 { column-span: all; margin: 0 0 12px; font-size: 1.1rem; color: var(--brand-d); }
+  nav.toc a { color: var(--ink); text-decoration: none; display: block; padding: 4px 0;
+    border-bottom: 1px dashed transparent; }
+  nav.toc a:hover { color: var(--brand); border-bottom-color: var(--brand); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 30px 34px; margin: 26px 0; box-shadow: 0 1px 2px rgba(20,30,60,0.03); }
+  h2.sec { font-size: 1.55rem; margin: 0 0 6px; color: var(--brand-d); letter-spacing: -0.01em; }
+  h2.sec .num { color: var(--brand); font-weight: 800; margin-right: 10px; }
+  h3 { font-size: 1.2rem; margin: 30px 0 10px; padding-left: 12px; border-left: 4px solid var(--brand); }
+  h4 { font-size: 1.03rem; margin: 22px 0 8px; color: var(--brand-d); }
+  p { margin: 10px 0; }
+  .lead { font-size: 1.06rem; color: var(--muted); }
+  .callout { border-radius: 10px; padding: 14px 18px; margin: 16px 0; border-left: 5px solid; }
+  .callout.goal { background: #eef3ff; border-color: var(--brand); }
+  .callout.warn { background: var(--chg-bg); border-color: var(--chg); }
+  .callout.bad  { background: var(--del-bg); border-color: var(--del); }
+  .callout.good { background: var(--add-bg); border-color: var(--add); }
+  .callout b { color: var(--brand-d); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.93rem; }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; vertical-align: top; }
+  th { background: #eef1f6; color: var(--brand-d); font-weight: 700; }
+  tbody tr:nth-child(even) { background: #fafbfd; }
+  code { background: #eef1f6; padding: 1.5px 6px; border-radius: 5px; font-size: 0.88em;
+    font-family: "JetBrains Mono","D2Coding",Consolas,monospace; color: #b3306b; }
+  pre.code { background: var(--code-bg); color: var(--code-ink); border-radius: 10px;
+    padding: 18px 20px; overflow-x: auto; font-size: 0.85rem; line-height: 1.6;
+    font-family: "JetBrains Mono","D2Coding",Consolas,monospace; }
+  pre.code .c { color: #6f7e9b; } pre.code .k { color: #79b8ff; } pre.code .s { color: #9ecbff; }
+  pre.code .f { color: #b392f0; } pre.code .add { color: #7ee787; } pre.code .del { color: #ff9a8d; }
+  .sev { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 0.78rem;
+    font-weight: 700; color: #fff; }
+  .sev.crit { background: var(--crit); } .sev.high { background: var(--high); } .sev.mid { background: var(--mid); }
+  .mermaid { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin: 18px 0; text-align: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } nav.toc { columns: 1; } }
+  .tree { background: #fbfcfe; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; font-family: "JetBrains Mono","D2Coding",Consolas,monospace;
+    font-size: 0.82rem; line-height: 1.55; overflow-x: auto; white-space: pre; }
+  .tree .title { display:block; font-family: inherit; font-weight:700; color: var(--brand-d);
+    margin-bottom: 8px; font-size: 0.86rem; }
+  .tree .add { color: var(--add); background: var(--add-bg); }
+  .tree .del { color: var(--del); background: var(--del-bg); text-decoration: line-through; }
+  .tree .chg { color: var(--chg); background: var(--chg-bg); }
+  .tree .cmt { color: #97a2b4; }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; font-size:0.82rem; margin: 8px 0 0; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:12px; height:12px; border-radius:3px; display:inline-block; }
+  .dot.add{background:var(--add-bg);border:1px solid var(--add);}
+  .dot.del{background:var(--del-bg);border:1px solid var(--del);}
+  .dot.chg{background:var(--chg-bg);border:1px solid var(--chg);}
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.steps > li { position: relative; padding: 4px 0 18px 46px; border-left: 2px solid var(--line); margin-left: 16px; }
+  ol.steps > li::before { counter-increment: step; content: counter(step); position: absolute;
+    left: -17px; top: 0; width: 32px; height: 32px; background: var(--brand); color:#fff;
+    border-radius: 50%; display:grid; place-items:center; font-weight:700; font-size:0.9rem; }
+  ol.steps > li:last-child { border-left-color: transparent; }
+  .pill { display:inline-block; font-size:0.72rem; font-weight:700; padding:2px 9px; border-radius:999px; }
+  .pill.req { background:#e6f4ea; color:var(--add); border:1px solid #b6e0c2; }
+  .pill.opt { background:#eef1f6; color:var(--muted); border:1px solid var(--line); }
+  footer { text-align:center; color: var(--muted); font-size: 0.85rem; padding: 30px 0; }
+  .anchor { display:block; position:relative; top:-20px; visibility:hidden; }
+  .kpi { display:grid; grid-template-columns: repeat(4,1fr); gap:14px; margin:18px 0; }
+  @media (max-width:900px){ .kpi{ grid-template-columns:1fr 1fr; } }
+  .kpi .card { background:#f4f7ff; border:1px solid #d8e2ff; border-radius:10px; padding:14px; text-align:center; }
+  .kpi .n { font-size:1.6rem; font-weight:800; color:var(--brand-d); }
+  .kpi .l { font-size:0.8rem; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <h1>FastAPI 프로젝트 구조 재설계 제안서</h1>
+  <p>Django-App 철학을 <b>실제로</b> 구현하는 자동발견 아키텍처</p>
+  <p style="font-size:0.9rem; opacity:0.85;">FastAPI · SQLAlchemy 2.0 · Celery · Alembic</p>
+  <div class="badges">
+    <span class="badge">작성일 2026-06-23</span>
+    <span class="badge">대상 fastapi-default-project-structure</span>
+    <span class="badge">범위 설계 + 전체 마이그레이션 플랜</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <h2>목차</h2>
+  <a href="#summary">요약 — 한 장으로 보는 제안</a>
+  <a href="#current">1. 현재 구조 분석</a>
+  <a href="#problems">2. 문제 진단 (근거 기반)</a>
+  <a href="#principles">3. 설계 원칙</a>
+  <a href="#proposal">4. 제안 아키텍처</a>
+  <a href="#folders">4.1 폴더 재분류 &amp; 네이밍</a>
+  <a href="#registry">4.2 앱 레지스트리 &amp; 자동발견</a>
+  <a href="#celery">4.3 Celery 단일 app + autodiscover</a>
+  <a href="#uow">4.4 UoW 보일러플레이트 제거</a>
+  <a href="#alembic">4.5 Alembic 모델 레지스트리</a>
+  <a href="#scaffold">4.6 스캐폴드 규약 &amp; 생성기</a>
+  <a href="#compare">5. Before / After 트리 종합 비교</a>
+  <a href="#migration">6. 전체 마이그레이션 플랜</a>
+  <a href="#newapp">7. 신규 앱 추가 가이드</a>
+  <a href="#risks">8. 리스크 &amp; 열린 결정사항</a>
+</nav>
+
+<!-- ============================= SUMMARY ============================= -->
+<span class="anchor" id="summary"></span>
+<section>
+  <h2 class="sec"><span class="num">★</span>요약 — 한 장으로 보는 제안</h2>
+  <p class="lead">현재 구조는 계층 분리와 의존성 방향이 잘 잡혀 있으나, “장고 앱처럼 독립적”이라는 목표가 <b>UoW 한 가지에만</b> 적용되고 라우터·모델·Admin·Celery 등록은 여전히 중앙집중입니다. 이 제안은 <b>“앱 레지스트리 + 규약 기반 자동발견”</b>으로 그 목표를 끝까지 밀어붙입니다.</p>
+
+  <div class="kpi">
+    <div class="card"><div class="n">3 → 0</div><div class="l">새 앱 추가 시<br>중앙 파일 수정 수</div></div>
+    <div class="card"><div class="n">2 → 1</div><div class="l">도메인당<br>UoW 클래스 수</div></div>
+    <div class="card"><div class="n">미설치 → 실체화</div><div class="l">Celery worker<br>폴더의 의미</div></div>
+    <div class="card"><div class="n">3종 → 1종</div><div class="l">규약 문서<br>(단일 소스)</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="callout bad">
+      <b>진단 핵심</b>
+      <ul style="margin:8px 0 0; padding-left:18px;">
+        <li>새 앱 추가 시 <code>main.py</code>·<code>session.py</code> 등 <b>중앙 파일 3곳 필수 수정</b></li>
+        <li>core 미들웨어가 특정 앱(<code>home</code>)에 <b>역의존</b></li>
+        <li>Foreground/Background UoW가 도메인마다 <b>2배 중복</b></li>
+        <li>Celery <b>미설치·빈 폴더</b>, Alembic <b>미초기화</b></li>
+        <li>README·refac.md·실제 코드 <b>3중 드리프트</b></li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <b>제안 핵심</b>
+      <ul style="margin:8px 0 0; padding-left:18px;">
+        <li>각 앱이 <code>AppConfig</code>로 라우터·모델·Admin·태스크를 <b>스스로 등록</b></li>
+        <li><code>app/domains</code> · <code>app/core</code> · <code>app/shared</code> <b>3계층 명시 분리</b></li>
+        <li>단일 Celery app + <b>per-app autodiscover</b></li>
+        <li>선언형 <code>repositories</code> 맵 + <code>background</code> 플래그로 UoW <b>1벌화</b></li>
+        <li>레지스트리가 Alembic <b>모델 자동수집</b>까지 담당 + 스캐폴드 생성기</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= CURRENT ============================= -->
+<span class="anchor" id="current"></span>
+<section>
+  <h2 class="sec"><span class="num">1</span>현재 구조 분석</h2>
+  <p>리포지토리 전체를 교차 검토했습니다. 구현이 완료된 앱은 <code>home</code> 하나이며, <code>blog/reply/sns/user</code>는 동일한 폴더 골격만 갖춘 <b>빈 스캐폴드</b>입니다.</p>
+
+  <h3>1.1 현재 디렉터리 (주석 포함)</h3>
+  <div class="tree"><span class="title">app/ — 현재 (평면 구조, 인프라와 앱이 같은 깊이)</span>app/
+├── core/                  <span class="cmt"># 인프라성 공통</span>
+│   ├── exception.py
+│   ├── middlewares/       <span class="cmt"># cors / user_info  ← user_info가 home 앱에 의존(역의존)</span>
+│   ├── models/            <span class="cmt"># Base, TimestampMixin, UUIDMixin</span>
+│   ├── repositories/      <span class="cmt"># crud_base, repository_base</span>
+│   ├── services/          <span class="cmt"># services_base (BaseService)</span>
+│   └── tags_metadata.py
+├── database/              <span class="cmt"># core와 분리돼 있으나 둘 다 '인프라'</span>
+│   ├── session.py         <span class="cmt"># 엔진/세션/풀 + create_db_tables(모델 수동 import)</span>
+│   ├── unit_of_work.py    <span class="cmt"># BaseUnitOfWork / BaseBackgroundUnitOfWork</span>
+│   ├── redis.py
+│   └── unit_of_work.py
+├── dependencies/auth.py   <span class="cmt"># 전역 의존성</span>
+├── utils/                 <span class="cmt"># logger, pagination (순수 유틸)</span>
+│
+├── home/                  <span class="cmt"># ✅ 유일하게 구현된 앱</span>
+│   ├── api/routers/{router.py, v1/home.py}
+│   ├── api/home_admin.py
+│   ├── models/models.py
+│   ├── repositories/ services/ schemas/
+│   ├── unit_of_work/home_unit_of_work.py
+│   ├── worker/home_task.py     <span class="cmt"># ⬅ 0줄 (빈 파일)</span>
+│   ├── dependency.py           <span class="cmt"># ⬅ 0줄</span>
+│   ├── home_exception.py
+│   └── tests/
+├── user/ blog/ reply/ sns/     <span class="cmt"># ⬅ 동일 골격의 빈 스캐폴드 (worker 전부 0줄)</span>
+│
+main.py                    <span class="cmt"># 라우터/Admin 수동 등록</span>
+config.py                  <span class="cmt"># Pydantic Settings</span>
+  </div>
+
+  <h3>1.2 요청 처리 흐름 (현행)</h3>
+  <div class="mermaid">
+flowchart LR
+  R["HTTP 요청"] --> MW["미들웨어<br/>CORS · UserInfo"]
+  MW --> RT["Router (api/routers/v1)"]
+  RT --> UOW["도메인 UnitOfWork<br/>(트랜잭션 경계)"]
+  UOW --> SV["Service (비즈니스 로직)"]
+  SV --> RP["Repository (BaseRepository 상속)"]
+  RP --> DB[("MySQL")]
+  MW -. "asyncio.create_task" .-> BUOW["HomeBackgroundUnitOfWork<br/>분리 풀에 접속로그 저장"]
+  BUOW --> DB
+  </div>
+
+  <h3>1.3 구현 현황</h3>
+  <table>
+    <thead><tr><th>영역</th><th>상태</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td>계층/패턴 (Router→Service→Repo→UoW)</td><td>✅ 구현·동작</td><td><code>home</code> 앱 전체</td></tr>
+      <tr><td>도메인별 UoW</td><td>✅ 구현 (단, 2배 중복)</td><td><code>home_unit_of_work.py</code></td></tr>
+      <tr><td>Celery</td><td>❌ 미설치·미구현</td><td><code>pyproject.toml</code>에 celery 의존성 없음, <code>worker/*_task.py</code> 0줄</td></tr>
+      <tr><td>Alembic</td><td>⚠ 의존성만 존재</td><td><code>migrations/</code> 디렉터리 부재</td></tr>
+      <tr><td>blog/user/reply/sns</td><td>⚠ 빈 스캐폴드</td><td>router/worker/모델 미작성</td></tr>
+      <tr><td>문서</td><td>⚠ 3중 드리프트</td><td>README vs refac.md vs 실제 코드 경로·시그니처 상이</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================= PROBLEMS ============================= -->
+<span class="anchor" id="problems"></span>
+<section>
+  <h2 class="sec"><span class="num">2</span>문제 진단 (근거 기반)</h2>
+  <p class="lead">아래 6가지는 모두 “파일·라인 근거”를 동반합니다. 표면 증상이 아니라 <b>공통 뿌리</b>가 무엇인지에 초점을 맞췄습니다.</p>
+
+  <h3>① “독립적인 앱” 목표와 실제의 모순 <span class="sev crit">CRITICAL</span></h3>
+  <p>새 앱을 추가하려면 <b>중앙 파일 3곳</b>을 반드시 수정해야 합니다. 즉 앱은 “독립”이 아니라 중앙에 <b>강결합</b>되어 있습니다.</p>
+  <table>
+    <thead><tr><th>수정해야 하는 중앙 파일</th><th>무엇을</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td><code>main.py</code></td><td>라우터 <code>include_router</code></td><td>main.py:229 + 232~235 주석 “향후 추가될 라우터들”</td></tr>
+      <tr><td><code>app/database/session.py</code></td><td>모델 import + 테이블 목록 추가</td><td>session.py:123–129 <code>create_db_tables()</code></td></tr>
+      <tr><td><code>main.py</code></td><td>Admin 뷰 <code>add_view</code></td><td>main.py:299–310</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><code>refac.md</code>는 “신규 도메인 추가 시 기존 코드 수정 불필요”를 천명했지만, 이는 <b>UoW에만</b> 성립합니다. README의 “신규 모듈 개발 가이드” 8·9·10단계가 라우터·모델·Admin 중앙 등록을 그대로 요구하며 모순을 드러냅니다.</div>
+
+  <h3>② core 인프라가 특정 앱에 역의존 <span class="sev high">HIGH</span></h3>
+  <p>공통 미들웨어가 특정 앱 <code>home</code>을 import합니다. 의존성 방향이 <b>core → app</b>으로 역전되어, <code>home</code>을 떼어내면 core가 깨집니다.</p>
+  <pre class="code"><span class="c"># app/core/middlewares/user_info_middleware.py:15</span>
+<span class="k">from</span> app.home.unit_of_work <span class="k">import</span> HomeBackgroundUnitOfWork  <span class="c"># core가 app을 앎</span></pre>
+
+  <h3>③ UoW 보일러플레이트가 도메인마다 2배 <span class="sev high">HIGH</span></h3>
+  <p><code>HomeUnitOfWork</code>와 <code>HomeBackgroundUnitOfWork</code>는 <b>레포지토리 구성이 완전히 동일</b>하고 오직 세션 풀만 다릅니다. 도메인이 늘수록 거의 같은 <code>__aenter__</code>가 2벌씩 증식합니다.</p>
+
+  <h3>④ Celery 미구현 + 미설치 <span class="sev crit">CRITICAL</span></h3>
+  <p>사용자 설명의 핵심(“각 앱 worker가 그 앱의 celery를 정의”)을 실현할 골격이 비어 있습니다.</p>
+  <ul>
+    <li><code>worker/*_task.py</code> = 전부 <b>0줄 빈 파일</b></li>
+    <li><code>pyproject.toml</code>에 <b>celery 의존성 자체가 없음</b></li>
+    <li>공통 Celery app · <code>autodiscover_tasks</code> · 태스크용 세션/UoW 기반 클래스 부재</li>
+  </ul>
+
+  <h3>⑤ 강제 스캐폴드의 “필수/옵션” 규약 부재 <span class="sev mid">MEDIUM</span></h3>
+  <p>앱마다 <code>dependency.py</code>·<code>*_exception.py</code>·<code>*_admin.py</code>·<code>unit_of_work/</code>·<code>worker/</code>가 강제되지만 대부분 빈 파일입니다. 무엇이 필수이고 무엇이 옵션인지 정의가 없어 앱마다 채움 정도가 제각각이고, 네이밍도 흔들립니다(<code>*_task.py</code> vs <code>tasks.py</code>, <code>dependency.py</code> vs <code>dependencies/</code>).</p>
+
+  <h3>⑥ Alembic 미초기화 + 모델 수동 등록 <span class="sev mid">MEDIUM</span></h3>
+  <p>Alembic autogenerate가 모든 앱 모델을 발견하려면 <b>모델 레지스트리</b>가 필요합니다. 현재는 <code>session.py</code>의 수동 import에 의존하므로 ①의 모델 등록 문제와 <b>같은 뿌리</b>입니다.</p>
+
+  <div class="callout goal">
+    <b>공통 뿌리 한 문장</b> — ①②④⑥은 모두 “중앙이 앱을 일일이 알아야 한다”는 <b>수동 등록(manual wiring)</b>에서 비롯됩니다. 따라서 해법도 하나로 수렴합니다: <b>중앙이 앱을 자동으로 발견하게 만든다.</b>
+  </div>
+</section>
+
+<!-- ============================= PRINCIPLES ============================= -->
+<span class="anchor" id="principles"></span>
+<section>
+  <h2 class="sec"><span class="num">3</span>설계 원칙</h2>
+  <p>사용자가 말한 의도를 검증 가능한 <b>설계 원칙</b>으로 번역했습니다. 모든 제안은 이 원칙에서 도출됩니다.</p>
+  <table>
+    <thead><tr><th>#</th><th>원칙</th><th>의미</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>앱 자율성(App Autonomy)</td><td>앱은 자기 자신을 등록한다. 새 앱 추가 시 중앙 파일 수정 0.</td></tr>
+      <tr><td>P2</td><td>의존성 단방향</td><td><code>domains → core → shared</code>. core/shared는 어떤 도메인도 알지 못한다.</td></tr>
+      <tr><td>P3</td><td>폴더가 의도를 말한다</td><td>“도메인/기능/공통”을 폴더 최상위 계층에서 즉시 식별 가능하게.</td></tr>
+      <tr><td>P4</td><td>규약 &gt; 설정 (단, 명시적 탈출구)</td><td>관례를 따르면 자동 동작, 예외는 <code>AppConfig</code>로 명시 오버라이드.</td></tr>
+      <tr><td>P5</td><td>보일러플레이트 최소화</td><td>같은 코드를 두 번 쓰지 않는다(UoW 2배 → 1벌).</td></tr>
+      <tr><td>P6</td><td>단일 진실 소스(SSoT)</td><td>구조 규약은 코드(레지스트리)와 1개의 살아있는 문서로만 표현.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================= PROPOSAL ============================= -->
+<span class="anchor" id="proposal"></span>
+<section>
+  <h2 class="sec"><span class="num">4</span>제안 아키텍처</h2>
+  <p class="lead">핵심은 <b>레지스트리(Registry)</b> 하나입니다. 앱이 자기 자신을 선언하면, 부팅 시 레지스트리가 모든 앱을 발견해 라우터·모델·Admin·Celery 태스크를 자동으로 연결합니다.</p>
+  <div class="mermaid">
+flowchart TD
+  subgraph APPS["app/domains/* — 자율 등록 (앱은 중앙을 모름)"]
+    A1["home/config.py<br/>HomeConfig(AppConfig)"]
+    A2["blog/config.py<br/>BlogConfig(AppConfig)"]
+    A3["user/config.py<br/>UserConfig(AppConfig)"]
+  end
+  REG["app/core/registry.py<br/>AppRegistry.discover()"]
+  A1 --> REG
+  A2 --> REG
+  A3 --> REG
+  REG --> R1["라우터 install → FastAPI"]
+  REG --> R2["모델 import → Base.metadata<br/>(런타임 &amp; Alembic 공용)"]
+  REG --> R3["Admin 뷰 install → SQLAdmin"]
+  REG --> R4["Celery autodiscover packages"]
+  style REG fill:#2f6df6,color:#fff
+  </div>
+
+  <!-- ---------- 4.1 FOLDERS ---------- -->
+  <span class="anchor" id="folders"></span>
+  <h3>4.1 폴더 재분류 &amp; 네이밍 (확정안)</h3>
+  <div class="callout goal">
+    <b>사용자 정의 (이 절의 출발점):</b> “<b>도메인</b> = 목적이 정확히 정의될 수 있는 작업의 <b>최소 집합체</b>. <b>기술/공통</b> = 도메인에 귀속되지 않고, 여러 도메인이 공유하는 클래스 모듈.” →
+    최상위 폴더 의도는 사실상 <b>2종</b>(도메인 / 기술·공통)이며, 별도의 “기능 앱” 범주는 두지 않습니다(<code>home</code>도 ‘접속로그·통계’라는 목적을 가진 <b>도메인</b>).
+  </div>
+  <p>여기에 <b>대규모(25개+)</b>·<b>앱 간 의존 일부 존재</b> 조건을 결합하면 다음 <b>확정안(domains / core / shared)</b>으로 수렴합니다.</p>
+
+  <div class="grid2">
+    <div class="tree"><span class="title">확정안 — domains / core / shared</span>app/
+├── <span class="add">domains/</span>              <span class="cmt"># 도메인 앱 = 목적이 정의된 최소 집합체</span>
+│   ├── home/            <span class="cmt"># 각 앱은 Django-app처럼 독립</span>
+│   ├── user/ blog/ reply/ sns/
+│   └── <span class="cmt">commerce/order/  # (선택) 25개+ 시 바운디드 컨텍스트 하위 그룹화</span>
+│                        <span class="cmt">#   레지스트리가 재귀 스캔 → 코드 변경 없이 허용</span>
+├── <span class="chg">core/</span>                 <span class="cmt"># 기술 인프라(도메인이 '의존'하는 공유 모듈)</span>
+│   ├── registry.py      <span class="cmt"># ⬅ 신규: 자동발견 핵심</span>
+│   ├── db/              <span class="cmt"># ⬅ 기존 database 통합 (session·uow·redis)</span>
+│   ├── celery/          <span class="cmt"># ⬅ 신규: celery app + DBTask</span>
+│   ├── models/ repositories/ services/   <span class="cmt"># Base 클래스들</span>
+│   └── exceptions/ middlewares/
+└── <span class="add">shared/</span>               <span class="cmt"># 도메인·프레임워크 무관 순수 유틸</span>
+    └── logging/ pagination/ ...
+    </div>
+    <div class="tree"><span class="title">매핑 — 사용자 어휘 → 폴더</span><span class="cmt"># 사용자 어휘            # 폴더</span>
+도메인(목적 최소단위)  →  <span class="add">domains/&lt;name&gt;</span>   (독립 앱)
+
+기술/공통             →  <span class="chg">core/</span>   (도메인이 의존하는
+                              프레임워크 결합 인프라)
+                      →  <span class="add">shared/</span> (의존 없는 순수 유틸)
+
+<span class="cmt"># 의존 방향(P2):  domains → core → shared</span>
+<span class="cmt"># core·shared 는 어떤 도메인도 알지 못함</span>
+    </div>
+  </div>
+  <div class="legend">
+    <span><span class="dot add"></span>신규/추가</span>
+    <span><span class="dot chg"></span>이동/통합</span>
+  </div>
+
+  <h4>왜 <code>domains/</code>가 아니라 <code>domains/</code>인가, 왜 <code>core</code>/<code>shared</code>를 나누는가</h4>
+  <table>
+    <thead><tr><th>결정</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td><code>domains/</code> 명명 (vs <code>domains/</code>)</td><td>사용자 어휘(“도메인 = 목적의 최소 집합체”)와 1:1 일치. 폴더 이름만 봐도 “이건 도메인”임이 자명.</td></tr>
+      <tr><td>“기능 앱(feature)” 범주 폐기</td><td>사용자 정의상 목적을 가진 단위는 전부 도메인. <code>home</code>도 도메인 → 별도 범주 불필요.</td></tr>
+      <tr><td><code>core</code> ↔ <code>shared</code> 분리</td><td>둘 다 “기술/공통”이지만 <b>의존성 성격</b>이 다름: <code>core</code>는 프레임워크에 결합돼 도메인이 의존하는 인프라, <code>shared</code>는 어디에도 의존 없는 순수 유틸. 분리하면 의존 방향(P2)이 폴더로 강제됨. <span style="color:var(--muted)">(단일 <code>common/</code>으로 합치는 것도 가능 — R-6에서 선택)</span></td></tr>
+      <tr><td>25개+ 평면 + 재귀 스캔</td><td>기본은 평면 <code>domains/&lt;name&gt;</code>. 규모가 커지면 <code>domains/&lt;context&gt;/&lt;name&gt;</code> 하위 그룹화 가능 — <code>config.py</code> 스캔이 재귀라 <b>코드 변경 0</b>.</td></tr>
+      <tr><td>앱 간 의존 ‘일부’ 규칙</td><td>도메인→도메인 참조는 <b>단방향·명시 선언</b>만 허용. 양방향 공유가 필요하면 계약을 <code>core/shared</code>로 승격. 레지스트리가 로드 순서·<b>순환참조</b>를 검증.</td></tr>
+    </tbody>
+  </table>
+
+  <h4>네이밍 표준화</h4>
+  <table>
+    <thead><tr><th>대상</th><th>현재</th><th>제안</th><th>이유</th></tr></thead>
+    <tbody>
+      <tr><td>앱 메타/등록</td><td>(없음)</td><td><code>domains/&lt;name&gt;/config.py</code></td><td>Django <code>apps.py</code> 대응, 자동발견 진입점</td></tr>
+      <tr><td>Celery 태스크</td><td><code>worker/&lt;name&gt;_task.py</code></td><td><code>worker/tasks.py</code></td><td>autodiscover 기본 <code>related_name</code>과 정합, 중복 접두사 제거</td></tr>
+      <tr><td>Admin 뷰</td><td><code>api/&lt;name&gt;_admin.py</code></td><td><code>admin.py</code></td><td>앱 루트의 단일 관례 위치</td></tr>
+      <tr><td>예외</td><td><code>&lt;name&gt;_exception.py</code></td><td><code>exceptions.py</code></td><td>접두사 중복 제거(폴더가 이미 네임스페이스)</td></tr>
+      <tr><td>의존성</td><td><code>dependency.py</code></td><td><code>dependencies.py</code></td><td>복수형 통일, 전역 <code>core</code>와 일관</td></tr>
+      <tr><td>인프라 묶음</td><td><code>core/</code> + <code>database/</code> 분리</td><td><code>core/db/</code>로 통합</td><td>둘 다 인프라 — 한 지붕 아래로</td></tr>
+      <tr><td>모델 모듈</td><td><code>models/models.py</code></td><td><code>models/__init__.py</code>에서 re-export</td><td><code>app.domains.blog.models</code> 한 경로로 import</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ---------- 4.2 REGISTRY ---------- -->
+  <span class="anchor" id="registry"></span>
+  <h3>4.2 앱 레지스트리 &amp; 자동발견 (P1·P2의 실현)</h3>
+  <p>각 앱은 <code>AppConfig</code> 하위 클래스 하나로 자신을 선언합니다. <b>선언만 하면</b> 레지스트리가 나머지를 자동으로 연결합니다. 비활성화·순서·prefix는 명시적 탈출구로 제공합니다(P4).</p>
+
+  <h4>① 앱이 자신을 선언한다</h4>
+  <pre class="code"><span class="c"># app/domains/home/config.py</span>
+<span class="k">from</span> app.core.registry <span class="k">import</span> AppConfig
+
+<span class="k">class</span> <span class="f">HomeConfig</span>(AppConfig):
+    name      = <span class="s">"home"</span>
+    category  = <span class="s">"feature"</span>        <span class="c"># "domain" | "feature" — 폴더가 아닌 속성</span>
+    prefix    = <span class="s">"/api"</span>
+    enabled   = True
+
+    <span class="k">def</span> <span class="f">router</span>(self):
+        <span class="k">from</span> app.domains.home.api.routers.router <span class="k">import</span> home_router
+        <span class="k">return</span> home_router
+
+    <span class="k">def</span> <span class="f">admin_views</span>(self):
+        <span class="k">from</span> app.domains.home.admin <span class="k">import</span> UserAccessLogAdmin
+        <span class="k">return</span> [UserAccessLogAdmin]
+
+    <span class="c"># models 패키지는 관례로 자동 import → 별도 선언 불필요</span>
+    <span class="c"># worker/tasks.py 도 Celery autodiscover가 자동 수집</span></pre>
+
+  <h4>② 레지스트리가 앱을 발견·연결한다</h4>
+  <pre class="code"><span class="c"># app/core/registry.py (요지)</span>
+<span class="k">class</span> <span class="f">AppRegistry</span>:
+    <span class="k">def</span> <span class="f">discover</span>(self, package=<span class="s">"app.domains"</span>) -> list[AppConfig]:
+        <span class="c"># app/domains/* 하위에서 AppConfig 서브클래스를 스캔</span>
+        ...
+
+    <span class="k">def</span> <span class="f">import_models</span>(self):
+        <span class="c"># 각 앱 models 패키지 import → Base.metadata 채움 (런타임·Alembic 공용)</span>
+        ...
+
+    <span class="k">def</span> <span class="f">install_routers</span>(self, app):
+        <span class="k">for</span> cfg <span class="k">in</span> self.enabled_apps:
+            <span class="k">if</span> (r := cfg.router()): app.include_router(r, prefix=cfg.prefix)
+
+    <span class="k">def</span> <span class="f">install_admin</span>(self, admin):
+        <span class="k">for</span> cfg <span class="k">in</span> self.enabled_apps:
+            <span class="k">for</span> view <span class="k">in</span> cfg.admin_views(): admin.add_view(view)
+
+    <span class="k">def</span> <span class="f">celery_packages</span>(self) -> list[str]:
+        <span class="k">return</span> [<span class="s">f"app.domains.{cfg.name}"</span> <span class="k">for</span> cfg <span class="k">in</span> self.enabled_apps]</pre>
+
+  <h4>③ 앱 팩토리가 부팅 시 한 번 호출한다</h4>
+  <pre class="code"><span class="c"># app/main.py (또는 app/bootstrap.py)</span>
+<span class="k">def</span> <span class="f">create_app</span>() -> FastAPI:
+    app = FastAPI(...)
+    registry = AppRegistry()
+    registry.discover()            <span class="c"># app/domains/* 자동 스캔</span>
+    registry.import_models()       <span class="c"># Base.metadata 채움</span>
+    setup_middlewares(app)         <span class="c"># core만 사용 (앱 비의존)</span>
+    setup_exception_handlers(app)
+    registry.install_routers(app)  <span class="c"># ← main.py의 수동 include_router 제거</span>
+    <span class="k">if</span> app_settings.ADMIN:
+        registry.install_admin(Admin(app, engine))
+    <span class="k">return</span> app</pre>
+
+  <div class="callout good"><b>효과(①②④⑥ 동시 해결):</b> <code>main.py</code>의 수동 <code>include_router</code>·Admin 등록, <code>session.py</code>의 수동 모델 import가 모두 사라집니다. 새 앱은 <code>domains/&lt;name&gt;/config.py</code>만 추가하면 끝 — <b>중앙 수정 0</b>.</div>
+
+  <!-- ---------- 4.3 CELERY ---------- -->
+  <span class="anchor" id="celery"></span>
+  <h3>4.3 Celery — 단일 app + per-app autodiscover (채택)</h3>
+  <p>공통 Celery app 1개를 <code>core/celery</code>에 두고, 레지스트리가 알려주는 앱 패키지들에서 <code>worker/tasks.py</code>를 자동 수집합니다. <code>worker/</code> 폴더가 비로소 의미를 갖습니다(④ 해결).</p>
+  <div class="mermaid">
+flowchart LR
+  subgraph CORE["app/core/celery"]
+    CAPP["celery_app = Celery(broker=redis, backend=redis)"]
+    BT["DBTask(Base)<br/>UoW·세션 헬퍼 제공"]
+  end
+  REG["AppRegistry.celery_packages()"] --> CAPP
+  CAPP -- "autodiscover_tasks(related_name='worker.tasks')" --> T1["domains/home/worker/tasks.py"]
+  CAPP -- " " --> T2["domains/blog/worker/tasks.py"]
+  CAPP -- " " --> T3["domains/sns/worker/tasks.py"]
+  T1 --> BUOW["HomeUnitOfWork(background=True)"]
+  BUOW --> DB[("MySQL")]
+  BEAT["AppConfig.beat_schedule 병합"] --> CAPP
+  </div>
+  <pre class="code"><span class="c"># app/core/celery/app.py</span>
+<span class="k">from</span> celery <span class="k">import</span> Celery
+<span class="k">from</span> config <span class="k">import</span> redis_settings
+<span class="k">from</span> app.core.registry <span class="k">import</span> AppRegistry
+
+celery_app = Celery(<span class="s">"project"</span>, broker=redis_settings.REDIS_URL, backend=redis_settings.REDIS_URL)
+celery_app.conf.update(task_track_started=True, timezone=<span class="s">"Asia/Seoul"</span>, ...)
+celery_app.autodiscover_tasks(AppRegistry().celery_packages(), related_name=<span class="s">"worker.tasks"</span>)
+
+<span class="c"># app/domains/home/worker/tasks.py</span>
+<span class="k">from</span> app.core.celery.app <span class="k">import</span> celery_app
+<span class="k">from</span> app.domains.home.unit_of_work <span class="k">import</span> HomeUnitOfWork
+
+<span class="f">@celery_app.task</span>(name=<span class="s">"home.aggregate_access_stats"</span>)
+<span class="k">def</span> <span class="f">aggregate_access_stats</span>():
+    <span class="c"># 동기 태스크 안에서 async UoW 실행(asgiref/anyio 브리지)</span>
+    ...</pre>
+  <div class="callout warn"><b>설계 메모:</b> SQLAlchemy는 <b>async</b>인데 Celery 워커는 <b>동기 프로세스</b>입니다. 태스크 내부에서 async UoW를 돌리는 브리지(<code>asyncio.run</code> 또는 <code>anyio</code>)와 <b>워커 전용 세션 풀</b> 운용 방식은 마이그레이션 Phase 4에서 PoC로 확정합니다(열린 결정사항 R-2).</div>
+
+  <!-- ---------- 4.4 UOW ---------- -->
+  <span class="anchor" id="uow"></span>
+  <h3>4.4 UoW 보일러플레이트 제거 (P5)</h3>
+  <p>도메인마다 거의 동일한 Foreground/Background 2벌을, <b>선언형 <code>repositories</code> 맵 + <code>background</code> 플래그</b>로 1벌화합니다.</p>
+  <div class="grid2">
+    <div>
+      <h4>현재 (도메인당 2 클래스 + __aenter__ 2벌)</h4>
+      <pre class="code"><span class="k">class</span> <span class="f">HomeUnitOfWork</span>(BaseUnitOfWork):
+    user_access_logs: Repo
+    <span class="k">async def</span> <span class="f">__aenter__</span>(self):
+        <span class="k">await</span> super().__aenter__()
+        self.user_access_logs = Repo(self._session)
+        <span class="k">return</span> self
+
+<span class="del">class HomeBackgroundUnitOfWork(...):  # 거의 동일 복제</span>
+    user_access_logs: Repo
+    <span class="k">async def</span> <span class="f">__aenter__</span>(self): ...</pre>
+    </div>
+    <div>
+      <h4>제안 (도메인당 1 클래스, 선언만)</h4>
+      <pre class="code"><span class="c"># app/core/db/unit_of_work.py</span>
+<span class="k">class</span> <span class="f">BaseUnitOfWork</span>:
+    repositories: dict[str, type] = {}
+    <span class="k">def</span> <span class="f">__init__</span>(self, session=None, *, background=False):
+        self._background = background; ...
+    <span class="k">async def</span> <span class="f">__aenter__</span>(self):
+        factory = BgSession <span class="k">if</span> self._background <span class="k">else</span> Session
+        <span class="k">if</span> self._owns_session: self._session = factory()
+        <span class="k">for</span> attr, cls <span class="k">in</span> self.repositories.items():
+            setattr(self, attr, cls(self._session))
+        <span class="k">return</span> self
+
+<span class="c"># app/domains/home/unit_of_work.py</span>
+<span class="k">class</span> <span class="f">HomeUnitOfWork</span>(BaseUnitOfWork):
+    user_access_logs: UserAccessLogRepository       <span class="c"># 타입힌트</span>
+    repositories = {<span class="s">"user_access_logs"</span>: UserAccessLogRepository}</pre>
+      <p style="font-size:0.85rem; color:var(--muted);">사용: 일반 <code>HomeUnitOfWork(session)</code> / 백그라운드 <code>HomeUnitOfWork(background=True)</code></p>
+    </div>
+  </div>
+
+  <!-- ---------- 4.5 ALEMBIC ---------- -->
+  <span class="anchor" id="alembic"></span>
+  <h3>4.5 Alembic 모델 레지스트리 (⑥ 해결)</h3>
+  <p>Alembic <code>env.py</code>가 <b>레지스트리를 그대로 재사용</b>해 모든 앱 모델을 자동 수집합니다. 런타임 테이블 생성과 마이그레이션이 <b>같은 진실 소스</b>를 공유합니다.</p>
+  <pre class="code"><span class="c"># migrations/env.py (요지)</span>
+<span class="k">from</span> app.core.db.session <span class="k">import</span> Base
+<span class="k">from</span> app.core.registry <span class="k">import</span> AppRegistry
+
+AppRegistry().import_models()        <span class="c"># 모든 domains/*/models 를 Base.metadata에 등록</span>
+target_metadata = Base.metadata      <span class="c"># autogenerate가 전체 모델을 발견</span></pre>
+  <p>이로써 <code>session.py</code>의 <code>create_db_tables()</code> 안 “모델 추가 시 여기에 import” 주석이 사라지고, DEBUG 자동생성과 운영 Alembic이 단일 메타데이터로 수렴합니다.</p>
+
+  <!-- ---------- 4.6 SCAFFOLD ---------- -->
+  <span class="anchor" id="scaffold"></span>
+  <h3>4.6 스캐폴드 “필수/옵션” 규약 + 생성기 (⑤ 해결)</h3>
+  <p>무엇이 필수이고 무엇이 옵션인지 못 박고, Django <code>startapp</code>에 대응하는 <b>생성기</b>로 일관성을 강제합니다.</p>
+  <table>
+    <thead><tr><th>구성요소</th><th>구분</th><th>경로</th></tr></thead>
+    <tbody>
+      <tr><td>앱 설정/등록</td><td><span class="pill req">필수</span></td><td><code>config.py</code></td></tr>
+      <tr><td>라우터</td><td><span class="pill req">필수</span></td><td><code>api/routers/router.py</code>, <code>api/routers/v1/</code></td></tr>
+      <tr><td>모델</td><td><span class="pill req">필수</span></td><td><code>models/</code></td></tr>
+      <tr><td>스키마</td><td><span class="pill req">필수</span></td><td><code>schemas/</code></td></tr>
+      <tr><td>서비스</td><td><span class="pill req">필수</span></td><td><code>services/</code></td></tr>
+      <tr><td>레포지토리 + UoW</td><td><span class="pill req">필수</span></td><td><code>repositories/</code>, <code>unit_of_work.py</code></td></tr>
+      <tr><td>Celery 태스크</td><td><span class="pill opt">옵션</span></td><td><code>worker/tasks.py</code></td></tr>
+      <tr><td>Admin 뷰</td><td><span class="pill opt">옵션</span></td><td><code>admin.py</code></td></tr>
+      <tr><td>앱 전용 의존성</td><td><span class="pill opt">옵션</span></td><td><code>dependencies.py</code></td></tr>
+      <tr><td>앱 전용 예외</td><td><span class="pill opt">옵션</span></td><td><code>exceptions.py</code></td></tr>
+      <tr><td>테스트</td><td><span class="pill req">필수</span></td><td><code>tests/</code></td></tr>
+    </tbody>
+  </table>
+  <pre class="code"><span class="c"># 사용 예: 새 앱은 한 줄로 생성 (Django startapp 대응)</span>
+python -m scripts.new_app product --category domain
+<span class="c"># → app/domains/product/ 필수 골격 + config.py 자동 생성 (옵션 폴더는 --with-worker 등으로)</span></pre>
+</section>
+
+<!-- ============================= COMPARE ============================= -->
+<span class="anchor" id="compare"></span>
+<section>
+  <h2 class="sec"><span class="num">5</span>Before / After 트리 종합 비교</h2>
+  <div class="legend" style="margin-bottom:12px;">
+    <span><span class="dot add"></span>신규</span>
+    <span><span class="dot chg"></span>이동·통합·개명</span>
+    <span><span class="dot del"></span>제거</span>
+  </div>
+  <div class="grid2">
+    <div class="tree"><span class="title">BEFORE — 현재</span>app/
+├── core/
+│   ├── exception.py
+│   ├── middlewares/      <span class="cmt"># home 앱에 역의존</span>
+│   ├── models/ repositories/ services/
+│   └── tags_metadata.py
+├── database/             <span class="cmt"># core와 분리</span>
+│   ├── session.py        <span class="cmt"># 모델 수동 import</span>
+│   ├── unit_of_work.py
+│   └── redis.py
+├── dependencies/auth.py
+├── utils/{logger,pagination}.py
+│
+├── home/
+│   ├── api/{routers, home_admin.py}
+│   ├── models/models.py
+│   ├── repositories/ services/ schemas/
+│   ├── unit_of_work/home_unit_of_work.py   <span class="cmt"># UoW 2배</span>
+│   ├── worker/home_task.py  <span class="cmt"># 0줄</span>
+│   ├── dependency.py        <span class="cmt"># 0줄</span>
+│   └── home_exception.py
+├── user/ blog/ reply/ sns/  <span class="cmt"># 빈 스캐폴드</span>
+│
+main.py     <span class="cmt"># 라우터·Admin 수동 등록</span>
+config.py
+<span class="cmt">(celery 미설치 · migrations/ 부재)</span>
+    </div>
+    <div class="tree"><span class="title">AFTER — 제안</span>app/
+├── <span class="add">domains/</span>                  <span class="cmt"># 모든 독립 앱</span>
+│   ├── home/
+│   │   ├── <span class="add">config.py</span>      <span class="cmt"># 자동발견 진입점</span>
+│   │   ├── api/routers/{router.py, v1/}
+│   │   ├── <span class="chg">admin.py</span>       <span class="cmt"># ← home_admin.py</span>
+│   │   ├── models/
+│   │   ├── repositories/ services/ schemas/
+│   │   ├── <span class="chg">unit_of_work.py</span>  <span class="cmt"># 1벌 (background 플래그)</span>
+│   │   ├── <span class="chg">worker/tasks.py</span>  <span class="cmt"># ← *_task.py, 실제 구현</span>
+│   │   ├── <span class="chg">exceptions.py</span>    <span class="cmt"># ← home_exception.py</span>
+│   │   └── <span class="chg">dependencies.py</span>  <span class="cmt"># (옵션)</span>
+│   └── user/ blog/ reply/ sns/
+├── <span class="chg">core/</span>
+│   ├── <span class="add">registry.py</span>        <span class="cmt"># 자동발견 핵심</span>
+│   ├── <span class="chg">db/</span>                <span class="cmt"># ← database 통합</span>
+│   │   ├── session.py     <span class="cmt"># 수동 import 제거</span>
+│   │   └── unit_of_work.py
+│   ├── <span class="add">celery/</span>            <span class="cmt"># celery app + DBTask</span>
+│   ├── exceptions/ middlewares/  <span class="cmt"># 앱 비의존</span>
+│   └── models/ repositories/ services/
+├── <span class="add">shared/</span>               <span class="cmt"># logger, pagination</span>
+│
+├── <span class="add">migrations/</span>           <span class="cmt"># Alembic, registry 재사용</span>
+main.py     <span class="chg"># create_app(): registry가 전부 연결</span>
+config.py
+<span class="add">scripts/new_app.py</span>     <span class="cmt"># 스캐폴드 생성기</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= MIGRATION ============================= -->
+<span class="anchor" id="migration"></span>
+<section>
+  <h2 class="sec"><span class="num">6</span>전체 마이그레이션 플랜</h2>
+  <p class="lead">기존 동작을 깨지 않도록 <b>역호환 shim</b>을 유지하며 8단계로 점진 전환합니다. 각 단계는 <b>원자적·검증 가능·롤백 가능</b>합니다.</p>
+  <div class="mermaid">
+gantt
+  title 마이그레이션 단계 (의존 관계 기반 순서)
+  dateFormat X
+  axisFormat %s
+  section 기반
+  P0 규약·레지스트리 골격(behavior无변경) :p0, 0, 1
+  P1 core/db 통합 + shared 분리(shim 유지) :p1, after p0, 1
+  section 자동발견
+  P2 domains/ 이전 + import 정리           :p2, after p1, 1
+  P3 레지스트리 연결(main/session 수동제거) :p3, after p2, 1
+  section 기능
+  P4 Celery 도입(app·autodiscover·PoC)   :p4, after p3, 1
+  P5 Alembic init + env.py 레지스트리     :p5, after p3, 1
+  P6 UoW 1벌화 리팩토링                  :p6, after p3, 1
+  section 마감
+  P7 생성기 + 문서 단일화(드리프트 제거)   :p7, after p4, 1
+  P8 테스트·검증·정리                    :p8, after p7, 1
+  </div>
+
+  <ol class="steps">
+    <li><b>P0 — 규약 동결 &amp; 레지스트리 골격</b><br>
+      <code>core/registry.py</code>, <code>AppConfig</code> 기반 클래스 추가(아직 미사용). 네이밍 표준 확정. <span style="color:var(--muted)">검증: import 에러 없음, 기존 테스트 그린. 롤백: 신규 파일 삭제.</span></li>
+    <li><b>P1 — core/db 통합 + shared 분리</b><br>
+      <code>database/</code> → <code>core/db/</code>, <code>utils/</code> → <code>shared/</code> 이동. 기존 경로는 <b>re-export shim</b>으로 유지(<code>app/database/__init__.py</code>가 새 위치를 re-export). <span style="color:var(--muted)">검증: 앱 부팅·테스트 그린. 롤백: shim 되돌림.</span></li>
+    <li><b>P2 — domains/ 이전</b><br>
+      <code>home,user,blog,reply,sns</code> → <code>app/domains/</code>. import 경로는 codegraph <code>impact</code>로 영향 산정 후 일괄 치환. 한 앱씩 이동·검증. <span style="color:var(--muted)">검증: 앱별 엔드포인트 응답 동일. 롤백: 앱 단위 되돌림.</span></li>
+    <li><b>P3 — 레지스트리 연결</b><br>
+      각 앱에 <code>config.py</code> 추가, <code>create_app()</code> 도입. <code>main.py</code> 수동 <code>include_router</code>·Admin, <code>session.py</code> 수동 모델 import <b>제거</b>. core 미들웨어의 home 역의존 제거(접속로그 저장을 앱 훅/시그널 또는 옵션 미들웨어로 분리). <span style="color:var(--muted)">검증: 라우트 목록·Admin 뷰·OpenAPI 동일. 롤백: 수동 등록 복원.</span></li>
+    <li><b>P4 — Celery 도입</b><br>
+      celery 의존성 추가, <code>core/celery/app.py</code> + <code>DBTask</code> + autodiscover. async UoW 브리지 PoC 후 <code>home</code>에 실제 태스크 1개 구현(접속로그 집계 등). <span style="color:var(--muted)">검증: 워커가 태스크 발견·실행, DB 반영. 롤백: celery 진입점 비활성.</span></li>
+    <li><b>P5 — Alembic 초기화</b><br>
+      <code>alembic init migrations</code>, <code>env.py</code>가 <code>AppRegistry().import_models()</code> 사용. 현 스키마 기준 baseline 마이그레이션 생성. <span style="color:var(--muted)">검증: autogenerate가 전체 모델 인식, upgrade/downgrade 동작. 롤백: migrations 폐기.</span></li>
+    <li><b>P6 — UoW 1벌화</b><br>
+      <code>BaseUnitOfWork</code>에 선언형 <code>repositories</code> + <code>background</code> 플래그 도입. 도메인 <code>*BackgroundUnitOfWork</code> 제거, 호출부를 <code>background=True</code>로 치환. <span style="color:var(--muted)">검증: 트랜잭션·롤백·풀 분리 동작 동일. 롤백: 2벌 구조 복원.</span></li>
+    <li><b>P7 — 생성기 &amp; 문서 단일화</b><br>
+      <code>scripts/new_app.py</code> 추가. README/refac.md/flow.md를 <b>1개의 살아있는 ARCHITECTURE 문서</b>로 통합, 드리프트 제거(P6 SSoT). <span style="color:var(--muted)">검증: 생성기로 만든 앱이 무수정 부팅. 롤백: 문서 되돌림.</span></li>
+    <li><b>P8 — 테스트·검증·정리</b><br>
+      shim 제거, 빈 옵션 파일 정리, 전 앱 스모크 테스트. <code>verification-before-completion</code> 기준 통과. <span style="color:var(--muted)">검증: 전체 테스트·부팅·OpenAPI·Admin·Celery·Alembic 그린.</span></li>
+  </ol>
+  <div class="callout goal"><b>안전장치:</b> P1·P2의 re-export shim 덕분에 각 단계가 독립 PR로 머지 가능하며, 어느 단계에서 멈춰도 앱은 항상 동작합니다. P4·P5·P6은 P3 이후 <b>병렬 진행</b>이 가능합니다.</div>
+</section>
+
+<!-- ============================= NEW APP ============================= -->
+<span class="anchor" id="newapp"></span>
+<section>
+  <h2 class="sec"><span class="num">7</span>신규 앱 추가 가이드 (제안 구조 기준)</h2>
+  <p>“중앙 수정 0”이 실제로 성립함을 보입니다. 아래가 <b>전부</b>입니다.</p>
+  <div class="mermaid">
+flowchart LR
+  S1["1. scripts.new_app product --category domain"] --> S2["2. models/ · schemas/ · repositories/ 작성"]
+  S2 --> S3["3. unit_of_work.py: repositories 맵 한 줄"]
+  S3 --> S4["4. services/ · api/routers/v1 작성"]
+  S4 --> S5["5. config.py에 router()/admin_views() 노출"]
+  S5 --> DONE["✅ 부팅 시 레지스트리가 자동 연결<br/>main.py·session.py·admin 수정 없음"]
+  style DONE fill:#e6f4ea,stroke:#1a7f37
+  </div>
+  <table>
+    <thead><tr><th></th><th>현재</th><th>제안</th></tr></thead>
+    <tbody>
+      <tr><td>중앙 파일 수정</td><td>3곳 (main×2, session)</td><td><b>0곳</b></td></tr>
+      <tr><td>UoW 클래스 작성</td><td>2개 (+__aenter__ 2벌)</td><td>1개 (선언 한 줄)</td></tr>
+      <tr><td>Celery 태스크</td><td>(연결 수단 없음)</td><td><code>worker/tasks.py</code> 작성 → 자동 수집</td></tr>
+      <tr><td>Alembic 인식</td><td>session.py 수동 import 필요</td><td>자동</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================= RISKS ============================= -->
+<span class="anchor" id="risks"></span>
+<section>
+  <h2 class="sec"><span class="num">8</span>리스크 &amp; 열린 결정사항</h2>
+  <table>
+    <thead><tr><th>ID</th><th>항목</th><th>내용 / 결정 필요</th><th>대응</th></tr></thead>
+    <tbody>
+      <tr><td>R-1</td><td>폴더 분할 안</td><td><b>확정</b>: <code>domains / core / shared</code> (사용자 정의 “도메인=목적의 최소 집합체” 기반)</td><td>해결됨 — 4.1 확정안</td></tr>
+      <tr><td>R-2</td><td>Celery×async</td><td>동기 워커에서 async UoW 실행 브리지/세션 풀 운용</td><td>P4에서 PoC로 확정</td></tr>
+      <tr><td>R-3</td><td>접속로그 저장 위치</td><td>core 미들웨어의 home 역의존 제거 방식(앱 훅 vs 옵션 미들웨어 vs Celery 태스크 이관)</td><td>P3/P4에서 결정</td></tr>
+      <tr><td>R-4</td><td>자동발견 방식</td><td><b>확정</b>: <code>config.py</code>(AppConfig) 재귀 스캔</td><td>해결됨 — 4.2</td></tr>
+      <tr><td>R-5</td><td>import 경로 대량 변경</td><td>P2의 광범위한 치환 리스크</td><td>codegraph impact + 앱 단위 점진 + shim</td></tr>
+      <tr><td>R-6</td><td>config.py 위치</td><td>루트 유지 vs <code>core/config</code> 이전</td><td>호환성 위해 1차는 루트 유지 권장</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout goal">
+    <b>확정된 사항</b> — 폴더 <code>domains / core / shared</code>(R-1), 자동발견 <code>config.py</code> 스캔(R-4), Celery 단일 app + autodiscover, 산출물 = 설계 + 전체 마이그레이션 플랜. <b>다음 단계</b>는 위 8개 Phase를 작업 단위로 분해한 <b>실행 계획서(구현 플랜)</b> 작성입니다.
+  </div>
+</section>
+
+<footer>
+  FastAPI 프로젝트 구조 재설계 제안서 · 2026-06-23 · docs/proposer/index.html<br>
+  본 문서는 현행 코드(파일·라인) 근거 기반으로 작성되었으며, 구현 전 설계 검토용입니다.
+</footer>
+
+</div>
+</body>
+</html>
