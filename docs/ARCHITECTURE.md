@@ -1,7 +1,5 @@
 # 아키텍처 문서
 
-> 설계 배경과 의사결정 근거는 [`docs/proposer/index.html`](proposer/index.html)을 참고하세요.
-
 이 문서는 프로젝트의 유일한 공식 아키텍처 소스입니다.
 코드와 문서 간 불일치가 있으면 코드가 정답이며, 이 문서를 업데이트하세요.
 
@@ -67,8 +65,9 @@ fastapi-default-project-structure/
 ├── scripts/
 │   └── new_app.py                   # 앱 스캐폴딩 생성기
 └── docs/
-    ├── ARCHITECTURE.md              # ← 이 문서
-    └── proposer/index.html          # 설계 결정 근거 (HTML)
+    ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
+    ├── concepts/                    # 개념·패턴 심화 해설
+    └── refactoring/                 # 변경 기록
 ```
 
 ### 의존 방향
