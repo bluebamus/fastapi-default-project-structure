@@ -13,6 +13,9 @@ __pycache__/
 # Logs
 logs/
 
+# Alembic scratch / local verification databases
+_scratch_alembic.db
+
 # macOS
 .DS_Store
 .AppleDouble

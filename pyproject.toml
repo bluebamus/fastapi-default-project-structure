@@ -24,6 +24,7 @@ dependencies = [
     "python-dotenv (>=1.0.0,<2.0.0)",
     "tzdata>=2026.2",
     "celery[redis]>=5.4,<6.0",
+    "pymysql>=1.2.0",
 ]
 
 [dependency-groups]
