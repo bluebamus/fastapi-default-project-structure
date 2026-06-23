@@ -35,7 +35,7 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.models.models_base import Base  # noqa: F401 - re-export
-from app.utils.logger import get_logger
+from app.shared.logging import get_logger
 from config import db_settings
 
 logger = get_logger("database")

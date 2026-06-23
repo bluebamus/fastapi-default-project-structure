@@ -4,7 +4,7 @@ Pagination Module
 페이지네이션 관련 Pydantic 스키마와 유틸리티 함수를 정의합니다.
 
 사용 예시:
-    from app.utils.pagination import PaginatedResponse, get_paginated
+    from app.shared.pagination import PaginatedResponse, get_paginated
 
     # 라우터에서 response_model로 사용
     @router.get("/items", response_model=PaginatedResponse[ItemModel])
@@ -43,7 +43,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
         - PaginatedResponse[VideoListItem]
 
     Example:
-        from app.utils.pagination import PaginatedResponse
+        from app.shared.pagination import PaginatedResponse
 
         @router.get("/items", response_model=PaginatedResponse[ItemModel])
         async def get_items(page: int = 1, page_size: int = 20):

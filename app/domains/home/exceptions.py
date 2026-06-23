@@ -5,7 +5,7 @@ Home 도메인에서 발생하는 비즈니스 예외와 에러 코드를 정의
 에러 코드는 Enum으로 중앙 관리하며, 각 예외 클래스가 이를 참조한다.
 
 사용 패턴:
-    from app.home.exceptions import InvalidDateRangeException
+    from app.domains.home.exceptions import InvalidDateRangeException
 
     if start_date > end_date:
         raise InvalidDateRangeException(

@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exception import ErrorResponse
-from app.database.session import get_session
+from app.core.db.session import get_session
 from app.domains.home.unit_of_work import HomeUnitOfWork
 from app.domains.home.schemas.user_access_log_schema import (
     UserAccessLogListResponse,
@@ -30,7 +30,7 @@ from app.domains.home.schemas.user_access_log_schema import (
     AccessLogStats,
 )
 from app.domains.home.services.user_access_log_service import UserAccessLogService
-from app.utils.logger import get_logger
+from app.shared.logging import get_logger
 
 logger = get_logger("home_router")
 
