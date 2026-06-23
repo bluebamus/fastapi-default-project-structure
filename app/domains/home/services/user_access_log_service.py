@@ -18,7 +18,7 @@ from app.domains.home.schemas.user_access_log_schema import (
     BrowserStats,
 )
 from app.core.services.services_base import BaseService
-from app.utils.logger import get_logger
+from app.shared.logging import get_logger
 
 if TYPE_CHECKING:
     from app.domains.home.unit_of_work.home_unit_of_work import HomeUnitOfWork

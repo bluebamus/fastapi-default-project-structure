@@ -11,7 +11,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, String, Text, Integer, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database.session import Base
+from app.core.db.session import Base
 from config import timezone_settings
 
 

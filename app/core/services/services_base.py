@@ -25,7 +25,7 @@ UnitOfWork 패턴을 사용하는 서비스의 기본 클래스입니다.
 
 from typing import Generic, TypeVar
 
-from app.database.unit_of_work import BaseUnitOfWork
+from app.core.db.unit_of_work import BaseUnitOfWork
 
 UoW = TypeVar("UoW", bound=BaseUnitOfWork)
 

@@ -44,10 +44,3 @@ class HomeUnitOfWork(BaseUnitOfWork):
 
     user_access_logs: UserAccessLogRepository
     repositories = {"user_access_logs": UserAccessLogRepository}
-
-
-class HomeBackgroundUnitOfWork(HomeUnitOfWork):
-    """DEPRECATED: HomeUnitOfWork(background=True)를 사용하라. 호환을 위해 유지."""
-
-    def __init__(self, session=None):
-        super().__init__(session, background=True)
