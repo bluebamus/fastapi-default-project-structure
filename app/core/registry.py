@@ -77,3 +77,36 @@ class AppRegistry:
 
         self._apps = sorted(found.values(), key=lambda c: (c.order, c.name))
         return self._apps
+
+    def install_routers(self, app) -> int:
+        count = 0
+        for cfg in self._apps:
+            router = cfg.router()
+            if router is not None:
+                app.include_router(router, prefix=cfg.prefix)
+                count += 1
+        return count
+
+    def import_models(self) -> None:
+        for cfg in self._apps:
+            try:
+                importlib.import_module(f"{cfg.package}.models")
+            except ModuleNotFoundError:
+                continue
+
+    def install_admin(self, admin) -> int:
+        count = 0
+        for cfg in self._apps:
+            for view in cfg.admin_views():
+                admin.add_view(view)
+                count += 1
+        return count
+
+    def celery_packages(self) -> list[str]:
+        return [cfg.package for cfg in self._apps]
+
+    def merged_beat_schedule(self) -> dict:
+        schedule: dict = {}
+        for cfg in self._apps:
+            schedule.update(cfg.beat_schedule())
+        return schedule
