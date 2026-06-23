@@ -44,17 +44,27 @@ class BaseUnitOfWork:
 
     이 클래스는 데이터베이스 세션의 생명주기와 트랜잭션 경계를 관리한다.
     Repository는 포함하지 않으며, 각 도메인별 하위 클래스에서 정의한다.
+    선언적 방식으로 repositories 맵을 정의하면 __aenter__ 시 자동 초기화된다.
 
     이 클래스는 Python의 비동기 컨텍스트 매니저 프로토콜을 구현하여
     async with 구문과 함께 사용할 수 있다.
 
     Attributes:
+        repositories: {attr_name: RepoClass} 맵. 하위 클래스에서 선언하면
+            __aenter__ 시 자동으로 인스턴스화되어 속성으로 설정된다.
         _session: 데이터베이스 세션 인스턴스
         _owns_session: 세션 소유권 여부 (True면 이 인스턴스가 세션을 생성함)
+        _background: True면 BackgroundSessionLocal을 사용한다.
 
     Example:
         이 클래스는 직접 사용하지 않고, 하위 클래스를 통해 사용한다.
 
+        # 선언적 방식 (권장)
+        class HomeUnitOfWork(BaseUnitOfWork):
+            user_access_logs: UserAccessLogRepository
+            repositories = {"user_access_logs": UserAccessLogRepository}
+
+        # 수동 방식 (기존 호환)
         class HomeUnitOfWork(BaseUnitOfWork):
             user_access_logs: UserAccessLogRepository
 
@@ -64,7 +74,9 @@ class BaseUnitOfWork:
                 return self
     """
 
-    def __init__(self, session: AsyncSession | None = None) -> None:
+    repositories: dict[str, type] = {}
+
+    def __init__(self, session: AsyncSession | None = None, *, background: bool = False) -> None:
         """
         BaseUnitOfWork를 초기화한다.
 
@@ -73,22 +85,30 @@ class BaseUnitOfWork:
 
         Args:
             session: 외부에서 주입할 세션. None인 경우 자동 생성한다.
+            background: True면 BackgroundSessionLocal 풀을 사용한다.
         """
         self._session = session
         self._owns_session = session is None
+        self._background = background
 
     async def __aenter__(self) -> Self:
         """
         비동기 컨텍스트 매니저 진입점.
 
-        세션이 주입되지 않은 경우 새 세션을 생성한다.
-        하위 클래스에서는 이 메서드를 오버라이드하여 Repository를 초기화한다.
+        세션이 주입되지 않은 경우 새 세션을 생성한다 (background 플래그에 따라
+        AsyncSessionLocal 또는 BackgroundSessionLocal을 선택한다).
+        repositories 맵에 선언된 Repository를 자동으로 초기화한다.
+        하위 클래스에서는 이 메서드를 오버라이드하여 추가 초기화를 수행할 수 있다.
 
         Returns:
             Self: UnitOfWork 인스턴스 자신
         """
         if self._owns_session:
-            self._session = AsyncSessionLocal()
+            factory = BackgroundSessionLocal if self._background else AsyncSessionLocal
+            self._session = factory()
+
+        for attr, repo_cls in self.repositories.items():
+            setattr(self, attr, repo_cls(self._session))
 
         logger.debug("[BaseUnitOfWork] 컨텍스트 진입")
         return self
@@ -169,28 +189,7 @@ class BaseUnitOfWork:
 
 
 class BaseBackgroundUnitOfWork(BaseUnitOfWork):
-    """
-    백그라운드 태스크용 UnitOfWork 기반 클래스.
+    """백그라운드 풀을 강제하는 얇은 하위 클래스. BaseUnitOfWork(background=True) 사용을 권장하며, Phase 8에서 제거 예정."""
 
-    메인 API 요청과 분리된 커넥션 풀을 사용하여
-    백그라운드 작업이 API 응답 성능에 영향을 주지 않도록 한다.
-
-    주요 사용 사례:
-        - 접속 로그 비동기 저장
-        - 이메일 발송 기록
-        - 통계 데이터 집계
-        - 배치 작업
-    """
-
-    async def __aenter__(self) -> Self:
-        """
-        백그라운드 세션을 사용하여 컨텍스트에 진입한다.
-
-        Returns:
-            Self: UnitOfWork 인스턴스 자신
-        """
-        if self._owns_session:
-            self._session = BackgroundSessionLocal()
-
-        logger.debug("[BaseBackgroundUnitOfWork] 컨텍스트 진입")
-        return self
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        super().__init__(session, background=True)
