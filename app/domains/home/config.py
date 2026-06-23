@@ -1,5 +1,9 @@
 from fastapi import APIRouter
 from app.core.registry import AppConfig
+from app.core.middlewares.access_log_sink import set_access_log_sink
+from app.domains.home.access_log_sink import HomeAccessLogSink
+
+set_access_log_sink(HomeAccessLogSink())
 
 
 class HomeConfig(AppConfig):
