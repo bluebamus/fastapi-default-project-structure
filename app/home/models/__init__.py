@@ -1,7 +1,3 @@
-"""
-Home 모듈 모델
-"""
-
-from app.home.models.models import UserAccessLog
-
-__all__ = ["UserAccessLog"]
+"""DEPRECATED shim. Re-exports from app.domains.home.models."""
+from app.domains.home.models.models import *  # noqa: F401,F403
+from app.domains.home.models.models import UserAccessLog  # noqa: F401

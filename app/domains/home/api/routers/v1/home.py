@@ -23,13 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exception import ErrorResponse
 from app.database.session import get_session
-from app.home.unit_of_work import HomeUnitOfWork
-from app.home.schemas.user_access_log_schema import (
+from app.domains.home.unit_of_work import HomeUnitOfWork
+from app.domains.home.schemas.user_access_log_schema import (
     UserAccessLogListResponse,
     UserAccessLogResponse,
     AccessLogStats,
 )
-from app.home.services.user_access_log_service import UserAccessLogService
+from app.domains.home.services.user_access_log_service import UserAccessLogService
 from app.utils.logger import get_logger
 
 logger = get_logger("home_router")
