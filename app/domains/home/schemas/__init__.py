@@ -2,7 +2,7 @@
 Home 모듈 스키마
 """
 
-from app.home.schemas.user_access_log_schema import (
+from app.domains.home.schemas.user_access_log_schema import (
     UserAccessLogBase,
     UserAccessLogCreate,
     UserAccessLogResponse,
