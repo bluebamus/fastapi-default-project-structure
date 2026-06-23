@@ -19,18 +19,26 @@ def test_middleware_does_not_import_home():
     assert "app.home" not in text and "app.domains.home" not in text
 
 
-def test_sink_registration_roundtrip():
-    """set_access_log_sink / get_access_log_sink roundtrip works."""
+async def test_sink_registration_roundtrip():
+    """set_access_log_sink / get_access_log_sink roundtrip works and delegates calls."""
     from app.core.middlewares.access_log_sink import (
         set_access_log_sink,
         get_access_log_sink,
     )
 
+    original = get_access_log_sink()
+
     calls = []
 
-    class S:
+    class StubSink:
         async def save(self, data: dict) -> None:
             calls.append(data)
 
-    set_access_log_sink(S())
-    assert get_access_log_sink() is not None
+    stub = StubSink()
+    try:
+        set_access_log_sink(stub)
+        assert get_access_log_sink() is stub
+        await get_access_log_sink().save({"x": 1})
+        assert calls == [{"x": 1}]
+    finally:
+        set_access_log_sink(original)
