@@ -154,8 +154,9 @@ fastapi-default-project-structure/
 │
 ├── migrations/                  # Alembic (env.py가 register_models()로 메타데이터 수집)
 └── docs/
-    ├── ARCHITECTURE.md          # 아키텍처 공식 문서
-    └── proposer/index.html      # 설계 결정 근거
+    ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
+    ├── concepts/                # 개념·패턴 심화 해설
+    └── refactoring/             # 변경 기록
 ```
 
 ### 핵심 파일 설명
