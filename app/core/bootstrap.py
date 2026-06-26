@@ -236,7 +236,7 @@ def create_app() -> FastAPI:
     Returns:
         구성이 완료된 FastAPI 앱 인스턴스
     """
-    registry.discover()          # app/domains/* 재귀 스캔(config.py 발견)
+    registry.discover()          # app/domains/* 컨벤션 스캔(디렉터리=앱)
     registry.import_models()     # Base.metadata 채움 (create_db_tables/Alembic 공용)
 
     app = FastAPI(
