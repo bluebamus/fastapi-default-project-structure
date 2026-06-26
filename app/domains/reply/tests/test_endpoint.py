@@ -37,7 +37,7 @@ async def client():
 
 
 def test_reply_auto_registered():
-    """config.py 만으로 reply CRUD 라우터가 자동 발견·마운트된다."""
+    """디렉터리 컨벤션만으로 reply CRUD 라우터가 자동 발견·마운트된다."""
     app = create_app()
     paths = {r.path for r in app.routes}
     assert "/api/v1/reply/replies" in paths

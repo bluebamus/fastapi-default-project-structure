@@ -185,3 +185,7 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
         if m.response_time_ms
         else "-",
     }
+
+
+# 컨벤션: AppRegistry.install_admin 이 이 모듈 레벨 리스트를 SQLAdmin 에 등록한다.
+admin_views: list[type] = [UserAccessLogAdmin]

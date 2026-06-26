@@ -134,8 +134,8 @@ async def create_db_tables() -> None:
     Base.metadata에 등록한 후 테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱을 추가할 때는 config.py 만 두면 AppRegistry 가
-        자동으로 발견합니다(수동 모델 등록 불필요).
+        새로운 도메인 앱은 app/domains/<name>/ 디렉터리 컨벤션만 지키면
+        AppRegistry 가 자동으로 발견합니다(별도 선언/수동 모델 등록 불필요).
     """
     import asyncio
 

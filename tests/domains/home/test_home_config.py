@@ -1,7 +1,7 @@
-"""Home 도메인 등록은 AppRegistry 자동발견(home/config.py)으로 이뤄진다.
+"""Home 도메인 등록은 AppRegistry 컨벤션 자동발견으로 이뤄진다(gen-2).
 
-home/config.py 는 import 시점에 access-log sink 를 등록하고(register_sink),
-HomeConfig(AppConfig) 를 통해 home 라우터를 노출한다.
+home 패키지 __init__.py 가 import 시점에 access-log sink 를 등록하고(register_sink),
+라우터는 컨벤션(home_router)으로 발견된다(별도 config.py 없음).
 """
 
 
@@ -21,11 +21,12 @@ def test_register_sink_installs_home_sink():
         set_access_log_sink(original)
 
 
-def test_registry_discovers_home_router():
+def test_registry_discovers_home_router_by_convention():
     from app.core.registry import AppRegistry
     from app.domains.home.api.routers.router import home_router
 
     apps = AppRegistry().discover()
-    home = next((c for c in apps if c.name == "home"), None)
+    home = next((m for m in apps if m.name == "home"), None)
     assert home is not None
-    assert home.router() is home_router
+    assert home.package == "app.domains.home"
+    assert home.load_router() is home_router
