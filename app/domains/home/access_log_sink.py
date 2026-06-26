@@ -25,7 +25,7 @@ class HomeAccessLogSink(AccessLogSink):
 def register_sink() -> None:
     """Register the Home access-log sink as the active middleware sink.
 
-    Called from ``home/config.py`` (import-time) so that auto-discovery of the
-    home app also wires up access-log persistence.
+    Called from ``home/__init__.py`` (import-time) so that convention discovery
+    of the home app also wires up access-log persistence.
     """
     set_access_log_sink(HomeAccessLogSink())

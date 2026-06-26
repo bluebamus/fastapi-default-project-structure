@@ -1,4 +1,4 @@
-"""Tests for scripts/new_app.py scaffolding generator."""
+"""Tests for scripts/new_app.py scaffolding generator (convention-based, gen-2)."""
 
 
 
@@ -13,19 +13,15 @@ def test_generator_creates_bootable_app(tmp_path, monkeypatch):
     assert (tmp_path / "app/domains/widget/api/routers/router.py").exists()
 
 
-def test_generator_creates_config(tmp_path, monkeypatch):
-    """config.py with an AppConfig subclass is generated for auto-discovery."""
+def test_generator_no_config_py(tmp_path, monkeypatch):
+    """컨벤션 기반이므로 config.py 는 생성하지 않는다(디렉터리=앱 선언)."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "app" / "domains").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    config_path = tmp_path / "app/domains/widget/config.py"
-    assert config_path.exists()
-    config_text = config_path.read_text(encoding="utf-8")
-    assert "class WidgetConfig(AppConfig):" in config_text
-    assert 'name = "widget"' in config_text
+    assert not (tmp_path / "app/domains/widget/config.py").exists()
 
 
 def test_generator_router_is_parameterized(tmp_path, monkeypatch):
@@ -62,31 +58,21 @@ def test_generator_creates_all_required_dirs(tmp_path, monkeypatch):
     assert (base / "dependencies" / "widget_dependencies.py").exists()
 
 
-def test_generator_optional_worker(tmp_path, monkeypatch):
-    """--with-worker flag creates worker/tasks.py."""
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
-    from scripts.new_app import scaffold
-
-    scaffold("widget", root=tmp_path, with_worker=True)
-
-    assert (tmp_path / "app/domains/widget/worker/tasks.py").exists()
-    assert (tmp_path / "app/domains/widget/worker/__init__.py").exists()
-
-
 def test_generator_optional_admin(tmp_path, monkeypatch):
-    """--with-admin flag creates admin.py."""
+    """--with-admin flag creates admin.py with an admin_views list."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "app" / "domains").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, with_admin=True)
 
-    assert (tmp_path / "app/domains/widget/admin.py").exists()
+    admin_path = tmp_path / "app/domains/widget/admin.py"
+    assert admin_path.exists()
+    assert "admin_views" in admin_path.read_text(encoding="utf-8")
 
 
-def test_generator_no_worker_by_default(tmp_path, monkeypatch):
-    """worker/ is NOT created unless with_worker=True."""
+def test_generator_no_worker_dir(tmp_path, monkeypatch):
+    """worker/ 는 더 이상 생성하지 않는다(app/celery 가 대체)."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "app" / "domains").mkdir(parents=True)
     from scripts.new_app import scaffold
