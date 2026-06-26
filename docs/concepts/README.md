@@ -20,3 +20,5 @@
 | 문서 | 작성일 | 요약 |
 |------|--------|------|
 | [session-management-patterns](session-management-patterns-2026-06-23.md) ([HTML](session-management-patterns-2026-06-23.html)) | 2026-06-23 | DB 세션 관리의 두 패턴 — AsyncGenerator(`yield`) vs Context Manager(`UnitOfWork`) 비교와 선택 가이드 |
+| [app-registration-installed-apps](app-registration-installed-apps-2026-06-25.html) (HTML) | 2026-06-25 | `app/apps.py` 수동 등록(Django `INSTALLED_APPS` 대응)의 구현·동작 추적 + Mermaid 도식. **main 기준**(브랜치 `feature/auto-app-discovery` 에서 자동발견으로 대체됨). v1.1 |
+| [auto-discovery-registry](auto-discovery-registry-2026-06-25.html) (HTML) | 2026-06-25 | 1세대 자동발견(`AppConfig`/`AppRegistry`) 설계·흐름 분석 + Mermaid 도식. **브랜치 `feature/auto-app-discovery` 에서 복원되어 현행**. v1.1 |

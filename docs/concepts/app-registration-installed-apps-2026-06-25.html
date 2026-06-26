@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FastAPI의 INSTALLED_APPS 유사 기능 — 구현·동작 추적</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --fg: #1f2328; --muted: #59636e; --bg: #ffffff; --border: #d1d9e0;
+    --code-bg: #f6f8fa; --link: #0969da; --accent: #0969da;
+    --ok-bg: #dafbe1; --ok-fg: #1a7f37; --warn-bg: #fff8c5; --warn-fg: #9a6700;
+    --info-bg: #ddf4ff; --info-fg: #0550ae; --diagram-bg: #fbfdff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117; --border: #30363d;
+      --code-bg: #161b22; --link: #4493f8; --accent: #4493f8;
+      --ok-bg: #12261e; --ok-fg: #3fb950; --warn-bg: #272115; --warn-fg: #d29922;
+      --info-bg: #0c2d4a; --info-fg: #6cb6ff; --diagram-bg: #0f1620;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
+      "Apple SD Gothic Neo", Pretendard, Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6; font-size: 16px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 96px; }
+  h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; margin: 1.6em 0 .6em; scroll-margin-top: 16px; }
+  h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: .2em; }
+  h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  h3 { font-size: 1.25em; }
+  h4 { font-size: 1em; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  p, li { color: var(--fg); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+    font-size: .88em; background: var(--code-bg); padding: .2em .4em; border-radius: 6px;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow: auto; line-height: 1.45;
+  }
+  pre code { background: none; padding: 0; font-size: .85em; white-space: pre; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; display: block; overflow: auto; }
+  th, td { border: 1px solid var(--border); padding: 7px 13px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); font-weight: 600; }
+  tr:nth-child(2n) td { background: var(--code-bg); }
+  blockquote {
+    margin: 14px 0; padding: 0 1em; color: var(--muted);
+    border-left: .25em solid var(--border);
+  }
+  ul, ol { padding-left: 2em; }
+  img { max-width: 100%; }
+  .toc { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 18px; }
+  .doc-note {
+    font-size: .85em; color: var(--muted); border: 1px dashed var(--border);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 24px;
+  }
+  .badge { display: inline-block; font-size: .8em; font-weight: 600; padding: .12em .6em; border-radius: 999px; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok-fg); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-fg); }
+  .callout { border-radius: 8px; padding: 12px 16px 12px 18px; margin: 16px 0; border: 1px solid var(--border); border-left-width: 4px; }
+  .callout.ok { background: var(--ok-bg); border-left-color: var(--ok-fg); }
+  .callout.warn { background: var(--warn-bg); border-left-color: var(--warn-fg); }
+  .callout.info { background: var(--info-bg); border-left-color: var(--info-fg); }
+  .small { font-size: .85em; color: var(--muted); }
+  .filepath { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85em; }
+  .diagram {
+    background: var(--diagram-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; margin: 18px 0; text-align: center; overflow-x: auto;
+  }
+  .diagram .cap { display: block; margin-top: 10px; font-size: .82em; color: var(--muted); text-align: center; }
+  .mermaid { display: flex; justify-content: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="doc-note">
+  <strong>문서 정보</strong> — 버전 <code>v1.1</code> · 생성일 <code>2026-06-25</code> · 최종수정 <code>2026-06-26</code> · 분류 <code>docs/concepts</code> · 형식 단독 HTML(Mermaid 포함)<br>
+  <em>v1.1 (2026-06-26): 브랜치 <code>feature/auto-app-discovery</code> 가 자동발견을 현행으로 복원함에 따라 상단 브랜치-상태 배너와 진화표 3세대 행 추가.</em><br>
+  이 문서는 실제 소스코드와 git 이력을 추적해 작성되었습니다(추측 아님).
+  조사 기준 커밋: <code>e3d5112</code> (main) · 핵심 전환 커밋: <code>07e73b1</code>.
+  코드와 이 문서가 다르면 <strong>코드가 정답</strong>입니다. 권위 문서는 <code>docs/ARCHITECTURE.md</code>.
+</div>
+
+<div class="callout warn">
+  <strong>⚠ 브랜치 상태 (2026-06-26).</strong> 이 문서는 <code>main</code> 기준 분석 스냅샷입니다 — 당시 현행은
+  <code>app/apps.py</code> 수동등록(2세대)이었습니다. 이후 브랜치
+  <code>feature/auto-app-discovery</code> 에서 <strong>1세대 자동발견(AppRegistry)이 현행으로 복원</strong>되고
+  <code>app/apps.py</code> 는 <strong>제거</strong>되었습니다. 따라서 아래 본문의 "현재/2세대/현행" 서술은 <em>main 기준</em>이며,
+  이 브랜치의 실제 현행 메커니즘은 자매 문서
+  <a href="auto-discovery-registry-2026-06-25.html">auto-discovery-registry</a> 가 설명합니다.
+</div>
+
+<h1 id="top">FastAPI의 <code>INSTALLED_APPS</code> 유사 기능 — 구현·동작 추적</h1>
+<p>
+  Django에는 활성 앱을 한곳에 선언하는 <code>INSTALLED_APPS</code>가 있지만 FastAPI에는 그런 내장 개념이 없습니다.
+  이 프로젝트는 이전 요청에 따라 <strong>Django식 앱 등록 구조를 모사</strong>했고, 그 결과물이
+  <code>app/apps.py</code>(앱 수동 등록 SSOT)입니다. 이 문서는 그 구현 내용과 실제 동작 여부를 추적·정리합니다.
+</p>
+
+<div class="callout ok">
+  <strong>결론 요약.</strong> Django <code>INSTALLED_APPS</code>의 역할은 <code>app/apps.py</code> 단일 모듈로 구현되어 있으며,
+  4개 소비처(부트스트랩·Celery·DB세션·Alembic)에 연결되어 <strong>실제로 동작합니다</strong>
+  (등록 테스트 5/5 통과 + 앱 부팅·라우트 마운트·메타데이터 등록 실측 확인).
+  단, 현재 활성 앱은 <code>home</code> 하나뿐이며 <code>blog·reply·sns·user</code>는
+  디스크에만 존재하고 미등록 상태(=비활성)입니다.
+</div>
+
+<h2 id="목차">목차</h2>
+<div class="toc">
+<ul>
+<li><a href="#1-django-vs-fastapi">1. 출발점 — Django <code>INSTALLED_APPS</code> vs FastAPI</a></li>
+<li><a href="#2-진화">2. 진화 추적 — 자동발견 → 명시적 수동등록</a></li>
+<li><a href="#3-구현">3. 현재 구현 — <code>app/apps.py</code> (SSOT)</a></li>
+<li><a href="#4-소비처">4. 소비처 4곳 — 등록이 실제로 쓰이는 지점</a></li>
+<li><a href="#5-매핑">5. Django ↔ 이 프로젝트 개념 매핑</a></li>
+<li><a href="#6-검증">6. 동작 여부 검증 (실측)</a></li>
+<li><a href="#7-발견">7. 주목할 발견 &amp; 설계 트레이드오프</a></li>
+<li><a href="#8-사용법">8. 새 앱을 "INSTALLED_APPS"에 추가하는 법</a></li>
+</ul>
+</div>
+
+<hr />
+
+<h2 id="1-django-vs-fastapi">1. 출발점 — Django <code>INSTALLED_APPS</code> vs FastAPI</h2>
+<p>Django는 프로젝트 부팅 시 <code>settings.INSTALLED_APPS</code>에 나열된 앱들을 스캔하여 모델·admin·관리 명령·시그널 등을 자동 등록합니다. 핵심 속성은 두 가지입니다.</p>
+<ul>
+<li><strong>단일 선언 지점</strong>: "어떤 앱이 활성인가"가 한 리스트에 모인다.</li>
+<li><strong>디스크 존재 ≠ 활성</strong>: 앱 코드가 있어도 리스트에 없으면 로드되지 않는다.</li>
+</ul>
+<p>FastAPI에는 이런 메커니즘이 없습니다. 라우터·모델·태스크를 개발자가 직접 <code>include_router()</code> 등으로 붙여야 합니다. 이 프로젝트는 그 "직접 붙이는 일"을 <strong>한 파일에 모아 SSOT(Single Source of Truth)로 만든 것</strong>이 <code>INSTALLED_APPS</code>에 대응하는 설계입니다.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+    subgraph CONSUMERS["소비처 — app/apps.py 를 읽는 쪽"]
+        BS["bootstrap.create_app()<br/>웹 앱 조립"]
+        CE["celery/app.py<br/>워커·스케줄"]
+        DB["db/session.py<br/>테이블 생성"]
+        AL["migrations/env.py<br/>Alembic"]
+    end
+
+    APPS["app/apps.py<br/>(앱 수동 등록 SSOT)<br/>routers / register_models<br/>admin_views / CELERY_TASK_MODULES"]
+
+    subgraph DOMAINS["도메인 앱"]
+        H["home ✅ 등록됨"]
+        REST["blog · reply · sns · user<br/>(디스크에만 존재, 미등록)"]
+    end
+
+    BS -->|"register_models · routers · admin_views"| APPS
+    CE -->|"CELERY_TASK_MODULES · BEAT_SCHEDULE"| APPS
+    DB -->|"register_models"| APPS
+    AL -->|"register_models"| APPS
+
+    APPS -->|"명시적으로 가리킴"| H
+    APPS -. "리스트에 없음 → 비활성" .-> REST
+
+    classDef cons fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef ssot fill:#fff8c5,stroke:#9a6700,color:#9a6700;
+    classDef on fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    classDef off fill:#f6f8fa,stroke:#959da5,color:#959da5;
+    class BS,CE,DB,AL cons;
+    class APPS ssot;
+    class H on;
+    class REST off;
+</pre>
+<span class="cap">그림 1. 허브 구조 — <code>app/apps.py</code>(SSOT)가 가운데서 소비처와 도메인을 잇는다. 리스트에 적힌 <code>home</code>만 활성, 나머지는 디스크에 있어도 비활성.</span>
+</div>
+
+<hr />
+
+<h2 id="2-진화">2. 진화 추적 — 자동발견 → 명시적 수동등록</h2>
+<p>이 기능은 두 세대를 거쳤습니다. git 이력으로 확인된 전환점은 커밋 <code>07e73b1</code>입니다.</p>
+
+<table>
+<thead>
+<tr><th>세대</th><th>구현</th><th>방식</th><th>상태</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>1세대 (이전)</strong></td>
+  <td><code>app/core/registry.py</code> — <code>AppConfig</code>/<code>AppRegistry</code><br>+ 도메인별 <code>config.py</code></td>
+  <td>Django 모사 <strong>자동 발견</strong>(pkgutil/inspect로 도메인 패키지 스캔). Django <code>AppConfig</code>를 가장 가깝게 흉내.</td>
+  <td>커밋 <code>07e73b1</code>에서 <strong>삭제됨</strong></td>
+</tr>
+<tr>
+  <td><strong>2세대 (main 현행)</strong></td>
+  <td><code>app/apps.py</code> 단일 SSOT</td>
+  <td><strong>명시적 수동 등록</strong>. 스캔 없음. 활성 앱을 리스트/함수에 직접 적는다.</td>
+  <td><span class="badge ok">main 현행</span></td>
+</tr>
+<tr>
+  <td><strong>3세대 (브랜치 현행)</strong></td>
+  <td><code>app/core/registry.py</code> 복원 + 도메인별 <code>config.py</code></td>
+  <td><strong>자동발견 재도입</strong>. <code>app/apps.py</code> 제거. config.py 만 두면 자동 등록(1세대 메커니즘 복원).</td>
+  <td><span class="badge warn">feature/auto-app-discovery</span></td>
+</tr>
+</tbody>
+</table>
+
+<p>전환 커밋의 메시지(요지):</p>
+<blockquote>
+<p><strong>refactor(core): replace auto-discovery with explicit manual app registration</strong></p>
+<p>Remove the Django-style AppConfig/AppRegistry auto-scan (pkgutil/inspect) and register domain apps explicitly in a single SSOT: <code>app/apps.py</code>. … Delete <code>app/core/registry.py</code> and <code>app/domains/home/config.py</code> … Rewire 4 consumers (bootstrap, celery/app, db/session, migrations/env) to import from <code>app.apps</code> instead of running <code>discover()</code> … Celery: drop <code>autodiscover_tasks</code>; use explicit <code>include=CELERY_TASK_MODULES</code>.</p>
+</blockquote>
+<p class="small">즉 "Django식 자동 마법"을 의도적으로 걷어내고, Django <code>INSTALLED_APPS</code>의 <em>명시성</em>만 취한 형태입니다. 자동 스캔(1세대)이 INSTALLED_APPS 동작에 더 가까웠고, 현재(2세대)는 그 <em>선언 리스트</em> 측면을 계승합니다.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    subgraph G1["1세대 — 자동발견 (제거됨)"]
+        direction TB
+        a["app/core/registry.py<br/>AppConfig · AppRegistry<br/>pkgutil/inspect 재귀 스캔<br/>도메인별 config.py"]
+    end
+    subgraph G2["2세대 — 수동등록 (현행)"]
+        direction TB
+        b["app/apps.py<br/>routers() · _MODEL_MODULES<br/>admin_views() · CELERY_TASK_MODULES<br/>명시 리스트, 스캔 없음"]
+    end
+    G1 == "커밋 07e73b1<br/>자동발견 삭제 · 명시성 채택" ==> G2
+
+    classDef old fill:#fff8c5,stroke:#9a6700,color:#9a6700;
+    classDef new fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    class a old;
+    class b new;
+</pre>
+<span class="cap">그림 2. 두 세대의 전환 — "파일을 두면 자동으로 켜짐"에서 "목록에 적어야 켜짐"으로. 자세한 1세대 해부는 <a href="auto-discovery-registry-2026-06-25.html">auto-discovery-registry-2026-06-25.html</a> 참고.</span>
+</div>
+
+<hr />
+
+<h2 id="3-구현">3. 현재 구현 — <code>app/apps.py</code> (SSOT)</h2>
+<p>파일 <span class="filepath">app/apps.py</span>는 네 가지 등록 축을 노출합니다. 각각이 Django 앱 시스템의 한 측면에 대응합니다.</p>
+
+<table>
+<thead>
+<tr><th>심볼</th><th>형태</th><th>등록 대상</th><th>현재 값</th></tr>
+</thead>
+<tbody>
+<tr><td><code>routers()</code></td><td>함수 → <code>list[RouterSpec]</code></td><td>FastAPI 라우터(+prefix)</td><td><code>[home_router @ /api]</code></td></tr>
+<tr><td><code>_MODEL_MODULES</code> + <code>register_models()</code></td><td>리스트 + 함수</td><td>SQLAlchemy 모델 → <code>Base.metadata</code></td><td><code>["app.domains.home.models.models"]</code></td></tr>
+<tr><td><code>admin_views()</code></td><td>함수 → <code>list[type]</code></td><td>SQLAdmin ModelView</td><td><code>[UserAccessLogAdmin]</code></td></tr>
+<tr><td><code>CELERY_TASK_MODULES</code></td><td>리스트</td><td>Celery 태스크 모듈</td><td><code>["app.domains.home.worker.tasks"]</code></td></tr>
+<tr><td><code>BEAT_SCHEDULE</code></td><td>dict</td><td>Celery beat 스케줄</td><td><code>{}</code></td></tr>
+</tbody>
+</table>
+
+<p>핵심 설계 포인트:</p>
+<ul>
+<li><strong>지연 import</strong>: <code>routers()</code>는 함수 내부에서 라우터를 import한다 — 모듈 로드 시점의 부수효과·순환참조를 피하기 위함.</li>
+<li><strong>등록 훅 보존</strong>: <code>routers()</code>는 home 라우터를 반환하기 전에 <code>access_log_sink.register_sink()</code>를 명시 호출한다(1세대 <code>config.py</code> 부수효과를 대체). → "core는 도메인을 모른다" 규칙 유지.</li>
+<li><strong>모델 등록 = import 부수효과</strong>: <code>register_models()</code>가 모델 모듈을 import하면 클래스 정의가 <code>Base.metadata</code>에 채워진다(테이블 생성·Alembic 공용).</li>
+</ul>
+
+<pre><code># app/apps.py (발췌)
+@dataclass(frozen=True)
+class RouterSpec:
+    router: APIRouter
+    prefix: str = "/api"
+
+def routers() -> list[RouterSpec]:
+    from app.domains.home.access_log_sink import register_sink
+    register_sink()                                   # 등록 훅 (core↔domain 분리 유지)
+    from app.domains.home.api.routers.router import home_router
+    return [RouterSpec(router=home_router, prefix="/api")]
+
+_MODEL_MODULES = ["app.domains.home.models.models"]
+def register_models() -> None:
+    for module_path in _MODEL_MODULES:
+        importlib.import_module(module_path)          # import → Base.metadata 채움
+
+def admin_views() -> list[type]:
+    from app.domains.home.admin import UserAccessLogAdmin
+    return [UserAccessLogAdmin]
+
+CELERY_TASK_MODULES = ["app.domains.home.worker.tasks"]
+BEAT_SCHEDULE: dict = {}
+</code></pre>
+
+<hr />
+
+<h2 id="4-소비처">4. 소비처 4곳 — 등록이 실제로 쓰이는 지점</h2>
+<p><code>app/apps.py</code>는 선언일 뿐이고, 실제 "활성화"는 아래 4개 소비처가 이를 읽어 수행합니다. 모두 <code>from app.apps import …</code>로 연결됨을 코드에서 확인했습니다.</p>
+
+<table>
+<thead>
+<tr><th>소비처</th><th>사용 심볼</th><th>하는 일</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><span class="filepath">app/core/bootstrap.py</span><br><code>create_app()</code></td>
+  <td><code>register_models()</code> → <code>routers()</code> → <code>admin_views()</code></td>
+  <td>모델 메타데이터 채우고 → 각 <code>RouterSpec</code>을 <code>app.include_router(spec.router, prefix=spec.prefix)</code>로 마운트 → <code>ADMIN=True</code>면 admin 뷰 등록</td>
+</tr>
+<tr>
+  <td><span class="filepath">app/core/celery/app.py</span></td>
+  <td><code>CELERY_TASK_MODULES</code>, <code>BEAT_SCHEDULE</code></td>
+  <td><code>Celery(..., include=CELERY_TASK_MODULES)</code> + <code>beat_schedule=BEAT_SCHEDULE</code>. <code>autodiscover_tasks</code> 미사용.</td>
+</tr>
+<tr>
+  <td><span class="filepath">app/core/db/session.py</span><br><code>create_db_tables()</code></td>
+  <td><code>register_models()</code></td>
+  <td>DEBUG 부팅 시 모델을 메타데이터에 모은 뒤 <code>Base.metadata.create_all</code> 실행</td>
+</tr>
+<tr>
+  <td><span class="filepath">migrations/env.py</span> (Alembic)</td>
+  <td><code>register_models()</code></td>
+  <td><code>register_models()</code> 호출 후 <code>target_metadata = Base.metadata</code> — autogenerate가 모든 도메인 모델을 인식</td>
+</tr>
+</tbody>
+</table>
+
+<p>웹 서버가 뜰 때(<code>main.py</code> → <code>create_app()</code>) <code>app/apps.py</code>의 등록을 어떤 순서로 소비하는지 시간 축으로 본 그림입니다.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant M as main.py
+    participant BS as bootstrap.create_app()
+    participant APPS as app/apps.py
+    participant APP as FastAPI 인스턴스
+
+    M->>BS: create_app()
+    BS->>APPS: register_models()
+    Note over APPS: _MODEL_MODULES 순회 import<br/>→ Base.metadata 채움
+    BS->>APP: FastAPI(...) 생성
+    BS->>APPS: routers()
+    APPS-->>BS: [RouterSpec(home_router, /api)]
+    Note right of APPS: 반환 전 register_sink() 호출<br/>(access-log sink 등록 훅)
+    BS->>APP: include_router(home_router, prefix="/api")
+    alt ADMIN=True
+        BS->>APPS: admin_views()
+        APPS-->>BS: [UserAccessLogAdmin]
+        BS->>APP: admin.add_view(UserAccessLogAdmin)
+    end
+    BS-->>M: 구성 완료된 app
+</pre>
+<span class="cap">그림 3. 웹 부팅 시퀀스 — <code>register_models</code> → FastAPI 생성 → <code>routers</code>(+sink 훅) → 마운트 → (ADMIN이면) <code>admin_views</code> 등록.</span>
+</div>
+
+<p>웹 부팅은 소비처 중 하나일 뿐입니다. Celery·DB·Alembic은 각자 독립적으로 <code>app/apps.py</code>의 해당 심볼을 읽어갑니다(아래 그림).</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    APPS["app/apps.py (SSOT)"]
+    R["routers()"]
+    M2["register_models()"]
+    A["admin_views()"]
+    C["CELERY_TASK_MODULES<br/>BEAT_SCHEDULE"]
+    APPS --- R & M2 & A & C
+
+    R --> WEB["bootstrap → include_router"]
+    A --> WEB2["bootstrap → admin.add_view"]
+    M2 --> WEB3["bootstrap → metadata"]
+    M2 --> DBC["db/session → create_all"]
+    M2 --> ALE["migrations/env → target_metadata"]
+    C --> CEL["celery/app → include=, beat_schedule"]
+
+    classDef ssot fill:#fff8c5,stroke:#9a6700,color:#9a6700;
+    classDef axis fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    class APPS ssot;
+    class R,M2,A,C axis;
+</pre>
+<span class="cap">그림 4. 4개 등록 축이 어느 소비처로 흘러가는지. <code>register_models()</code>는 웹·DB·Alembic 셋이 공유한다.</span>
+</div>
+
+<hr />
+
+<h2 id="5-매핑">5. Django ↔ 이 프로젝트 개념 매핑</h2>
+<table>
+<thead>
+<tr><th>Django</th><th>이 프로젝트</th><th>비고</th></tr>
+</thead>
+<tbody>
+<tr><td><code>settings.INSTALLED_APPS</code> (활성 앱 목록)</td><td><code>app/apps.py</code> 전체 (SSOT)</td><td>활성 앱을 한곳에 선언</td></tr>
+<tr><td>앱 <code>urls.py</code> + 루트 URLconf</td><td><code>routers()</code> → <code>RouterSpec</code> + <code>bootstrap</code>의 <code>include_router</code></td><td>라우터 마운트</td></tr>
+<tr><td>모델 자동 로드 (앱의 <code>models.py</code>)</td><td><code>_MODEL_MODULES</code> + <code>register_models()</code></td><td>스캔 대신 명시 리스트</td></tr>
+<tr><td>앱 <code>admin.py</code> 자동 등록</td><td><code>admin_views()</code> + SQLAdmin <code>add_view</code></td><td>ModelView 명시 반환</td></tr>
+<tr><td>Celery <code>app.autodiscover_tasks()</code></td><td><code>CELERY_TASK_MODULES</code> (<code>include=</code>)</td><td>autodiscover 대신 명시 모듈</td></tr>
+<tr><td>Celery beat <code>CELERY_BEAT_SCHEDULE</code></td><td><code>BEAT_SCHEDULE</code></td><td>동일 개념</td></tr>
+<tr><td><code>AppConfig</code> (앱별 설정/시그널)</td><td><em>(1세대 <code>config.py</code>에 존재, 현재는 제거)</em> 등록 훅 <code>register_sink()</code>로 축소</td><td>의도적으로 단순화</td></tr>
+<tr><td><code>django-admin startapp</code></td><td><code>scripts/new_app.py</code> (<code>python -m scripts.new_app &lt;name&gt;</code>)</td><td>스캐폴딩만, 자동 등록은 안 함</td></tr>
+</tbody>
+</table>
+
+<hr />
+
+<h2 id="6-검증">6. 동작 여부 검증 (실측)</h2>
+<p>"동작 여부"를 코드 읽기가 아니라 <strong>실제 실행 결과</strong>로 확인했습니다.</p>
+
+<h3>6.1 등록 테스트 — <span class="badge ok">5/5 PASS</span></h3>
+<p><span class="filepath">tests/core/test_apps_registration.py</span> 실행 결과:</p>
+<pre><code>tests/core/test_apps_registration.py::test_routers_includes_home_router            PASSED
+tests/core/test_apps_registration.py::test_routers_registers_access_log_sink       PASSED
+tests/core/test_apps_registration.py::test_register_models_populates_metadata      PASSED
+tests/core/test_apps_registration.py::test_admin_views_includes_user_access_log_admin  PASSED
+tests/core/test_apps_registration.py::test_celery_task_modules_includes_home       PASSED
+============================== 5 passed in 6.49s ==============================</code></pre>
+
+<h3>6.2 앱 부팅 + 등록 결과 실측</h3>
+<p><code>create_app()</code>을 직접 호출해 마운트된 라우트·메타데이터 테이블·등록물을 덤프한 결과:</p>
+<pre><code>ROUTES:       /api/v1/home/access-logs
+              /api/v1/home/access-logs/by-ip/{ip_address}
+              /api/v1/home/access-logs/by-user/{user_id}
+              /api/v1/home/access-logs/recent
+              /api/v1/home/access-logs/stats
+              /health  /docs  /openapi.json
+TABLES:       ['user_access_logs']      # register_models() 가 채움
+ROUTER_SPECS: 1                         # routers()
+ADMIN_VIEWS:  ['UserAccessLogAdmin']    # admin_views()
+CELERY_MODULES: ['app.domains.home.worker.tasks']
+BEAT:         {}</code></pre>
+<div class="callout ok">
+  <strong>판정: 정상 동작.</strong> <code>app/apps.py</code>의 선언이 부팅 시 라우트 마운트·테이블 등록·admin 뷰·Celery 모듈로 모두 반영됩니다.
+  즉 "INSTALLED_APPS에 home을 넣으면 home이 활성화된다"가 실측으로 성립합니다.
+</div>
+
+<hr />
+
+<h2 id="7-발견">7. 주목할 발견 &amp; 설계 트레이드오프</h2>
+
+<div class="callout warn">
+  <strong>발견 — 디스크에 있어도 미등록이면 비활성.</strong>
+  <code>app/domains/</code> 아래에는 <code>home</code> 외에도 <code>blog · reply · sns · user</code> 도메인이
+  라우터·모델 파일과 함께 존재합니다. 하지만 <code>app/apps.py</code>에는 <strong><code>home</code>만 등록</strong>되어 있어
+  나머지는 <strong>마운트되지 않습니다</strong>(라우트·테이블에 나타나지 않음).
+</div>
+<p>
+  이는 버그가 아니라 <strong>Django <code>INSTALLED_APPS</code>와 정확히 동일한 의미론</strong>입니다 —
+  앱 코드가 저장소에 있어도 등록 리스트에 없으면 비활성. 명시적 등록 철학의 자연스러운 귀결입니다.
+  (이 도메인들은 표준 레이아웃을 보여주는 스캐폴드/예시로 남아 있습니다.)
+</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    subgraph DISK["디스크에 존재하는 도메인 (app/domains/*)"]
+        H["home<br/>router + models"]
+        B["blog<br/>router + models"]
+        R["reply<br/>router + models"]
+        S["sns<br/>router + models"]
+        U["user<br/>router + models"]
+    end
+
+    APPS{"app/apps.py<br/>등록 목록"}
+    H --> APPS
+    B -. 미등록 .-> APPS
+    R -. 미등록 .-> APPS
+    S -. 미등록 .-> APPS
+    U -. 미등록 .-> APPS
+
+    APPS ==>|"활성"| LIVE["실행 중인 앱<br/>/api/v1/home/... 마운트<br/>user_access_logs 테이블"]
+    APPS -.->|"비활성"| DEAD["라우트·테이블에<br/>나타나지 않음"]
+
+    classDef on fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    classDef off fill:#f6f8fa,stroke:#959da5,color:#959da5;
+    classDef live fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    class H on;
+    class B,R,S,U off;
+    class LIVE live;
+    class DEAD off;
+</pre>
+<span class="cap">그림 5. "디스크 존재 ≠ 활성." 5개 도메인이 모두 라우터·모델 파일을 갖지만, <code>app/apps.py</code>에 적힌 <code>home</code>만 실제로 살아난다. §6 실측(<code>TABLES: ['user_access_logs']</code>)이 이를 뒷받침.</span>
+</div>
+
+<h3>트레이드오프 정리</h3>
+<table>
+<thead>
+<tr><th>측면</th><th>명시적 수동 등록(현재)</th><th>자동 발견(1세대)</th></tr>
+</thead>
+<tbody>
+<tr><td>활성 앱 가시성</td><td>한 파일에서 전부 보임 ✅</td><td>런타임 스캔 결과라 추적 어려움</td></tr>
+<tr><td>마법/암묵성</td><td>없음 — import·순서가 명시적 ✅</td><td>스캔·import 타이밍 부수효과</td></tr>
+<tr><td>실수 가능성</td><td>등록 누락 시 조용히 비활성 ⚠️</td><td>규약만 지키면 자동</td></tr>
+<tr><td>신규 앱 추가 비용</td><td><code>apps.py</code> 직접 수정 필요</td><td>파일만 두면 됨</td></tr>
+</tbody>
+</table>
+<p class="small">현재 구조의 최대 리스크는 "등록을 빠뜨리면 라우터/모델/Admin/태스크가 조용히 연결되지 않는다"는 점입니다. README와 <code>scripts/new_app.py</code> 출력이 이 단계를 반복 강조하는 이유입니다.</p>
+
+<hr />
+
+<h2 id="8-사용법">8. 새 앱을 "INSTALLED_APPS"에 추가하는 법</h2>
+<p>Django <code>startapp</code> → <code>INSTALLED_APPS</code> 추가 흐름에 대응합니다.</p>
+<ol>
+<li><strong>스캐폴딩 생성</strong> (Django <code>startapp</code> 대응):
+<pre><code>python -m scripts.new_app orders --with-worker --with-admin</code></pre>
+디렉토리/파일만 생성하며 <strong>자동 등록하지 않습니다</strong>(명령이 수동 등록 안내를 출력).</li>
+<li><strong><code>app/apps.py</code>에 수동 등록</strong> (Django <code>INSTALLED_APPS += [...]</code> 대응):
+<pre><code>def routers():
+    ...
+    from app.domains.orders.api.routers.router import orders_router
+    return [..., RouterSpec(router=orders_router, prefix="/api")]
+
+_MODEL_MODULES = [..., "app.domains.orders.models.models"]
+CELERY_TASK_MODULES = [..., "app.domains.orders.worker.tasks"]   # 워커 있으면
+# admin 있으면 admin_views() 에 ModelView 추가</code></pre></li>
+<li><strong>서버 재시작</strong> — 등록된 라우터가 마운트되고 모델이 메타데이터에 들어갑니다.</li>
+</ol>
+
+<div class="callout ok">
+  체크리스트: <code>routers()</code> ✓ · <code>_MODEL_MODULES</code> ✓ · (선택) <code>admin_views()</code> · (선택) <code>CELERY_TASK_MODULES</code> / <code>BEAT_SCHEDULE</code>.
+  하나라도 빠뜨리면 그 축만 조용히 비활성화됩니다.
+</div>
+
+<hr />
+<h2 id="부록">부록 — 추적에 사용한 근거</h2>
+<ul>
+<li>구현: <span class="filepath">app/apps.py</span>, <span class="filepath">app/core/bootstrap.py</span>, <span class="filepath">app/core/celery/app.py</span>, <span class="filepath">app/core/db/session.py</span>, <span class="filepath">migrations/env.py</span></li>
+<li>스캐폴딩: <span class="filepath">scripts/new_app.py</span></li>
+<li>테스트: <span class="filepath">tests/core/test_apps_registration.py</span> (5/5 통과)</li>
+<li>진화 이력: git 커밋 <code>07e73b1</code> "replace auto-discovery with explicit manual app registration"</li>
+<li>관련 문서: <span class="filepath">README.md</span>(§핵심 구성·신규 모듈 개발 가이드), <span class="filepath">docs/ARCHITECTURE.md</span></li>
+</ul>
+
+<p class="small" style="margin-top:32px">
+  <strong>검사 범위 한정.</strong> 본 문서는 등록 메커니즘의 구현·연결·부팅 동작을 다룹니다.
+  런타임 요청 처리·DB I/O·Celery 워커 실제 실행은 검증 범위 밖입니다.
+  잔여 리스크: 등록 누락 시 조용한 비활성화(§7) — 정적 검사로 강제되지 않음.
+</p>
+
+</div>
+<script>
+  const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: dark ? 'dark' : 'default',
+    securityLevel: 'loose',
+    flowchart: { curve: 'basis', useMaxWidth: true },
+    sequence: { useMaxWidth: true }
+  });
+</script>
+</body>
+</html>
