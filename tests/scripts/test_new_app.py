@@ -13,15 +13,19 @@ def test_generator_creates_bootable_app(tmp_path, monkeypatch):
     assert (tmp_path / "app/domains/widget/api/routers/router.py").exists()
 
 
-def test_generator_does_not_create_config(tmp_path, monkeypatch):
-    """No config.py is generated; apps are registered manually in app/apps.py."""
+def test_generator_creates_config(tmp_path, monkeypatch):
+    """config.py with an AppConfig subclass is generated for auto-discovery."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "app" / "domains").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    assert not (tmp_path / "app/domains/widget/config.py").exists()
+    config_path = tmp_path / "app/domains/widget/config.py"
+    assert config_path.exists()
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "class WidgetConfig(AppConfig):" in config_text
+    assert 'name = "widget"' in config_text
 
 
 def test_generator_router_is_parameterized(tmp_path, monkeypatch):
