@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.repositories.repository_base import BaseRepository
 from app.domains.home.models.models import UserAccessLog
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 
 logger = get_logger("user_access_log_repository")
 
