@@ -33,7 +33,7 @@ from typing import Self
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import AsyncSessionLocal, BackgroundSessionLocal
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 
 logger = get_logger("unit_of_work")
 

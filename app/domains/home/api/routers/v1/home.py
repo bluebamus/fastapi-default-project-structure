@@ -30,7 +30,7 @@ from app.domains.home.schemas.user_access_log_schema import (
 )
 from app.domains.home.services.user_access_log_service import UserAccessLogService
 from app.domains.home.unit_of_work import HomeUnitOfWork
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 
 logger = get_logger("home_router")
 

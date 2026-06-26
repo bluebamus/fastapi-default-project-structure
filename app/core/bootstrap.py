@@ -20,7 +20,7 @@ from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.registry import AppRegistry
 from app.core.tags_metadata import tags_metadata
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 from config import app_settings
 
 logger = get_logger("bootstrap")
