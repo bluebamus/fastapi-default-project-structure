@@ -31,6 +31,7 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
 
 import time
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -104,6 +105,26 @@ BackgroundSessionLocal = async_sessionmaker(
 )
 
 
+@asynccontextmanager
+async def background_session() -> AsyncGenerator[AsyncSession, None]:
+    """요청 밖(백그라운드 태스크·Celery)에서 사용하는 세션 컨텍스트.
+
+    요청 스코프 DI(get_session)를 쓸 수 없는 곳에서 트랜잭션 경계를 제공한다.
+    예외 시 롤백하고, 컨텍스트 종료 시 세션을 닫는다. 커밋은 호출자가 명시한다.
+
+    Example:
+        async with background_session() as session:
+            await SomeService(session).do_write()
+            await session.commit()
+    """
+    async with BackgroundSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+
 async def create_db_tables() -> None:
     """
     데이터베이스 테이블을 생성합니다.
@@ -154,7 +175,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     Note:
         - 세션은 요청 범위(request scope)로 관리됩니다
         - 한 요청 내에서 여러 번 호출해도 같은 세션을 반환하지 않습니다
-        - 트랜잭션 관리는 UnitOfWork 패턴 사용을 권장합니다
+        - 트랜잭션 경계는 기능 의존성(dependencies)이 yield 후 커밋으로 관리합니다
     """
     start_time = time.perf_counter()
     pool = engine.pool
@@ -208,7 +229,7 @@ async def get_background_session() -> AsyncGenerator[AsyncSession, None]:
 
     Note:
         - 메인 API 풀과 분리되어 있어 백그라운드 작업이 API를 블로킹하지 않습니다
-        - BackgroundUnitOfWork 사용을 권장합니다
+        - 요청 밖 트랜잭션 경계는 background_session() 컨텍스트 사용을 권장합니다
     """
     start_time = time.perf_counter()
     pool = background_engine.pool
