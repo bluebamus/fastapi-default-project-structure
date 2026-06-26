@@ -37,7 +37,7 @@ from sqlalchemy.sql import Select
 
 from app.core.exception import DatabaseException, DuplicateException, NotFoundException
 from app.core.repositories.crud_base import CRUDBase, ModelType
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 
 logger = get_logger("repository")
 

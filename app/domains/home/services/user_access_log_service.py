@@ -19,7 +19,7 @@ from app.domains.home.schemas.user_access_log_schema import (
     OSStats,
     UserAccessLogCreate,
 )
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 
 if TYPE_CHECKING:
     pass
