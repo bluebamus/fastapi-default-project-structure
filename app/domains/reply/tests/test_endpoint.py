@@ -1,36 +1,102 @@
-"""Reply 최소 API 엔드포인트 테스트 (AppRegistry 자동 등록 포함)."""
-from fastapi.testclient import TestClient
+"""Reply CRUD 엔드포인트 테스트.
+
+AppRegistry 자동 등록 + view→dependency→service→repository→DB 전체 경로를
+in-memory sqlite(get_session 오버라이드)로 검증한다.
+"""
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.core.bootstrap import create_app
+from app.core.db.session import Base, get_session
+from app.domains.reply.models.models import Reply  # noqa: F401  (register table)
 
-app = create_app()
-client = TestClient(app)
+
+@pytest_asyncio.fixture
+async def client():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _override_get_session():
+        async with maker() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_session] = _override_get_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    await engine.dispose()
 
 
 def test_reply_auto_registered():
-    """config.py 만으로 reply 라우터가 자동 발견·마운트된다."""
+    """config.py 만으로 reply CRUD 라우터가 자동 발견·마운트된다."""
+    app = create_app()
     paths = {r.path for r in app.routes}
-    assert "/api/v1/reply/ping" in paths
-    assert "/api/v1/reply/echo" in paths
+    assert "/api/v1/reply/replies" in paths
+    assert "/api/v1/reply/replies/{reply_id}" in paths
 
 
-def test_reply_ping():
-    resp = client.get("/api/v1/reply/ping")
+async def test_create_and_get_reply(client):
+    resp = await client.post(
+        "/api/v1/reply/replies",
+        json={"content": "좋은 글이네요", "author": "lee", "post_id": "p1"},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["content"] == "좋은 글이네요"
+    assert body["id"]
+    reply_id = body["id"]
+
+    got = await client.get(f"/api/v1/reply/replies/{reply_id}")
+    assert got.status_code == 200
+    assert got.json()["post_id"] == "p1"
+
+
+async def test_list_replies(client):
+    await client.post("/api/v1/reply/replies", json={"content": "a"})
+    await client.post("/api/v1/reply/replies", json={"content": "b"})
+
+    resp = await client.get("/api/v1/reply/replies")
     assert resp.status_code == 200
-    assert resp.json() == {"app": "reply", "status": "ok"}
+    assert resp.json()["total"] == 2
 
 
-def test_reply_echo():
-    resp = client.post("/api/v1/reply/echo", json={"message": "hello"})
+async def test_update_reply(client):
+    created = await client.post("/api/v1/reply/replies", json={"content": "old"})
+    reply_id = created.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/reply/replies/{reply_id}", json={"content": "new"}
+    )
     assert resp.status_code == 200
-    assert resp.json() == {"app": "reply", "message": "hello"}
+    assert resp.json()["content"] == "new"
 
 
-def test_reply_echo_rejects_empty_message():
-    resp = client.post("/api/v1/reply/echo", json={"message": ""})
-    assert resp.status_code == 422
+async def test_delete_reply(client):
+    created = await client.post("/api/v1/reply/replies", json={"content": "c"})
+    reply_id = created.json()["id"]
+
+    resp = await client.delete(f"/api/v1/reply/replies/{reply_id}")
+    assert resp.status_code == 204
+
+    got = await client.get(f"/api/v1/reply/replies/{reply_id}")
+    assert got.status_code == 404
 
 
-def test_reply_echo_rejects_missing_message():
-    resp = client.post("/api/v1/reply/echo", json={})
+async def test_get_missing_reply_returns_404(client):
+    resp = await client.get("/api/v1/reply/replies/nonexistent-id")
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "REPLY_NOT_FOUND"
+
+
+async def test_create_rejects_empty_content(client):
+    resp = await client.post("/api/v1/reply/replies", json={"content": ""})
     assert resp.status_code == 422
