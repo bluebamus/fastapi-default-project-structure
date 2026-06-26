@@ -24,6 +24,23 @@ from zoneinfo import ZoneInfo
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# =============================================================================
+# 설치된 앱 (수동 등록 — main 브랜치)
+# =============================================================================
+# Django 의 INSTALLED_APPS 와 동일한 개념. AppRegistry 가 이 "앱 이름" 목록을 읽어
+# app/domains/<name> 을 컨벤션(라우터/모델/Admin)으로 결선한다.
+# 목록의 순서가 곧 로드 순서다(수동 등록의 장점 — 명시적 순서 제어).
+#
+# 새 앱 추가: app/domains/<name>/ 를 만들고 아래 목록에 이름을 추가한다.
+# (feature 브랜치는 이 목록 없이 app/domains/* 를 자동 스캔한다 — 동일한 결선 로직 공유.)
+INSTALLED_APPS: list[str] = [
+    "home",
+    "blog",
+    "reply",
+    "sns",
+    "user",
+]
+
 
 # =============================================================================
 # 타임존 설정

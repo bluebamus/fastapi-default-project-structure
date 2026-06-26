@@ -1,13 +1,15 @@
 from fastapi import FastAPI
 
-from app.core.registry import AppRegistry
+from app.core.registry import AppModule, AppRegistry
 
 
 def test_install_routers_mounts_by_convention():
     """alpha 는 alpha_router(컨벤션)를 가지므로 /api 에 마운트되고, beta 는 건너뛴다."""
     reg = AppRegistry()
-    reg.discover(package="tests.core._fakeapps")
-
+    reg._apps = [
+        AppModule(name="alpha", package="tests.core._fakeapps.alpha"),
+        AppModule(name="beta", package="tests.core._fakeapps.beta"),
+    ]
     app = FastAPI()
     count = reg.install_routers(app)
     assert count == 1                          # alpha 만 라우터 보유
@@ -18,7 +20,7 @@ def test_install_routers_mounts_by_convention():
 def test_import_models_skips_apps_without_models():
     """models 패키지가 없어도 예외 없이 통과한다."""
     reg = AppRegistry()
-    reg.discover(package="tests.core._fakeapps")
+    reg._apps = [AppModule(name="alpha", package="tests.core._fakeapps.alpha")]
     assert reg.import_models() is None         # 예외 없이 None 반환
 
 
@@ -33,7 +35,7 @@ def test_install_admin_collects_admin_views():
             self.collected.append(view)
 
     reg = AppRegistry()
-    reg.discover(package="tests.core._fakeapps")
+    reg._apps = [AppModule(name="beta", package="tests.core._fakeapps.beta")]
     stub = _StubAdmin()
     count = reg.install_admin(stub)
     assert count == 2                          # beta 가 ViewA, ViewB 제공
