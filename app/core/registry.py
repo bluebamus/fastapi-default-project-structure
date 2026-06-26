@@ -11,13 +11,12 @@
 
 브랜치 차이는 오직 "앱 목록의 출처"뿐이다:
     - feature(자동): discover() 가 app/domains/* 를 스캔해 목록을 만든다.
-    - main(수동):    discover() 가 config.INSTALLED_APPS 목록을 읽는다.
+    - main(수동):    discover() 가 config.INSTALLED_APPS 목록을 읽는다.  ← 이 브랜치
 결선(install_routers/import_models/install_admin)은 두 브랜치가 동일하게 공유한다.
 """
 from __future__ import annotations
 
 import importlib
-import pkgutil
 from dataclasses import dataclass
 
 from fastapi import APIRouter
@@ -84,29 +83,26 @@ class AppRegistry:
         return self._apps
 
     def discover(self, package: str = DOMAINS_PACKAGE) -> list[AppModule]:
-        """`package` 직계 하위의 도메인 앱을 발견한다(컨벤션 스캔).
+        """`config.INSTALLED_APPS` 목록을 읽어 도메인 앱을 등록한다(수동 등록).
 
-        앱 = `package` 바로 아래의 서브패키지(언더스코어로 시작하지 않는 것).
-        발견된 각 앱 패키지를 import 하여 import-time 부수효과(__init__.py)를 실행하고,
-        이름 알파벳순으로 정렬해 보관한다.
+        앱 = INSTALLED_APPS 에 나열된 이름. `package`(기본 app.domains) 하위에서
+        `<package>.<name>` 패키지로 매핑한다. 목록 순서를 그대로 보존하여(정렬 없음)
+        명시적 로드 순서 제어를 제공한다. 각 앱 패키지를 import 하여 import-time
+        부수효과(__init__.py, 예: home 의 sink 등록)를 실행한다.
 
-        main 브랜치에서는 이 메서드만 INSTALLED_APPS 기반으로 교체한다.
+        feature 브랜치는 이 메서드만 app/domains/* 자동 스캔으로 교체하고,
+        결선 로직(install_routers/import_models/install_admin)은 동일하게 공유한다.
         """
-        root = importlib.import_module(package)
-        names: list[str] = []
-        for info in pkgutil.iter_modules(root.__path__):
-            if not info.ispkg or info.name.startswith("_"):
-                continue
-            names.append(info.name)
+        from config import INSTALLED_APPS
 
-        apps = [AppModule(name=name, package=f"{package}.{name}") for name in sorted(names)]
+        apps = [AppModule(name=name, package=f"{package}.{name}") for name in INSTALLED_APPS]
 
         # import-time 부수효과(예: home 의 access-log sink 등록)를 위해 패키지 import
         for app in apps:
             importlib.import_module(app.package)
 
         self._apps = apps
-        logger.debug("discovered %d apps: %s", len(apps), [a.name for a in apps])
+        logger.debug("installed %d apps: %s", len(apps), [a.name for a in apps])
         return self._apps
 
     def install_routers(self, app) -> int:

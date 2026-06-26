@@ -130,12 +130,12 @@ async def create_db_tables() -> None:
     데이터베이스 테이블을 생성합니다.
 
     애플리케이션 시작 시 lifespan에서 호출됩니다.
-    AppRegistry 자동발견(discover→import_models)을 통해 모든 앱의 모델을
-    Base.metadata에 등록한 후 테이블을 생성합니다.
+    AppRegistry(discover→import_models)를 통해 INSTALLED_APPS 에 등록된 모든 앱의
+    모델을 Base.metadata에 등록한 후 테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱은 app/domains/<name>/ 디렉터리 컨벤션만 지키면
-        AppRegistry 가 자동으로 발견합니다(별도 선언/수동 모델 등록 불필요).
+        새로운 도메인 앱은 app/domains/<name>/ 를 만들고 config.INSTALLED_APPS 에
+        이름을 추가하면 라우터/모델이 컨벤션으로 결선됩니다(수동 등록).
     """
     import asyncio
 
