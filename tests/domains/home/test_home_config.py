@@ -1,7 +1,7 @@
-"""Home domain registration is now done explicitly in app/apps.py.
+"""Home 도메인 등록은 AppRegistry 자동발견(home/config.py)으로 이뤄진다.
 
-The former home/config.py AppConfig was removed; the home-domain side effect
-(access-log sink registration) lives in access_log_sink.register_sink().
+home/config.py 는 import 시점에 access-log sink 를 등록하고(register_sink),
+HomeConfig(AppConfig) 를 통해 home 라우터를 노출한다.
 """
 
 
@@ -21,8 +21,11 @@ def test_register_sink_installs_home_sink():
         set_access_log_sink(original)
 
 
-def test_apps_routers_includes_home():
-    from app.apps import routers
+def test_registry_discovers_home_router():
+    from app.core.registry import AppRegistry
     from app.domains.home.api.routers.router import home_router
 
-    assert any(spec.router is home_router for spec in routers())
+    apps = AppRegistry().discover()
+    home = next((c for c in apps if c.name == "home"), None)
+    assert home is not None
+    assert home.router() is home_router
