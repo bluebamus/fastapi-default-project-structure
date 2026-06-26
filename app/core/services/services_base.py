@@ -1,71 +1,45 @@
-"""
-기본 서비스 클래스
+"""기본 서비스 클래스.
 
-UnitOfWork 패턴을 사용하는 서비스의 기본 클래스입니다.
+세션을 주입받아 비즈니스 로직을 처리하는 모든 도메인 Service의 공통 기반.
 
-이 모듈은 모든 도메인의 Service가 상속받는 범용 기반 클래스를 제공한다.
-도메인별 폴더가 아닌 core 모듈에 위치하여 도메인 간 의존성 없이 공유할 수 있다.
-
-설계 원칙:
-    - BaseService는 도메인에 속하지 않는 공통 인프라 클래스이다
-    - 모든 도메인의 Service가 이 클래스를 상속받아 UoW 주입 패턴을 사용한다
-    - Service는 UoW를 통해 트랜잭션을 제어할 수 있다
-    - 의존성 방향: 도메인 Service -> core BaseService -> database BaseUnitOfWork
+설계 원칙 (UnitOfWork 제거 후):
+    - Service 는 AsyncSession 을 주입받는다(트랜잭션 경계는 의존성/컨텍스트가 관리).
+    - 데이터 접근은 Service 가 session 으로 생성한 Repository 를 통해 수행한다.
+    - LoggerMixin 을 상속하여 self.log 로 클래스명이 주입된 로거를 쓴다(방식 C).
 
 사용 패턴:
-    class UserAccessLogService(BaseService[HomeUnitOfWork]):
-        def __init__(self, uow: HomeUnitOfWork) -> None:
-            super().__init__(uow)
+    class UserAccessLogService(BaseService):
+        def __init__(self, session: AsyncSession) -> None:
+            super().__init__(session)
+            self.repository = UserAccessLogRepository(session)
 
-        async def create_with_audit(self, data: dict) -> UserAccessLog:
-            log = await self.uow.user_access_logs.create(data)
-            await self.uow.commit()  # Service에서 트랜잭션 제어
-            return log
+        async def list(self, skip: int, limit: int):
+            self.log.debug("목록 조회 skip=%s limit=%s", skip, limit)
+            return await self.repository.get_all(skip=skip, limit=limit)
 """
 
-from typing import Generic, TypeVar
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.unit_of_work import BaseUnitOfWork
-
-UoW = TypeVar("UoW", bound=BaseUnitOfWork)
+from app.utils.logs import LoggerMixin
 
 
-class BaseService(Generic[UoW]):
-    """
-    기본 서비스 클래스
+class BaseService(LoggerMixin):
+    """세션 주입 기반 서비스 공통 클래스.
 
-    UnitOfWork를 주입받아 비즈니스 로직을 처리합니다.
-    데이터 접근은 UoW의 Repository를 통해 수행합니다.
-    트랜잭션 제어(commit/rollback)는 Service에서 담당합니다.
-
-    Type Parameters:
-        UoW: BaseUnitOfWork를 상속한 UnitOfWork 타입
+    트랜잭션 커밋/롤백은 호출하는 의존성(요청) 또는 background_session(비요청)이
+    경계를 책임진다. Service 는 필요 시 commit()/rollback() 헬퍼를 쓸 수 있다.
 
     Attributes:
-        uow: 트랜잭션 및 Repository 접근을 위한 UnitOfWork
+        session: 비동기 데이터베이스 세션
     """
 
-    def __init__(self, uow: UoW) -> None:
-        """
-        BaseService 초기화
-
-        Args:
-            uow: 트랜잭션 및 Repository 접근을 위한 UnitOfWork
-        """
-        self.uow = uow
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
 
     async def commit(self) -> None:
-        """
-        현재 트랜잭션을 커밋합니다.
-
-        Service 메서드 내에서 데이터 변경 후 호출합니다.
-        """
-        await self.uow.commit()
+        """현재 트랜잭션을 커밋한다(보통 의존성/컨텍스트가 대신 수행)."""
+        await self.session.commit()
 
     async def rollback(self) -> None:
-        """
-        현재 트랜잭션을 롤백합니다.
-
-        예외 발생 시 또는 명시적 롤백이 필요할 때 호출합니다.
-        """
-        await self.uow.rollback()
+        """현재 트랜잭션을 롤백한다."""
+        await self.session.rollback()
