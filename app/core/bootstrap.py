@@ -1,7 +1,7 @@
 """
 FastAPI 애플리케이션 팩토리 모듈
 
-app/apps.py 에 명시적으로 등록된 도메인 앱(라우터/모델/Admin)으로 FastAPI 앱을 생성합니다.
+AppRegistry 자동발견으로 도메인 앱(라우터/모델/Admin)을 찾아 FastAPI 앱을 생성합니다.
 """
 
 from collections.abc import AsyncGenerator
@@ -14,16 +14,17 @@ from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.apps import admin_views, register_models, routers
 from app.core.db.session import create_db_tables, dispose_engine, engine
 from app.core.exception import AppException, ErrorResponse, ValidationException
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
+from app.core.registry import AppRegistry
 from app.core.tags_metadata import tags_metadata
 from app.shared.logging import get_logger
 from config import app_settings
 
 logger = get_logger("bootstrap")
+registry = AppRegistry()
 
 
 @asynccontextmanager
@@ -230,12 +231,13 @@ def _add_health_and_docs(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     """
-    app/apps.py 의 명시적 등록을 사용하여 FastAPI 앱을 생성합니다.
+    AppRegistry 자동발견을 사용하여 FastAPI 앱을 생성합니다.
 
     Returns:
         구성이 완료된 FastAPI 앱 인스턴스
     """
-    register_models()            # Base.metadata 채움 (create_db_tables/Alembic 공용)
+    registry.discover()          # app/domains/* 재귀 스캔(config.py 발견)
+    registry.import_models()     # Base.metadata 채움 (create_db_tables/Alembic 공용)
 
     app = FastAPI(
         title=app_settings.PROJECT_NAME,
@@ -263,11 +265,9 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
     logger.info("글로벌 예외 핸들러 설정 완료")
 
-    # 라우터 등록
-    specs = routers()
-    for spec in specs:
-        app.include_router(spec.router, prefix=spec.prefix)
-    logger.info("registered %d app routers", len(specs))
+    # 라우터 등록 (자동발견된 각 앱의 router())
+    n = registry.install_routers(app)
+    logger.info("registered %d app routers", n)
 
     # 헬스체크 + Scalar 문서
     _add_health_and_docs(app)
@@ -277,8 +277,7 @@ def create_app() -> FastAPI:
         from sqladmin import Admin
 
         admin = Admin(app, engine, title=f"{app_settings.PROJECT_NAME} Admin")
-        for view in admin_views():
-            admin.add_view(view)
+        registry.install_admin(admin)
         logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
     else:
         logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")

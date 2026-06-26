@@ -2,8 +2,8 @@
 scripts/new_app.py — FastAPI app scaffolding generator.
 
 Django-style ``startapp`` equivalent for a uv-based FastAPI project that uses
-explicit (manual) app registration. Each new app must be wired up by hand in
-``app/apps.py`` (router, models, admin views, Celery package).
+registry auto-discovery. Each new app exposes a ``config.py`` with an
+``AppConfig`` subclass; AppRegistry discovers it at boot — no central edits.
 
 Usage (CLI):
     python -m scripts.new_app <name> [--category domain] [--with-worker] [--with-admin]
@@ -22,6 +22,29 @@ import pathlib
 # ---------------------------------------------------------------------------
 # Template constants
 # ---------------------------------------------------------------------------
+
+_CONFIG_TMPL = '''\
+"""
+{Class} 도메인 앱 자기선언(AppConfig).
+
+AppRegistry 가 부팅 시 이 모듈을 자동 발견하여 라우터/모델/Admin 을 연결한다.
+admin/worker 를 쓰면 admin_views()/beat_schedule() 훅을 아래에 추가한다.
+"""
+from fastapi import APIRouter
+
+from app.core.registry import AppConfig
+
+
+class {Class}Config(AppConfig):
+    name = "{name}"
+    category = "{category}"
+    prefix = "/api"
+    order = 100
+
+    def router(self) -> APIRouter:
+        from app.domains.{name}.api.routers.router import {name}_router
+        return {name}_router
+'''
 
 _ROUTER_TMPL = '''\
 """
@@ -127,15 +150,14 @@ def scaffold(
     Args:
         name: Snake-case app name (e.g. ``"orders"``).
         root: Project root directory (the one containing ``app/``).
-        category: Reserved for compatibility; no longer affects output.
+        category: AppConfig ``category`` written into the generated config.py.
         with_worker: If True, create ``worker/tasks.py``.
         with_admin: If True, create ``admin.py``.
 
     Note:
-        The generated app is NOT auto-discovered. After scaffolding, register
-        it manually in ``app/apps.py`` (router, models, admin, Celery package).
+        The generated app IS auto-discovered via its ``config.py`` — AppRegistry
+        picks it up at boot. No central-file edits required.
     """
-    del category  # reserved for backward compatibility; unused
     class_name = "".join(part.capitalize() for part in name.split("_"))
     base = root / "app" / "domains" / name
 
@@ -151,6 +173,10 @@ def scaffold(
     (base / "__init__.py").touch()
 
     # Core files
+    (base / "config.py").write_text(
+        _CONFIG_TMPL.format(name=name, Class=class_name, category=category),
+        encoding="utf-8",
+    )
     (base / "api" / "routers" / "router.py").write_text(
         _ROUTER_TMPL.format(name=name, Class=class_name),
         encoding="utf-8",
@@ -221,12 +247,13 @@ if __name__ == "__main__":
         with_admin=args.with_admin,
     )
     name = args.name
+    class_name = "".join(part.capitalize() for part in name.split("_"))
     print(f"created app/domains/{name}")
     print()
-    print("다음 단계: app/apps.py 에 이 앱을 수동으로 등록하세요.")
-    print(f"  - routers(): app.domains.{name}.api.routers.router 의 {name}_router 를 RouterSpec 으로 추가")
-    print(f"  - register_models(): _MODEL_MODULES 에 \"app.domains.{name}.models.models\" 추가")
+    print("이 앱은 config.py 로 자동 발견됩니다 — app/apps.py 등 중앙 파일 수정 불필요.")
+    print(f"  - config.py: {class_name}Config(AppConfig) 가 생성됨(라우터 자동 연결)")
     if args.with_admin:
-        print(f"  - admin_views(): app.domains.{name}.admin 의 ModelView 클래스 추가")
+        print("  - admin: config.py 에 admin_views() 훅을 추가해 ModelView 를 노출하세요")
     if args.with_worker:
-        print(f"  - CELERY_TASK_MODULES: \"app.domains.{name}.worker.tasks\" 추가 (필요 시 BEAT_SCHEDULE 도)")
+        print("  - worker: worker/tasks.py 의 태스크는 autodiscover_tasks 가 자동 등록(필요 시 config.py 에 beat_schedule())")
+    print("  - 서버 재시작 시 /api 경로에 라우터가 마운트됩니다")

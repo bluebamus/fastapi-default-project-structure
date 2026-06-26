@@ -1,15 +1,17 @@
 from celery import Celery
 
-from app.apps import BEAT_SCHEDULE, CELERY_TASK_MODULES
+from app.core.registry import AppRegistry
 from config import redis_settings
 
-# 태스크 모듈은 app/apps.py 의 CELERY_TASK_MODULES 에 명시적으로 등록한다.
-# include= 로 전달하면 Celery 가 해당 모듈을 import 하여 태스크를 등록한다(autodiscover 미사용).
+# 태스크는 AppRegistry 자동발견으로 등록한다.
+# autodiscover_tasks 가 각 도메인 패키지의 worker/tasks.py 를 import 하여 태스크를 등록한다.
+registry = AppRegistry()
+registry.discover()
+
 celery_app = Celery(
     "project",
     broker=redis_settings.REDIS_URL,
     backend=redis_settings.REDIS_URL,
-    include=CELERY_TASK_MODULES,
 )
 celery_app.conf.update(
     task_track_started=True,
@@ -18,5 +20,8 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="Asia/Seoul",
     enable_utc=False,
-    beat_schedule=BEAT_SCHEDULE,
+    beat_schedule=registry.merged_beat_schedule(),
 )
+_packages = registry.celery_packages()
+celery_app.conf["__autodiscover_packages__"] = _packages
+celery_app.autodiscover_tasks(_packages, related_name="worker.tasks")
