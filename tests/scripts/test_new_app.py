@@ -58,7 +58,8 @@ def test_generator_creates_all_required_dirs(tmp_path, monkeypatch):
     assert (base / "repositories" / "__init__.py").exists()
     assert (base / "tests" / "__init__.py").exists()
     assert (base / "api" / "routers" / "v1" / "__init__.py").exists()
-    assert (base / "unit_of_work.py").exists()
+    assert (base / "dependencies" / "__init__.py").exists()
+    assert (base / "dependencies" / "widget_dependencies.py").exists()
 
 
 def test_generator_optional_worker(tmp_path, monkeypatch):

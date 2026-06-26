@@ -60,38 +60,39 @@ from fastapi import APIRouter
 {name}_router = APIRouter()
 '''
 
-_UOW_TMPL = '''\
+_DEPS_TMPL = '''\
 """
-{Class} domain UnitOfWork.
+{Class} 기능 의존성 (인터페이스 집합체).
 
-Declare domain repositories in the ``repositories`` map; BaseUnitOfWork
-will initialise them automatically on ``async with``.
+services 의 기능 클래스를 session 으로 생성·결합해 view 에 제공한다.
+yield 후 성공 시 커밋 — 트랜잭션 경계를 담당한다(UnitOfWork 대체).
 
-Example:
-    class {Class}UnitOfWork(BaseUnitOfWork):
-        items: ItemRepository
-        repositories = {{"items": ItemRepository}}
+예시:
+    from collections.abc import AsyncGenerator
+    from fastapi import Depends
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.core.db.session import get_session
+    from app.domains.{name}.services.{name}_service import {Class}Service
+
+    async def get_{name}_service(
+        session: AsyncSession = Depends(get_session),
+    ) -> AsyncGenerator[{Class}Service, None]:
+        service = {Class}Service(session)
+        yield service
+        await session.commit()
 """
-
-from app.core.db.unit_of_work import BaseUnitOfWork
-
-
-class {Class}UnitOfWork(BaseUnitOfWork):
-    """Declarative UnitOfWork for the {name} domain."""
-
-    repositories: dict = {{}}
 '''
 
 _TASKS_TMPL = '''\
 """
 {Class} domain Celery tasks.
 
-Register tasks here. For recurring schedules, add entries to BEAT_SCHEDULE
-in app/apps.py.
+Register tasks here. For recurring schedules, add entries to the central
+beat schedule in app/celery.
 """
 
-from app.core.celery.app import celery_app
-from app.core.celery.task import run_async
+from app.celery.app import celery_app
+from app.celery.task import run_async
 
 
 @celery_app.task(name="{name}.example_task")
@@ -129,6 +130,7 @@ _REQUIRED_DIRS = [
     "schemas",
     "services",
     "repositories",
+    "dependencies",
     "tests",
 ]
 
@@ -181,8 +183,8 @@ def scaffold(
         _ROUTER_TMPL.format(name=name, Class=class_name),
         encoding="utf-8",
     )
-    (base / "unit_of_work.py").write_text(
-        _UOW_TMPL.format(name=name, Class=class_name),
+    (base / "dependencies" / f"{name}_dependencies.py").write_text(
+        _DEPS_TMPL.format(name=name, Class=class_name),
         encoding="utf-8",
     )
 

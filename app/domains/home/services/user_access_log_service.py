@@ -1,17 +1,20 @@
 """
 UserAccessLog Service
 
-접속 로그 관련 비즈니스 로직을 처리합니다.
-UnitOfWork 패턴을 사용하여 트랜잭션을 관리합니다.
+접속 로그 관련 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
+트랜잭션 경계(commit/rollback)는 호출하는 의존성 또는 background_session 이 책임진다.
 """
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.services.services_base import BaseService
 from app.domains.home.exceptions import InvalidDateRangeException
 from app.domains.home.models.models import UserAccessLog
+from app.domains.home.repositories.user_access_log_repository import UserAccessLogRepository
 from app.domains.home.schemas.user_access_log_schema import (
     AccessLogStats,
     BrowserStats,
@@ -19,115 +22,39 @@ from app.domains.home.schemas.user_access_log_schema import (
     OSStats,
     UserAccessLogCreate,
 )
-from app.utils.logs import get_logger
-
-if TYPE_CHECKING:
-    pass
-
-logger = get_logger("user_access_log_service")
 
 
-class UserAccessLogService(BaseService["HomeUnitOfWork"]):
-    """
-    UserAccessLog Service
+class UserAccessLogService(BaseService):
+    """접속 로그 비즈니스 로직 (세션 기반)."""
 
-    접속 로그 관련 비즈니스 로직을 처리합니다.
-    BaseService를 상속받아 UoW 패턴을 사용합니다.
-
-    Attributes:
-        uow: HomeUnitOfWork 인스턴스
-
-    Example:
-        async with HomeUnitOfWork(session) as uow:
-            service = UserAccessLogService(uow)
-            log = await service.create_access_log(data)
-            # commit은 Service 내부에서 또는 명시적으로 호출
-    """
-
-    @property
-    def repository(self):
-        """
-        UserAccessLogRepository에 대한 편의 프로퍼티
-
-        Returns:
-            UserAccessLogRepository 인스턴스
-        """
-        return self.uow.user_access_logs
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__(session)
+        self.repository = UserAccessLogRepository(session)
 
     async def create_access_log(
         self,
         data: UserAccessLogCreate | dict[str, Any],
-        auto_commit: bool = True,
     ) -> UserAccessLog:
-        """
-        접속 로그를 생성합니다.
-
-        Args:
-            data: 생성할 접속 로그 데이터
-            auto_commit: 자동 커밋 여부 (기본값: True)
-
-        Returns:
-            생성된 UserAccessLog
-        """
-        request_path = data.get("request_path") if isinstance(data, dict) else data.request_path
-        logger.debug(f"[1/3] 접속 로그 생성 시작: path={request_path}")
-
-        if isinstance(data, UserAccessLogCreate):
-            data_dict = data.model_dump()
-        else:
-            data_dict = data
-
-        log = await self.repository.create(data_dict)
-        logger.debug(f"[2/3] 접속 로그 생성 완료: id={log.id}")
-
-        if auto_commit:
-            await self.commit()
-            logger.debug("[3/3] 트랜잭션 커밋 완료")
-
-        return log
+        """접속 로그를 생성한다(커밋은 호출자가 수행)."""
+        data_dict = data.model_dump() if isinstance(data, UserAccessLogCreate) else data
+        self.log.debug("접속 로그 생성: path=%s", data_dict.get("request_path"))
+        return await self.repository.create(data_dict)
 
     async def get_access_logs(
         self,
         skip: int = 0,
         limit: int = 100,
     ) -> tuple[Sequence[UserAccessLog], int]:
-        """
-        접속 로그 목록을 조회합니다.
-
-        Args:
-            skip: 건너뛸 레코드 수
-            limit: 최대 조회 수
-
-        Returns:
-            (UserAccessLog 리스트, 전체 개수) 튜플
-        """
-        logger.debug(f"[1/2] 접속 로그 목록 조회 시작: skip={skip}, limit={limit}")
-
+        """접속 로그 목록과 전체 개수를 조회한다."""
+        self.log.debug("접속 로그 목록 조회: skip=%s, limit=%s", skip, limit)
         logs = await self.repository.get_all(skip=skip, limit=limit)
         total = await self.repository.count()
-
-        logger.debug(f"[2/2] 접속 로그 목록 조회 완료: count={len(logs)}, total={total}")
         return logs, total
 
-    async def get_recent_logs(
-        self,
-        limit: int = 50,
-    ) -> Sequence[UserAccessLog]:
-        """
-        최근 접속 로그를 조회합니다.
-
-        Args:
-            limit: 최대 조회 수
-
-        Returns:
-            UserAccessLog 리스트
-        """
-        logger.debug(f"[1/2] 최근 접속 로그 조회 시작: limit={limit}")
-
-        logs = await self.repository.get_recent_logs(limit=limit)
-
-        logger.debug(f"[2/2] 최근 접속 로그 조회 완료: count={len(logs)}")
-        return logs
+    async def get_recent_logs(self, limit: int = 50) -> Sequence[UserAccessLog]:
+        """최근 접속 로그를 조회한다."""
+        self.log.debug("최근 접속 로그 조회: limit=%s", limit)
+        return await self.repository.get_recent_logs(limit=limit)
 
     async def get_logs_by_ip(
         self,
@@ -135,27 +62,9 @@ class UserAccessLogService(BaseService["HomeUnitOfWork"]):
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[UserAccessLog]:
-        """
-        IP 주소로 접속 로그를 조회합니다.
-
-        Args:
-            ip_address: IP 주소
-            skip: 건너뛸 레코드 수
-            limit: 최대 조회 수
-
-        Returns:
-            UserAccessLog 리스트
-        """
-        logger.debug(f"[1/2] IP별 접속 로그 조회 시작: ip={ip_address}")
-
-        logs = await self.repository.get_by_ip(
-            ip_address=ip_address,
-            skip=skip,
-            limit=limit,
-        )
-
-        logger.debug(f"[2/2] IP별 접속 로그 조회 완료: count={len(logs)}")
-        return logs
+        """IP 주소로 접속 로그를 조회한다."""
+        self.log.debug("IP별 접속 로그 조회: ip=%s", ip_address)
+        return await self.repository.get_by_ip(ip_address=ip_address, skip=skip, limit=limit)
 
     async def get_logs_by_user(
         self,
@@ -163,27 +72,9 @@ class UserAccessLogService(BaseService["HomeUnitOfWork"]):
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[UserAccessLog]:
-        """
-        사용자 ID로 접속 로그를 조회합니다.
-
-        Args:
-            user_id: 사용자 ID
-            skip: 건너뛸 레코드 수
-            limit: 최대 조회 수
-
-        Returns:
-            UserAccessLog 리스트
-        """
-        logger.debug(f"[1/2] 사용자별 접속 로그 조회 시작: user_id={user_id}")
-
-        logs = await self.repository.get_by_user_id(
-            user_id=user_id,
-            skip=skip,
-            limit=limit,
-        )
-
-        logger.debug(f"[2/2] 사용자별 접속 로그 조회 완료: count={len(logs)}")
-        return logs
+        """사용자 ID로 접속 로그를 조회한다."""
+        self.log.debug("사용자별 접속 로그 조회: user_id=%s", user_id)
+        return await self.repository.get_by_user_id(user_id=user_id, skip=skip, limit=limit)
 
     async def get_logs_by_date_range(
         self,
@@ -192,80 +83,27 @@ class UserAccessLogService(BaseService["HomeUnitOfWork"]):
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[UserAccessLog]:
-        """
-        날짜 범위로 접속 로그를 조회합니다.
-
-        Args:
-            start_date: 시작 날짜
-            end_date: 종료 날짜
-            skip: 건너뛸 레코드 수
-            limit: 최대 조회 수
-
-        Returns:
-            UserAccessLog 리스트
-
-        Raises:
-            InvalidDateRangeException: 시작 날짜가 종료 날짜보다 늦은 경우
-        """
-        # 날짜 범위 유효성 검증
+        """날짜 범위로 접속 로그를 조회한다."""
         if start_date > end_date:
-            logger.warning(f"[VALIDATION] 잘못된 날짜 범위: start={start_date}, end={end_date}")
+            self.log.warning("잘못된 날짜 범위: start=%s end=%s", start_date, end_date)
             raise InvalidDateRangeException(
                 detail={"start_date": str(start_date), "end_date": str(end_date)},
             )
-
-        logger.debug(f"[1/2] 날짜 범위 접속 로그 조회 시작: {start_date} ~ {end_date}")
-
-        logs = await self.repository.get_by_date_range(
-            start_date=start_date,
-            end_date=end_date,
-            skip=skip,
-            limit=limit,
+        self.log.debug("날짜 범위 접속 로그 조회: %s ~ %s", start_date, end_date)
+        return await self.repository.get_by_date_range(
+            start_date=start_date, end_date=end_date, skip=skip, limit=limit
         )
 
-        logger.debug(f"[2/2] 날짜 범위 접속 로그 조회 완료: count={len(logs)}")
-        return logs
-
     async def get_stats(self) -> AccessLogStats:
-        """
-        접속 로그 통계를 조회합니다.
-
-        Returns:
-            AccessLogStats
-        """
-        logger.debug("[1/4] 접속 로그 통계 조회 시작")
-
-        # 전체 개수
+        """접속 로그 통계를 조회한다."""
+        self.log.debug("접속 로그 통계 조회 시작")
         total_count = await self.repository.count()
-        logger.debug(f"[2/4] 전체 개수: {total_count}")
-
-        # 장치 유형별 통계
         device_counts = await self.repository.count_by_device_type()
-        device_types = [
-            DeviceTypeStats(device_type=k, count=v)
-            for k, v in device_counts.items()
-        ]
-        logger.debug("[3/4] 장치 유형별 통계 완료")
-
-        # OS별 통계
         os_counts = await self.repository.count_by_os()
-        os_list = [
-            OSStats(os_name=k, count=v)
-            for k, v in os_counts.items()
-        ]
-
-        # 브라우저별 통계
         browser_counts = await self.repository.count_by_browser()
-        browsers = [
-            BrowserStats(browser_name=k, count=v)
-            for k, v in browser_counts.items()
-        ]
-
-        logger.debug("[4/4] 접속 로그 통계 조회 완료")
-
         return AccessLogStats(
             total_count=total_count,
-            device_types=device_types,
-            os_list=os_list,
-            browsers=browsers,
+            device_types=[DeviceTypeStats(device_type=k, count=v) for k, v in device_counts.items()],
+            os_list=[OSStats(os_name=k, count=v) for k, v in os_counts.items()],
+            browsers=[BrowserStats(browser_name=k, count=v) for k, v in browser_counts.items()],
         )
