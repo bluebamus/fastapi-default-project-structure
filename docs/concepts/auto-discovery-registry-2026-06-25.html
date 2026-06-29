@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>1세대 자동발견(Auto-Discovery) 레지스트리 — 설계·동작·흐름 분석</title>
+<title>feature 브랜치 설계 — 컨벤션 기반 자동 발견(Auto-Discovery)</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
   :root {
@@ -11,6 +11,7 @@
     --code-bg: #f6f8fa; --link: #0969da; --accent: #0969da;
     --ok-bg: #dafbe1; --ok-fg: #1a7f37; --warn-bg: #fff8c5; --warn-fg: #9a6700;
     --info-bg: #ddf4ff; --info-fg: #0550ae; --diagram-bg: #fbfdff;
+    --def-bg: #f3eefe; --def-fg: #6639ba;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -18,6 +19,7 @@
       --code-bg: #161b22; --link: #4493f8; --accent: #4493f8;
       --ok-bg: #12261e; --ok-fg: #3fb950; --warn-bg: #272115; --warn-fg: #d29922;
       --info-bg: #0c2d4a; --info-fg: #6cb6ff; --diagram-bg: #0f1620;
+      --def-bg: #1d1530; --def-fg: #b083f0;
     }
   }
   * { box-sizing: border-box; }
@@ -25,14 +27,14 @@
     margin: 0; background: var(--bg); color: var(--fg);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
       "Apple SD Gothic Neo", Pretendard, Roboto, Helvetica, Arial, sans-serif;
-    line-height: 1.7; font-size: 16px;
+    line-height: 1.6; font-size: 16px;
   }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 24px 96px; }
-  h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; margin: 1.8em 0 .6em; scroll-margin-top: 16px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 96px; }
+  h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; margin: 1.6em 0 .6em; scroll-margin-top: 16px; }
   h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: .2em; }
   h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
   h3 { font-size: 1.25em; }
-  h4 { font-size: 1.02em; color: var(--muted); }
+  h4 { font-size: 1em; }
   a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
   p, li { color: var(--fg); }
@@ -43,29 +45,34 @@
   }
   pre {
     background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
-    padding: 14px 16px; overflow: auto; line-height: 1.5;
+    padding: 14px 16px; overflow: auto; line-height: 1.45;
   }
   pre code { background: none; padding: 0; font-size: .85em; white-space: pre; }
   table { border-collapse: collapse; width: 100%; margin: 14px 0; display: block; overflow: auto; }
-  th, td { border: 1px solid var(--border); padding: 8px 13px; text-align: left; vertical-align: top; }
+  th, td { border: 1px solid var(--border); padding: 7px 13px; text-align: left; vertical-align: top; }
   th { background: var(--code-bg); font-weight: 600; }
   tr:nth-child(2n) td { background: var(--code-bg); }
-  blockquote { margin: 14px 0; padding: 0 1em; color: var(--muted); border-left: .25em solid var(--border); }
-  ul, ol { padding-left: 1.6em; }
-  li { margin: .25em 0; }
+  blockquote {
+    margin: 14px 0; padding: 0 1em; color: var(--muted);
+    border-left: .25em solid var(--border);
+  }
+  ul, ol { padding-left: 2em; }
   img { max-width: 100%; }
-  .toc { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 22px; }
+  .toc { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 18px; }
   .doc-note {
     font-size: .85em; color: var(--muted); border: 1px dashed var(--border);
     border-radius: 8px; padding: 10px 14px; margin-bottom: 24px;
   }
   .badge { display: inline-block; font-size: .8em; font-weight: 600; padding: .12em .6em; border-radius: 999px; }
-  .badge.gone { background: var(--warn-bg); color: var(--warn-fg); }
+  .badge.ok { background: var(--ok-bg); color: var(--ok-fg); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-fg); }
+  .badge.main { background: var(--info-bg); color: var(--info-fg); }
+  .badge.feature { background: var(--def-bg); color: var(--def-fg); }
   .callout { border-radius: 8px; padding: 12px 16px 12px 18px; margin: 16px 0; border: 1px solid var(--border); border-left-width: 4px; }
   .callout.ok { background: var(--ok-bg); border-left-color: var(--ok-fg); }
   .callout.warn { background: var(--warn-bg); border-left-color: var(--warn-fg); }
   .callout.info { background: var(--info-bg); border-left-color: var(--info-fg); }
-  .callout.def { background: var(--code-bg); border-left-color: var(--accent); }
+  .callout.def { background: var(--def-bg); border-left-color: var(--def-fg); }
   .small { font-size: .85em; color: var(--muted); }
   .filepath { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85em; }
   .diagram {
@@ -74,622 +81,701 @@
   }
   .diagram .cap { display: block; margin-top: 10px; font-size: .82em; color: var(--muted); text-align: center; }
   .mermaid { display: flex; justify-content: center; }
-  .step-num {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--accent); color: #fff;
-    font-size: .8em; font-weight: 700; margin-right: .4em;
-  }
 </style>
 </head>
 <body>
 <div class="wrap">
 <div class="doc-note">
-  <strong>문서 정보</strong> — 버전 <code>v1.1</code> · 생성일 <code>2026-06-25</code> · 최종수정 <code>2026-06-26</code> · 분류 <code>docs/concepts</code> · 형식 단독 HTML(Mermaid 포함)<br>
-  <em>v1.1 (2026-06-26): 브랜치 <code>feature/auto-app-discovery</code> 에서 이 자동발견이 현행으로 복원됨에 따라 상단 상태 배너 추가.</em><br>
-  이 문서가 해부하는 코드는 <code>main</code> 에는 없으나(커밋 <code>07e73b1</code>에서 삭제) <strong>이 브랜치에서 복원되어 현행으로 동작</strong>합니다.
-  모든 코드 인용은 git 이력 <code>07e73b1^</code>(삭제 직전 스냅샷) 및 복원본에서 가져온 <strong>실제 소스</strong>이며 추측이 아닙니다.
+  <strong>문서 정보</strong> — 버전 <code>v2.0</code> · 생성일 <code>2026-06-25</code> · 최종수정 <code>2026-06-29</code> · 분류 <code>docs/concepts</code> · 형식 단독 HTML(Mermaid 포함)<br>
+  <em>v2.0 (2026-06-29): 전면 재작성. "삭제된 1세대 자동발견의 복원 분석"이라는 과거 프레이밍을 폐기하고, 현행 <strong>feature 브랜치</strong>의 <strong>gen-2 컨벤션 기반 자동 발견</strong>(앱별 <code>config.py</code> 제거, 디렉터리 스캔)을 기준으로 새로 정리. 앱 생성·자동 발견·라우터 결선·앱 간 참조·서비스 클래스·DI 주입을 도식과 함께 설명.</em><br>
+  기준 커밋: <code>feature/auto-app-discovery @ c03b9c8</code>. 코드와 이 문서가 다르면 <strong>코드가 정답</strong>입니다.
 </div>
-
-<div class="callout ok">
-  <strong>✅ 브랜치 상태 (2026-06-26).</strong> 이 문서가 해부하는 자동발견은 <code>main</code> 에서는 제거된 상태였으나,
-  브랜치 <code>feature/auto-app-discovery</code> 에서 <strong>현행 메커니즘으로 복원</strong>되었습니다
-  (<code>app/core/registry.py</code> 재도입 · 각 도메인 <code>config.py</code> 자동 등록 · <code>app/apps.py</code> 제거 · 테스트 43개 통과).
-  따라서 아래 본문의 "제거됨 / 사라진 / 현재 저장소에 없음" 표현은 <em>main 기준</em> 서술이며, 이 브랜치에서는 모두 <strong>복원·현행</strong>입니다.
-</div>
-
-<h1 id="top">1세대 자동발견(Auto-Discovery) 레지스트리 <span class="badge gone">main 제거 → 브랜치 복원</span></h1>
-<p>
-  이 프로젝트는 한때 <strong>Django식 "앱 자동발견"</strong> 구조를 갖고 있었습니다. 각 도메인 앱이 스스로를 선언하면,
-  부팅 시 중앙 레지스트리가 <code>app/domains/</code> 아래를 <strong>재귀 스캔</strong>해서 라우터·모델·Admin·Celery 태스크를
-  자동으로 연결하는 방식이었습니다. 즉 <strong>새 앱을 추가할 때 중앙 파일을 한 줄도 고칠 필요가 없는</strong> 설계였습니다.
-</p>
-<p>
-  이후 이 자동발견은 명시적 수동등록(<code>app/apps.py</code>)으로 교체되었습니다(전환 분석은 자매 문서
-  <a href="app-registration-installed-apps-2026-06-25.html"><code>app-registration-installed-apps-2026-06-25.html</code></a> 참고). 이 문서는 <strong>사라진 1세대가
-  정확히 어떻게 설계·동작했는지</strong>를 도식과 함께 복원·정리합니다.</p>
 
 <div class="callout info">
-  <strong>한 문장 요약.</strong> 두 개의 클래스 <code>AppConfig</code>(각 도메인의 자기선언)와
-  <code>AppRegistry</code>(스캐너)가 핵심이었고, <code>pkgutil.walk_packages</code>로 도메인 트리를 훑어
-  <code>config.py</code> 안의 <code>AppConfig</code> 하위 클래스를 모아 4개 소비처(웹·Celery·DB·Alembic)에 흘려보냈습니다.
+  <strong>이 문서의 범위.</strong> 이 문서는 <span class="badge feature">feature 브랜치</span> 의 <strong>자동 발견(Auto-Discovery)</strong> 설계를 다룹니다.
+  앱을 어디에도 "등록"하지 않고, <code>app/domains/</code> 디렉터리에 폴더가 존재하는 것만으로 자동 활성화하는 "convention over configuration" 방식입니다.
+  명시적 목록(<code>INSTALLED_APPS</code>) 방식은 자매 문서
+  <a href="app-registration-installed-apps-2026-06-25.html">app-registration-installed-apps</a>(<span class="badge main">main 브랜치</span>)가 다룹니다.
+  두 브랜치는 <strong>앱 목록을 얻는 방법(<code>discover()</code>)만 다르고, 그 뒤의 결선·서비스·DI 구조는 완전히 동일</strong>합니다.
+</div>
+
+<h1 id="top">feature 브랜치 설계 — 컨벤션 기반 자동 발견</h1>
+<p>
+  자동 발견(Auto-Discovery)은 개발자가 "이 앱을 켜라"라고 어디에도 <em>적지 않아도</em>, 부팅 시점에 프로그램이 디렉터리를 뒤져 앱을 <strong>스스로 찾아내는</strong> 방식입니다.
+  이 프로젝트의 <strong>feature 브랜치</strong>는 <code>app/domains/</code> 바로 아래의 하위 패키지를 모두 앱으로 간주하고, 이름 기반 컨벤션으로 라우터·모델·Admin을 자동 결선합니다.
+  새 앱을 추가할 때 <strong>중앙 파일을 한 줄도 고치지 않습니다</strong>.
+</p>
+<p>
+  핵심을 한 줄로 요약하면 이렇습니다. <strong>"앱을 켜는 일(등록)"과 "켜진 앱을 연결하는 일(결선)"을 모두 규칙이 자동으로 한다.</strong>
+  사람은 약속된 디렉터리 구조와 이름만 지키면 됩니다. 이 문서는 그 자동 발견이 어떻게 동작하는지, 그리고 그 위에서 라우터·서비스·DI가 어떻게 조립되는지를 끝까지 따라갑니다.
+</p>
+
+<div class="callout ok">
+  <strong>결론 요약.</strong>
+  <code>AppRegistry.discover()</code> 가 부팅 시 <code>app/domains/*</code> 직계 하위 패키지를 <strong>스캔</strong>(언더스코어 디렉터리 제외, 알파벳순)하여 각 앱을 발견합니다.
+  앱별 <code>config.py</code> 나 <code>AppConfig</code> 선언은 <strong>없습니다</strong>(gen-2). 발견 이후 라우터는 <code>/api/v1/&lt;name&gt;</code> 에 마운트되고,
+  각 요청은 <strong>View → Service → Repository → DB</strong> 계층을 타며, 트랜잭션 경계는 <strong>의존성(dependency)</strong> 이 <code>yield</code> 후 커밋으로 책임집니다(UnitOfWork 제거).
 </div>
 
 <h2 id="toc">목차</h2>
 <div class="toc">
 <ul>
-<li><a href="#용어">0. 먼저 — 핵심 용어 정의</a></li>
-<li><a href="#큰그림">1. 큰 그림 — 무엇이 무엇과 연결되었나</a></li>
-<li><a href="#appconfig">2. <code>AppConfig</code> — 도메인의 "자기소개서"</a></li>
-<li><a href="#appregistry">3. <code>AppRegistry</code> — 스캐너이자 설치 기사</a></li>
-<li><a href="#discover">4. <code>discover()</code>의 내부 — 자동발견의 심장</a></li>
-<li><a href="#boot">5. 부팅 흐름 — 웹 앱이 뜨기까지(시퀀스)</a></li>
-<li><a href="#consumers">6. 4개 소비처 — 같은 레지스트리, 네 방향</a></li>
-<li><a href="#example">7. 손으로 따라가는 예시 — <code>home</code>이 등록되는 전 과정</a></li>
-<li><a href="#newapp">8. 새 앱 추가 — "중앙 편집 0회"의 의미</a></li>
-<li><a href="#why">9. 왜 제거되었나 — 자동발견의 그림자</a></li>
-<li><a href="#부록">부록 — 복원에 사용한 근거</a></li>
+<li><a href="#0-gen">0. 두 세대 — 무엇이 "gen-2"인가</a></li>
+<li><a href="#1-bigpicture">1. 큰 그림 — 자동 발견의 흐름</a></li>
+<li><a href="#2-anatomy">2. 앱의 해부학 — 디렉터리가 곧 선언</a></li>
+<li><a href="#3-create">3. 앱을 만드는 절차 — 폴더만 만들면 끝</a></li>
+<li><a href="#4-registry">4. 발견 메커니즘 — discover()의 내부</a></li>
+<li><a href="#5-router">5. 라우터 등록 흐름 — 경로는 어떻게 합성되나</a></li>
+<li><a href="#6-layers">6. 계층 아키텍처 — View·Service·Repository</a></li>
+<li><a href="#7-di">7. DI 결합·주입 — 트랜잭션 경계는 의존성이 책임진다</a></li>
+<li><a href="#8-refs">8. 앱 간 참조 — 무엇을 공유하고 무엇을 격리하나</a></li>
+<li><a href="#9-boot">9. 전체 부팅 시퀀스 (end-to-end)</a></li>
+<li><a href="#10-newapp">10. 새 앱을 추가하는 실전 가이드</a></li>
+<li><a href="#11-compare">11. feature(자동) ↔ main(수동) 비교</a></li>
 </ul>
 </div>
 
 <hr />
 
-<h2 id="용어">0. 먼저 — 핵심 용어 정의</h2>
-<p>이 문서를 편하게 읽기 위한 5개 용어입니다.</p>
+<h2 id="0-gen">0. 두 세대 — 무엇이 "gen-2"인가</h2>
+<p>
+  이 프로젝트의 자동 발견은 두 세대를 거쳤습니다. 두 세대 모두 "자동"이지만, <strong>앱이 자신을 어떻게 드러내는가</strong>가 다릅니다.
+</p>
 
+<table>
+<thead><tr><th>세대</th><th>앱의 자기 선언</th><th>발견 방식</th><th>상태</th></tr></thead>
+<tbody>
+<tr><td><strong>gen-1 (이전)</strong></td><td>앱마다 <code>config.py</code> 에 <code>AppConfig</code> 하위 클래스</td><td><code>config.py</code> 모듈을 스캔해 <code>AppConfig</code> 수집</td><td>대체됨</td></tr>
+<tr><td><strong>gen-2 (현행)</strong></td><td><strong>선언 없음</strong> — 디렉터리 구조가 곧 선언</td><td><code>app/domains/*</code> 패키지 자체를 스캔</td><td><span class="badge ok">현행</span></td></tr>
+</tbody>
+</table>
+<p>
+  gen-1은 Django의 <code>AppConfig</code> 를 가장 충실히 흉내 낸 형태였습니다. 각 앱이 <code>config.py</code> 에 "나는 이런 앱이고 내 라우터는 여기 있다"라고 적었고, 레지스트리가 그 선언을 모았습니다.
+  gen-2는 한 발 더 나아가 그 선언마저 없앴습니다. <strong>"디렉터리가 있으면 그게 앱"</strong>이라는 컨벤션으로 바꾼 것입니다. 그 결과 앱마다 반복되던 <code>config.py</code> 보일러플레이트가 사라졌습니다.
+</p>
 <div class="callout def">
-<strong>자동발견(Auto-Discovery).</strong> 개발자가 "이 앱을 켜라"라고 어딘가에 <em>적지 않아도</em>, 프로그램이
-실행 시점에 디렉토리를 뒤져 앱을 <em>스스로 찾아내는</em> 방식. 반대말은 "수동 등록(명시적 목록에 직접 추가)".
-</div>
-<div class="callout def">
-<strong>레지스트리(Registry).</strong> 발견한 앱들을 모아두고 "라우터 설치", "모델 import" 같은 작업을 대신 실행해 주는
-중앙 객체. 여기서는 <code>AppRegistry</code> 클래스.
-</div>
-<div class="callout def">
-<strong>AppConfig.</strong> 각 도메인 앱이 "나는 이런 앱이고, 내 라우터·Admin은 여기 있다"라고 적어두는 <em>자기소개 클래스</em>.
-Django의 <code>apps.py</code> 안 <code>AppConfig</code>와 같은 역할. 도메인의 <code>config.py</code>에 들어 있었습니다.
-</div>
-<div class="callout def">
-<strong>훅(Hook) 메서드.</strong> 베이스가 비워둔 채 "필요하면 하위 클래스가 채워라"라고 열어 둔 메서드.
-예: <code>router()</code>는 기본값이 <code>None</code>이고, 라우터가 있는 앱만 오버라이드.
-</div>
-<div class="callout def">
-<strong>소비처(Consumer).</strong> 레지스트리가 모은 정보를 실제로 <em>사용하는</em> 코드. 1세대에는 4곳이 있었습니다 —
-웹 부트스트랩, Celery 앱, DB 테이블 생성, Alembic 마이그레이션.
+  <strong>왜 gen-2로 갔나.</strong> main 브랜치의 수동 등록은 <code>INSTALLED_APPS = [이름]</code> 입니다 — <em>이름</em>만 있습니다.
+  그 이름만으로 라우터를 연결하려면 결국 <strong>이름 기반 컨벤션</strong>(<code>&lt;name&gt;_router</code> 등)이 필요합니다. 그런데 결선을 이름 컨벤션으로 통일하고 나면, gen-1의 <code>config.py</code> 선언은 더 이상 필요가 없어집니다.
+  feature는 그 컨벤션을 그대로 쓰되 "이름 목록"을 <em>스캔으로</em> 채울 뿐입니다. 그래서 두 브랜치가 <strong>같은 결선 코드</strong>를 공유할 수 있게 되었습니다(이것이 gen-2의 진짜 동기).
 </div>
 
 <hr />
 
-<h2 id="큰그림">1. 큰 그림 — 무엇이 무엇과 연결되었나</h2>
+<h2 id="1-bigpicture">1. 큰 그림 — 자동 발견의 흐름</h2>
 <p>
-  세 층으로 보면 쉽습니다. <strong>(아래) 도메인 앱들</strong>이 각자 <code>config.py</code>로 자기를 선언하고 →
-  <strong>(가운데) 레지스트리</strong>가 그것들을 스캔·수집하고 → <strong>(위) 소비처들</strong>이 레지스트리에 물어
-  필요한 것을 가져갑니다. 도메인은 소비처를 모르고, 소비처도 도메인을 직접 모릅니다 — 오직 레지스트리를 통해서만 만납니다.
+  전체 지형도입니다. 가운데에 명시적 목록이 <strong>없다는 점</strong>이 main과의 차이입니다. 대신 <code>AppRegistry</code> 가 <code>app/domains/</code> 디렉터리 자체를 입력으로 삼습니다.
 </p>
 
 <div class="diagram">
 <pre class="mermaid">
 flowchart TB
-    subgraph CONSUMERS["소비처 (레지스트리에 질문하는 쪽)"]
-        BS["bootstrap.create_app()<br/>웹 앱 조립"]
-        CE["celery/app.py<br/>워커/스케줄"]
-        AL["migrations/env.py<br/>Alembic"]
-        DB["db/session.py<br/>테이블 생성"]
+    subgraph SRC["입력 (선언 없음)"]
+        FS["app/domains/ 디렉터리<br/>home/ blog/ reply/ sns/ user/"]
     end
 
-    REG["AppRegistry<br/>(app/core/registry.py)<br/>스캔 · 수집 · 설치"]
-
-    subgraph DOMAINS["도메인 앱 (자기 선언하는 쪽)"]
-        H["home/config.py<br/>HomeConfig(AppConfig)"]
-        X["blog/config.py<br/>(가상 예시)"]
-        Y["orders/config.py<br/>(가상 예시)"]
+    subgraph REG["결선 엔진 (공유 로직)"]
+        AR["AppRegistry.discover()<br/>디렉터리 스캔 → AppModule 생성"]
+        IM["install_routers / import_models / install_admin"]
     end
 
-    BS -->|"discover()/install_*"| REG
-    CE -->|"discover()/celery_packages()"| REG
-    AL -->|"discover()/import_models()"| REG
-    DB -.->|"채워진 metadata 사용"| REG
+    subgraph DOM["발견된 도메인 앱"]
+        H["home"]
+        B["blog"]
+        R["reply"]
+        S["sns"]
+        U["user"]
+    end
 
-    REG -->|"walk_packages 재귀 스캔"| DOMAINS
-    H -. "AppConfig 하위클래스 발견" .-> REG
-    X -. "발견" .-> REG
-    Y -. "발견" .-> REG
+    subgraph OUT["조립 결과"]
+        APP["FastAPI 앱<br/>/api/v1/&lt;name&gt;/... 라우트"]
+        META["Base.metadata<br/>테이블 등록"]
+        ADM["SQLAdmin 뷰"]
+    end
 
-    classDef cons fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
-    classDef reg fill:#fff8c5,stroke:#9a6700,color:#9a6700;
-    classDef dom fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
-    class BS,CE,AL,DB cons;
-    class REG reg;
-    class H,X,Y dom;
+    FS --> AR --> IM
+    IM --> H & B & R & S & U
+    IM --> APP & META & ADM
+
+    classDef src fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    classDef eng fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef dom fill:#f3eefe,stroke:#6639ba,color:#6639ba;
+    classDef out fill:#fff8c5,stroke:#9a6700,color:#9a6700;
+    class FS src;
+    class AR,IM eng;
+    class H,B,R,S,U dom;
+    class APP,META,ADM out;
 </pre>
-<span class="cap">그림 1. 3층 구조 — 도메인(자기선언) ↔ 레지스트리(중개) ↔ 소비처(사용). 화살표는 "호출/의존" 방향.</span>
+<span class="cap">그림 1. 자동 발견 허브 — 입력이 "명시적 목록"이 아니라 "디렉터리 자체"다. 그 외 결선 엔진과 조립 결과는 main과 동일하다.</span>
 </div>
 
 <p>
-  이 구조의 묘미는 <strong>화살표가 모두 레지스트리를 거친다</strong>는 점입니다. 도메인을 하나 더 추가해도
-  소비처 코드(웹·Celery·Alembic)는 전혀 바뀌지 않습니다. 새 도메인의 <code>config.py</code>만 있으면 스캔에 자동으로 걸립니다.
+  main 문서의 그림 1과 비교하면, 왼쪽 상자만 <code>INSTALLED_APPS</code> 리스트에서 <code>app/domains/</code> 디렉터리로 바뀌었습니다. 오른쪽(결선 엔진·조립 결과)은 글자 그대로 같습니다.
+  즉 자동/수동의 차이는 <strong>"앱 목록을 어디서 얻느냐"</strong> 한 곳에 격리되어 있습니다.
 </p>
-
-<hr />
-
-<h2 id="appconfig">2. <code>AppConfig</code> — 도메인의 "자기소개서"</h2>
-<p>
-  모든 도메인 앱은 <code>app/core/registry.py</code>의 <code>AppConfig</code>를 상속해, 자기 디렉토리의 <code>config.py</code>에
-  설정 클래스를 하나 둡니다. 클래스 <em>속성</em>은 "정적 사실"(이름·prefix·로드 순서)이고, <em>메서드</em>는
-  "필요할 때 꺼내 주는 것"(라우터·Admin·스케줄)입니다.
-</p>
-
-<pre><code># app/core/registry.py (복원) — 베이스 클래스
-class AppConfig:
-    """도메인 앱의 자기 선언. 하위 클래스가 클래스 속성/훅을 오버라이드한다."""
-
-    name: str = ""            # 앱 고유 이름 (중복 금지)
-    category: str = "domain"  # 분류 (거의 항상 domain)
-    prefix: str = "/api"      # 이 앱 라우터의 URL 프리픽스
-    enabled: bool = True      # False면 발견돼도 건너뜀 (스위치)
-    order: int = 100          # 낮을수록 먼저 로드 (앱 간 의존 순서 제어)
-
-    @property
-    def package(self) -> str:
-        # type(self).__module__ == "app.domains.home.config"
-        # → 마지막 ".config"를 떼어 "app.domains.home" 을 돌려준다
-        module = type(self).__module__
-        return module.rsplit(".", 1)[0]
-
-    def router(self) -> APIRouter | None: return None   # 훅: 라우터 있으면 오버라이드
-    def admin_views(self) -> list[type]: return []      # 훅: Admin 뷰
-    def beat_schedule(self) -> dict: return {}          # 훅: Celery 스케줄 조각
-</code></pre>
 
 <table>
-<thead><tr><th>구성</th><th>종류</th><th>의미 / 사용처</th></tr></thead>
+<thead><tr><th>성질</th><th>자동 발견(feature)</th><th>의미</th></tr></thead>
 <tbody>
-<tr><td><code>name</code></td><td>속성</td><td>앱 식별자. 발견 단계에서 <strong>중복되면 부팅 실패</strong>(RuntimeError).</td></tr>
-<tr><td><code>prefix</code></td><td>속성</td><td>라우터 마운트 시 URL 접두어. 기본 <code>/api</code>.</td></tr>
-<tr><td><code>enabled</code></td><td>속성</td><td><code>False</code>면 발견돼도 제외 — Django의 INSTALLED_APPS에서 빼는 것과 유사한 "끄기 스위치".</td></tr>
-<tr><td><code>order</code></td><td>속성</td><td>로드 순서. 낮을수록 먼저. 앱 간 의존(예: 공통 앱 먼저)을 제어.</td></tr>
-<tr><td><code>package</code></td><td>프로퍼티</td><td>모듈 경로에서 패키지를 <strong>역산</strong>. 모델·태스크 경로의 기준점(<code>{package}.models</code> 등).</td></tr>
-<tr><td><code>router()</code></td><td>훅</td><td>앱의 통합 <code>APIRouter</code>. 없으면 <code>None</code>(웹 라우터 없는 앱도 허용).</td></tr>
-<tr><td><code>admin_views()</code></td><td>훅</td><td>SQLAdmin <code>ModelView</code> 목록.</td></tr>
-<tr><td><code>beat_schedule()</code></td><td>훅</td><td>Celery beat 스케줄 조각. 레지스트리가 전부 병합.</td></tr>
+<tr><td>선언 지점</td><td>없음 (디렉터리가 선언)</td><td>중앙 파일 편집 0회</td></tr>
+<tr><td>디스크 존재 = 활성</td><td>예 — 폴더가 있으면 켜짐</td><td>추가가 빠름, 그러나 게이트 없음</td></tr>
+<tr><td>로드 순서</td><td>알파벳순(이름 정렬)</td><td>순서를 사람이 통제하지 않음</td></tr>
+<tr><td>제외 규칙</td><td>언더스코어(<code>_</code>) 시작 디렉터리 무시</td><td><code>__pycache__</code> 등 자동 제외</td></tr>
 </tbody>
 </table>
 
-<h4>실제 예시 — <code>home</code> 앱의 자기소개서</h4>
-<pre><code># app/domains/home/config.py (복원)
-from fastapi import APIRouter
-from app.core.registry import AppConfig
-from app.core.middlewares.access_log_sink import set_access_log_sink
-from app.domains.home.access_log_sink import HomeAccessLogSink
+<hr />
 
-set_access_log_sink(HomeAccessLogSink())   # ⚠️ import 시점 부수효과 (9장에서 다룸)
+<h2 id="2-anatomy">2. 앱의 해부학 — 디렉터리가 곧 선언</h2>
+<p>
+  자동 발견에서 디렉터리 구조는 단순한 정리 정돈이 아니라 <strong>"이 앱은 이렇게 생겼다"는 선언 그 자체</strong>입니다. 레지스트리는 약속된 위치·이름을 보고 구성요소를 찾습니다.
+  아래는 <code>blog</code> 앱의 표준 레이아웃입니다(구조는 main과 동일하며, 차이는 <strong><code>config.py</code> 가 없다</strong>는 점뿐입니다).
+</p>
 
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+    ROOT["app/domains/blog/  ← 이 폴더의 존재 = 앱 선언"]
+    ROOT --> INIT["__init__.py<br/>(import-time 부수효과 자리)"]
+    ROOT --> API["api/routers/"]
+    API --> RT["router.py 의 blog_router (집약)"]
+    API --> V1["v1/blog.py 의 router (CRUD 뷰)"]
+    ROOT --> SCH["schemas/blog_schema.py"]
+    ROOT --> SVC["services/blog_service.py"]
+    ROOT --> REPO["repositories/post_repository.py"]
+    ROOT --> MOD["models/ 의 Post (ORM)"]
+    ROOT --> DEP["dependencies/blog_dependencies.py"]
+    ROOT --> EXC["exceptions.py"]
+    ROOT --> TST["tests/test_endpoint.py"]
+    NOCONF["(config.py 없음 — gen-2)"]
+    ROOT -.->|"제거됨"| NOCONF
 
-class HomeConfig(AppConfig):
-    name = "home"
-    category = "domain"
-    prefix = "/api"
-    order = 10                              # home을 먼저 로드
+    classDef root fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    classDef wire fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef biz fill:#f3eefe,stroke:#6639ba,color:#6639ba;
+    classDef gone fill:#f6f8fa,stroke:#959da5,color:#959da5;
+    class ROOT root;
+    class API,RT,V1,DEP wire;
+    class SCH,SVC,REPO,MOD,EXC biz;
+    class NOCONF gone;
+</pre>
+<span class="cap">그림 2. 도메인 앱의 해부도(feature) — 폴더의 존재 자체가 앱 선언이다. gen-1의 <code>config.py</code> 는 사라졌고, 그 역할은 디렉터리 구조와 이름 컨벤션이 대신한다.</span>
+</div>
 
-    def router(self) -> APIRouter:
-        from app.domains.home.api.routers.router import home_router  # 지연 import
-        return home_router
-
-    def admin_views(self) -> list[type]:
-        from app.domains.home.admin import UserAccessLogAdmin
-        return [UserAccessLogAdmin]
-</code></pre>
-<p class="small">
-  메서드 안에서 <code>import</code>를 하는 "지연 import"에 주목하세요. <code>config.py</code>가 로드될 때가 아니라,
-  레지스트리가 실제로 <code>router()</code>를 <em>호출할 때</em> 라우터를 가져옵니다 — 순환참조와 불필요한 조기 로딩을 피하는 장치입니다.
+<table>
+<thead><tr><th>구성요소</th><th>경로(컨벤션)</th><th>레지스트리가 보는가?</th><th>없으면?</th></tr></thead>
+<tbody>
+<tr><td>앱 패키지</td><td><code>app/domains/&lt;name&gt;/__init__.py</code></td><td>예 — 스캔 대상·import</td><td>앱으로 인식 안 됨</td></tr>
+<tr><td>라우터 집약</td><td><code>api/routers/router.py</code> 의 <code>&lt;name&gt;_router</code></td><td>예 — <code>&lt;name&gt;_router</code> 규칙</td><td>라우터 없이 발견(경고 후 건너뜀)</td></tr>
+<tr><td>모델</td><td><code>models/</code> 패키지</td><td>예 — <code>import_models</code></td><td>테이블 미등록(그냥 건너뜀)</td></tr>
+<tr><td>Admin(선택)</td><td><code>admin.py</code> 의 <code>admin_views</code></td><td>예 — <code>install_admin</code></td><td>Admin 뷰 없음</td></tr>
+<tr><td>서비스/리포지토리/스키마/의존성</td><td>각 폴더</td><td>아니오 (앱 내부 결선)</td><td>해당 기능 없음</td></tr>
+</tbody>
+</table>
+<p>
+  "없으면?" 열이 자동 발견의 관용성을 보여줍니다. 라우터가 없는 디렉터리도 "앱"으로는 발견되지만, 마운트할 라우터가 없으니 경고 로그를 남기고 조용히 건너뜁니다.
+  모델이 없으면 테이블 등록을 건너뛰고, Admin이 없으면 Admin 뷰가 없을 뿐입니다. 즉 <strong>각 구성요소는 독립적으로 "있으면 결선, 없으면 무시"</strong> 됩니다. 덕분에 최소한의 앱(라우터만 있는 앱)도 문제없이 동작합니다.
 </p>
 
 <hr />
 
-<h2 id="appregistry">3. <code>AppRegistry</code> — 스캐너이자 설치 기사</h2>
+<h2 id="3-create">3. 앱을 만드는 절차 — 폴더만 만들면 끝</h2>
 <p>
-  <code>AppRegistry</code>는 두 가지 일을 합니다. ① <strong>발견</strong>(<code>discover</code>) — 도메인 트리를 훑어
-  <code>AppConfig</code>들을 모은다. ② <strong>설치</strong>(<code>install_*</code>) — 모은 것들을 소비처가 준 대상(앱·Admin)에 꽂아 준다.
-  발견 결과는 내부 <code>_apps</code> 리스트에 보관됩니다.
+  자동 발견에서 앱 추가는 단 하나의 본질적 행위로 줄어듭니다. <strong>약속된 구조의 폴더를 만드는 것.</strong> 별도의 "등록" 단계가 없습니다.
+</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    A["① 스캐폴딩<br/>python -m scripts.new_app blog"] --> B["app/domains/blog/ 골격 생성<br/>(router.py · dependencies · 디렉터리)"]
+    B --> C["② 본체 작성<br/>model · schema · repository<br/>service · v1 뷰 · 의존성"]
+    C --> E["서버 재시작 → 자동 발견·결선<br/>/api/v1/blog/... 마운트"]
+
+    classDef step fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef auto fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    class A,B,C step;
+    class E auto;
+</pre>
+<span class="cap">그림 3. 앱 생성 파이프라인(feature) — main 그림 3과 비교해 "③ 목록 등록" 단계가 통째로 사라졌다. 폴더가 곧 등록이다.</span>
+</div>
+
+<p>
+  main 브랜치의 파이프라인(그림 3)에는 "③ <code>INSTALLED_APPS</code> 에 추가"라는 노란 단계가 있었습니다. feature에는 그 단계가 없습니다. 스캐폴더가 만든 폴더가 그 자리에 있는 한, 다음 부팅에서 자동으로 발견됩니다.
+  스캐폴더는 gen-2 컨벤션을 따르므로 <strong><code>config.py</code> 를 생성하지 않으며</strong>, 워커 옵션(<code>--with-worker</code>)도 없습니다(워커는 중앙 <code>app/celery</code>).
+</p>
+
+<div class="callout warn">
+  <strong>자동의 그림자.</strong> 편한 만큼 위험도 있습니다. <code>app/domains/</code> 아래에 실험용·미완성 폴더를 두면 <strong>의도치 않게 함께 켜집니다</strong>.
+  잠시 끄고 싶다면 폴더 이름을 언더스코어로 시작하게 바꾸거나(<code>_draft_blog</code>), <code>app/domains</code> 밖으로 옮기면 됩니다(스캔 제외). 명시적 on/off 게이트가 필요하면 main의 수동 방식이 더 안전합니다.
+</div>
+
+<hr />
+
+<h2 id="4-registry">4. 발견 메커니즘 — discover()의 내부</h2>
+<p>
+  등록 메커니즘의 구성요소는 main과 동일합니다 — 데이터 홀더 <code>AppModule</code> 과 엔진 <code>AppRegistry</code>. 차이는 오직 <code>discover()</code> 의 본문입니다.
 </p>
 
 <div class="diagram">
 <pre class="mermaid">
 classDiagram
-    class AppConfig {
+    class AppModule {
         +str name
-        +str category
+        +str package
         +str prefix
-        +bool enabled
-        +int order
-        +package() str
-        +router() APIRouter_or_None
-        +admin_views() list
-        +beat_schedule() dict
+        +router_attr() str
+        +load_router() APIRouter
+        +load_admin_views() list
+        +import_models() None
     }
     class AppRegistry {
-        -list~AppConfig~ _apps
+        -list _apps
         +enabled_apps list
         +discover(package) list
         +install_routers(app) int
-        +import_models() void
+        +import_models() None
         +install_admin(admin) int
-        +celery_packages() list
-        +merged_beat_schedule() dict
     }
-    class HomeConfig {
-        name = "home"
-        order = 10
-        +router() home_router
-        +admin_views() UserAccessLogAdmin
-    }
-    AppConfig <|-- HomeConfig : 상속
-    AppRegistry o-- AppConfig : discover()가 수집 → _apps
+    AppRegistry "1" o-- "*" AppModule : 보유(_apps)
+    note for AppRegistry "feature: discover()가 app/domains/* 를 pkgutil 로 스캔한다 / main: discover()가 config.INSTALLED_APPS 를 읽는다 → 그 외 메서드는 동일"
 </pre>
-<span class="cap">그림 2. 클래스 관계 — 도메인의 <code>HomeConfig</code>는 <code>AppConfig</code>를 상속하고, <code>AppRegistry</code>는 그런 config들을 모아 보관·설치한다.</span>
+<span class="cap">그림 4. 레지스트리 클래스 다이어그램 — <code>AppModule</code> 과 결선 메서드는 main과 byte-identical. 분기점은 <code>discover()</code> 한 곳뿐이다.</span>
 </div>
 
-<h4>설치 메서드들 — 모은 것을 어디에 꽂는가</h4>
-<pre><code># app/core/registry.py (복원) — 설치 메서드
-def install_routers(self, app) -> int:          # 웹 앱에 라우터 마운트
-    count = 0
-    for cfg in self._apps:
-        router = cfg.router()
-        if router is not None:
-            app.include_router(router, prefix=cfg.prefix)
-            count += 1
-    return count
+<p>feature 브랜치의 <code>discover()</code> 는 <code>pkgutil.iter_modules</code> 로 <code>app/domains</code> 직계 하위 패키지를 훑습니다. 언더스코어로 시작하는 것은 제외하고, 이름 알파벳순으로 정렬한 뒤 각 앱 패키지를 import 합니다(부수효과).</p>
 
-def import_models(self) -> None:                # 각 앱의 models 모듈 import → Base.metadata 채움
-    for cfg in self._apps:
-        try:
-            importlib.import_module(f"{cfg.package}.models")
-        except ModuleNotFoundError:
-            continue                            # 모델 없는 앱은 조용히 통과
-
-def install_admin(self, admin) -> int:          # SQLAdmin에 뷰 등록
-    count = 0
-    for cfg in self._apps:
-        for view in cfg.admin_views():
-            admin.add_view(view)
-            count += 1
-    return count
-
-def celery_packages(self) -> list[str]:         # Celery autodiscover 대상 패키지 목록
-    return [cfg.package for cfg in self._apps]
-
-def merged_beat_schedule(self) -> dict:         # 모든 앱의 스케줄 조각 병합
-    schedule: dict = {}
-    for cfg in self._apps:
-        schedule.update(cfg.beat_schedule())
-    return schedule
-</code></pre>
-<p class="small">
-  설치 메서드들은 하나같이 "<code>self._apps</code>를 순회하며 각 config의 훅을 호출"하는 단순 루프입니다.
-  복잡함은 전부 <code>discover()</code> 한 곳에 모여 있습니다 — 그것이 다음 장입니다.
-</p>
-
-<hr />
-
-<h2 id="discover">4. <code>discover()</code>의 내부 — 자동발견의 심장</h2>
-<p>
-  자동발견의 "마법"은 전부 이 메서드 안에 있습니다. 말로 풀면 이렇습니다:
-  <em>"<code>app.domains</code> 패키지 아래 모든 하위 모듈을 걸어다니다가, 이름이 <code>.config</code>로 끝나는 모듈을 만나면 import해서,
-  그 안에 정의된 <code>AppConfig</code>의 진짜 하위 클래스를 꺼내 인스턴스로 만든다. 켜져 있고 이름이 안 겹치면 채택하고,
-  마지막에 <code>order</code> 순으로 줄 세운다."</em>
-</p>
-
-<pre><code># app/core/registry.py (복원) — 발견 엔진
-def discover(self, package: str = "app.domains") -> list[AppConfig]:
+<pre><code># app/core/registry.py — feature 브랜치
+def discover(self, package: str = DOMAINS_PACKAGE) -> list[AppModule]:
     root = importlib.import_module(package)
-    found: dict[str, AppConfig] = {}
-
-    # ① app.domains 아래 모든 하위 패키지/모듈을 재귀적으로 순회
-    for mod_info in pkgutil.walk_packages(root.__path__, prefix=f"{package}."):
-        # ② 이름이 ".config" 로 끝나는 모듈만 관심 대상
-        if not mod_info.name.endswith(".config"):
-            continue
-        module = importlib.import_module(mod_info.name)        # ③ 그 config 모듈 import (부수효과 실행됨)
-        # ④ 모듈 안의 모든 클래스 중 AppConfig 의 '직접 정의된' 하위 클래스만
-        for _, obj in inspect.getmembers(module, inspect.isclass):
-            if (issubclass(obj, AppConfig) and obj is not AppConfig
-                    and obj.__module__ == mod_info.name):       # ← import해 온 클래스 제외
-                cfg = obj()                                     # ⑤ 인스턴스화
-                if not cfg.enabled:                             # ⑥ 꺼진 앱 건너뜀
-                    continue
-                if cfg.name in found:                           # ⑦ 이름 충돌 → 즉시 실패
-                    raise RuntimeError(f"중복된 앱 이름: {cfg.name}")
-                found[cfg.name] = cfg
-
-    # ⑧ order, name 순 정렬 후 보관
-    self._apps = sorted(found.values(), key=lambda c: (c.order, c.name))
-    return self._apps
+    names: list[str] = []
+    for info in pkgutil.iter_modules(root.__path__):
+        if not info.ispkg or info.name.startswith("_"):
+            continue                                  # 패키지가 아니거나 _시작이면 제외
+        names.append(info.name)
+    apps = [AppModule(name=n, package=f"{package}.{n}") for n in sorted(names)]
+    for app in apps:
+        importlib.import_module(app.package)          # __init__.py 부수효과(예: home sink)
+    self._apps = apps
+    return apps
 </code></pre>
 
 <div class="diagram">
 <pre class="mermaid">
-flowchart TD
-    A(["discover('app.domains') 호출"]) --> B["import app.domains"]
-    B --> C{"walk_packages:<br/>다음 하위 모듈?"}
-    C -->|"없음"| Z["order, name 순 정렬<br/>→ self._apps 저장"]
-    C -->|"있음"| D{"모듈명이<br/>.config 로 끝남?"}
-    D -->|"아니오"| C
-    D -->|"예"| E["그 config 모듈 import<br/>(import 부수효과 실행)"]
-    E --> F{"AppConfig의<br/>직접 하위 클래스?<br/>__module__ 일치?"}
-    F -->|"아니오"| C
-    F -->|"예"| G["인스턴스화 cfg = obj()"]
-    G --> H{"cfg.enabled?"}
-    H -->|"False"| C
-    H -->|"True"| I{"name 이미<br/>존재?"}
-    I -->|"예"| ERR(["RuntimeError<br/>중복된 앱 이름 → 부팅 실패"])
-    I -->|"아니오"| J["found[name] = cfg"]
-    J --> C
-    Z --> END(["발견된 AppConfig 목록 반환"])
+sequenceDiagram
+    participant Boot as create_app()
+    participant Reg as AppRegistry
+    participant FS as pkgutil.iter_modules
+    participant Mod as AppModule
+    participant Pkg as app.domains.NAME
 
-    classDef err fill:#ffe3e3,stroke:#c92a2a,color:#c92a2a;
-    class ERR err;
+    Boot->>Reg: discover()
+    Reg->>FS: app/domains 직계 하위 나열
+    FS-->>Reg: [home, blog, reply, sns, user, __pycache__ ...]
+    Reg->>Reg: 패키지 아님 / _시작 제외 → 정렬
+    loop 발견된 각 이름 (알파벳순)
+        Reg->>Mod: AppModule(name, package)
+        Reg->>Pkg: import_module(package)
+        Note right of Pkg: __init__.py 실행 (home은 register_sink())
+    end
+    Reg-->>Boot: [AppModule, ...] (알파벳순)
 </pre>
-<span class="cap">그림 3. <code>discover()</code> 알고리즘 — 재귀 순회 → <code>.config</code> 필터 → 클래스 판별 → 활성/중복 검사 → 정렬.</span>
+<span class="cap">그림 5. discover() 시퀀스(feature) — 디렉터리를 나열하고, 비-패키지·언더스코어를 걸러 정렬한 뒤, 각 앱 패키지를 import해 부수효과를 깨운다.</span>
 </div>
 
-<h4>왜 이런 조건들이 필요했나 — 세 가지 "안전장치"</h4>
-<ul>
-<li><strong><code>obj.__module__ == mod_info.name</code></strong>: <code>config.py</code>는 보통 <code>from app.core.registry import AppConfig</code>로
-베이스를 import합니다. 이 조건이 없으면 <em>import해 온</em> <code>AppConfig</code>까지 "클래스"로 잡혀 버립니다.
-"이 모듈에서 <em>실제로 정의된</em> 클래스만"이라는 필터입니다.</li>
-<li><strong><code>obj is not AppConfig</code></strong>: 베이스 자신은 앱이 아니므로 제외.</li>
-<li><strong>이름 중복 → <code>RuntimeError</code></strong>: 두 앱이 같은 <code>name</code>을 쓰면 라우터/모델이 덮어써져 조용히 깨지는 대신,
-<strong>부팅을 즉시 중단</strong>해 개발자에게 알립니다("실패를 빠르게").</li>
-</ul>
-
-<div class="callout warn">
-<strong>핵심 부작용(③).</strong> <code>discover()</code>는 발견을 위해 <em>모든 <code>config.py</code>를 import</em>합니다.
-그래서 <code>home/config.py</code> 맨 위의 <code>set_access_log_sink(HomeAccessLogSink())</code> 같은
-<strong>모듈 레벨 코드가 "발견되는 순간" 실행</strong>됩니다. 이것이 1세대의 강력함이자 동시에 9장에서 다룰 위험의 근원입니다.
-</div>
+<table>
+<thead><tr><th>단계</th><th>처리</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td>1. 나열</td><td><code>pkgutil.iter_modules(domains.__path__)</code></td><td>직계 하위만(재귀 아님)</td></tr>
+<tr><td>2. 필터</td><td>패키지가 아니거나 <code>_</code> 시작이면 제외</td><td><code>__pycache__</code> 등 자동 제외</td></tr>
+<tr><td>3. 정렬</td><td><code>sorted(names)</code></td><td>알파벳순(결정적)</td></tr>
+<tr><td>4. 매핑·부수효과</td><td><code>AppModule</code> 생성 + 패키지 import</td><td><code>__init__.py</code> 실행</td></tr>
+</tbody>
+</table>
+<p>
+  main의 <code>discover()</code>(목록 읽기)와 이 코드(디렉터리 스캔)를 나란히 보면, 마지막 두 줄(<code>AppModule</code> 생성, 패키지 import, <code>self._apps</code> 보관)이 동일합니다.
+  바뀐 것은 "이름 목록을 어떻게 만드느냐"뿐입니다. main은 리스트에서 읽고, feature는 디스크를 훑습니다. 그 이후의 결선은 완전히 같은 코드를 탑니다.
+</p>
 
 <hr />
 
-<h2 id="boot">5. 부팅 흐름 — 웹 앱이 뜨기까지 (시퀀스)</h2>
+<h2 id="5-router">5. 라우터 등록 흐름 — 경로는 어떻게 합성되나</h2>
 <p>
-  웹 서버가 기동될 때(<code>main.py</code> → <code>create_app()</code>) 레지스트리가 어떤 순서로 일을 했는지 시간 축으로 본 그림입니다.
+  발견된 앱의 라우터가 URL로 마운트되는 과정은 main과 완전히 동일합니다(공유 코드 <code>install_routers</code>). 경로는 세 조각이 합쳐집니다.
+</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    P1["레지스트리 prefix<br/>/api"] --> CONCAT
+    P2["router.py include prefix<br/>/v1/blog"] --> CONCAT
+    P3["v1 뷰 경로<br/>/posts/{post_id}"] --> CONCAT
+    CONCAT["최종 경로<br/>/api/v1/blog/posts/{post_id}"]
+
+    classDef seg fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef fin fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    class P1,P2,P3 seg;
+    class CONCAT fin;
+</pre>
+<span class="cap">그림 6. 경로 합성 — 레지스트리의 <code>/api</code>, 앱 라우터의 <code>/v1/&lt;name&gt;</code>, 뷰의 <code>/posts/...</code> 가 이어진다. main과 동일한 결선 코드의 결과다.</span>
+</div>
+
+<pre><code># app/core/registry.py (결선 — 두 브랜치 공유, 완전히 동일)
+def install_routers(self, app) -> int:
+    count = 0
+    for module in self._apps:
+        router = module.load_router()          # <name>_router 를 컨벤션으로 찾음
+        if router is None:
+            logger.warning("앱 '%s' 에 %s 라우터가 없어 건너뜀", module.name, module.router_attr)
+            continue
+        app.include_router(router, prefix=module.prefix)   # prefix = "/api"
+        count += 1
+    return count
+</code></pre>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    participant Boot as create_app()
+    participant Reg as AppRegistry
+    participant Mod as AppModule(blog)
+    participant RouterMod as blog/router.py
+    participant App as FastAPI
+
+    Boot->>Reg: install_routers(app)
+    loop 발견된 _apps 각각
+        Reg->>Mod: load_router()
+        Mod->>RouterMod: import 후 getattr("blog_router")
+        alt 라우터 있음
+            RouterMod-->>Mod: blog_router
+            Mod-->>Reg: APIRouter
+            Reg->>App: include_router(router, prefix="/api")
+        else 없음
+            Mod-->>Reg: None
+            Note right of Reg: 경고 후 건너뜀
+        end
+    end
+    Reg-->>Boot: 마운트된 라우터 수
+</pre>
+<span class="cap">그림 7. install_routers 시퀀스(feature) — 자동 발견은 라우터가 없는 앱을 만날 수 있으므로, None이면 경고 후 건너뛴다(관용적 결선).</span>
+</div>
+
+<table>
+<thead><tr><th>조각</th><th>정의 위치</th><th>값(blog 예)</th></tr></thead>
+<tbody>
+<tr><td>전역 prefix</td><td>레지스트리(<code>AppModule.prefix</code>)</td><td><code>/api</code></td></tr>
+<tr><td>앱·버전 prefix</td><td>앱 <code>router.py</code> include</td><td><code>/v1/blog</code></td></tr>
+<tr><td>엔드포인트 경로</td><td>v1 뷰</td><td><code>/posts/{post_id}</code></td></tr>
+<tr><td>= 최종</td><td>합성</td><td><code>/api/v1/blog/posts/{post_id}</code></td></tr>
+</tbody>
+</table>
+
+<hr />
+
+<h2 id="6-layers">6. 계층 아키텍처 — View·Service·Repository</h2>
+<p>
+  발견·결선이 끝난 뒤의 요청 처리 계층은 main과 동일합니다(같은 코드베이스). <strong>뷰는 HTTP만, 서비스는 비즈니스 로직만, 리포지토리는 데이터 접근만</strong> 담당합니다.
+</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+    V["View (api/routers/v1)<br/>HTTP 입출력만"]
+    D["Dependency (dependencies/)<br/>서비스 조립 + 트랜잭션 경계"]
+    S["Service (services/)<br/>비즈니스 로직 · LoggerMixin"]
+    R["Repository (repositories/)<br/>SQLAlchemy CRUD"]
+    DB[("Database")]
+
+    V -->|"Depends(get_xxx_service)"| D
+    D -->|"생성·주입"| S
+    S -->|"self.repository"| R
+    R --> DB
+
+    classDef http fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef wire fill:#fff8c5,stroke:#9a6700,color:#9a6700;
+    classDef biz fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    class V http;
+    class D wire;
+    class S,R biz;
+</pre>
+<span class="cap">그림 8. 계층 블록도 — 뷰가 의존성을 통해 서비스를 주입받고, 서비스가 리포지토리로 DB에 접근한다. (main 그림 8과 동일)</span>
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+classDiagram
+    class LoggerMixin {
+        +log
+    }
+    class BaseService {
+        +AsyncSession session
+        +commit() None
+        +rollback() None
+    }
+    class BlogService {
+        +PostRepository repository
+        +create_post(data) Post
+        +get_post(id) Post
+        +list_posts(skip, limit)
+        +update_post(id, data) Post
+        +delete_post(id) None
+    }
+    class BaseRepository {
+        +AsyncSession session
+        +create(data)
+        +get_by_id(id)
+        +get_all(skip, limit)
+        +update(id, data)
+        +delete(id)
+    }
+    class PostRepository {
+        +model
+    }
+    LoggerMixin <|-- BaseService
+    BaseService <|-- BlogService
+    BaseRepository <|-- PostRepository
+    BlogService o-- PostRepository : 보유
+</pre>
+<span class="cap">그림 9. 서비스·리포지토리 클래스 다이어그램(blog 예) — 서비스는 <code>BaseService</code>(세션·로깅)를, 리포지토리는 <code>BaseRepository</code>(CRUD)를 상속한다.</span>
+</div>
+
+<pre><code># app/domains/blog/services/blog_service.py (main과 동일)
+class BlogService(BaseService):
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__(session)
+        self.repository = PostRepository(session)
+
+    async def get_post(self, post_id: str) -> Post:
+        self.log.debug("게시글 조회: id=%s", post_id)
+        post = await self.repository.get_by_id(post_id)
+        if post is None:
+            raise PostNotFoundException(detail={"id": post_id})
+        return post
+</code></pre>
+
+<table>
+<thead><tr><th>계층</th><th>기반 클래스</th><th>책임</th></tr></thead>
+<tbody>
+<tr><td>View</td><td>—</td><td>HTTP 입출력 (파라미터→서비스→응답)</td></tr>
+<tr><td>Dependency</td><td>—</td><td>서비스 조립 + 커밋(트랜잭션 경계)</td></tr>
+<tr><td>Service</td><td><code>BaseService(LoggerMixin)</code></td><td>비즈니스 규칙·도메인 예외</td></tr>
+<tr><td>Repository</td><td><code>BaseRepository[Model]</code></td><td>SQLAlchemy CRUD</td></tr>
+</tbody>
+</table>
+<p>
+  이 계층 구조가 자동/수동 어느 쪽이든 동일하다는 점이 중요합니다. 앱을 어떻게 <em>발견</em>하든, 일단 발견된 뒤의 내부 동작(요청이 뷰→서비스→리포지토리를 타는 흐름)은 한 가지뿐입니다.
+  발견 방식은 "현관문"의 차이일 뿐, "집 내부 구조"는 같습니다.
+</p>
+
+<hr />
+
+<h2 id="7-di">7. DI 결합·주입 — 트랜잭션 경계는 의존성이 책임진다</h2>
+<p>
+  UnitOfWork를 제거하고 그 역할을 의존성으로 옮긴 설계도 main과 동일합니다. 뷰는 "비즈니스 흐름 함수"(의존성)를 주입받고, 그 의존성이 서비스를 조립해 건넨 뒤 성공 시 커밋합니다.
+</p>
+
+<pre><code># app/domains/blog/dependencies/blog_dependencies.py
+async def get_blog_service(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncGenerator[BlogService, None]:
+    service = BlogService(session)   # ① 세션으로 서비스 조립
+    yield service                    # ② 뷰에 주입
+    await session.commit()           # ③ 성공 시 커밋 (트랜잭션 경계)
+</code></pre>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant V as View(create_post)
+    participant Dep as get_blog_service
+    participant GS as get_session
+    participant Svc as BlogService
+    participant Repo as PostRepository
+    participant DB as Database
+
+    C->>V: POST /api/v1/blog/posts
+    V->>Dep: Depends 해석
+    Dep->>GS: Depends(get_session)
+    GS-->>Dep: AsyncSession (yield)
+    Dep->>Svc: BlogService(session)
+    Dep-->>V: service (yield)
+    V->>Svc: create_post(payload)
+    Svc->>Repo: create(data)
+    Repo->>DB: INSERT (flush)
+    DB-->>Repo: row
+    Repo-->>Svc: Post
+    Svc-->>V: Post
+    V-->>Dep: 응답 반환 (성공)
+    Dep->>DB: session.commit()  ← 트랜잭션 경계
+    Note over GS,DB: 예외 시 get_session 이 rollback
+    Dep-->>C: 201 Created
+</pre>
+<span class="cap">그림 10. 요청 라이프사이클 — <code>yield</code> 이전은 "준비", 이후는 "커밋". 예외 시 커밋 줄에 도달하지 못하고 <code>get_session</code> 이 롤백한다. (main과 동일)</span>
+</div>
+
+<table>
+<thead><tr><th>관심사</th><th>과거(UnitOfWork)</th><th>현재(의존성 DI)</th></tr></thead>
+<tbody>
+<tr><td>세션 수명</td><td>UoW가 열고 닫음</td><td><code>get_session</code>(요청 스코프 DI)</td></tr>
+<tr><td>트랜잭션 경계</td><td><code>async with uow:</code></td><td>의존성의 <code>yield</code> 후 <code>commit()</code></td></tr>
+<tr><td>리포지토리 결선</td><td>UoW가 보유</td><td>서비스가 세션으로 생성</td></tr>
+<tr><td>요청 밖 작업</td><td>UoW 재사용</td><td><code>background_session()</code> 컨텍스트</td></tr>
+</tbody>
+</table>
+<p>
+  자동 발견과 직접 맞닿는 부분은 마지막 행입니다. <code>home</code> 앱의 접속 로그 sink는 요청 밖에서 동작하는데, 그 등록은 <code>home/__init__.py</code> 의 import 시점에 일어납니다.
+  그리고 그 import를 트리거하는 것이 바로 <code>discover()</code> 의 "각 앱 패키지 import" 단계입니다. 즉 <strong>자동 발견이 앱을 찾는 행위가, 그 앱의 초기화(sink 등록)까지 자연스럽게 함께 일으키는</strong> 구조입니다.
+</p>
+
+<hr />
+
+<h2 id="8-refs">8. 앱 간 참조 — 무엇을 공유하고 무엇을 격리하나</h2>
+<p>
+  앱 간 결합 관계도 main과 동일합니다. 앱들은 서로를 직접 import하지 않고, 모두 공유 토대(코어·유틸·설정) 위에 섭니다.
+</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+    subgraph SHARED["공유 토대 (모든 앱이 의존)"]
+        CORE["app/core<br/>registry · db · exception<br/>services_base · repository_base"]
+        UTIL["app/utils/logs<br/>LoggerMixin · get_logger"]
+        CONF["config<br/>settings (INSTALLED_APPS 없음)"]
+    end
+    subgraph APPS["도메인 앱 (서로 직접 참조 안 함)"]
+        H["home"]
+        B["blog"]
+        R["reply"]
+        U["user"]
+    end
+    H --> CORE & UTIL & CONF
+    B --> CORE & UTIL & CONF
+    R --> CORE & UTIL & CONF
+    U --> CORE & UTIL & CONF
+    R -. "느슨한 참조: post_id 문자열 (FK 없음)" .-> B
+
+    classDef shared fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
+    classDef app fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
+    class CORE,UTIL,CONF shared;
+    class H,B,R,U app;
+</pre>
+<span class="cap">그림 11. 의존 방향 — 자동 발견 브랜치에서는 <code>config</code> 에 <code>INSTALLED_APPS</code> 가 없다는 점만 다르다. 앱 간 결합 규칙은 동일하다.</span>
+</div>
+
+<table>
+<thead><tr><th>대상</th><th>참조 방식</th><th>결합도</th><th>예</th></tr></thead>
+<tbody>
+<tr><td>코어 기반 클래스</td><td>상속/import</td><td>강함(의도적)</td><td><code>BaseService</code>, <code>BaseRepository</code></td></tr>
+<tr><td>코어 예외</td><td>상속</td><td>강함(의도적)</td><td><code>NotFoundException</code> ← <code>PostNotFoundException</code></td></tr>
+<tr><td>설정</td><td>import</td><td>강함</td><td><code>config.timezone_settings</code></td></tr>
+<tr><td>형제 앱</td><td>직접 import 없음</td><td><strong>느슨함</strong></td><td><code>reply.post_id</code> = blog 게시글 식별자(문자열)</td></tr>
+</tbody>
+</table>
+<p>
+  자동 발견은 이 "느슨한 결합"과 특히 잘 맞습니다. 앱이 서로를 import하지 않기 때문에, 디렉터리를 추가/제거하는 것만으로 앱을 켜고 끌 수 있습니다.
+  만약 <code>reply</code> 가 <code>blog</code> 를 직접 import했다면, <code>blog</code> 폴더를 지우는 순간 <code>reply</code> 의 발견·import가 깨졌을 것입니다. <code>post_id</code> 문자열 참조는 그런 연쇄 파손을 막아 줍니다.
+</p>
+
+<hr />
+
+<h2 id="9-boot">9. 전체 부팅 시퀀스 (end-to-end)</h2>
+<p>
+  부팅 흐름은 첫 단계(discover의 내부)만 다르고 나머지는 main과 같습니다.
 </p>
 
 <div class="diagram">
 <pre class="mermaid">
 sequenceDiagram
-    autonumber
-    participant M as main.py
-    participant BS as bootstrap.create_app()
-    participant R as AppRegistry
-    participant FS as app/domains/* (파일시스템)
-    participant CFG as home/config.py
-    participant APP as FastAPI 인스턴스
+    participant Main as create_app()
+    participant Reg as AppRegistry
+    participant FS as app/domains 스캔
+    participant Apps as 각 앱 패키지
+    participant FA as FastAPI
 
-    M->>BS: create_app()
-    BS->>R: registry.discover()
-    R->>FS: walk_packages("app.domains")
-    FS-->>R: ...home.config 발견
-    R->>CFG: import home.config
-    CFG-->>R: HomeConfig + (sink 부수효과 실행)
-    R-->>BS: [HomeConfig] (order 정렬)
-    BS->>R: registry.import_models()
-    R->>CFG: import app.domains.home.models
-    Note over R: Base.metadata 채워짐
-    BS->>APP: FastAPI(...) 생성
-    BS->>R: registry.install_routers(app)
-    R->>APP: app.include_router(home_router, prefix="/api")
+    Main->>Reg: discover()
+    Reg->>FS: 직계 하위 패키지 나열·필터·정렬
+    Reg->>Apps: 각 패키지 import (부수효과)
+    Reg-->>Main: AppModule 리스트 (알파벳순)
+    Main->>Reg: import_models()
+    Reg->>Apps: 각 models 패키지 import → Base.metadata
+    Main->>FA: FastAPI(...) 생성 + 예외 핸들러 등록
+    Main->>Reg: install_routers(app)
+    Reg->>FA: include_router(/api ...) 반복
+    Main->>FA: /health · Scalar 문서 등록
     alt ADMIN=True
-        BS->>R: registry.install_admin(admin)
-        R->>APP: admin.add_view(UserAccessLogAdmin)
+        Main->>Reg: install_admin(admin)
+        Reg->>FA: admin_views 등록
     end
-    BS-->>M: 구성 완료된 app
+    FA-->>Main: 구성 완료된 app
+    Note over Main,FA: lifespan 시작 시 DEBUG면 create_db_tables()로 테이블 생성
 </pre>
-<span class="cap">그림 4. 웹 부팅 시퀀스 — discover → import_models → FastAPI 생성 → install_routers → (선택) install_admin.</span>
-</div>
-
-<pre><code># app/core/bootstrap.py (복원) — 핵심부
-registry = AppRegistry()           # 모듈 레벨 단일 인스턴스
-
-def create_app() -> FastAPI:
-    registry.discover()            # ① app/domains/* 재귀 스캔
-    registry.import_models()       # ② Base.metadata 채움
-
-    app = FastAPI(...)
-    # ... 미들웨어/예외핸들러 ...
-    n = registry.install_routers(app)          # ③ 라우터 마운트
-    logger.info("registered %d app routers", n)
-    _add_health_and_docs(app)
-
-    if app_settings.ADMIN:
-        admin = Admin(app, engine, ...)
-        registry.install_admin(admin)          # ④ Admin 뷰 등록
-    return app
-</code></pre>
-
-<hr />
-
-<h2 id="consumers">6. 4개 소비처 — 같은 레지스트리, 네 방향</h2>
-<p>
-  웹 부팅은 소비처 중 하나일 뿐이었습니다. 흥미로운 점: 각 소비처가 <strong>각자 <code>AppRegistry()</code>를 새로 만들어
-  <code>discover()</code>를 따로 호출</strong>했다는 것입니다. 웹·Celery·Alembic은 서로 다른 프로세스에서 뜨기 때문입니다.
-</p>
-
-<div class="diagram">
-<pre class="mermaid">
-flowchart LR
-    subgraph WEB["웹 프로세스"]
-        BS["bootstrap.py<br/>registry.discover()<br/>→ import_models<br/>→ install_routers<br/>→ install_admin"]
-    end
-    subgraph WORKER["Celery 프로세스"]
-        CE["celery/app.py<br/>registry.discover()<br/>→ celery_packages()<br/>→ autodiscover_tasks(...)<br/>→ merged_beat_schedule()"]
-    end
-    subgraph MIGRATE["Alembic CLI"]
-        AL["migrations/env.py<br/>_reg.discover()<br/>→ import_models()<br/>→ target_metadata"]
-    end
-
-    D[("app/domains/*<br/>config.py 들")]
-    BS -->|독립 스캔| D
-    CE -->|독립 스캔| D
-    AL -->|독립 스캔| D
-
-    classDef p fill:#ddf4ff,stroke:#0550ae,color:#0550ae;
-    class BS,CE,AL p;
-</pre>
-<span class="cap">그림 5. 세 프로세스가 같은 도메인 트리를 <strong>각자 독립적으로</strong> 스캔. 같은 규약(config.py)을 공유하므로 결과는 일관됨.</span>
+<span class="cap">그림 12. 부팅 end-to-end(feature) — 첫 단계가 "디렉터리 스캔"인 것만 빼면 main과 동일한 순서다.</span>
 </div>
 
 <table>
-<thead><tr><th>소비처</th><th>레지스트리에서 꺼낸 것</th><th>한 일</th></tr></thead>
+<thead><tr><th>순서</th><th>호출</th><th>효과</th></tr></thead>
 <tbody>
-<tr>
-  <td><span class="filepath">app/core/bootstrap.py</span><br>(웹)</td>
-  <td><code>discover()</code> → <code>import_models()</code> → <code>install_routers()</code> → <code>install_admin()</code></td>
-  <td>모델 메타데이터 채우고, 라우터·Admin 뷰를 FastAPI에 마운트</td>
-</tr>
-<tr>
-  <td><span class="filepath">app/core/celery/app.py</span><br>(워커)</td>
-  <td><code>celery_packages()</code>, <code>merged_beat_schedule()</code></td>
-  <td><code>autodiscover_tasks(packages, related_name="worker.tasks")</code>로 각 앱의 <code>worker/tasks.py</code> 자동 등록 + 스케줄 병합</td>
-</tr>
-<tr>
-  <td><span class="filepath">migrations/env.py</span><br>(Alembic)</td>
-  <td><code>discover()</code> → <code>import_models()</code></td>
-  <td>모든 도메인 모델을 import해 <code>target_metadata</code>를 채움 → autogenerate가 전체 스키마 인식</td>
-</tr>
-<tr>
-  <td><span class="filepath">app/core/db/session.py</span><br>(테이블 생성)</td>
-  <td>(간접) 채워진 <code>Base.metadata</code></td>
-  <td>위에서 채워진 메타데이터로 <code>create_all</code> 실행</td>
-</tr>
+<tr><td>1</td><td><code>registry.discover()</code></td><td><code>app/domains/*</code> 스캔 → AppModule 목록 + 부수효과</td></tr>
+<tr><td>2</td><td><code>registry.import_models()</code></td><td>각 앱 모델을 <code>Base.metadata</code> 에 등록</td></tr>
+<tr><td>3</td><td><code>FastAPI(...)</code> + 핸들러</td><td>앱 + 글로벌 예외 핸들러(AppException→상태코드)</td></tr>
+<tr><td>4</td><td><code>registry.install_routers(app)</code></td><td>각 <code>&lt;name&gt;_router</code> 를 <code>/api</code> 에 마운트</td></tr>
+<tr><td>5</td><td><code>_add_health_and_docs</code></td><td><code>/health</code>, Scalar <code>/docs</code>(DEBUG)</td></tr>
+<tr><td>6</td><td><code>install_admin</code> (ADMIN=True)</td><td><code>admin_views</code> 를 SQLAdmin에 등록</td></tr>
+<tr><td>7</td><td>lifespan startup</td><td>DEBUG면 <code>create_db_tables()</code> 로 테이블 생성</td></tr>
 </tbody>
 </table>
 
-<pre><code># app/core/celery/app.py (복원) — Celery도 자동발견
-registry = AppRegistry()
-registry.discover()                                   # 워커 프로세스에서 독립 스캔
-celery_app = Celery("project", broker=..., backend=...)
-celery_app.conf.update(..., beat_schedule=registry.merged_beat_schedule())
-_packages = registry.celery_packages()                # ["app.domains.home", ...]
-celery_app.autodiscover_tasks(_packages, related_name="worker.tasks")
-</code></pre>
-<p class="small">
-  Celery의 <code>autodiscover_tasks(..., related_name="worker.tasks")</code>는 "각 패키지의 <code>worker/tasks.py</code>를 찾아
-  태스크를 등록하라"는 뜻입니다. 즉 1세대는 라우터·모델뿐 아니라 <strong>Celery 태스크까지 자동발견</strong>했습니다.
-</p>
-
 <hr />
 
-<h2 id="example">7. 손으로 따라가는 예시 — <code>home</code>이 등록되는 전 과정</h2>
-<p>추상적 설명을 구체적인 한 줄짜리 여정으로 바꿔 봅시다. 웹 서버가 막 시작했습니다.</p>
+<h2 id="10-newapp">10. 새 앱을 추가하는 실전 가이드</h2>
+<p><code>order</code> 앱을 추가한다고 합시다. feature 브랜치에서는 더 짧습니다.</p>
 <ol>
-<li><span class="step-num">1</span><code>create_app()</code>이 <code>registry.discover()</code>를 호출.</li>
-<li><span class="step-num">2</span>레지스트리가 <code>app.domains</code>를 import하고 <code>walk_packages</code>로 하위를 순회하다
-<code>app.domains.home.config</code>를 만남(이름이 <code>.config</code>로 끝남 ✔).</li>
-<li><span class="step-num">3</span>그 모듈을 import → <strong>맨 윗줄 <code>set_access_log_sink(HomeAccessLogSink())</code>가 이 순간 실행</strong>됨.</li>
-<li><span class="step-num">4</span>모듈 안에서 <code>HomeConfig</code> 발견 — <code>AppConfig</code>의 하위이고, <code>__module__</code>이 그 모듈과 일치 ✔.</li>
-<li><span class="step-num">5</span><code>HomeConfig()</code> 인스턴스화. <code>enabled=True</code> ✔, <code>name="home"</code> 중복 없음 ✔ → 채택.</li>
-<li><span class="step-num">6</span>더 이상 config 없음 → <code>order</code> 순 정렬(<code>home</code>=10) → <code>_apps = [HomeConfig()]</code>.</li>
-<li><span class="step-num">7</span><code>import_models()</code>: <code>cfg.package</code>가 <code>"app.domains.home"</code>이므로
-<code>app.domains.home.models</code>를 import → <code>user_access_logs</code> 테이블이 <code>Base.metadata</code>에 등록.</li>
-<li><span class="step-num">8</span><code>install_routers(app)</code>: <code>HomeConfig.router()</code>가 <code>home_router</code>를 반환 →
-<code>app.include_router(home_router, prefix="/api")</code> → <code>/api/v1/home/...</code> 경로가 살아남.</li>
-<li><span class="step-num">9</span>(<code>ADMIN=True</code>면) <code>install_admin(admin)</code>: <code>UserAccessLogAdmin</code>이 <code>/admin</code>에 등록.</li>
+<li><strong>골격 생성</strong>: <code>python -m scripts.new_app order</code> → <code>app/domains/order/</code> 컨벤션 골격.</li>
+<li><strong>본체 작성</strong>: <code>models/</code> · <code>schemas/</code> · <code>repositories/</code> · <code>services/</code> · <code>dependencies/</code> · <code>api/routers/v1/order.py</code>. <code>router.py</code> 가 v1을 <code>/v1/order</code> 로 include.</li>
+<li><strong>등록 단계 없음</strong>: 폴더가 <code>app/domains/</code> 아래에 있는 것으로 충분하다. 별도 목록 편집이 없다.</li>
+<li><strong>확인</strong>: 서버 재시작 → 자동 발견 → <code>/api/v1/order/...</code> 마운트, DEBUG면 테이블 생성.</li>
 </ol>
-<div class="callout ok">
-<strong>핵심 포인트.</strong> 이 9단계 어디에도 "home을 켜라"고 적은 중앙 코드가 없습니다.
-<code>home/config.py</code> 파일이 <em>존재한다는 사실 자체</em>가 등록의 트리거였습니다.
-</div>
-
-<hr />
-
-<h2 id="newapp">8. 새 앱 추가 — "중앙 편집 0회"의 의미</h2>
-<p>1세대에서 <code>orders</code> 앱을 추가한다면 절차는 이게 전부였습니다:</p>
-<ol>
-<li>스캐폴딩으로 <code>app/domains/orders/</code> 디렉토리 생성.</li>
-<li><code>app/domains/orders/config.py</code>에 <code>OrdersConfig(AppConfig)</code>를 작성:
-<pre><code>class OrdersConfig(AppConfig):
-    name = "orders"
-    order = 50
-    def router(self):
-        from app.domains.orders.api.routers.router import orders_router
-        return orders_router</code></pre></li>
-<li>끝. <strong><code>bootstrap.py</code>·<code>celery/app.py</code>·<code>migrations/env.py</code>를 건드리지 않습니다.</strong>
-다음 부팅 때 <code>discover()</code>가 자동으로 <code>orders.config</code>를 주워 라우터·모델·태스크를 연결합니다.</li>
-</ol>
-<div class="callout info">
-<strong>현재(2세대)와의 대비.</strong> 지금은 같은 일을 하려면 <code>app/apps.py</code>의 <code>routers()</code>·<code>_MODEL_MODULES</code> 등에
-<strong>직접 항목을 추가</strong>해야 합니다. 1세대는 "파일을 두면 켜진다", 2세대는 "목록에 적어야 켜진다"의 차이입니다.
-</div>
-
-<hr />
-
-<h2 id="why">9. 왜 제거되었나 — 자동발견의 그림자</h2>
-<p>
-  자동발견은 편리했지만, 전환 커밋 <code>07e73b1</code>은 이를 의도적으로 걷어냈습니다. 정직하게 말하면 1세대에는 다음과 같은
-  구조적 비용이 있었습니다.
-</p>
-<table>
-<thead><tr><th>그림자</th><th>설명</th></tr></thead>
-<tbody>
-<tr><td><strong>import 시점 부수효과</strong></td>
-<td><code>discover()</code>가 <code>config.py</code>를 import하는 순간 <code>set_access_log_sink(...)</code> 같은 모듈 레벨 코드가
-실행됨. "발견"과 "부수효과 실행"이 얽혀, 언제 무엇이 실행되는지 추적이 어려움.</td></tr>
-<tr><td><strong>스캔 마법(암묵성)</strong></td>
-<td>활성 앱 목록이 코드 어디에도 명시되지 않음. "지금 무엇이 켜져 있나?"를 알려면 런타임 스캔 결과를 봐야 함.</td></tr>
-<tr><td><strong>중복 스캔</strong></td>
-<td>웹·Celery·Alembic이 <strong>각자</strong> <code>AppRegistry()</code>를 만들어 <code>discover()</code>를 호출 — 같은 작업을 3번 반복.</td></tr>
-<tr><td><strong>암묵적 순서 의존</strong></td>
-<td>앱 간 로드 순서를 <code>order</code> 정수로 제어 — 충돌·의존이 생기면 숫자 조정이라는 미묘한 메커니즘에 의존.</td></tr>
-<tr><td><strong>디버깅 난이도</strong></td>
-<td><code>pkgutil</code>/<code>inspect</code> 기반 동적 발견은 IDE·정적분석이 따라가지 못해, "왜 이 앱이 안 떴지?"의 추적이 어려움.</td></tr>
-</tbody>
-</table>
-
-<div class="diagram">
-<pre class="mermaid">
-flowchart LR
-    subgraph G1["1세대 — 자동발견 (제거됨)"]
-        direction TB
-        a1["파일을 두면 켜짐<br/>중앙 편집 0회"]
-        a2["import 부수효과<br/>스캔 마법<br/>3중 스캔"]
-    end
-    subgraph G2["2세대 — 수동등록 (현행)"]
-        direction TB
-        b1["app/apps.py에<br/>명시적으로 적음"]
-        b2["부수효과 없음<br/>한눈에 보임<br/>정적 추적 가능"]
-    end
-    G1 == "07e73b1: 명시성 채택<br/>마법 제거" ==> G2
-
-    classDef old fill:#fff8c5,stroke:#9a6700,color:#9a6700;
-    classDef new fill:#dafbe1,stroke:#1a7f37,color:#1a7f37;
-    class a1,a2 old;
-    class b1,b2 new;
-</pre>
-<span class="cap">그림 6. 트레이드오프의 방향 — "편의·자동(마법)"에서 "명시·추적가능(수동)"으로의 전환.</span>
-</div>
 
 <div class="callout def">
-<strong>균형 잡힌 정리.</strong> 1세대 자동발견이 "틀린" 설계는 아니었습니다. "앱 추가 마찰 0"이라는 분명한 장점이 있었고,
-대규모 플러그인형 시스템에는 적합합니다. 다만 이 프로젝트는 앱 수가 적고 명시성·예측가능성을 더 중시했기에,
-"마법보다 평범한 import"를 택한 것입니다. 같은 목표(여러 곳을 한 번에 등록)를 <em>마법 없이</em> 달성한 것이 2세대입니다.
+  <strong>이름 컨벤션 체크리스트(main과 동일).</strong> 라우터 변수 <code>order_router</code>, 모델은 <code>models/</code> 패키지, Admin은 <code>admin.py</code> 의 <code>admin_views</code>, import-time 초기화는 <code>__init__.py</code>.
+  다만 feature에서는 <strong><code>INSTALLED_APPS</code> 추가 단계가 없다</strong>는 점만 기억하면 됩니다.
 </div>
 
 <hr />
 
-<h2 id="부록">부록 — 복원에 사용한 근거</h2>
-<p>이 문서의 모든 코드는 아래 git 스냅샷에서 복원했습니다(<code>main</code> 에는 없으나 이 브랜치 작업트리에 복원·반영됨).</p>
-<ul>
-<li>핵심: <code>git show 07e73b1^:app/core/registry.py</code> (112줄, <code>AppConfig</code>+<code>AppRegistry</code>)</li>
-<li>규약 예시: <code>git show 07e73b1^:app/domains/home/config.py</code> (<code>HomeConfig</code>)</li>
-<li>소비처: <code>07e73b1^</code>의 <code>app/core/bootstrap.py</code>, <code>app/core/celery/app.py</code>, <code>migrations/env.py</code></li>
-<li>테스트: <code>07e73b1^</code>의 <code>tests/core/test_registry_discover.py</code> / <code>test_registry_appconfig.py</code> / <code>test_registry_install.py</code></li>
-<li>설계 의도: <code>07e73b1^:docs/superpowers/plans/2026-06-23-domains-registry-architecture.md</code></li>
-<li>전환 커밋: <code>07e73b1</code> "replace auto-discovery with explicit manual app registration"</li>
-</ul>
-<p class="small" style="margin-top:24px">
-  <strong>검사 범위 한정.</strong> 이 문서는 1세대의 <em>설계·구조·부팅 흐름</em>을 복원·서술합니다.
-  서술 자체는 <code>main</code> 기준(삭제 상태)으로 작성되었으나, 브랜치 <code>feature/auto-app-discovery</code> 에서
-  이 코드가 실제로 복원되어 <strong>테스트 43개 통과 + 부팅 시 5개 도메인 자동발견</strong>으로 동작이 검증되었습니다.
+<h2 id="11-compare">11. feature(자동) ↔ main(수동) 비교</h2>
+<p>
+  마지막으로 두 브랜치를 나란히 둡니다. 차이는 단 하나, "앱 목록을 어떻게 얻는가"뿐이며 그 외 모든 것은 동일합니다.
+</p>
+
+<table>
+<thead><tr><th>항목</th><th>feature (이 문서)</th><th>main</th></tr></thead>
+<tbody>
+<tr><td>앱 목록 출처</td><td><code>app/domains/*</code> 디렉터리 스캔</td><td><code>config.INSTALLED_APPS</code> (사람이 작성)</td></tr>
+<tr><td>활성화 행위</td><td>폴더 생성만으로 자동</td><td>목록에 이름 추가(명시적)</td></tr>
+<tr><td>로드 순서</td><td>알파벳순</td><td>리스트 순서(명시 제어)</td></tr>
+<tr><td>"디스크 존재 = 활성"</td><td>예(있으면 켜짐)</td><td>아니오(목록이 게이트)</td></tr>
+<tr><td>앱 끄기</td><td>폴더를 옮기거나 <code>_</code> 접두</td><td>목록에서 한 줄 삭제</td></tr>
+<tr><td><code>discover()</code> 구현</td><td>pkgutil 스캔</td><td>INSTALLED_APPS 읽기</td></tr>
+<tr><td>결선 로직 / AppModule</td><td colspan="2" style="text-align:center"><strong>완전히 동일 (byte-identical)</strong></td></tr>
+<tr><td>계층·DI·서비스·예외</td><td colspan="2" style="text-align:center"><strong>완전히 동일</strong></td></tr>
+</tbody>
+</table>
+<p>
+  feature는 "속도와 무설정(zero-config)"을 택한 브랜치입니다. 새 앱을 만들면 즉시 켜지고, 중앙 파일을 만질 일이 없습니다. 대신 게이트가 없으므로,
+  실험용 폴더가 우연히 켜지는 것을 막으려면 명명 규칙(언더스코어)이나 위치 이동에 의존해야 합니다. 명시적 통제가 중요한 환경이라면 main의 수동 방식이 더 맞습니다.
+</p>
+
+<div class="callout info">
+  <strong>한눈에.</strong> 두 문서를 함께 읽으면 이 프로젝트의 설계 의도가 분명해집니다. "자동이냐 수동이냐"는 철학의 차이처럼 보이지만,
+  코드 차원에서는 <code>discover()</code> 메서드 하나로 격리되어 있습니다. 그래서 같은 코드베이스 위에서 두 철학을 모두 시연할 수 있습니다.
+  수동 방식의 상세는 자매 문서 <a href="app-registration-installed-apps-2026-06-25.html">app-registration-installed-apps</a> 를 보세요.
+</div>
+
+<p class="small" style="margin-top:32px">
+  <strong>출처.</strong> 본 문서의 모든 코드 인용은 <code>feature/auto-app-discovery @ c03b9c8</code> 의 실제 소스입니다 —
+  <span class="filepath">app/core/registry.py</span>(discover 스캔) · <span class="filepath">app/core/bootstrap.py</span> ·
+  <span class="filepath">app/domains/home/__init__.py</span>(sink) · <span class="filepath">app/domains/blog/*</span> · <span class="filepath">scripts/new_app.py</span>.
+  코드와 문서가 다르면 코드가 정답입니다.
 </p>
 
 </div>
