@@ -3,10 +3,11 @@
 뷰는 HTTP 역할만: 입력 수신 → 주입된 AuthService 호출 → 응답 변환.
 """
 import jwt
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exception import ErrorResponse
+from app.core.rate_limit import limiter
 from app.domains.auth.dependencies.auth_dependencies import (
     get_auth_service,
     get_current_user,
@@ -21,6 +22,7 @@ from app.domains.auth.schemas.auth_schema import (
 from app.domains.auth.services.auth_service import AuthService
 from app.domains.user.models.models import User
 from app.utils.authenticator.auth import REFRESH_TOKEN_TYPE, decode_token
+from config import middleware_settings
 
 router = APIRouter()
 
@@ -36,7 +38,9 @@ _UNAUTH = {401: {"model": ErrorResponse, "description": "인증 실패"}}
     operation_id="authRegister",
     responses={409: {"model": ErrorResponse, "description": "사용자명 중복"}},
 )
+@limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)
 async def register(
+    request: Request,
     payload: RegisterRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
@@ -52,7 +56,9 @@ async def register(
     operation_id="authLogin",
     responses=_UNAUTH,
 )
+@limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)
 async def login(
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:
