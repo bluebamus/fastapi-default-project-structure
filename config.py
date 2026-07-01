@@ -438,6 +438,18 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
+    # 레이트 리밋(slowapi) 활성화
+    RATE_LIMIT_ENABLED: bool = Field(
+        default=True,
+        description="요청 레이트 리밋 활성화",
+    )
+
+    # 라우트 데코레이터(@limiter.limit)용 기본 레이트 리밋 (slowapi 형식: "<count>/<period>")
+    RATE_LIMIT_DEFAULT: str = Field(
+        default="100/minute",
+        description="라우트 데코레이터 기본 레이트 리밋",
+    )
+
 
 # =============================================================================
 # Redis 설정
