@@ -37,6 +37,8 @@ class User(Base):
         String(100), unique=True, nullable=False, index=True
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 인증(auth 도메인)용 bcrypt 해시. 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(

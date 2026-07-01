@@ -488,6 +488,49 @@ class RedisSettings(BaseSettings):
 
 
 # =============================================================================
+# JWT 인증 설정
+# =============================================================================
+class JWTSettings(BaseSettings):
+    """JWT 토큰(access/refresh) 설정.
+
+    OAuth2 password flow 기반 인증에 사용됩니다.
+    비밀 키는 운영 환경에서 반드시 안전한 값으로 교체하세요.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # Access Token 서명 키
+    ACCESS_TOKEN_SECRET_KEY: str = Field(
+        default="change-this-access-token-secret-key",
+        description="Access Token 서명 키",
+    )
+    # Refresh Token 서명 키 (access 와 다른 키 권장)
+    REFRESH_TOKEN_SECRET_KEY: str = Field(
+        default="change-this-refresh-token-secret-key",
+        description="Refresh Token 서명 키",
+    )
+    # Access Token 만료 (분)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30,
+        description="Access Token 만료 시간(분)",
+    )
+    # Refresh Token 만료 (일)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
+        default=7,
+        description="Refresh Token 만료 시간(일)",
+    )
+    # JWT 서명 알고리즘
+    JWT_ALGORITHM: str = Field(
+        default="HS256",
+        description="JWT 서명 알고리즘",
+    )
+
+
+# =============================================================================
 # 설정 인스턴스 팩토리 (싱글톤)
 # =============================================================================
 @lru_cache
@@ -532,6 +575,12 @@ def get_middleware_settings() -> MiddlewareSettings:
     return MiddlewareSettings()
 
 
+@lru_cache
+def get_jwt_settings() -> JWTSettings:
+    """JWT 설정 인스턴스 반환 (캐싱)"""
+    return JWTSettings()
+
+
 # =============================================================================
 # 편의를 위한 전역 설정 인스턴스
 # =============================================================================
@@ -544,3 +593,4 @@ cors_settings = get_cors_settings()
 log_settings = get_log_settings()
 redis_settings = get_redis_settings()
 middleware_settings = get_middleware_settings()
+jwt_settings = get_jwt_settings()
