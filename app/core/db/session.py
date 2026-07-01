@@ -179,21 +179,8 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         - 트랜잭션 경계는 기능 의존성(dependencies)이 yield 후 커밋으로 관리합니다
     """
     start_time = time.perf_counter()
-    pool = engine.pool
-
-    # 커넥션 풀 상태 로깅 (디버깅용 - 필요 시 주석 해제)
-    # logger.debug(
-    #     f"[get_session] ACQUIRE - pool_size: {pool.size()}, "
-    #     f"in: {pool.checkedin()}, out: {pool.checkedout()}, "
-    #     f"overflow: {pool.overflow()}"
-    # )
 
     async with AsyncSessionLocal() as session:
-        acquire_time = time.perf_counter()
-        # logger.debug(
-        #     f"[get_session] Session acquired in "
-        #     f"{(acquire_time - start_time)*1000:.1f}ms"
-        # )
         try:
             yield session
         except Exception as e:
@@ -203,12 +190,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
                 f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
             )
             raise e
-        finally:
-            total_time = time.perf_counter() - start_time
-            # logger.debug(
-            #     f"[get_session] RELEASE - duration: {total_time*1000:.1f}ms, "
-            #     f"pool_out: {pool.checkedout()}"
-            # )
 
 
 async def get_background_session() -> AsyncGenerator[AsyncSession, None]:
@@ -233,20 +214,8 @@ async def get_background_session() -> AsyncGenerator[AsyncSession, None]:
         - 요청 밖 트랜잭션 경계는 background_session() 컨텍스트 사용을 권장합니다
     """
     start_time = time.perf_counter()
-    pool = background_engine.pool
-
-    # logger.debug(
-    #     f"[get_background_session] ACQUIRE - pool_size: {pool.size()}, "
-    #     f"in: {pool.checkedin()}, out: {pool.checkedout()}, "
-    #     f"overflow: {pool.overflow()}"
-    # )
 
     async with BackgroundSessionLocal() as session:
-        acquire_time = time.perf_counter()
-        # logger.debug(
-        #     f"[get_background_session] Session acquired in "
-        #     f"{(acquire_time - start_time)*1000:.1f}ms"
-        # )
         try:
             yield session
         except Exception as e:
@@ -257,13 +226,6 @@ async def get_background_session() -> AsyncGenerator[AsyncSession, None]:
                 f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
             )
             raise e
-        finally:
-            total_time = time.perf_counter() - start_time
-            # logger.debug(
-            #     f"[get_background_session] RELEASE - "
-            #     f"duration: {total_time*1000:.1f}ms, "
-            #     f"pool_out: {pool.checkedout()}"
-            # )
 
 
 async def dispose_engine() -> None:
