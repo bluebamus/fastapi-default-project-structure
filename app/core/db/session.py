@@ -130,20 +130,21 @@ async def create_db_tables() -> None:
     데이터베이스 테이블을 생성합니다.
 
     애플리케이션 시작 시 lifespan에서 호출됩니다.
-    AppRegistry(discover→import_models)를 통해 INSTALLED_APPS 에 등록된 모든 앱의
-    모델을 Base.metadata에 등록한 후 테이블을 생성합니다.
+    각 도메인 앱의 models 모듈을 import 하여 Base.metadata에 모든 테이블을 등록한 후
+    테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱은 app/domains/<name>/ 를 만들고 config.INSTALLED_APPS 에
-        이름을 추가하면 라우터/모델이 컨벤션으로 결선됩니다(수동 등록).
+        새로운 도메인 앱은 app/domains/<name>/ 를 만들고 아래 import 목록과
+        main.py 의 APPS 목록에 추가합니다.
     """
     import asyncio
 
-    from app.core.registry import AppRegistry
-
-    registry = AppRegistry()
-    registry.discover()
-    registry.import_models()   # imports every app's models package -> Base.metadata
+    # 모델 메타데이터 등록: 각 앱 models 모듈 import -> Base.metadata 채움
+    import app.domains.blog.models.models  # noqa: F401
+    import app.domains.home.models.models  # noqa: F401
+    import app.domains.reply.models.models  # noqa: F401
+    import app.domains.sns.models.models  # noqa: F401
+    import app.domains.user.models.models  # noqa: F401
 
     logger.info("Creating database tables...")
 

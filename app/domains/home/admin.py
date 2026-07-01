@@ -187,5 +187,5 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     }
 
 
-# 컨벤션: AppRegistry.install_admin 이 이 모듈 레벨 리스트를 SQLAdmin 에 등록한다.
+# 컨벤션: 패키지 __init__.py 가 이 리스트를 재노출하면 main.py 가 SQLAdmin 에 등록한다.
 admin_views: list[type] = [UserAccessLogAdmin]
