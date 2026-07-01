@@ -1,16 +1,22 @@
 """
-scripts/new_app.py — FastAPI app scaffolding generator (컨벤션 기반, gen-2).
+scripts/new_app.py — FastAPI app scaffolding generator (표준 배선).
 
-Django-style ``startapp`` equivalent. 앱은 별도 선언(config.py) 없이 디렉터리
-구조와 네이밍 컨벤션만으로 AppRegistry 에 자동 발견된다.
+Django-style ``startapp`` equivalent. 표준 FastAPI 구조를 따르는 도메인 앱을 생성한다:
+각 앱 패키지의 ``__init__.py`` 가 하위 뷰 라우터를 취합한 ``router`` 를 공개하고,
+``main.py`` 가 이를 ``include_router`` 로 최종 취합한다.
 
 컨벤션 (생성되는 구조):
     app/domains/<name>/
-        api/routers/router.py   →  <name>_router: APIRouter   (/api 에 자동 마운트)
+        __init__.py             →  router(+admin_views) 재노출
+        api/routers/router.py   →  <name>_router: APIRouter   (하위 v1 라우터 취합)
         api/routers/v1/         →  버전별 서브라우터 위치
-        models/                 →  ORM 모델 (Base.metadata 자동 등록)
+        models/                 →  ORM 모델 (Base.metadata 등록 — __init__ 에서 import)
         schemas/ services/ repositories/ dependencies/ tests/
         admin.py (선택)         →  admin_views: list[type]
+
+생성 후 등록 (수동 — 표준 방식):
+    main.py 의 ``from app.domains import ...`` 와 ``APPS`` 목록에 <name> 을 추가한다.
+    (모델을 만들었다면 __init__.py 의 models import 주석을 해제한다.)
 
 Usage (CLI):
     python -m scripts.new_app <name> [--with-admin]
@@ -34,8 +40,8 @@ _ROUTER_TMPL = '''\
 """
 {name} module router aggregator.
 
-컨벤션: AppRegistry 가 이 모듈의 ``{name}_router`` 를 발견해 /api 에 마운트한다.
-버전별 서브라우터를 여기에 include 한다. 예:
+컨벤션: 이 모듈의 ``{name}_router`` 를 패키지 ``__init__.py`` 가 ``router`` 로 재노출하고
+main.py 가 /api 에 마운트한다. 버전별 서브라우터를 여기에 include 한다. 예:
     from app.domains.{name}.api.routers.v1 import {name} as {name}_v1
     {name}_router.include_router({name}_v1.router, prefix="/v1/{name}", tags=["{Class}"])
 """
@@ -43,6 +49,35 @@ _ROUTER_TMPL = '''\
 from fastapi import APIRouter
 
 {name}_router = APIRouter()
+'''
+
+_INIT_TMPL = '''\
+"""{Class} 도메인 패키지.
+
+하위 뷰 라우터를 취합한 ``router`` 를 공개한다. main.py 의 APPS 목록에 이 패키지를
+추가하면 ``include_router`` 로 /api 에 취합된다.
+
+모델을 추가하면 아래 import 주석을 해제해 ``Base.metadata`` 에 등록한다:
+    from app.domains.{name}.models import models as _models  # noqa: F401
+"""
+from app.domains.{name}.api.routers.router import {name}_router as router
+
+__all__ = ["router"]
+'''
+
+_INIT_ADMIN_TMPL = '''\
+"""{Class} 도메인 패키지.
+
+하위 뷰 라우터를 취합한 ``router`` 와 ``admin_views`` 를 공개한다. main.py 의 APPS
+목록에 이 패키지를 추가하면 라우터가 /api 에, admin_views 가 SQLAdmin 에 등록된다.
+
+모델을 추가하면 아래 import 주석을 해제해 ``Base.metadata`` 에 등록한다:
+    from app.domains.{name}.models import models as _models  # noqa: F401
+"""
+from app.domains.{name}.admin import admin_views
+from app.domains.{name}.api.routers.router import {name}_router as router
+
+__all__ = ["router", "admin_views"]
 '''
 
 _DEPS_TMPL = '''\
@@ -72,8 +107,8 @@ _ADMIN_TMPL = '''\
 """
 {Class} domain SQLAdmin views.
 
-컨벤션: 모듈 레벨 ``admin_views`` 리스트를 두면 AppRegistry.install_admin 이
-자동으로 SQLAdmin 에 등록한다(중앙 파일 수정 불필요).
+컨벤션: 모듈 레벨 ``admin_views`` 리스트를 패키지 ``__init__.py`` 가 재노출하면
+main.py 가 SQLAdmin 에 등록한다.
 
 활성화하려면 placeholder 를 실제 모델 기반 ModelView 로 교체한다:
     from sqladmin import ModelView
@@ -124,8 +159,7 @@ def scaffold(
         with_admin: If True, create ``admin.py`` (with empty ``admin_views``).
 
     Note:
-        생성된 앱은 디렉터리 컨벤션만으로 AppRegistry 에 자동 발견된다.
-        중앙 파일(config.py / app/apps.py 등) 수정이 필요 없다.
+        생성된 앱은 main.py 의 ``APPS`` 목록에 <name> 을 추가해야 취합된다(표준 방식).
     """
     class_name = "".join(part.capitalize() for part in name.split("_"))
     base = root / "app" / "domains" / name
@@ -135,9 +169,6 @@ def scaffold(
         full = base / rel
         full.mkdir(parents=True, exist_ok=True)
         _touch_init_chain(base, rel)
-
-    # App root __init__.py (import-time 부수효과가 필요하면 여기에 추가)
-    (base / "__init__.py").touch()
 
     # Core files
     (base / "api" / "routers" / "router.py").write_text(
@@ -155,6 +186,13 @@ def scaffold(
             _ADMIN_TMPL.format(name=name, Class=class_name),
             encoding="utf-8",
         )
+
+    # App root __init__.py — 라우터(+admin_views) 를 재노출 (router.py/admin.py 작성 후)
+    init_tmpl = _INIT_ADMIN_TMPL if with_admin else _INIT_TMPL
+    (base / "__init__.py").write_text(
+        init_tmpl.format(name=name, Class=class_name),
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +219,7 @@ def _touch_init_chain(base: pathlib.Path, rel: str) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m scripts.new_app",
-        description="Scaffold a new FastAPI domain app (convention-based).",
+        description="Scaffold a new FastAPI domain app (standard include_router wiring).",
     )
     p.add_argument("name", help="Snake-case app name (e.g. orders)")
     p.add_argument("--category", default="domain", help="Reserved (unused; kept for compatibility)")
@@ -201,9 +239,11 @@ if __name__ == "__main__":
     class_name = "".join(part.capitalize() for part in name.split("_"))
     print(f"created app/domains/{name}")
     print()
-    print("이 앱은 디렉터리 컨벤션으로 자동 발견됩니다 — 중앙 파일 수정 불필요.")
-    print(f"  - router: api/routers/router.py 의 {name}_router 가 /api 에 자동 마운트")
-    print("  - models: models/ 에 ORM 모델을 두면 Base.metadata 에 자동 등록")
+    print("등록하려면 main.py 를 수정하세요 (표준 방식):")
+    print(f"  1) from app.domains import ... , {name}")
+    print(f"  2) APPS = [..., {name}]   # 라우터가 /api 에 취합됨")
+    print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
+    print("  - models: models/ 에 ORM 모델 추가 후 __init__.py 의 import 주석 해제 (Base.metadata 등록)")
     if args.with_admin:
-        print(f"  - admin: admin.py 의 admin_views 에 {class_name}Admin 을 추가하면 자동 노출")
+        print(f"  - admin: admin.py 의 admin_views 에 {class_name}Admin 을 추가하면 SQLAdmin 에 노출")
     print("  - 서버 재시작 시 라우터가 마운트됩니다")
