@@ -28,6 +28,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     "python-multipart>=0.0.32",
     "bcrypt>=5.0.0",
+    "slowapi>=0.1.10",
 ]
 
 [dependency-groups]
@@ -95,6 +96,9 @@ markers = [
 env = [
     "DEBUG=true",
     "ENV=test",
+    # 레이트 리밋은 in-memory 카운터가 테스트 간 공유되므로 비활성화
+    # (레이트 리밋 자체는 tests/test_rate_limit.py 가 격리된 앱으로 검증)
+    "RATE_LIMIT_ENABLED=false",
 ]
 
 # 필터 경고
