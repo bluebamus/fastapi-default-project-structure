@@ -1,6 +1,7 @@
 # FastAPI Default Project Structure
 
 Repository 패턴과 도메인별 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.
+표준 FastAPI 배선을 따릅니다: 각 도메인 앱 패키지(`app/domains/<name>/__init__.py`)가 하위 뷰 라우터를 취합한 `router` 를 공개하고, `main.py` 가 이를 `include_router` 로 최종 취합하며 앱 설정을 구성합니다.
 
 ## 목차
 
@@ -120,13 +121,12 @@ app/domains/home/       app/domains/user/       app/domains/blog/
 
 ```
 fastapi-default-project-structure/
-├── main.py                      # 진입점: app = create_app() 한 줄
+├── main.py                      # 진입점: 각 앱 router 를 include_router 로 취합 + 앱 설정
 ├── config.py                    # 환경 설정 (Pydantic Settings)
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
 │
 ├── app/
-│   ├── apps.py                  # 앱 수동 등록 SSOT (routers/모델/admin/celery)
-│   ├── domains/                 # 기능 단위 앱 (app/apps.py에 수동 등록)
+│   ├── domains/                 # 기능 단위 앱 (__init__.py가 router 취합 → main.py APPS 에 등록)
 │   │   └── <name>/              # 각 앱 디렉토리
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
 │   │       ├── models/          # SQLAlchemy ORM 모델
@@ -139,7 +139,6 @@ fastapi-default-project-structure/
 │   │       └── tests/           # 테스트
 │   │
 │   ├── core/                    # 프레임워크 인프라 (도메인이 의존)
-│   │   ├── bootstrap.py         # create_app() 팩토리
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── db/                  # 세션, BaseUnitOfWork, Redis
 │   │   ├── celery/              # Celery 앱 + run_async 브릿지
@@ -152,7 +151,7 @@ fastapi-default-project-structure/
 │       ├── logging/             # 구조화 로깅
 │       └── pagination/          # 페이지네이션 헬퍼
 │
-├── migrations/                  # Alembic (env.py가 register_models()로 메타데이터 수집)
+├── migrations/                  # Alembic (env.py가 각 앱 models import로 메타데이터 수집)
 └── docs/
     ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
     ├── concepts/                # 개념·패턴 심화 해설
@@ -163,13 +162,12 @@ fastapi-default-project-structure/
 
 | 파일 | 설명 |
 |------|------|
-| `main.py` | `create_app()` 호출 한 줄 — 모든 조립은 `create_app()`이 수행 |
-| `app/apps.py` | 앱 수동 등록 SSOT — `routers()`/`register_models()`/`admin_views()`/`CELERY_TASK_MODULES` |
-| `app/core/bootstrap.py` | `create_app()` — register_models → routers → admin_views 등록 |
+| `main.py` | FastAPI 조립 — 각 앱 `router` 를 `include_router(prefix="/api")` 로 취합 + 미들웨어/예외/문서/lifespan/Admin 설정 |
+| `app/domains/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` (및 선택 `admin_views`) 공개 — `main.py` 의 `APPS` 가 이를 취합 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀 |
 | `app/core/db/unit_of_work.py` | `BaseUnitOfWork` (세션 관리·트랜잭션만, 도메인 무관) |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
-| `migrations/env.py` | `register_models()`로 모든 도메인 모델 수집 → Alembic autogenerate |
+| `migrations/env.py` | 각 앱 `models` 모듈을 import 해 `Base.metadata` 수집 → Alembic autogenerate |
 
 ### `app/` 구현 규칙 (Conventions)
 
@@ -236,9 +234,9 @@ Router  →  Service(uow)  →  uow.<repository>  →  DB
 
 > **주의 (자주 틀리는 부분):** `BaseService`는 **Repository가 아니라 UoW를 주입받습니다.** `Service(uow)`로 생성하고 내부에서 `self.uow.user_access_logs.create(...)`처럼 접근하세요.
 
-#### 마지막 단계 — `app/apps.py`에 수동 등록
+#### 마지막 단계 — `main.py` 의 `APPS` 에 등록
 
-자동 발견이 없으므로, 위 구조를 만든 뒤 반드시 [`app/apps.py`](app/apps.py)에 등록해야 라우터/모델/Admin/태스크가 연결됩니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
+위 구조를 만든 뒤 `main.py` 의 `from app.domains import ...` 와 `APPS` 목록에 새 앱을 추가해야 라우터/Admin 이 연결됩니다. 모델은 앱 `__init__.py` 에서 import 하여 `Base.metadata` 에 등록합니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
 
 ---
 
@@ -947,8 +945,8 @@ async def dispatch(self, request: Request, call_next: Callable):
 
 > 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
 
-새 앱은 스캐폴딩으로 디렉토리/파일을 생성한 뒤 **`app/apps.py`에 수동으로 등록**합니다.
-자동 발견은 사용하지 않으므로 등록을 빠뜨리면 라우터/모델/Admin/태스크가 연결되지 않습니다.
+새 앱은 스캐폴딩으로 디렉토리/파일을 생성한 뒤 **`main.py` 의 `APPS` 목록에 등록**합니다.
+등록을 빠뜨리면 라우터/Admin 이 연결되지 않습니다.
 
 ### 스캐폴딩 생성기 사용 (권장)
 
@@ -964,29 +962,22 @@ uv run python -m scripts.new_app <name> --with-worker --with-admin
 
 **1. 스캐폴딩 생성 + 도메인 코드 작성** (`models/`, `schemas/`, `repositories/`, `services/`, `api/routers/`)
 
-**2. `app/apps.py`에 등록**
+**2. `main.py` 의 `APPS` 에 등록**
 
 ```python
-# routers()
-return [
-    RouterSpec(router=home_router, prefix="/api"),
-    RouterSpec(router=<name>_router, prefix="/api"),   # ← 추가
-]
+# main.py
+from app.domains import blog, home, reply, sns, user, <name>   # ← import 추가
 
-# register_models()
-_MODEL_MODULES = [
-    "app.domains.home.models.models",
-    "app.domains.<name>.models.models",                # ← 추가
-]
-
-# 선택: admin_views() 에 ModelView 추가, CELERY_TASK_MODULES 에 "app.domains.<name>.worker.tasks" 추가
+APPS = [home, blog, reply, sns, user, <name>]   # ← 목록에 추가 (순서 = 로드 순서)
 ```
 
-**3. 서버 재시작** — `app/apps.py`에 등록된 라우터가 마운트됩니다.
+각 앱 패키지의 `__init__.py` 가 `router`(및 선택 `admin_views`)를 공개하므로, `main.py` 는 `APPS` 를 순회하며 `include_router(prefix="/api")` 로 취합합니다. 모델은 앱 `__init__.py` 의 models import(주석 해제)로 `Base.metadata` 에 등록됩니다.
+
+**3. 서버 재시작** — `APPS` 에 추가한 앱의 라우터가 마운트됩니다.
 
 ### 개발 체크리스트
 
-- [ ] `app/apps.py` 등록 — `routers()` / `_MODEL_MODULES` (+ 선택: admin/celery)
+- [ ] `main.py` 의 `APPS` 에 앱 등록 (라우터/Admin 취합) + `__init__.py` models import(메타데이터)
 - [ ] `models/` — SQLAlchemy ORM 모델
 - [ ] `repositories/` — BaseRepository 확장
 - [ ] `unit_of_work/` — BaseUnitOfWork 선언형 repositories 맵
