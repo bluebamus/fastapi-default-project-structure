@@ -19,14 +19,14 @@ from app.core.exception import AppException, ErrorResponse, ValidationException
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.tags_metadata import tags_metadata
-from app.domains import blog, home, reply, sns, user
+from app.domains import auth, blog, home, reply, sns, user
 from app.utils.logs import get_logger
 from config import app_settings
 
 logger = get_logger("main")
 
 # 최종 취합 대상 도메인 앱 (등록 순서 = 로드 순서). 새 앱은 여기에 추가한다.
-APPS = [home, blog, reply, sns, user]
+APPS = [home, blog, reply, sns, user, auth]
 
 
 @asynccontextmanager
