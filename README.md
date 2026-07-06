@@ -247,7 +247,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 
 ```python
 # dependencies — Service 구성 + 트랜잭션 경계
-async def get_home_service(
+async def get_access_log_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[UserAccessLogService, None]:
     service = UserAccessLogService(session)
@@ -260,7 +260,7 @@ async def get_home_service(
 async def get_access_logs(
     skip: int = 0,
     limit: int = 50,
-    service: UserAccessLogService = Depends(get_home_service),
+    service: UserAccessLogService = Depends(get_access_log_service),
 ):
     logs, total = await service.get_access_logs(skip, limit)
     return UserAccessLogListResponse(
@@ -340,7 +340,7 @@ UnitOfWork 대신 **기능 의존성**이 세션으로 Service를 구성하고 �
 
 ```python
 # app/domains/home/dependencies/access_log_dependencies.py
-async def get_home_service(
+async def get_access_log_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[UserAccessLogService, None]:
     service = UserAccessLogService(session)
