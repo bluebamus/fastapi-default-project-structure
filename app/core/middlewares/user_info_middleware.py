@@ -4,7 +4,6 @@
 모든 요청에서 사용자의 접속 정보를 수집하여 데이터베이스에 저장합니다.
 """
 
-import asyncio
 import time
 from collections.abc import Callable
 
@@ -13,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from user_agents import parse as parse_user_agent
 
 from app.core.middlewares.access_log_sink import get_access_log_sink
+from app.core.middlewares.background_tasks import access_log_tasks
 from app.utils.logs import get_logger
 from config import middleware_settings
 
@@ -44,7 +44,6 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         self.enabled = middleware_settings.ACCESS_LOG_ENABLED
         self.exclude_paths = set(middleware_settings.ACCESS_LOG_EXCLUDE_PATHS)
         self.exclude_extensions = set(middleware_settings.ACCESS_LOG_EXCLUDE_EXTENSIONS)
-        self._background_tasks: set[asyncio.Task] = set()
 
     def _should_skip(self, path: str) -> bool:
         """
@@ -242,10 +241,9 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             f"- {response.status_code} ({response_time_ms}ms)"
         )
 
-        # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음)
-        task = asyncio.create_task(self._save_access_log(request_info))
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음).
+        # 상한 초과 시 드롭·집계되고, 앱 종료 시 lifespan 이 drain 한다(W1).
+        access_log_tasks.spawn(self._save_access_log(request_info))
 
         return response
 

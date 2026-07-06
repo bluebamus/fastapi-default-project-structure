@@ -27,9 +27,16 @@ async def get_auth_service(
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    service: AuthService = Depends(get_auth_service),
+    session: AsyncSession = Depends(get_session),
 ) -> User:
-    """Bearer access token 을 검증해 현재 사용자를 반환한다(실패 시 401)."""
+    """Bearer access token 을 검증해 현재 사용자를 반환한다(실패 시 401).
+
+    인증은 읽기 전용이므로 커밋하는 ``get_auth_service`` 대신 세션에서 직접
+    Service 를 구성한다. 이렇게 해야 인증+쓰기 의존성을 함께 쓰는 엔드포인트에서
+    한 세션에 커밋 주체가 둘이 되는 이중 커밋(부분 저장) 위험이 사라지고,
+    인증된 읽기 요청마다 불필요한 COMMIT 왕복도 없앤다(검수 W2/REQ-009).
+    """
+    service = AuthService(session)
     try:
         payload = decode_token(token, token_type=ACCESS_TOKEN_TYPE)
     except jwt.InvalidTokenError as exc:
