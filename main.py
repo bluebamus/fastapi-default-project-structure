@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.db.session import create_db_tables, dispose_engine, engine
 from app.core.exception import AppException, ErrorResponse, ValidationException
+from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.rate_limit import limiter
@@ -61,6 +62,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     logger.info("[Shutdown] 애플리케이션 종료 시작")
+    # 엔진 정리 전에 진행 중인 백그라운드 로그 태스크를 drain (W1) —
+    # dispose 와의 경합으로 인한 마지막 로그 유실을 줄인다.
+    await access_log_tasks.drain()
     await dispose_engine()
     logger.info("[Shutdown] 애플리케이션 종료 완료")
 
