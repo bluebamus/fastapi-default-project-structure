@@ -10,8 +10,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Logs
-logs/
+# Logs (runtime output at repo root only — anchored so it does NOT swallow
+# the source package app/utils/logs/)
+/logs/
 
 # Alembic scratch / local verification databases
 _scratch_alembic.db
