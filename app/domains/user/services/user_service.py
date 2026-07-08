@@ -55,11 +55,11 @@ class UserService(BaseService):
     async def update_user(self, user_id: str, data: UserUpdate) -> User:
         """사용자를 부분 수정한다. 없으면 UserNotFoundException."""
         self.log.debug("사용자 수정: id=%s", user_id)
-        await self.get_user(user_id)  # 존재 보장
+        existing = await self.get_user(user_id)  # 존재 보장(없으면 404)
         updated = await self.repository.update(user_id, data.model_dump(exclude_unset=True))
-        if updated is None:
-            raise UserNotFoundException(detail={"id": user_id})
-        return updated
+        # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
+        # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
+        return updated if updated is not None else existing
 
     async def delete_user(self, user_id: str) -> None:
         """사용자를 삭제한다. 없으면 UserNotFoundException."""
