@@ -13,7 +13,7 @@ SQLAlchemy Base 클래스
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from sqlalchemy import DateTime, String
@@ -29,6 +29,13 @@ class Base(DeclarativeBase):
     모든 모델이 상속받는 기본 클래스입니다.
     공통 필드와 메서드를 제공합니다.
     """
+
+    if TYPE_CHECKING:
+        # 저장소(BaseRepository)가 관리하는 모든 모델은 UUIDMixin 을 통해 문자열 ``id``
+        # 기본키를 갖는다는 것이 이 프로젝트의 불변식이다. 런타임에는 각 모델/믹스인이
+        # 실제 컬럼을 정의하므로, 여기서는 제네릭 코드(self.model.id)의 타입 체크를 위한
+        # 선언만 둔다(TYPE_CHECKING 가드로 런타임 매핑에는 영향을 주지 않음).
+        id: Mapped[str]
 
     type_annotation_map = {
         datetime: DateTime(timezone=True),
