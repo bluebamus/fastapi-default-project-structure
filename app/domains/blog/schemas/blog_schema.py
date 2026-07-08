@@ -1,4 +1,5 @@
 """Blog 도메인 스키마 — 게시글 CRUD 요청/응답 모델 (Pydantic v2)."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field

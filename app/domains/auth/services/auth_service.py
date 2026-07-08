@@ -3,6 +3,7 @@
 user 도메인의 `User` 모델·`UserRepository` 에 대해 인증한다(자격증명은 users.hashed_password).
 auth 는 횡단 관심사라 user 식별 모델에 의존하는 것을 허용한다.
 """
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.services.services_base import BaseService

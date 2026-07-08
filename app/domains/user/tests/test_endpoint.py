@@ -3,6 +3,7 @@
 표준 include_router 배선 + view→dependency→service→repository→DB 전체 경로를
 in-memory sqlite(get_session 오버라이드)로 검증한다.
 """
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -74,9 +75,7 @@ async def test_update_user_deactivate(client):
     )
     user_id = created.json()["id"]
 
-    resp = await client.patch(
-        f"/api/v1/user/users/{user_id}", json={"is_active": False}
-    )
+    resp = await client.patch(f"/api/v1/user/users/{user_id}", json={"is_active": False})
     assert resp.status_code == 200
     assert resp.json()["is_active"] is False
 
@@ -95,12 +94,8 @@ async def test_delete_user(client):
 
 
 async def test_duplicate_username_returns_409(client):
-    await client.post(
-        "/api/v1/user/users", json={"username": "dup", "email": "d1@x.com"}
-    )
-    resp = await client.post(
-        "/api/v1/user/users", json={"username": "dup", "email": "d2@x.com"}
-    )
+    await client.post("/api/v1/user/users", json={"username": "dup", "email": "d1@x.com"})
+    resp = await client.post("/api/v1/user/users", json={"username": "dup", "email": "d2@x.com"})
     assert resp.status_code == 409
     assert resp.json()["error_code"] == "USER_USERNAME_DUPLICATE"
 
@@ -112,7 +107,5 @@ async def test_get_missing_user_returns_404(client):
 
 
 async def test_create_rejects_invalid_email(client):
-    resp = await client.post(
-        "/api/v1/user/users", json={"username": "x", "email": "not-an-email"}
-    )
+    resp = await client.post("/api/v1/user/users", json={"username": "x", "email": "not-an-email"})
     assert resp.status_code == 422

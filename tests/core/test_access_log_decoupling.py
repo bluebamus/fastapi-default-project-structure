@@ -12,9 +12,7 @@ import importlib.util
 
 def test_middleware_does_not_import_home():
     """Middleware source must not reference app.home or app.domains.home."""
-    src = importlib.util.find_spec(
-        "app.core.middlewares.user_info_middleware"
-    ).origin
+    src = importlib.util.find_spec("app.core.middlewares.user_info_middleware").origin
     text = open(src, encoding="utf-8").read()
     assert "app.home" not in text and "app.domains.home" not in text
 

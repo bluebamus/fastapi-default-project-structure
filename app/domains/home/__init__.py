@@ -6,6 +6,7 @@
 import-time 부수효과로 access-log sink 를 미들웨어에 등록한다.
 모델 모듈을 import 하여 ``Base.metadata`` 에 테이블을 등록한다.
 """
+
 from app.domains.home.access_log_sink import register_sink
 from app.domains.home.admin import admin_views
 from app.domains.home.api.routers.router import home_router as router

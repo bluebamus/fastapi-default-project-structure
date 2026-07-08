@@ -56,9 +56,7 @@ class UserService(BaseService):
         """사용자를 부분 수정한다. 없으면 UserNotFoundException."""
         self.log.debug("사용자 수정: id=%s", user_id)
         await self.get_user(user_id)  # 존재 보장
-        updated = await self.repository.update(
-            user_id, data.model_dump(exclude_unset=True)
-        )
+        updated = await self.repository.update(user_id, data.model_dump(exclude_unset=True))
         if updated is None:
             raise UserNotFoundException(detail={"id": user_id})
         return updated

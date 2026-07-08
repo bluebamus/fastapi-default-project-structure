@@ -3,6 +3,7 @@
 configure_logging() 이 환경별 dictConfig 를 root 로거에 1회 적용하고,
 get_logger() 는 그 설정을 공유하는 자식 로거를 돌려준다(핸들러는 root 에만).
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,7 +39,7 @@ def setup_uvicorn_logging() -> dict:
     level = _level()
     use_utc = env in ("production", "staging")
     access_fmt = (
-        '[{asctime} {tzname}] {levelname:5} [app=uvicorn] '
+        "[{asctime} {tzname}] {levelname:5} [app=uvicorn] "
         '{client_addr} - "{request_line}" {status_code}'
     )
     return {

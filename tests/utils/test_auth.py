@@ -1,4 +1,5 @@
 """app/utils/authenticator/auth.py 단위 테스트 (bcrypt 해시 + JWT 토큰)."""
+
 from datetime import timedelta
 
 import jwt

@@ -4,6 +4,7 @@
 celery_app.conf.include = ["app.celery.tasks"] 로 등록된다.
 요청 밖 세션은 background_session 컨텍스트로 관리한다(UnitOfWork 제거).
 """
+
 from app.celery.app import celery_app
 from app.celery.task import run_async
 from app.core.db.session import background_session

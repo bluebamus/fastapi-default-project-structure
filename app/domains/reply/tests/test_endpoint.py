@@ -3,6 +3,7 @@
 표준 include_router 배선 + view→dependency→service→repository→DB 전체 경로를
 in-memory sqlite(get_session 오버라이드)로 검증한다.
 """
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -72,9 +73,7 @@ async def test_update_reply(client):
     created = await client.post("/api/v1/reply/replies", json={"content": "old"})
     reply_id = created.json()["id"]
 
-    resp = await client.patch(
-        f"/api/v1/reply/replies/{reply_id}", json={"content": "new"}
-    )
+    resp = await client.patch(f"/api/v1/reply/replies/{reply_id}", json={"content": "new"})
     assert resp.status_code == 200
     assert resp.json()["content"] == "new"
 

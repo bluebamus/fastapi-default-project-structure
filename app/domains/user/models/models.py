@@ -33,9 +33,7 @@ class User(Base):
         primary_key=True,
         default=lambda: str(uuid4()),
     )
-    username: Mapped[str] = mapped_column(
-        String(100), unique=True, nullable=False, index=True
-    )
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     # 인증(auth 도메인)용 bcrypt 해시. 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
