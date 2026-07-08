@@ -160,3 +160,30 @@
 
 > 보류 #4(dev 바인딩 완전차단)는 nginx/리버스 프록시로 설정 가능한 영역이라 사용자
 > 지시에 따라 제외(코드 기본값 0.0.0.0 유지, SERVER_HOST 로 이미 제한 가능).
+
+---
+
+## 실행 #1 (후속2) — 페이지네이션 유틸 재구성 · 2026-07-08
+
+#### WU-10 · `0469c25` refactor(pagination): utils 로 이동 + 순수 dataclass
+- 요청: 페이지네이션을 utils 폴더에 별도 모듈·클래스로, 데이터클래스로 초기값 정의,
+  return cls() 에 쓸 클래스 변수만 정의(반환 타입 고정). 안티패턴 있으면 확인.
+- 안티패턴 검토 → 사용자 확인:
+  - (Q1) 응답스키마를 순수 dataclass 로 → 트레이드오프 안내 후 **순수 @dataclass 선택**.
+    현재 미사용이라 즉시 리스크 없음.
+  - (Q2) 배치 → **app/utils/pagination/ 이동** 선택.
+  - 자동 처리: items 가변 기본값 → field(default_factory)(안티패턴 회피), __init__ wildcard
+    import 제거(명시적 export).
+- 변경 전 상태: app/shared/pagination/ 의 PaginatedResponse(Pydantic Generic)+get_paginated
+  (DB/Pydantic 결합). **앱 전체 미사용(grep 확인, 테스트 0) = 데드코드.** shared 계층은
+  pagination 만 보유.
+- 결정/근거:
+  - 순수 Pagination[T] dataclass 를 app/utils/pagination/ 에 신규(무의존, utils 순수성 준수).
+  - app/shared/ 전면 제거(참조 0 확인). get_paginated 는 미사용+DB결합이라 utils 순수성
+    위반 → 드롭(검증된 데드코드, 안전 삭제). **capability 감소 인지**: 향후 DB 페이지네이션
+    헬퍼가 필요하면 재도입 가능(현재 도메인은 자체 skip/limit 스키마 사용).
+  - 문서 정합성(코드 기준): README/ARCHITECTURE 의 shared→utils, 의존방향, stale 한
+    app.shared.logging→app.utils.logs, 미존재 로거상수 섹션→실제 get_logger 패턴,
+    authenticator 스텁→구현. filters 의 죽은 /app/shared/ 세그먼트 제거.
+- 검증: ruff clean, mypy 0(146), pytest 95 passed(+6), bandit MEDIUM+ 0(신규 파일 이슈 0).
+- 회귀: 없음. 미사용 코드 제거 + 신규 순수 유틸. 과거 결정과 독립.
