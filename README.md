@@ -137,8 +137,7 @@ fastapi-default-project-structure/
 │   │   └── middlewares/         # CORS, UserInfo, AccessLogSink
 │   │
 │   ├── celery/                  # 중앙 Celery 앱 + tasks.py + run_async 브릿지
-│   ├── shared/pagination/       # 페이지네이션 헬퍼
-│   └── utils/                   # logs(구조화 로깅), authenticator(JWT·bcrypt 인증)
+│   └── utils/                   # logs(구조화 로깅), authenticator(JWT·bcrypt 인증), pagination(페이지네이션)
 │
 ├── migrations/                  # Alembic (env.py가 각 앱 models import로 메타데이터 수집)
 └── docs/
@@ -163,14 +162,14 @@ fastapi-default-project-structure/
 `app/` 아래는 **3개 영역**으로 나뉘며, 의존은 한 방향으로만 흐릅니다.
 
 ```
-domains → core → shared
+domains → core → utils
 ```
 
 | 영역 | 역할 | 규칙 |
 |------|------|------|
 | `app/domains/<name>/` | 기능 단위 앱(도메인) | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 도메인은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
 | `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 `domains`를 import하지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`(DEBUG 전용 테이블 자동 생성)가 메타데이터 등록을 위해 각 도메인 `models` 를 함수 내부에서 import 하는 것 |
-| `app/shared/`, `app/utils/` | 순수 유틸리티 (페이지네이션, 로깅) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
+| `app/utils/` | 순수 유틸리티 (로깅, 인증, 페이지네이션) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
 > 핵심 규칙: **`core`는 도메인을 모른다.** 도메인이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
 
@@ -491,7 +490,7 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                        get_logger()                          │
-│          app/shared/logging/ (캐싱된 로거 반환)               │
+│          app/utils/logs/ (캐싱된 로거 반환)                   │
 └─────────────────────────────────────────────────────────────┘
                               ↓
               ┌───────────────┴───────────────┐
@@ -536,7 +535,7 @@ DEBUG=false → 로그 레벨: INFO (INFO 이상만 출력)
 #### 1. 기본 사용법
 
 ```python
-from app.shared.logging import get_logger
+from app.utils.logs import get_logger
 
 # 모듈별 로거 생성 (이름으로 로그 출처 구분)
 logger = get_logger("my_module")
@@ -613,20 +612,15 @@ logs/
 [2024-01-15 10:30:02] ERROR    [database:connect:23] 연결 실패: timeout
 ```
 
-### 미리 정의된 로거 상수
+### 로거 이름 규칙
+
+별도의 상수 없이 모듈/출처를 나타내는 문자열로 로거를 만든다(예: `"home"`, `"database"`,
+`"celery"`). 로그 헤더의 `[app=..]` 세그먼트가 소스 경로에서 앱을 자동 식별한다.
 
 ```python
-# app/shared/logging/logger.py에 정의된 상수 (app.shared.logging에서 re-export)
-from app.shared.logging import (
-    HOME_LOGGER,      # "home"
-    LYRIC_LOGGER,     # "lyric"
-    SONG_LOGGER,      # "song"
-    VIDEO_LOGGER,     # "video"
-    CELERY_LOGGER,    # "celery"
-    APP_LOGGER,       # "app"
-)
+from app.utils.logs import get_logger
 
-logger = get_logger(HOME_LOGGER)
+logger = get_logger("home")  # 이름은 로그에서 출처를 구분하는 문자열
 ```
 
 ---
