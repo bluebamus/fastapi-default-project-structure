@@ -19,7 +19,7 @@ def _app_from_path(pathname: str) -> str:
     p = pathname.replace("\\", "/")
     if "/domains/" in p:
         return p.split("/domains/", 1)[1].split("/", 1)[0]
-    for seg in ("/app/core/", "/app/celery/", "/app/utils/", "/app/shared/"):
+    for seg in ("/app/core/", "/app/celery/", "/app/utils/"):
         if seg in p:
             return seg.strip("/").rsplit("/", 1)[-1]
     if "/app/" in p:
