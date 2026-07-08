@@ -141,3 +141,22 @@
   이미 `SERVER_HOST` 로 설정 가능하므로 코드 변경 불요. 운영 제한은 배포 시 env 로 결정.
 
 > 회귀 대조: 보류 #3/#4 미적용은 과거 결정 회귀 아님(신규 발견 문서화). #1/#2 는 신규 보안 강화.
+
+#### WU-9 · `0bcab15` fix(update): no-op PATCH 404 수정 (M4, 사용자 승인 후 적용)
+- 대상: blog/user/reply/sns services 의 update_*, tests/domains/test_update_noop.py(신규).
+- 변경 전: 존재확인 후 `repository.update` 가 None 이면 404. MySQL 은 동일 값 UPDATE 시
+  rowcount=0 → None → 존재하는 리소스에 no-op PATCH 시 **잘못된 404**.
+- 결정/근거: 존재는 이미 `get_*` 로 보장 → update 가 None 이면 404 대신 현재 엔티티 반환.
+  [동작 변경] MySQL no-op PATCH: 404→200. SQLite 는 no-op 도 rowcount=1 이라 불변.
+- 테스트: repository 스텁으로 no-op(None)/부재(get_by_id=None) 분리 검증 8건(4×2).
+  현재 SQLite 하니스에서 실행 확인(사용자 지시: 현재 환경에서만 테스트).
+- 검증: ruff/mypy clean, pytest 89 passed(+8). 회귀: 없음(SQLite 경로 불변).
+
+#### 최종 Bandit 감사 (사용자 지시: 모든 단계 후)
+- 명령: `bandit -r app main.py config.py` (전체 5,740 LOC).
+- 결과: **High 0 / Medium 0**. Low 96 = B101 assert 89(테스트) + B105 6(오탐: 토큰
+  종류 식별자·에러코드 상수) + B106 1(테스트 픽스처). #nosec 처리 1(B104 정당화).
+- 결론: **실질 보안 이슈 0건**. Low 는 전부 테스트 assert 또는 문자열 상수 오탐.
+
+> 보류 #4(dev 바인딩 완전차단)는 nginx/리버스 프록시로 설정 가능한 영역이라 사용자
+> 지시에 따라 제외(코드 기본값 0.0.0.0 유지, SERVER_HOST 로 이미 제한 가능).
