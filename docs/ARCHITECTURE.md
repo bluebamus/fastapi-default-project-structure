@@ -51,10 +51,10 @@ fastapi-default-project-structure/
 │   │   ├── tasks.py                 # 중앙 태스크 모듈 (모든 도메인 백그라운드 작업)
 │   │   └── task.py                  # run_async() 동기 브릿지
 │   │
-│   ├── shared/pagination/           # 페이지네이션 헬퍼 (외부 의존 없음)
-│   └── utils/
+│   └── utils/                       # 순수 유틸 (외부·상위 계층 의존 없음)
 │       ├── logs/                    # 구조화 로깅 (get_logger, setup_uvicorn_logging)
-│       └── authenticator/           # 인증 (현재 빈 스텁 — 미구현)
+│       ├── authenticator/           # 인증 (JWT·bcrypt)
+│       └── pagination/              # 페이지네이션 (순수 dataclass)
 │
 ├── migrations/env.py                # 각 앱 models 모듈을 import 해 Base.metadata 수집
 ├── scripts/new_app.py               # 앱 스캐폴딩 생성기
@@ -67,10 +67,10 @@ fastapi-default-project-structure/
 ### 의존 방향
 
 ```
-domains → core → shared/utils
+domains → core → utils
 ```
 
-`core`는 `shared`/`utils`만 알고, `domains`는 `core`를 사용합니다.
+`core`는 `utils`만 알고, `domains`는 `core`를 사용합니다.
 `core`는 절대로 `domains`를 import하지 않습니다(도메인이 미들웨어 등에 붙어야 하면
 등록 훅으로 연결 — 예: `access_log_sink.register_sink()`).
 
