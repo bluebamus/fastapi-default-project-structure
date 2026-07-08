@@ -23,6 +23,10 @@ from app.utils.authenticator.auth import (
     verify_password,
 )
 
+# 사용자가 없거나 비밀번호 미설정일 때도 동일한 bcrypt 검증 비용을 지불하기 위한 더미 해시.
+# 존재하는 사용자와 없는 사용자의 응답 시간을 맞춰 사용자명 열거(타이밍 사이드채널)를 막는다.
+_DUMMY_PASSWORD_HASH = hash_password("constant-time-dummy-password")
+
 
 class AuthService(BaseService):
     """인증 비즈니스 로직(세션 기반). 커밋은 의존성이 담당."""
@@ -48,10 +52,12 @@ class AuthService(BaseService):
     async def authenticate(self, username: str, password: str) -> User:
         """사용자명/비밀번호를 검증하고 사용자를 반환한다(실패 시 401)."""
         user = await self.users.get_by_username(username)
-        if user is None or not user.hashed_password or not user.is_active:
-            raise InvalidCredentialsException()
-        # bcrypt 검증도 CPU 집약적이라 스레드로 격리(이벤트 루프 블로킹 방지).
-        if not await asyncio.to_thread(verify_password, password, user.hashed_password):
+        # 사용자 부재/비밀번호 미설정이어도 더미 해시로 항상 동일한 bcrypt 검증을 수행한다
+        # (응답 시간차로 사용자명을 열거하는 타이밍 공격 방지). bcrypt 는 CPU 집약적이라
+        # 스레드로 격리해 이벤트 루프 블로킹도 막는다.
+        hashed = user.hashed_password if user and user.hashed_password else _DUMMY_PASSWORD_HASH
+        password_ok = await asyncio.to_thread(verify_password, password, hashed)
+        if user is None or not user.hashed_password or not user.is_active or not password_ok:
             raise InvalidCredentialsException()
         return user
 
