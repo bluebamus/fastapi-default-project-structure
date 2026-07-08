@@ -158,6 +158,20 @@ class AppSettings(BaseSettings):
         description="실행 환경",
     )
 
+    # 개발용 `python main.py` 직접 실행 시 바인딩 호스트/포트.
+    # 컨테이너·배포 환경에서 외부 접근을 허용하려면 0.0.0.0 이 기본이지만, 민감한
+    # 환경에서는 SERVER_HOST=127.0.0.1 로 지정하고 리버스 프록시를 두는 것을 권장한다.
+    SERVER_HOST: str = Field(
+        default="0.0.0.0",  # nosec B104 - 컨테이너 실행 전제의 의도된 기본값(운영은 env 로 제한)
+        description="개발 서버 바인딩 호스트",
+    )
+
+    # 개발 서버 바인딩 포트
+    SERVER_PORT: int = Field(
+        default=8000,
+        description="개발 서버 바인딩 포트",
+    )
+
 
 # =============================================================================
 # 데이터베이스 설정
