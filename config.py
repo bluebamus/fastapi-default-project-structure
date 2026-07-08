@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -281,6 +281,21 @@ class CORSSettings(BaseSettings):
         default=600,
         description="Preflight 캐시 시간(초)",
     )
+
+    @model_validator(mode="after")
+    def _reject_wildcard_with_credentials(self) -> "CORSSettings":
+        """`allow_origins=["*"]` 와 `allow_credentials=True` 조합을 거부한다.
+
+        이 조합은 CORS 스펙상 무효일 뿐 아니라, Starlette 은 이때 요청 Origin 을 그대로
+        반영해 '자격증명 포함 임의 출처 허용'이라는 취약 상태가 된다. 잘못된 운영 설정을
+        기동 시점에 차단한다(fail-fast).
+        """
+        if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ALLOW_ORIGINS:
+            raise ValueError(
+                "CORS_ALLOW_CREDENTIALS=True 와 CORS_ALLOW_ORIGINS=['*'] 는 함께 쓸 수 없습니다. "
+                "자격증명을 허용하려면 구체적인 Origin 을 지정하세요."
+            )
+        return self
 
 
 # =============================================================================
