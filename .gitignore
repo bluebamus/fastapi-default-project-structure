@@ -5,6 +5,9 @@
 .venv/
 venv/
 
+# Claude Code (local project skills/agents — keep locally, don't commit/push)
+.claude/
+
 # Python cache
 __pycache__/
 *.py[cod]
