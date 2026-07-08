@@ -50,11 +50,11 @@ class ReplyService(BaseService):
     async def update_reply(self, reply_id: str, data: ReplyUpdate) -> Reply:
         """댓글을 부분 수정한다. 없으면 ReplyNotFoundException."""
         self.log.debug("댓글 수정: id=%s", reply_id)
-        await self.get_reply(reply_id)  # 존재 보장
+        existing = await self.get_reply(reply_id)  # 존재 보장(없으면 404)
         updated = await self.repository.update(reply_id, data.model_dump(exclude_unset=True))
-        if updated is None:
-            raise ReplyNotFoundException(detail={"id": reply_id})
-        return updated
+        # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
+        # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
+        return updated if updated is not None else existing
 
     async def delete_reply(self, reply_id: str) -> None:
         """댓글을 삭제한다. 없으면 ReplyNotFoundException."""
