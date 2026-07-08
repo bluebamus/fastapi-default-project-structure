@@ -30,8 +30,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-T = TypeVar("T")
-ModelT = TypeVar("ModelT")
+from app.core.models.models_base import Base
+
+# 스키마 타입(T)은 Pydantic 모델, 모델 타입(ModelT)은 SQLAlchemy Base 하위로 제약한다.
+# 이 바운드가 있어야 item_schema.model_fields / model.id 접근이 타입 안전하다.
+T = TypeVar("T", bound=BaseModel)
+ModelT = TypeVar("ModelT", bound=Base)
 
 
 class PaginatedResponse(BaseModel, Generic[T]):

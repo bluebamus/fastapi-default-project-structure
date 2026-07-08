@@ -3,6 +3,8 @@
 뷰는 HTTP 역할만: 입력 수신 → 주입된 AuthService 호출 → 응답 변환.
 """
 
+from typing import Any
+
 import jwt
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -27,7 +29,12 @@ from config import middleware_settings
 
 router = APIRouter()
 
-_UNAUTH = {401: {"model": ErrorResponse, "description": "인증 실패"}}
+_UNAUTH: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorResponse, "description": "인증 실패"}
+}
+_CONFLICT: dict[int | str, dict[str, Any]] = {
+    409: {"model": ErrorResponse, "description": "사용자명 중복"}
+}
 
 
 @router.post(
@@ -37,7 +44,7 @@ _UNAUTH = {401: {"model": ErrorResponse, "description": "인증 실패"}}
     summary="회원가입",
     description="사용자명·이메일·비밀번호로 사용자를 생성합니다.",
     operation_id="authRegister",
-    responses={409: {"model": ErrorResponse, "description": "사용자명 중복"}},
+    responses=_CONFLICT,
 )
 @limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)
 async def register(
@@ -85,7 +92,10 @@ async def refresh(
     except jwt.InvalidTokenError as exc:
         raise InvalidTokenException() from exc
 
-    user = await service.get_user_by_id(claims.get("sub"))
+    subject = claims.get("sub")
+    if not isinstance(subject, str):
+        raise InvalidTokenException()
+    user = await service.get_user_by_id(subject)
     if user is None or not user.is_active:
         raise InvalidTokenException()
     access, new_refresh = service.issue_tokens(user)

@@ -28,13 +28,15 @@ def _pw_bytes(password: str) -> bytes:
 
 def hash_password(password: str) -> str:
     """비밀번호를 bcrypt 로 해시한다."""
-    return bcrypt.hashpw(_pw_bytes(password), bcrypt.gensalt()).decode("utf-8")
+    digest: bytes = bcrypt.hashpw(_pw_bytes(password), bcrypt.gensalt())
+    return digest.decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
     """평문 비밀번호가 해시와 일치하는지 검증한다(불일치·오류 시 False)."""
     try:
-        return bcrypt.checkpw(_pw_bytes(password), hashed.encode("utf-8"))
+        matches: bool = bcrypt.checkpw(_pw_bytes(password), hashed.encode("utf-8"))
+        return matches
     except (ValueError, TypeError):
         return False
 
