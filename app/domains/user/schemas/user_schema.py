@@ -1,4 +1,5 @@
 """User 도메인 스키마 — 사용자 CRUD 요청/응답 모델 (Pydantic v2)."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,9 +12,7 @@ class UserBase(BaseModel):
     """사용자 공통 필드."""
 
     username: str = Field(..., min_length=1, max_length=100, description="사용자명(고유)")
-    email: str = Field(
-        ..., max_length=255, pattern=_EMAIL_PATTERN, description="이메일"
-    )
+    email: str = Field(..., max_length=255, pattern=_EMAIL_PATTERN, description="이메일")
 
 
 class UserCreate(UserBase):
@@ -23,9 +22,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """사용자 수정 요청 — 전달된 필드만 부분 수정한다."""
 
-    email: str | None = Field(
-        None, max_length=255, pattern=_EMAIL_PATTERN, description="이메일"
-    )
+    email: str | None = Field(None, max_length=255, pattern=_EMAIL_PATTERN, description="이메일")
     is_active: bool | None = Field(None, description="활성 여부")
 
 

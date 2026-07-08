@@ -21,7 +21,15 @@ class ErrorResponse(BaseModel):
     message: str
     detail: Any | None = None
 
-    model_config = {"json_schema_extra": {"example": {"error_code": "NOT_FOUND", "message": "리소스를 찾을 수 없습니다.", "detail": {"resource": "User", "id": 1}}}}
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "error_code": "NOT_FOUND",
+                "message": "리소스를 찾을 수 없습니다.",
+                "detail": {"resource": "User", "id": 1},
+            }
+        }
+    }
 
 
 # =============================================================================

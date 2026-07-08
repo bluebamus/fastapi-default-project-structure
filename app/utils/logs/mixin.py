@@ -3,6 +3,7 @@
 클래스가 LoggerMixin 을 상속하면 self.log 로 클래스명이 주입된 로거를 쓸 수 있다.
 LoggerAdapter 의 extra 로 classname 을 넣으므로 프레임 탐색(방식 A) 없이 오버헤드 0.
 """
+
 from __future__ import annotations
 
 import logging

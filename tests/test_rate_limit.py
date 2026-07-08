@@ -5,6 +5,7 @@
 _rate_limit_exceeded_handler)과 `@limiter.limit` 데코레이터를 격리된 앱으로 구성해
 429 동작을 검증한다.
 """
+
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from slowapi import Limiter, _rate_limit_exceeded_handler

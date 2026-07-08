@@ -4,6 +4,7 @@
 - 동시 실행 태스크 수에 상한을 두어(백프레셔) 고부하 시 무제한 증가를 막고,
 - 앱 종료 시 in-flight 태스크를 drain 하여 마지막 로그 유실/엔진 경합을 줄인다.
 """
+
 import asyncio
 
 from app.core.middlewares.background_tasks import BackgroundTaskRunner

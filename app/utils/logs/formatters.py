@@ -3,6 +3,7 @@
 asctime 을 설정된 타임존(또는 UTC)으로 렌더하고, 약어(KST/UTC)를 record.tzname 에 주입한다.
 style 은 '{' 고정. appname/classname 이 비어 있으면 안전 기본값으로 채운다.
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,7 +40,9 @@ class TzFormatter(logging.Formatter):
         return rendered
 
     def format(self, record: logging.LogRecord) -> str:
-        record.tzname = "UTC" if self.use_utc else (datetime.now(self._tz()).strftime("%Z") or "KST")
+        record.tzname = (
+            "UTC" if self.use_utc else (datetime.now(self._tz()).strftime("%Z") or "KST")
+        )
         if not getattr(record, "appname", None):
             record.appname = "app"
         if not getattr(record, "classname", None):

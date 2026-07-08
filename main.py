@@ -219,6 +219,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
 
     # Scalar API 문서 (DEBUG 모드에서만 활성화)
     if app_settings.DEBUG:
+
         @app.get("/docs", include_in_schema=False)
         async def scalar_docs():
             """
@@ -246,8 +247,8 @@ app = FastAPI(
     openapi_tags=tags_metadata,
     lifespan=lifespan,
     default_response_class=ORJSONResponse,
-    docs_url=None,      # Swagger UI 비활성화 (Scalar 사용)
-    redoc_url=None,     # ReDoc 비활성화 (Scalar 사용)
+    docs_url=None,  # Swagger UI 비활성화 (Scalar 사용)
+    redoc_url=None,  # ReDoc 비활성화 (Scalar 사용)
     openapi_url="/openapi.json" if app_settings.DEBUG else None,
 )
 

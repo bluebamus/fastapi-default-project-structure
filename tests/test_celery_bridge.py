@@ -12,6 +12,7 @@ C1(검수 REQ-008): `run_async` 가 매 호출 `asyncio.run()` 으로 새 이벤
 살아있는 동일 루프에서 실행된다"—를 결정적으로 검증한다. 실제 MySQL 을 띄운
 Celery 통합 재현은 단위테스트 범위 밖(운영 환경 스모크 테스트로 위임).
 """
+
 import asyncio
 
 from app.celery.task import run_async
