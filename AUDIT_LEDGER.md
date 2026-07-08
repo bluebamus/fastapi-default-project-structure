@@ -187,3 +187,24 @@
     authenticator 스텁→구현. filters 의 죽은 /app/shared/ 세그먼트 제거.
 - 검증: ruff clean, mypy 0(146), pytest 95 passed(+6), bandit MEDIUM+ 0(신규 파일 이슈 0).
 - 회귀: 없음. 미사용 코드 제거 + 신규 순수 유틸. 과거 결정과 독립.
+
+---
+
+## 실행 #1 (후속3) — 완결 스윕(미정독 영역 정독) · 2026-07-08
+
+사용자 질의("개선될 항목 없는 게 확실히 검수됐는가")에 답하기 위해, 그간 스캔만 했던
+영역(home 서비스/리포지토리, core/exception·services_base·db/redis, migrations/env,
+celery/app, 로그 모듈 setup, 전 도메인 스키마 검증, admin 뷰, 로거 팩토리)을 전부 정독.
+
+- 대부분 매우 일관·견고. 아래 2건만 개선 대상으로 식별·수정.
+
+#### WU-11 · `e7167bf` fix(validation,config): auth 이메일 + celery 타임존
+- F1(Low): auth `RegisterRequest.email` 형식 검증 부재 → 실제 회원가입이 잘못된 이메일
+  허용(user 도메인은 검증). 정규식을 `app/utils/validators.py`(EMAIL_PATTERN)로 단일화해
+  auth·user 공유. [동작 변경] 잘못된 이메일 회원가입 → 422. 테스트 11건.
+- F2(Low): celery `timezone` 하드코딩('Asia/Seoul') → `timezone_settings.TIME_ZONE`.
+- 검증: ruff clean, mypy 0(147), pytest 106 passed(+11), bandit MEDIUM+ 0.
+- 회귀: 없음(F1은 정확성 강화, F2는 설정 일원화. 기본값 동작 불변).
+
+> 완결 스윕 결론: 위 2건 처리 후 **추가 개선 항목 없음**. 정적 도구(ruff/mypy/bandit)
+> 클린 + 전 소스 정독 완료. 남은 것은 '설계 결정/권고'(§AUDIT_REPORT 5·6)뿐.
