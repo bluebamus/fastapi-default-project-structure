@@ -13,15 +13,15 @@
 | 구분 | 내용 |
 |---|---|
 | 베이스라인 테스트 | **78 passed / 0 failed** |
-| 최종 테스트 | **78 passed / 0 failed** (회귀 0) |
+| 최종 테스트 | **89 passed / 0 failed** (회귀 0, 신규 테스트 +11) |
 | Ruff (lint) | 시작 clean → 최종 clean (`E/W/F/I/B/C4/UP`) |
 | Ruff (format) | 69개 파일 재포맷 적용 → 최종 전부 정렬 |
 | mypy | **60 errors → 0 errors** (147 파일, `# type: ignore` 미사용) |
 | Bandit | MEDIUM+ **1건 → 0건** |
-| 커밋 | 10개 원자적 커밋(chore/style/fix×6/docs×2) |
+| 커밋 | 12개 원자적 커밋(chore/style/fix×7/docs) |
+| 최종 Bandit | **High 0 / Medium 0** (Low 96 = 테스트 assert·문자열 상수 오탐, 실질 이슈 0) |
 
-**발견/조치 집계**: 결함·개선 **12건 식별** — **9건 수정 적용**, **3건 보류(설계 결정 필요)**.
-(후속으로 보류 #1 CORS 가드·#2 상수시간 인증을 추가 적용, 심층 분석 중 MySQL no-op PATCH 404 잠재버그 신규 발견.)
+**발견/조치 집계**: 결함·개선 **12건 식별** — **10건 수정 적용**, **2건 보류**(B104 완전차단=nginx 영역 제외, README 상세문서=권고).
 
 **설치한 도구**: `bandit==1.9.4` (dev 의존성, 보안 스캔용). Ruff·mypy·pytest 는 기존 dev 그룹에 존재.
 
@@ -58,7 +58,7 @@
 
 | # | 위치 | 문제 | 조치 |
 |---|---|---|---|
-| M4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | **MySQL 전용 no-op PATCH → 잘못된 404.** aiomysql 은 `CLIENT_FOUND_ROWS` 미설정이라 rowcount=변경행. 동일 값으로 PATCH 하면 rowcount=0 → `repository.update` 가 None → 서비스가 404. (SQLite 테스트는 no-op 도 rowcount=1 이라 이 버그를 가림 → **현재 CI 로 회귀 검증 불가**) | **보류(설계 결정)**: 동작 변경(404→200) + 회귀 검증 수단 부재로 자동 미적용. §4-③ 권고안 |
+| M4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | **MySQL 전용 no-op PATCH → 잘못된 404.** aiomysql 은 `CLIENT_FOUND_ROWS` 미설정이라 rowcount=변경행. 동일 값으로 PATCH 하면 rowcount=0 → `repository.update` 가 None → 서비스가 404. (SQLite 테스트는 no-op 도 rowcount=1 이라 이 버그를 가림) | **수정**(사용자 승인): 존재확인 후 update 가 None 이면 404 대신 현재 엔티티 반환(4도메인). 스텁 기반 회귀 테스트 8건 추가(현재 SQLite 하니스). [동작 변경 404→200] `fix(update)` |
 
 ---
 
@@ -108,9 +108,10 @@
 1. ✅ **CORS 가드**: `CORSSettings` 에 `['*']`+credentials=True 조합을 거부하는 `model_validator` 추가(fail-fast) + 테스트 3케이스. `9cecf2b`
 2. ✅ **상수시간 인증(L3)**: 더미 해시로 사용자 부재 시에도 동일 bcrypt 검증 → 타이밍 열거 차단. `9cecf2b`
 
+3. ✅ **update no-op 404 (M4)**: 존재확인 후 `repository.update` 가 None 이면 404 대신 현재 엔티티 반환(blog/user/reply/sns). 스텁 기반 회귀 테스트 8건 추가. `0bcab15`
+
 **여전히 보류(설계 결정 필요)**:
-3. **update no-op 404 (M4)**: `update_*` 의 사전 존재확인은 **제거 불가**(제거 시 오히려 위험). 재분석으로 드러난 실제 이슈는 **MySQL 전용 no-op PATCH 404** 버그다. 수정하면 동작 변경(404→200)이고 현재 SQLite 테스트로는 회귀 검증이 안 되므로 명시적 결정 필요. → 권고안: 서비스에서 `get_*` 로 존재 확인 후 `repository.update` 가 None 이면 404 대신 현재 엔티티 반환(4개 도메인), 또는 커넥션에 `CLIENT_FOUND_ROWS` 활성화 + MySQL 통합 테스트 추가.
-4. **B104 완전 차단(M3 잔여)**: 기본 바인딩을 `127.0.0.1` 로 바꾸면 컨테이너 외부 접근이 막혀 의도된 실행이 깨짐 → 기본값 0.0.0.0 유지, 운영 제한은 배포 시 `SERVER_HOST` 주입으로 결정. (이미 설정화 완료 — 코드 변경 불요)
+4. **B104 완전 차단(M3 잔여)** — **nginx/리버스 프록시 설정 영역이라 코드 변경 제외**(사용자 지시). 기본 바인딩 `0.0.0.0` 유지, 운영 제한은 `SERVER_HOST` env 또는 리버스 프록시로 결정. (이미 설정화 완료)
 5. **README 인증/레이트리밋 상세 섹션(권고)**: 특징·스택엔 추가했으나, 엔드포인트(`/api/v1/auth/*`)·토큰 수명·레이트리밋 한도 문자열에 대한 **전용 사용 섹션**은 미작성(대규모 문서 추가라 보류).
 
 ### 4-④ 회귀 방지 비교표
@@ -141,8 +142,28 @@
 
 ---
 
+---
+
+## 7. 최종 Bandit 보안 감사 결과
+
+전체 소스(`app` + `main.py` + `config.py`, 5,740 LOC)에 대한 최종 스캔:
+
+| 심각도 | 건수 | 성격 |
+|---|---|---|
+| **High** | **0** | — |
+| **Medium** | **0** | — |
+| Low (B101) | 89 | 테스트 파일의 `assert` 사용(pytest 정상 패턴) |
+| Low (B105) | 6 | **오탐** — `ACCESS_TOKEN_TYPE="access"`/`REFRESH_TOKEN_TYPE="refresh"`(토큰 종류 식별자), `INVALID_TOKEN="AUTH_INVALID_TOKEN"`(에러코드 상수) 등 비밀번호 아님 |
+| Low (B106) | 1 | 테스트 픽스처 비밀번호(`"wrong-password"`) |
+| #nosec 처리 | 1 | `config.SERVER_HOST` 기본값 `0.0.0.0`(B104) — 의도된 컨테이너 바인딩, 정당화 주석 |
+
+**결론: 실질 보안 이슈 0건.** Low 96건은 전부 테스트 코드의 assert이거나 문자열 상수 오탐으로, 조치 불요.
+
+---
+
 ### 부록 · 커밋 목록
 ```
+0bcab15 fix(update): no-op PATCH must not 404 on MySQL (M4)
 9cecf2b fix(security): CORS wildcard+credentials guard + constant-time auth
 bfe49e8 docs(audit): add AUDIT_REPORT.md and AUDIT_LEDGER.md
 7700662 docs: fix README drift vs code (auth/rate-limit/env/arch exceptions)
