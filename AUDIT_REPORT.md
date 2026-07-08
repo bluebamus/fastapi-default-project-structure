@@ -18,9 +18,10 @@
 | Ruff (format) | 69개 파일 재포맷 적용 → 최종 전부 정렬 |
 | mypy | **60 errors → 0 errors** (147 파일, `# type: ignore` 미사용) |
 | Bandit | MEDIUM+ **1건 → 0건** |
-| 커밋 | 8개 원자적 커밋(chore/style/fix×5/docs) |
+| 커밋 | 10개 원자적 커밋(chore/style/fix×6/docs×2) |
 
-**발견/조치 집계**: 결함·개선 **11건 식별** — **7건 수정 적용**, **4건 보류(설계 결정 필요)**.
+**발견/조치 집계**: 결함·개선 **12건 식별** — **9건 수정 적용**, **3건 보류(설계 결정 필요)**.
+(후속으로 보류 #1 CORS 가드·#2 상수시간 인증을 추가 적용, 심층 분석 중 MySQL no-op PATCH 404 잠재버그 신규 발견.)
 
 **설치한 도구**: `bandit==1.9.4` (dev 의존성, 보안 스캔용). Ruff·mypy·pytest 는 기존 dev 그룹에 존재.
 
@@ -50,8 +51,14 @@
 |---|---|---|---|
 | L1 | `app/core/repositories/repository_base.py` (DML×6) | `Result.rowcount` 접근이 타입상 부정확(`CursorResult` 이어야) | **수정**: `cast("CursorResult[Any]", …)` (런타임 동일). `fix(repo)` |
 | L2 | 라우터 6종 `responses=` 상수 / pagination / bcrypt 반환 / middleware / celery / filters / admin | mypy 60건(대부분 제네릭·서드파티 스텁·타입 추론) | **수정**: 타입 명시·TypeVar 바운드·중간변수 타입화·표준 스타렛 타입. mypy override 에 slowapi/bcrypt/celery 추가. `fix(types)` |
-| L3 | `app/domains/auth/services/auth_service.py:authenticate` | 사용자 부재 시 bcrypt 미실행 → 응답 시간차로 **사용자명 열거** 가능(타이밍 사이드채널) | **보류(권고)**: §4-③ 참조 |
-| L4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | 존재확인 `get_*`(SELECT) 후 `repository.update`(내부 재-SELECT) → 중복 쿼리 | **보류(권고)**: §4-③ 참조 |
+| L3 | `app/domains/auth/services/auth_service.py:authenticate` | 사용자 부재 시 bcrypt 미실행 → 응답 시간차로 **사용자명 열거** 가능(타이밍 사이드채널) | **수정**: 더미 해시 상시 검증으로 상수시간화(401 동일). `fix(security)` |
+| L4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | 존재확인 `get_*` 는 필요(제거 불가). **재분석 결과 별도 잠재버그 발견 → M4** | M4 참조 |
+
+### Medium (심층 분석 중 신규 발견)
+
+| # | 위치 | 문제 | 조치 |
+|---|---|---|---|
+| M4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | **MySQL 전용 no-op PATCH → 잘못된 404.** aiomysql 은 `CLIENT_FOUND_ROWS` 미설정이라 rowcount=변경행. 동일 값으로 PATCH 하면 rowcount=0 → `repository.update` 가 None → 서비스가 404. (SQLite 테스트는 no-op 도 rowcount=1 이라 이 버그를 가림 → **현재 CI 로 회귀 검증 불가**) | **보류(설계 결정)**: 동작 변경(404→200) + 회귀 검증 수단 부재로 자동 미적용. §4-③ 권고안 |
 
 ---
 
@@ -95,12 +102,15 @@
 
 ### 4-③ 설계·워크플로 평가 및 보류 항목(설계 결정 필요)
 
-전반적으로 관심사 분리·결합도·에러 처리·동시성 모델이 **일관되고 건전**하다. 아래는 자동 적용하지 않고 남긴 판단 항목:
+전반적으로 관심사 분리·결합도·에러 처리·동시성 모델이 **일관되고 건전**하다.
 
-1. **CORS 가드 (권고)**: 현재 기본값은 안전하나, 운영자가 `CORS_ALLOW_CREDENTIALS=true` 를 켜면서 `CORS_ALLOW_ORIGINS=["*"]` 를 남기면 자격증명 포함 임의 출처 허용(취약). → `CORSSettings` 에 두 값 조합을 거부하는 `model_validator` 추가 권고. (동작 변경 소지 있어 보류)
-2. **사용자 열거 타이밍(L3, 권고)**: `authenticate` 가 사용자 부재 시 bcrypt 를 건너뛰어 응답 시간차 발생. → 더미 해시 상시 비교로 상수시간화 권고. (보안 설계 선택 — 보류)
-3. **update 중복 쿼리(L4, 권고)**: `update_*` 의 사전 존재확인은 `repository.update` 의 rowcount 판정과 중복. → 사전 SELECT 제거로 1쿼리 절약 가능(에러 메시지 동일). (경미, 보류)
-4. **B104 완전 차단(M3 잔여)**: 기본 바인딩을 `127.0.0.1` 로 바꾸면 컨테이너 외부 접근이 막혀 의도된 실행 방식이 깨짐 → 기본값 0.0.0.0 유지, 운영 제한은 배포 시 `SERVER_HOST` 주입으로 결정 필요.
+**후속 적용 완료**(사용자 승인):
+1. ✅ **CORS 가드**: `CORSSettings` 에 `['*']`+credentials=True 조합을 거부하는 `model_validator` 추가(fail-fast) + 테스트 3케이스. `9cecf2b`
+2. ✅ **상수시간 인증(L3)**: 더미 해시로 사용자 부재 시에도 동일 bcrypt 검증 → 타이밍 열거 차단. `9cecf2b`
+
+**여전히 보류(설계 결정 필요)**:
+3. **update no-op 404 (M4)**: `update_*` 의 사전 존재확인은 **제거 불가**(제거 시 오히려 위험). 재분석으로 드러난 실제 이슈는 **MySQL 전용 no-op PATCH 404** 버그다. 수정하면 동작 변경(404→200)이고 현재 SQLite 테스트로는 회귀 검증이 안 되므로 명시적 결정 필요. → 권고안: 서비스에서 `get_*` 로 존재 확인 후 `repository.update` 가 None 이면 404 대신 현재 엔티티 반환(4개 도메인), 또는 커넥션에 `CLIENT_FOUND_ROWS` 활성화 + MySQL 통합 테스트 추가.
+4. **B104 완전 차단(M3 잔여)**: 기본 바인딩을 `127.0.0.1` 로 바꾸면 컨테이너 외부 접근이 막혀 의도된 실행이 깨짐 → 기본값 0.0.0.0 유지, 운영 제한은 배포 시 `SERVER_HOST` 주입으로 결정. (이미 설정화 완료 — 코드 변경 불요)
 5. **README 인증/레이트리밋 상세 섹션(권고)**: 특징·스택엔 추가했으나, 엔드포인트(`/api/v1/auth/*`)·토큰 수명·레이트리밋 한도 문자열에 대한 **전용 사용 섹션**은 미작성(대규모 문서 추가라 보류).
 
 ### 4-④ 회귀 방지 비교표
@@ -133,6 +143,8 @@
 
 ### 부록 · 커밋 목록
 ```
+9cecf2b fix(security): CORS wildcard+credentials guard + constant-time auth
+bfe49e8 docs(audit): add AUDIT_REPORT.md and AUDIT_LEDGER.md
 7700662 docs: fix README drift vs code (auth/rate-limit/env/arch exceptions)
 f850393 fix(async): offload bcrypt hashing/verify to threadpool
 0f3d9d4 fix(security): make dev server bind host/port configurable (B104)
