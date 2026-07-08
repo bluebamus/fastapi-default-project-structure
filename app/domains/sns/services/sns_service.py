@@ -50,11 +50,11 @@ class SnsService(BaseService):
     async def update_post(self, post_id: str, data: SnsPostUpdate) -> SnsPost:
         """피드 게시물을 부분 수정한다. 없으면 SnsPostNotFoundException."""
         self.log.debug("피드 게시물 수정: id=%s", post_id)
-        await self.get_post(post_id)  # 존재 보장
+        existing = await self.get_post(post_id)  # 존재 보장(없으면 404)
         updated = await self.repository.update(post_id, data.model_dump(exclude_unset=True))
-        if updated is None:
-            raise SnsPostNotFoundException(detail={"id": post_id})
-        return updated
+        # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
+        # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
+        return updated if updated is not None else existing
 
     async def delete_post(self, post_id: str) -> None:
         """피드 게시물을 삭제한다. 없으면 SnsPostNotFoundException."""
