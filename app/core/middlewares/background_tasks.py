@@ -13,6 +13,7 @@
 전역 싱글턴 ``access_log_tasks`` 를 미들웨어(spawn)와 main lifespan(drain)이
 공유한다.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -73,9 +74,7 @@ class BackgroundTaskRunner:
         logger.info("백그라운드 태스크 drain 시작 — %d건 대기", len(pending))
         done, still_pending = await asyncio.wait(pending, timeout=timeout)
         if still_pending:
-            logger.warning(
-                "drain 타임아웃(%.1fs) — 미완료 %d건", timeout, len(still_pending)
-            )
+            logger.warning("drain 타임아웃(%.1fs) — 미완료 %d건", timeout, len(still_pending))
         else:
             logger.info("백그라운드 태스크 drain 완료 — %d건", len(done))
 

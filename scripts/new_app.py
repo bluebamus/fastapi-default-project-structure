@@ -243,7 +243,11 @@ if __name__ == "__main__":
     print(f"  1) from app.domains import ... , {name}")
     print(f"  2) APPS = [..., {name}]   # 라우터가 /api 에 취합됨")
     print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
-    print("  - models: models/ 에 ORM 모델 추가 후 __init__.py 의 import 주석 해제 (Base.metadata 등록)")
+    print(
+        "  - models: models/ 에 ORM 모델 추가 후 __init__.py 의 import 주석 해제 (Base.metadata 등록)"
+    )
     if args.with_admin:
-        print(f"  - admin: admin.py 의 admin_views 에 {class_name}Admin 을 추가하면 SQLAdmin 에 노출")
+        print(
+            f"  - admin: admin.py 의 admin_views 에 {class_name}Admin 을 추가하면 SQLAdmin 에 노출"
+        )
     print("  - 서버 재시작 시 라우터가 마운트됩니다")

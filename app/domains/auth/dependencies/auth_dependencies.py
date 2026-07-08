@@ -1,4 +1,5 @@
 """Auth 의존성 — 서비스 구성(트랜잭션 경계) + OAuth2 현재 사용자 해석."""
+
 from collections.abc import AsyncGenerator
 
 import jwt

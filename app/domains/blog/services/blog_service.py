@@ -51,9 +51,7 @@ class BlogService(BaseService):
         """게시글을 부분 수정한다. 없으면 PostNotFoundException."""
         self.log.debug("게시글 수정: id=%s", post_id)
         await self.get_post(post_id)  # 존재 보장
-        updated = await self.repository.update(
-            post_id, data.model_dump(exclude_unset=True)
-        )
+        updated = await self.repository.update(post_id, data.model_dump(exclude_unset=True))
         if updated is None:
             raise PostNotFoundException(detail={"id": post_id})
         return updated

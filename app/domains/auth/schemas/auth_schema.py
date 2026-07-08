@@ -1,4 +1,5 @@
 """Auth 도메인 스키마 — 회원가입/토큰 요청·응답."""
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

@@ -2,6 +2,7 @@
 
 뷰는 HTTP 역할만: 입력 수신 → 주입된 AuthService 호출 → 응답 변환.
 """
+
 import jwt
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm

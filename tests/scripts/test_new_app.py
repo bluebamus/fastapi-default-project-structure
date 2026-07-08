@@ -1,7 +1,6 @@
 """Tests for scripts/new_app.py scaffolding generator (convention-based, gen-2)."""
 
 
-
 def test_generator_creates_bootable_app(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "app" / "domains").mkdir(parents=True)

@@ -51,9 +51,7 @@ class ReplyService(BaseService):
         """댓글을 부분 수정한다. 없으면 ReplyNotFoundException."""
         self.log.debug("댓글 수정: id=%s", reply_id)
         await self.get_reply(reply_id)  # 존재 보장
-        updated = await self.repository.update(
-            reply_id, data.model_dump(exclude_unset=True)
-        )
+        updated = await self.repository.update(reply_id, data.model_dump(exclude_unset=True))
         if updated is None:
             raise ReplyNotFoundException(detail={"id": reply_id})
         return updated

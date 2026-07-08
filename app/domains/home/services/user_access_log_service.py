@@ -103,7 +103,9 @@ class UserAccessLogService(BaseService):
         browser_counts = await self.repository.count_by_browser()
         return AccessLogStats(
             total_count=total_count,
-            device_types=[DeviceTypeStats(device_type=k, count=v) for k, v in device_counts.items()],
+            device_types=[
+                DeviceTypeStats(device_type=k, count=v) for k, v in device_counts.items()
+            ],
             os_list=[OSStats(os_name=k, count=v) for k, v in os_counts.items()],
             browsers=[BrowserStats(browser_name=k, count=v) for k, v in browser_counts.items()],
         )

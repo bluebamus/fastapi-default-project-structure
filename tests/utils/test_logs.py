@@ -2,6 +2,7 @@
 
 검증: appname 산출, 클래스명 자동추출(A), 믹스인 주입(C), 포맷 필드, end-to-end.
 """
+
 import io
 import logging
 

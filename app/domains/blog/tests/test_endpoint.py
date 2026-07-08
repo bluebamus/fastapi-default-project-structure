@@ -3,6 +3,7 @@
 표준 include_router 배선 + view→dependency→service→repository→DB 전체 경로를
 in-memory sqlite(get_session 오버라이드)로 검증한다.
 """
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -71,23 +72,17 @@ async def test_list_posts(client):
 
 
 async def test_update_post(client):
-    created = await client.post(
-        "/api/v1/blog/posts", json={"title": "old", "content": "c"}
-    )
+    created = await client.post("/api/v1/blog/posts", json={"title": "old", "content": "c"})
     post_id = created.json()["id"]
 
-    resp = await client.patch(
-        f"/api/v1/blog/posts/{post_id}", json={"title": "new"}
-    )
+    resp = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"title": "new"})
     assert resp.status_code == 200
     assert resp.json()["title"] == "new"
     assert resp.json()["content"] == "c"  # 미전달 필드는 유지
 
 
 async def test_delete_post(client):
-    created = await client.post(
-        "/api/v1/blog/posts", json={"title": "t", "content": "c"}
-    )
+    created = await client.post("/api/v1/blog/posts", json={"title": "t", "content": "c"})
     post_id = created.json()["id"]
 
     resp = await client.delete(f"/api/v1/blog/posts/{post_id}")
@@ -104,7 +99,5 @@ async def test_get_missing_post_returns_404(client):
 
 
 async def test_create_rejects_empty_title(client):
-    resp = await client.post(
-        "/api/v1/blog/posts", json={"title": "", "content": "c"}
-    )
+    resp = await client.post("/api/v1/blog/posts", json={"title": "", "content": "c"})
     assert resp.status_code == 422

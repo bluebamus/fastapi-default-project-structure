@@ -5,6 +5,7 @@
 
 주의: bcrypt 는 72바이트를 초과하는 비밀번호를 거부하므로 입력을 72바이트로 잘라서 사용한다.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -95,7 +96,5 @@ def decode_token(token: str, *, token_type: str = ACCESS_TOKEN_TYPE) -> dict[str
     )
     payload = jwt.decode(token, secret, algorithms=[jwt_settings.JWT_ALGORITHM])
     if payload.get("type") != token_type:
-        raise jwt.InvalidTokenError(
-            f"expected {token_type} token, got {payload.get('type')!r}"
-        )
+        raise jwt.InvalidTokenError(f"expected {token_type} token, got {payload.get('type')!r}")
     return payload

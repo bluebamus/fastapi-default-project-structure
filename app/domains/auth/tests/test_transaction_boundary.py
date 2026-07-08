@@ -5,6 +5,7 @@
 엔드포인트에서 한 세션에 커밋 주체가 둘이 되어 부분 저장(이중 커밋) 위험이
 생긴다. 또한 인증된 읽기 요청마다 불필요한 COMMIT 왕복이 발생한다.
 """
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -64,9 +65,7 @@ async def test_me_read_only_path_does_not_commit(counting_client):
 
     # 측정: 읽기 전용 /me 동안의 커밋만 집계 → 0 이어야 한다
     counter["on"] = True
-    me = await client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
-    )
+    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     counter["on"] = False
 
     assert me.status_code == 200

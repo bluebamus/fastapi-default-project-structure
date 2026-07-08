@@ -1,4 +1,5 @@
 """Auth 엔드포인트 테스트 — register/login/me/refresh 전체 경로 (in-memory sqlite)."""
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -96,9 +97,7 @@ async def test_me_without_token_401(client):
 
 
 async def test_me_with_invalid_token_401(client):
-    resp = await client.get(
-        "/api/v1/auth/me", headers={"Authorization": "Bearer not-a-real-token"}
-    )
+    resp = await client.get("/api/v1/auth/me", headers={"Authorization": "Bearer not-a-real-token"})
     assert resp.status_code == 401
     assert resp.json()["error_code"] == "AUTH_INVALID_TOKEN"
 
@@ -111,9 +110,7 @@ async def test_refresh_issues_working_access_token(client):
     )
     assert resp.status_code == 200
     new_access = resp.json()["access_token"]
-    me = await client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {new_access}"}
-    )
+    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {new_access}"})
     assert me.status_code == 200
 
 

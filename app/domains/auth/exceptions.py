@@ -2,6 +2,7 @@
 
 core 공통 예외(UnauthorizedException, ConflictException)를 상속해 도메인 에러 코드를 부여한다.
 """
+
 from enum import StrEnum
 
 from app.core.exception import ConflictException, UnauthorizedException

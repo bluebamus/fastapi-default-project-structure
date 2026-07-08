@@ -15,6 +15,7 @@
 `RateLimitExceeded` 예외 핸들러를 등록한다.
 테스트에서는 RATE_LIMIT_ENABLED=false 로 비활성화된다(in-memory 카운터 공유 방지).
 """
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 

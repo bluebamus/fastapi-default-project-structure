@@ -147,9 +147,8 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         """
         logger.debug("[count_by_device_type] 집계 시작")
 
-        stmt = (
-            select(self.model.device_type, func.count(self.model.id))
-            .group_by(self.model.device_type)
+        stmt = select(self.model.device_type, func.count(self.model.id)).group_by(
+            self.model.device_type
         )
         result = await self.session.execute(stmt)
         counts = {row[0] or "unknown": row[1] for row in result.all()}
@@ -166,10 +165,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         """
         logger.debug("[count_by_os] 집계 시작")
 
-        stmt = (
-            select(self.model.os_name, func.count(self.model.id))
-            .group_by(self.model.os_name)
-        )
+        stmt = select(self.model.os_name, func.count(self.model.id)).group_by(self.model.os_name)
         result = await self.session.execute(stmt)
         counts = {row[0] or "unknown": row[1] for row in result.all()}
 
@@ -185,9 +181,8 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         """
         logger.debug("[count_by_browser] 집계 시작")
 
-        stmt = (
-            select(self.model.browser_name, func.count(self.model.id))
-            .group_by(self.model.browser_name)
+        stmt = select(self.model.browser_name, func.count(self.model.id)).group_by(
+            self.model.browser_name
         )
         result = await self.session.execute(stmt)
         counts = {row[0] or "unknown": row[1] for row in result.all()}
@@ -207,11 +202,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         """
         logger.debug(f"[get_recent_logs] 조회 시작: limit={limit}")
 
-        stmt = (
-            select(self.model)
-            .order_by(self.model.created_at.desc())
-            .limit(limit)
-        )
+        stmt = select(self.model).order_by(self.model.created_at.desc()).limit(limit)
         result = await self.session.execute(stmt)
         logs = result.scalars().all()
 

@@ -51,9 +51,7 @@ class SnsService(BaseService):
         """피드 게시물을 부분 수정한다. 없으면 SnsPostNotFoundException."""
         self.log.debug("피드 게시물 수정: id=%s", post_id)
         await self.get_post(post_id)  # 존재 보장
-        updated = await self.repository.update(
-            post_id, data.model_dump(exclude_unset=True)
-        )
+        updated = await self.repository.update(post_id, data.model_dump(exclude_unset=True))
         if updated is None:
             raise SnsPostNotFoundException(detail={"id": post_id})
         return updated

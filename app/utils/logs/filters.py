@@ -7,6 +7,7 @@ record 에 두 필드를 주입한다.
     · 방식 A — 없으면 호출 프레임에서 self/cls 를 찾아 클래스명을 자동 추출.
   자유 함수(클래스 없음)는 '-'.
 """
+
 from __future__ import annotations
 
 import logging
