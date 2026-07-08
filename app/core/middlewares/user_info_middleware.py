@@ -5,10 +5,10 @@
 """
 
 import time
-from collections.abc import Callable
 
 from fastapi import FastAPI, Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp
 from user_agents import parse as parse_user_agent
 
 from app.core.middlewares.access_log_sink import get_access_log_sink
@@ -33,12 +33,12 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         - 응답 상태 코드 및 시간
     """
 
-    def __init__(self, app: FastAPI) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         """
         미들웨어 초기화
 
         Args:
-            app: FastAPI 애플리케이션 인스턴스
+            app: 다음 ASGI 애플리케이션(add_middleware 가 주입)
         """
         super().__init__(app)
         self.enabled = middleware_settings.ACCESS_LOG_ENABLED
@@ -200,7 +200,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self,
         request: Request,
-        call_next: Callable,
+        call_next: RequestResponseEndpoint,
     ) -> Response:
         """
         미들웨어 메인 로직
