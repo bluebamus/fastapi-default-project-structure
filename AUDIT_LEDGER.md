@@ -111,3 +111,33 @@
 
 > 이전 감사(W1/W2/C1)에서 '문제'로 식별해 해결한 상태로 **의도치 않게 되돌아간 변경 없음**.
 > 이번 변경은 전부 신규 개선이거나 과거 결정과 독립적.
+
+---
+
+## 실행 #1 (후속) — 보류 항목 처리 · 2026-07-08
+
+사용자 승인("진행해줘")에 따라 §5 보류 4건을 재검토·처리.
+
+#### WU-8 · `9cecf2b` fix(security): CORS 가드 + 상수시간 인증 (보류 #1·#2 적용)
+- 대상: config.py(CORSSettings), auth_service.py, tests/core/test_cors_settings.py(신규).
+- #1 CORS: `['*']`+credentials=True 조합을 `model_validator` 로 기동 시 거부(fail-fast).
+  안전 조합(`*`+credentials=False, 구체Origin+credentials=True)은 허용. 테스트 3케이스.
+- #2 상수시간 인증: 사용자 부재/비번 미설정 시에도 더미 해시로 항상 bcrypt 검증 →
+  응답 시간차 제거(사용자명 열거 방지). 결과 401 동일.
+- 검증: ruff/mypy clean, pytest 81 passed(+3). 회귀: 없음(안전 조합·정상 로그인 불변).
+
+#### 보류 #3 (update 중복 쿼리) — **미적용, 근거와 함께 보류 유지**
+- 재분석: 사전 존재확인 `get_*` 는 제거하면 안 됨. 오히려 그 뒤에 **MySQL 전용 잠재 버그**
+  발견 — aiomysql 은 `CLIENT_FOUND_ROWS` 미설정이라 rowcount=변경행. 동일 값 PATCH 시
+  rowcount=0 → `repository.update` 가 None → 서비스가 **잘못된 404** 반환.
+- 테스트가 이를 못 잡는 이유: 테스트는 SQLite(aiosqlite)로 돌고, SQLite 는 no-op UPDATE
+  도 rowcount=1 을 반환해 문제를 가림. 즉 **현재 CI 로 회귀 검증 불가**.
+- 판단: 수정은 동작 변경(no-op PATCH MySQL 에서 404→200)이며 회귀 검증 수단이 없어
+  **자동 적용하지 않고 설계 결정 필요로 승격**. 권고안: 서비스에서 존재확인 후 update 가
+  None 이면 404 대신 현재 엔티티 반환(4개 도메인 동일), 또는 커넥션에 CLIENT_FOUND_ROWS.
+
+#### 보류 #4 (B104 완전 차단) — **미적용, 기본값 유지**
+- 기본 바인딩을 127.0.0.1 로 강제하면 컨테이너 외부 접근이 막혀 의도된 실행이 깨짐.
+  이미 `SERVER_HOST` 로 설정 가능하므로 코드 변경 불요. 운영 제한은 배포 시 env 로 결정.
+
+> 회귀 대조: 보류 #3/#4 미적용은 과거 결정 회귀 아님(신규 발견 문서화). #1/#2 는 신규 보안 강화.
