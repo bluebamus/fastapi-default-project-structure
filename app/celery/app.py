@@ -6,7 +6,7 @@
 
 from celery import Celery
 
-from config import redis_settings
+from config import redis_settings, timezone_settings
 
 celery_app = Celery(
     "project",
@@ -19,7 +19,8 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
-    timezone="Asia/Seoul",
+    # 앱 전역 타임존 설정(TIME_ZONE)을 따른다(하드코딩 대신 설정 일원화).
+    timezone=timezone_settings.TIME_ZONE,
     enable_utc=False,
     beat_schedule={},
 )
