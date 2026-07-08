@@ -18,9 +18,21 @@ Note:
     운영 환경에서는 보안상 ADMIN=False 설정을 권장합니다.
 """
 
+from typing import Any
+
 from sqladmin import ModelView
 
 from app.domains.home.models.models import UserAccessLog
+
+
+def _format_is_bot(model: Any, _attr: Any) -> str:
+    """봇 여부를 사람이 읽는 문자열로 표시한다."""
+    return "봇" if model.is_bot else "사용자"
+
+
+def _format_response_time(model: Any, _attr: Any) -> str:
+    """응답 시간을 'Nms' 형식으로 표시한다(없으면 '-')."""
+    return f"{model.response_time_ms}ms" if model.response_time_ms else "-"
 
 
 class UserAccessLogAdmin(ModelView, model=UserAccessLog):
@@ -180,10 +192,8 @@ class UserAccessLogAdmin(ModelView, model=UserAccessLog):
     # 컬럼 포맷터 (값 표시 형식)
     # =========================================================================
     column_formatters = {
-        UserAccessLog.is_bot: lambda m, _: "봇" if m.is_bot else "사용자",
-        UserAccessLog.response_time_ms: lambda m, _: f"{m.response_time_ms}ms"
-        if m.response_time_ms
-        else "-",
+        UserAccessLog.is_bot: _format_is_bot,
+        UserAccessLog.response_time_ms: _format_response_time,
     }
 
 

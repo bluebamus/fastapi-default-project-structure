@@ -215,6 +215,8 @@ exclude = [
 ]
 
 # 모듈별 설정
+# 아래 서드파티 패키지들은 타입 스텁(py.typed)을 제공하지 않으므로 import 검사만 완화한다.
+# (개별 코드에 # type: ignore 를 다는 대신 설정에서 일괄 처리 — 재발 방지 게이트)
 [[tool.mypy.overrides]]
 module = [
     "uvicorn.*",
@@ -222,5 +224,8 @@ module = [
     "aiomysql.*",
     "scalar_fastapi.*",
     "sqladmin.*",
+    "slowapi.*",
+    "bcrypt.*",
+    "celery.*",
 ]
 ignore_missing_imports = true
