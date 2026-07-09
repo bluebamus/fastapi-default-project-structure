@@ -176,11 +176,82 @@ class AppSettings(BaseSettings):
 # =============================================================================
 # 데이터베이스 설정
 # =============================================================================
+def format_host(host: str) -> str:
+    """DSN 에 넣을 호스트 표기를 만든다.
+
+    IP(IPv4)·도메인은 그대로 두고, IPv6 만 대괄호로 감싼다. 감싸지 않으면 주소 안의
+    콜론과 포트 구분자가 뒤섞여 ``@::1:3306`` 같은 깨진 DSN 이 만들어진다.
+    """
+    host = host.strip()
+    if host.startswith("["):  # 이미 대괄호 표기
+        return host
+    return f"[{host}]" if ":" in host else host
+
+
+def split_host_port(entry: str, default_port: int) -> tuple[str, int]:
+    """``"host"`` / ``"host:port"`` 항목을 (호스트, 포트)로 분해한다.
+
+    허용 형식:
+        - IPv4      : ``10.0.0.11``            / ``10.0.0.11:3307``
+        - 도메인    : ``replica.example.com``  / ``replica.example.com:3307``
+        - IPv6      : ``[::1]``                / ``[2001:db8::10]:3307``
+
+    IPv6 는 반드시 대괄호로 감싸야 한다. 감싸지 않으면 어디까지가 주소이고 어디부터가
+    포트인지 구분할 수 없어 조용히 깨진 DSN 이 된다 — 그래서 여기서 명시적으로 거부한다.
+    """
+    entry = entry.strip()
+
+    if entry.startswith("["):
+        host, closing, rest = entry.partition("]")
+        if not closing:
+            raise ValueError(f"replica 호스트 '{entry}' 의 대괄호가 닫히지 않았습니다.")
+        host = f"{host}]"
+        if rest and not rest.startswith(":"):
+            raise ValueError(f"replica 호스트 '{entry}' 형식이 잘못되었습니다 (기대: [주소]:포트).")
+        port = rest[1:]
+    else:
+        if entry.count(":") > 1:
+            raise ValueError(
+                f"IPv6 주소 '{entry}' 는 대괄호로 감싸야 합니다 (예: [2001:db8::10]:3307)."
+            )
+        host, _, port = entry.partition(":")
+
+    if not host or host == "[]":
+        raise ValueError(f"replica 호스트가 비어 있습니다: '{entry}'")
+    if port and not port.isdigit():
+        raise ValueError(f"replica 호스트 '{entry}' 의 포트가 숫자가 아닙니다.")
+
+    return host, int(port) if port else default_port
+
+
+def mask_dsn(url: str) -> str:
+    """DSN 의 비밀번호를 가린다 (로그·헬스체크 노출용).
+
+    예: ``mysql+aiomysql://app:s3cr3t@db:3306/shop`` → ``mysql+aiomysql://app:***@db:3306/shop``
+    """
+    scheme, separator, rest = url.partition("://")
+    if not separator or "@" not in rest:
+        return url
+    credentials, _, location = rest.rpartition("@")
+    user, has_password, _ = credentials.partition(":")
+    if not has_password:
+        return url
+    return f"{scheme}://{user}:***@{location}"
+
+
 class DatabaseSettings(BaseSettings):
     """
     데이터베이스 연결 설정
 
     MySQL 비동기 연결을 위한 aiomysql 드라이버를 사용합니다.
+
+    읽기/쓰기 분리(DB 라우터):
+        DB_ROUTER_ENABLED=false  → 단일 서버. 모든 쿼리가 primary 로 간다(기본값).
+        DB_ROUTER_ENABLED=true   → 라우터 활성. replica 가 없으면 여전히 primary 로 간다.
+        + DB_REPLICATION_ENABLED=true
+                                 → SELECT 는 replica, 쓰기는 primary 로 분리된다.
+
+    라우팅 구현은 ``app/core/db/router.py`` 를 참고하세요.
     """
 
     model_config = SettingsConfigDict(
@@ -189,6 +260,7 @@ class DatabaseSettings(BaseSettings):
         extra="ignore",
     )
 
+    # === primary(쓰기) 서버 ===
     # MySQL 서버 호스트 (IP 또는 도메인)
     MYSQL_HOST: str = Field(
         default="localhost",
@@ -219,13 +291,166 @@ class DatabaseSettings(BaseSettings):
         description="데이터베이스 이름",
     )
 
+    # === DB 라우터 (읽기/쓰기 분리) ===
+    # 라우터 사용 여부. false 면 세션이 단일 엔진에 직접 바인딩된다(기존 동작).
+    DB_ROUTER_ENABLED: bool = Field(
+        default=False,
+        description="DB 읽기/쓰기 라우터 활성화",
+    )
+
+    # 복제(replication) 사용 여부. true 면 SELECT 를 replica 로 보낸다.
+    # DB_ROUTER_ENABLED=true 와 MYSQL_REPLICA_HOSTS 지정이 함께 필요하다.
+    DB_REPLICATION_ENABLED: bool = Field(
+        default=False,
+        description="읽기 복제본(replica) 사용",
+    )
+
+    # 쓰기가 일어난 세션의 이후 SELECT 를 primary 로 고정할지 여부.
+    # 복제 지연으로 방금 쓴 데이터가 replica 에서 안 보이는 것을 막는다(권장: true).
+    DB_READ_STICKY_AFTER_WRITE: bool = Field(
+        default=True,
+        description="쓰기 이후 읽기를 primary 에 고정(read-after-write 일관성)",
+    )
+
+    # === replica(읽기) 서버 ===
+    # replica 호스트 목록. "host" 또는 "host:port" 형식.
+    # 예: ["replica-a", "replica-b:3307"]
+    MYSQL_REPLICA_HOSTS: list[str] = Field(
+        default=[],
+        description="replica 호스트 목록 (host 또는 host:port)",
+    )
+
+    # 포트를 명시하지 않은 replica 에 적용할 기본 포트
+    MYSQL_REPLICA_PORT: int = Field(
+        default=3306,
+        description="replica 기본 포트",
+    )
+
+    # replica 전용 자격증명. 미설정(None) 시 primary 값을 재사용한다.
+    # 읽기 전용 계정을 분리해 두면 실수로 replica 에 쓰는 사고를 DB 권한 수준에서 막는다.
+    MYSQL_REPLICA_USER: str | None = Field(
+        default=None,
+        description="replica 사용자명 (미설정 시 primary 재사용)",
+    )
+
+    MYSQL_REPLICA_PASSWORD: str | None = Field(
+        default=None,
+        description="replica 비밀번호 (미설정 시 primary 재사용)",
+    )
+
+    MYSQL_REPLICA_DATABASE: str | None = Field(
+        default=None,
+        description="replica 데이터베이스 이름 (미설정 시 primary 재사용)",
+    )
+
+    # === 마이그레이션 ===
+    # Alembic 이 사용할 DSN 을 직접 지정한다 (로컬·CI 에서 SQLite 로 갈아끼울 때 유용).
+    # 미설정 시 primary DSN 의 비동기 드라이버를 동기 드라이버로 바꿔 쓴다.
+    ALEMBIC_DATABASE_URL: str | None = Field(
+        default=None,
+        description="Alembic 전용 DSN (미설정 시 primary DSN 에서 자동 유도)",
+    )
+
+    @property
+    def ALEMBIC_URL(self) -> str:
+        """Alembic 마이그레이션이 사용할 동기 DSN.
+
+        Alembic 은 동기로 실행되므로 aiomysql(비동기 드라이버)을 쓸 수 없다.
+        primary DSN 의 드라이버만 pymysql 로 바꿔서 같은 서버를 가리킨다.
+        마이그레이션은 항상 primary 에서 실행한다 — replica 는 읽기 전용이다.
+        """
+        if self.ALEMBIC_DATABASE_URL:
+            return self.ALEMBIC_DATABASE_URL
+        return self.MYSQL_WRITER_URL.replace("+aiomysql", "+pymysql")
+
     @property
     def MYSQL_URL(self) -> str:
-        """SQLAlchemy 비동기 연결 URL (aiomysql 드라이버)"""
+        """SQLAlchemy 비동기 연결 URL (aiomysql 드라이버) — primary(쓰기) 서버
+
+        호스트는 IP·도메인 모두 가능하다 (IPv6 는 자동으로 대괄호 처리).
+        """
         return (
             f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
-            f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+            f"@{format_host(self.MYSQL_HOST)}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
         )
+
+    @property
+    def MYSQL_WRITER_URL(self) -> str:
+        """primary(쓰기) 서버 URL — ``MYSQL_URL`` 의 의미를 드러낸 별칭"""
+        return self.MYSQL_URL
+
+    @property
+    def _replica_entries(self) -> list[str]:
+        """공백을 정리한 유효 replica 항목만 추린다."""
+        return [entry.strip() for entry in self.MYSQL_REPLICA_HOSTS if entry.strip()]
+
+    @property
+    def MYSQL_REPLICA_URLS(self) -> list[str]:
+        """replica(읽기) 서버 URL 목록. 복제가 비활성이면 빈 목록."""
+        if not self.replication_active:
+            return []
+
+        user = self.MYSQL_REPLICA_USER or self.MYSQL_USER
+        password = self.MYSQL_REPLICA_PASSWORD or self.MYSQL_PASSWORD
+        database = self.MYSQL_REPLICA_DATABASE or self.MYSQL_DATABASE
+
+        urls = []
+        for entry in self._replica_entries:
+            host, port = split_host_port(entry, self.MYSQL_REPLICA_PORT)
+            urls.append(f"mysql+aiomysql://{user}:{password}@{host}:{port}/{database}")
+        return urls
+
+    @property
+    def replication_active(self) -> bool:
+        """읽기/쓰기를 실제로 다른 서버로 보내는 상태인가."""
+        return self.DB_ROUTER_ENABLED and self.DB_REPLICATION_ENABLED
+
+    @property
+    def routing_mode(self) -> Literal["single", "router-single", "router-replicated"]:
+        """현재 라우팅 모드 (로그·헬스체크 표시용).
+
+        - single:            라우터 미사용. 모든 쿼리 → primary
+        - router-single:     라우터 사용, replica 없음. 모든 쿼리 → primary
+        - router-replicated: 라우터 사용 + 복제. SELECT → replica / 쓰기 → primary
+        """
+        if not self.DB_ROUTER_ENABLED:
+            return "single"
+        return "router-replicated" if self.replication_active else "router-single"
+
+    def describe_routing(self) -> dict[str, object]:
+        """기동 시 로그로 남길 라우팅 구성 요약 (비밀번호는 마스킹)."""
+        return {
+            "mode": self.routing_mode,
+            "router_enabled": self.DB_ROUTER_ENABLED,
+            "replication_enabled": self.DB_REPLICATION_ENABLED,
+            "sticky_after_write": self.DB_READ_STICKY_AFTER_WRITE,
+            "writer": mask_dsn(self.MYSQL_WRITER_URL),
+            "readers": [mask_dsn(url) for url in self.MYSQL_REPLICA_URLS],
+        }
+
+    @model_validator(mode="after")
+    def _validate_routing(self) -> "DatabaseSettings":
+        """모순된 라우팅 설정을 기동 시점에 차단한다(fail-fast).
+
+        조용히 무시하면 '복제를 켰다고 믿는데 실제로는 primary 만 쓰는' 상태가
+        운영에서 성능 문제로만 드러난다. 설정 단계에서 실패시키는 편이 안전하다.
+        """
+        if self.DB_REPLICATION_ENABLED and not self.DB_ROUTER_ENABLED:
+            raise ValueError(
+                "DB_REPLICATION_ENABLED=true 는 DB_ROUTER_ENABLED=true 를 필요로 합니다. "
+                "라우터를 켜지 않으면 읽기/쓰기를 분리할 수 없습니다."
+            )
+        if self.DB_REPLICATION_ENABLED and not self._replica_entries:
+            raise ValueError(
+                "DB_REPLICATION_ENABLED=true 인데 MYSQL_REPLICA_HOSTS 가 비어 있습니다. "
+                '읽기 복제본을 최소 1대 지정하세요 (예: MYSQL_REPLICA_HOSTS=["replica-a"]).'
+            )
+
+        # 호스트 표기 오류는 엔진 생성 시점의 난해한 예외가 아니라 여기서 잡는다.
+        for entry in self._replica_entries:
+            split_host_port(entry, self.MYSQL_REPLICA_PORT)
+
+        return self
 
 
 # =============================================================================
@@ -572,6 +797,199 @@ class JWTSettings(BaseSettings):
 
 
 # =============================================================================
+# API 설정
+# =============================================================================
+class ApiSettings(BaseSettings):
+    """REST API 관련 설정."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # REST API 버전 (URL prefix 에 사용: /api/v1/...)
+    API_VERSION: str = Field(
+        default="v1",
+        description="REST API 버전",
+    )
+
+
+# =============================================================================
+# 세션 설정
+# =============================================================================
+class SessionSettings(BaseSettings):
+    """세션 쿠키 설정.
+
+    Note:
+        현재 인증은 JWT(Bearer) 기반이라 세션 쿠키를 사용하는 코드는 없다.
+        쿠키 세션을 도입할 때 이 설정을 주입하면 된다. 설정 자체는 `.env` 에
+        있으므로 config 가 로드해 둔다(설정의 단일 출처 유지).
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # 세션 쿠키 이름
+    SESSION_COOKIE_NAME: str = Field(
+        default="session",
+        description="세션 쿠키 이름",
+    )
+
+    # 세션 암호화 키 (운영 환경에서 반드시 교체)
+    SESSION_SECRET_KEY: str = Field(
+        default="change-this-session-secret-key",
+        description="세션 암호화 키",
+    )
+
+    # 세션 만료 시간 (초, 기본값 24시간)
+    SESSION_EXPIRE_SECONDS: int = Field(
+        default=86400,
+        description="세션 만료 시간(초)",
+    )
+
+
+# =============================================================================
+# SMTP 이메일 설정
+# =============================================================================
+class SMTPSettings(BaseSettings):
+    """이메일 발송(SMTP) 설정.
+
+    Note:
+        이메일 발송 모듈은 아직 없다. 설정만 config 에 로드해 두고, 발송 기능을
+        구현할 때 `from config import smtp_settings` 로 가져다 쓴다.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # SMTP 서버 주소 (로컬 개발: localhost, Gmail: smtp.gmail.com)
+    SMTP_SERVER: str = Field(
+        default="localhost",
+        description="SMTP 서버 주소",
+    )
+
+    # SMTP 서버 포트 (25: 비암호화, 587: TLS, 465: SSL)
+    SMTP_PORT: int = Field(
+        default=25,
+        description="SMTP 서버 포트",
+    )
+
+    # SMTP 인증 사용자명 (보통 이메일 주소)
+    SMTP_USERNAME: str = Field(
+        default="",
+        description="SMTP 사용자명",
+    )
+
+    # SMTP 인증 비밀번호 (Gmail 은 앱 비밀번호 사용)
+    SMTP_PASSWORD: str = Field(
+        default="",
+        description="SMTP 비밀번호",
+    )
+
+    # 발신자 이메일 주소 (미설정 시 SMTP_USERNAME 사용)
+    SMTP_FROM_EMAIL: str | None = Field(
+        default=None,
+        description="발신자 이메일 주소",
+    )
+
+    # 발신자 이름 (미설정 시 PROJECT_NAME 사용)
+    SMTP_FROM_NAME: str | None = Field(
+        default=None,
+        description="발신자 이름",
+    )
+
+    # TLS 사용 여부 (포트 587)
+    SMTP_TLS: bool = Field(
+        default=False,
+        description="TLS 사용 여부",
+    )
+
+    # SSL 사용 여부 (포트 465)
+    SMTP_SSL: bool = Field(
+        default=False,
+        description="SSL 사용 여부",
+    )
+
+    @model_validator(mode="after")
+    def _reject_tls_with_ssl(self) -> "SMTPSettings":
+        """TLS 와 SSL 을 동시에 켜는 건 의미가 없다(포트별로 하나만 쓴다)."""
+        if self.SMTP_TLS and self.SMTP_SSL:
+            raise ValueError(
+                "SMTP_TLS 와 SMTP_SSL 은 동시에 켤 수 없습니다. "
+                "포트 587 이면 TLS, 465 면 SSL 하나만 사용하세요."
+            )
+        return self
+
+
+# =============================================================================
+# 이미지 업로드 설정
+# =============================================================================
+class UploadSettings(BaseSettings):
+    """파일·이미지 업로드 설정.
+
+    Note:
+        업로드 핸들러는 아직 없다. 설정만 config 에 로드해 둔다.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # 업로드 파일 저장 경로 (프로젝트 루트 기준 상대 경로)
+    UPLOAD_DIR: str = Field(
+        default="uploads",
+        description="업로드 파일 저장 경로",
+    )
+
+    # 업로드 이미지 최대 크기 (MB)
+    UPLOAD_IMAGE_SIZE_LIMIT: int = Field(
+        default=20,
+        description="업로드 이미지 최대 크기(MB)",
+    )
+
+    # 업로드된 이미지 자동 리사이즈 활성화
+    UPLOAD_IMAGE_RESIZE: bool = Field(
+        default=False,
+        description="이미지 자동 리사이즈 활성화",
+    )
+
+    # 리사이즈 최대 너비 (px, UPLOAD_IMAGE_RESIZE=true 시 적용)
+    UPLOAD_IMAGE_RESIZE_WIDTH: int = Field(
+        default=1200,
+        description="리사이즈 최대 너비(px)",
+    )
+
+    # 리사이즈 최대 높이 (px, UPLOAD_IMAGE_RESIZE=true 시 적용)
+    UPLOAD_IMAGE_RESIZE_HEIGHT: int = Field(
+        default=2800,
+        description="리사이즈 최대 높이(px)",
+    )
+
+    # 이미지 압축 품질 (0-100)
+    UPLOAD_IMAGE_QUALITY: int = Field(
+        default=85,
+        ge=0,
+        le=100,
+        description="이미지 압축 품질(0-100)",
+    )
+
+    # 허용되는 이미지 확장자
+    UPLOAD_ALLOWED_EXTENSIONS: list[str] = Field(
+        default=[".jpg", ".jpeg", ".png", ".gif", ".webp"],
+        description="허용 이미지 확장자",
+    )
+
+
+# =============================================================================
 # 설정 인스턴스 팩토리 (싱글톤)
 # =============================================================================
 @lru_cache
@@ -622,6 +1040,30 @@ def get_jwt_settings() -> JWTSettings:
     return JWTSettings()
 
 
+@lru_cache
+def get_api_settings() -> ApiSettings:
+    """API 설정 인스턴스 반환 (캐싱)"""
+    return ApiSettings()
+
+
+@lru_cache
+def get_session_settings() -> SessionSettings:
+    """세션 설정 인스턴스 반환 (캐싱)"""
+    return SessionSettings()
+
+
+@lru_cache
+def get_smtp_settings() -> SMTPSettings:
+    """SMTP 설정 인스턴스 반환 (캐싱)"""
+    return SMTPSettings()
+
+
+@lru_cache
+def get_upload_settings() -> UploadSettings:
+    """업로드 설정 인스턴스 반환 (캐싱)"""
+    return UploadSettings()
+
+
 # =============================================================================
 # 편의를 위한 전역 설정 인스턴스
 # =============================================================================
@@ -635,3 +1077,7 @@ log_settings = get_log_settings()
 redis_settings = get_redis_settings()
 middleware_settings = get_middleware_settings()
 jwt_settings = get_jwt_settings()
+api_settings = get_api_settings()
+session_settings = get_session_settings()
+smtp_settings = get_smtp_settings()
+upload_settings = get_upload_settings()

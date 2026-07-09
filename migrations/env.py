@@ -1,4 +1,3 @@
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -29,15 +28,11 @@ target_metadata = Base.metadata
 
 # ---------------------------------------------------------------------------
 # Resolve the database URL.
-# Priority: ALEMBIC_DATABASE_URL env var (for local/CI override, e.g. SQLite)
-# Fallback: db_settings.MYSQL_URL with the async driver swapped to pymysql
-# (Alembic runs synchronously; aiomysql is not compatible here).
+# 환경변수를 직접 읽지 않는다 — 설정은 config.py 가 단독으로 로드한다.
+# db_settings.ALEMBIC_URL 이 ALEMBIC_DATABASE_URL 오버라이드(로컬/CI 의 SQLite 등)와
+# primary DSN 의 동기 드라이버 치환(aiomysql → pymysql)을 모두 처리한다.
 # ---------------------------------------------------------------------------
-_url = (
-    os.environ.get("ALEMBIC_DATABASE_URL")
-    or db_settings.MYSQL_URL.replace("+aiomysql", "+pymysql")
-)
-config.set_main_option("sqlalchemy.url", _url)
+config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 
 
 def run_migrations_offline() -> None:
