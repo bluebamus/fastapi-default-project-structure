@@ -4,7 +4,8 @@
 모델 모듈을 import 하여 ``Base.metadata`` 에 테이블을 등록한다.
 """
 
+from app.domains.user.admin import admin_views
 from app.domains.user.api.routers.router import user_router as router
 from app.domains.user.models import models as _models  # noqa: F401  (Base.metadata 등록)
 
-__all__ = ["router"]
+__all__ = ["admin_views", "router"]
