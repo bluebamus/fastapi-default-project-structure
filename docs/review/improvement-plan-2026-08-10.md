@@ -21,6 +21,7 @@
 | P4-1 읽기 경로 무커밋 | ✅ 완료 | 조회 13개 전환, xfail 해소 |
 | P4-2 Alembic 체인 복구 | ✅ 완료 | 빈 DB `upgrade head` 성공 |
 | P4-3 auth 읽기 세션 정리 | ✅ 완료 | 조회 라우트 14개 전부 읽기 전용 세션 |
+| P5 FastAPI 상향 검토 | ⛔ 상향 보류 | 실측 결과 P1-3 이 **필수**가 됨 (아래 P5 절) |
 
 게이트: `pytest 198 passed` (기준 177, xfail 0) · `ruff` 통과 · `mypy` 통과
 
@@ -142,6 +143,64 @@ P1-2의 4번이 실패하면 — 즉 커밋 실패가 응답 전송 후에 일�
 
 - 착수 전 판단 기준: P3-1 이후에도 "무겁다"는 실제 사용자 피드백이 반복되는가?
 - 착수한다면 브랜치 분기보다 **`scripts/`의 제거 스크립트**(선택 기능을 걷어내는 방향)가 3개 트리를 동기화하는 것보다 저렴하다.
+
+---
+
+## P5 — FastAPI 상향 검토 결과 (2026-08-10 실측)
+
+P1-2 의 안전망이 갖춰져 상향을 실제로 시도했다. **결론: 지금은 올리지 않는다.**
+격리된 venv 에서 `fastapi 0.115.14 → 0.141.1` 로 올려 게이트를 돌린 실측 결과다
+(핀은 되돌렸고 저장소는 0.115.x 유지).
+
+| | |
+|---|---|
+| 대상 | 0.115.14 → **0.141.1** (정식 릴리스 94개, 마이너 26개 라인) |
+| 의존성 | starlette 0.46.2 / pydantic 2.13.4 그대로 충족 — **연쇄 상향 불필요** |
+| 결과 | **9 failed, 189 passed** |
+
+### 차단 요인 1 — 트랜잭션 경계 붕괴 (P1-3 조건 충족) ⚠️
+
+`test_commit_failure_is_not_reported_as_success` **실패**.
+
+- 0.115.x: 커밋 실패 → 클라이언트 **5xx** (안전)
+- 0.141.1: 커밋 실패 → 클라이언트 **201** + 데이터 미저장 → **데이터 불일치**
+
+`yield` 이후의 종료 코드가 **응답 전송 후에** 실행되도록 바뀌었다. 계획서가 예측한
+바로 그 시나리오이며, **P1-3(쓰기 경로를 명시적 트랜잭션 컨텍스트로 전환)이 이제
+필수 조건이 되었다.** 상향의 선결 과제다.
+
+나머지 3개 경계 케이스(읽기 무커밋 / 쓰기 1회 커밋 / 예외 시 롤백)는 통과했다.
+
+### 차단 요인 2 — 라우트 모델 변경 (테스트 6곳)
+
+`app.routes` 가 더 이상 하위 라우터를 평탄화하지 않는다.
+
+```text
+0.115.x : APIRoute 약 40개
+0.141.1 : {'_IncludedRouter': 6, 'APIRoute': 2, 'Route': 1, 'Mount': 1}
+```
+
+`AttributeError: '_IncludedRouter' object has no attribute 'path'` 로 5개 실패,
+`test_read_path_no_commit.py` 는 조회 라우트를 0개로 판정해 실패. 영향 파일:
+`tests/test_route_inventory.py`, `tests/test_main.py`, `tests/test_read_path_no_commit.py`,
+각 도메인의 `test_*_auto_registered`.
+
+`_IncludedRouter.original_router.routes` 로 재귀하면 고칠 수 있으나 **private API** 다.
+라우트 인벤토리를 공개 API 로 얻는 방법(`app.openapi()` 등)으로 바꾸는 편이 낫다.
+
+### 차단 요인 3 — Deprecation 2건
+
+- `ORJSONResponse` — FastAPI 가 Pydantic 으로 직접 직렬화하므로 불필요해졌다
+- `Path(..., example=...)` — `examples` 로 교체 (`app/domains/home/api/routers/v1/home.py:75`)
+
+### 착수 순서 (상향을 진행한다면)
+
+1. **P1-3** 먼저 — 0.115.x 에서도 안전하게 적용 가능하므로 상향과 분리해 선행
+2. 라우트 인벤토리 테스트를 공개 API 기반으로 재작성
+3. deprecation 2건 정리
+4. 그 다음 핀 상향
+
+1번을 건너뛰고 올리면 **쓰기 실패가 성공 응답으로 둔갑**한다. 순서를 바꾸지 말 것.
 
 ---
 
