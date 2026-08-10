@@ -404,6 +404,10 @@ users = await repo.get_all_with(
 
 ## 시작하기
 
+> **처음이라면 [docs/QUICKSTART.md](docs/QUICKSTART.md) 부터.** 인프라 없이 30초 만에
+> 기동을 확인하는 최소 경로와, 첫 실행에서 가장 자주 막히는 지점(`DEBUG=true` 기본값이
+> MySQL을 요구한다)을 다룬다. 아래는 전체 설치 절차다.
+
 ### 1. 저장소 클론
 
 ```bash
