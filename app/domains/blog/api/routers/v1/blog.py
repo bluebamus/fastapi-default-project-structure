@@ -10,7 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.domains.blog.dependencies.blog_dependencies import get_blog_service
+from app.domains.blog.dependencies.blog_dependencies import (
+    get_blog_service,
+    get_blog_service_readonly,
+)
 from app.domains.blog.schemas.blog_schema import (
     PostCreate,
     PostListResponse,
@@ -52,7 +55,7 @@ async def create_post(
 async def list_posts(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
-    service: BlogService = Depends(get_blog_service),
+    service: BlogService = Depends(get_blog_service_readonly),
 ) -> PostListResponse:
     posts, total = await service.list_posts(skip=skip, limit=limit)
     return PostListResponse(
@@ -73,7 +76,7 @@ async def list_posts(
 )
 async def get_post(
     post_id: str = Path(..., description="게시글 ID(UUID)"),
-    service: BlogService = Depends(get_blog_service),
+    service: BlogService = Depends(get_blog_service_readonly),
 ) -> PostResponse:
     post = await service.get_post(post_id)
     return PostResponse.model_validate(post)

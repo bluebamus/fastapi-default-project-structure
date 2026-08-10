@@ -10,14 +10,26 @@ from collections.abc import AsyncGenerator
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.session import get_session
+from app.core.db.session import get_read_session, get_session
 from app.domains.reply.services.reply_service import ReplyService
 
 
 async def get_reply_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[ReplyService, None]:
-    """ReplyService 를 구성해 view 에 제공하고, 요청 성공 시 커밋한다."""
+    """ReplyService 를 구성해 view 에 제공하고, 요청 성공 시 커밋한다(쓰기 전용)."""
     service = ReplyService(session)
     yield service
     await session.commit()
+
+
+async def get_reply_service_readonly(
+    session: AsyncSession = Depends(get_read_session),
+) -> ReplyService:
+    """조회 엔드포인트용 — 커밋하지 않는다.
+
+    쓰기용 의존성을 읽기에 재사용하면 조회마다 불필요한 COMMIT 왕복이 생기고,
+    인증 등 다른 의존성과 함께 쓸 때 한 세션에 커밋 주체가 둘이 되는 위험이 있다
+    (auth 의 get_current_user 가 같은 이유로 분리되어 있다).
+    """
+    return ReplyService(session)

@@ -10,7 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.domains.reply.dependencies.reply_dependencies import get_reply_service
+from app.domains.reply.dependencies.reply_dependencies import (
+    get_reply_service,
+    get_reply_service_readonly,
+)
 from app.domains.reply.schemas.reply_schema import (
     ReplyCreate,
     ReplyListResponse,
@@ -52,7 +55,7 @@ async def create_reply(
 async def list_replies(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
-    service: ReplyService = Depends(get_reply_service),
+    service: ReplyService = Depends(get_reply_service_readonly),
 ) -> ReplyListResponse:
     replies, total = await service.list_replies(skip=skip, limit=limit)
     return ReplyListResponse(
@@ -73,7 +76,7 @@ async def list_replies(
 )
 async def get_reply(
     reply_id: str = Path(..., description="댓글 ID(UUID)"),
-    service: ReplyService = Depends(get_reply_service),
+    service: ReplyService = Depends(get_reply_service_readonly),
 ) -> ReplyResponse:
     reply = await service.get_reply(reply_id)
     return ReplyResponse.model_validate(reply)
