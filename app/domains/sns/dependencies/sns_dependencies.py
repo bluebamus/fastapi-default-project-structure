@@ -1,11 +1,9 @@
 """SNS 기능 의존성 (인터페이스 집합체).
 
 services 의 기능 클래스를 session 으로 생성·결합하여 view 에 제공한다.
-yield 후 성공 시 커밋 — 제거된 UnitOfWork 의 트랜잭션 경계를 대체한다.
+커밋은 **핸들러 본문**이 `await service.commit()` 으로 수행한다(P1-3).
 예외 시에는 get_session 의 teardown 이 롤백을 수행한다.
 """
-
-from collections.abc import AsyncGenerator
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,11 +14,14 @@ from app.domains.sns.services.sns_service import SnsService
 
 async def get_sns_service(
     session: AsyncSession = Depends(get_session),
-) -> AsyncGenerator[SnsService, None]:
-    """SnsService 를 구성해 view 에 제공하고, 요청 성공 시 커밋한다(쓰기 전용)."""
-    service = SnsService(session)
-    yield service
-    await session.commit()
+) -> SnsService:
+    """SnsService 를 구성해 view 에 제공한다(쓰기용 — 커밋은 핸들러가 한다).
+
+    이전에는 `yield` 이후 커밋했으나, FastAPI 상위 버전에서 yield dependency 의
+    종료 코드가 **응답 전송 후에** 실행되도록 바뀌어 커밋 실패가 201 로 둔갑했다.
+    커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다.
+    """
+    return SnsService(session)
 
 
 async def get_sns_service_readonly(

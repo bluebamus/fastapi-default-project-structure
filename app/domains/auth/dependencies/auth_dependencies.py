@@ -1,7 +1,5 @@
 """Auth 의존성 — 서비스 구성(트랜잭션 경계) + OAuth2 현재 사용자 해석."""
 
-from collections.abc import AsyncGenerator
-
 import jwt
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -19,11 +17,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 async def get_auth_service(
     session: AsyncSession = Depends(get_session),
-) -> AsyncGenerator[AuthService, None]:
-    """AuthService 를 구성해 제공하고, 요청 성공 시 커밋한다."""
-    service = AuthService(session)
-    yield service
-    await session.commit()
+) -> AuthService:
+    """AuthService 를 구성해 제공한다(쓰기용 — 커밋은 핸들러가 한다).
+
+    이전에는 `yield` 이후 커밋했으나, FastAPI 상위 버전에서 yield dependency 의
+    종료 코드가 **응답 전송 후에** 실행되도록 바뀌어 커밋 실패가 201 로 둔갑했다.
+    커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다(P1-3).
+    """
+    return AuthService(session)
 
 
 async def get_current_user(

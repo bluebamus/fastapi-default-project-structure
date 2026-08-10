@@ -42,6 +42,7 @@ async def create_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> ReplyResponse:
     reply = await service.create_reply(payload)
+    await service.commit()
     return ReplyResponse.model_validate(reply)
 
 
@@ -96,6 +97,7 @@ async def update_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> ReplyResponse:
     reply = await service.update_reply(reply_id, payload)
+    await service.commit()
     return ReplyResponse.model_validate(reply)
 
 
@@ -112,3 +114,4 @@ async def delete_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> None:
     await service.delete_reply(reply_id)
+    await service.commit()
