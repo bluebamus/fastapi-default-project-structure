@@ -3,9 +3,11 @@
 Django식 AppRegistry 자동발견 → 표준 FastAPI include_router 배선으로 재구조화하는 동안
 공개 API 경로/메서드가 바뀌지 않았음을 보장한다. DEBUG/ADMIN 설정에 따라 달라지는
 /docs·/openapi.json·/admin 은 제외하고, 항상 존재하는 도메인 API + /health 만 고정한다.
-"""
 
-from collections import defaultdict
+경로 수집에는 `app.openapi()` 를 쓴다. `app.routes` 직접 순회는 FastAPI 버전에 따라
+하위 라우터가 평탄화되지 않아(0.141 의 `_IncludedRouter`) 깨진다. OpenAPI 스키마는
+공개 API 이고 버전 간 형태가 안정적이다.
+"""
 
 # 재구조화 이전 baseline 에서 캡처한 골든 경로 집합 (경로 -> 허용 메서드).
 EXPECTED: dict[str, frozenset[str]] = {
@@ -34,14 +36,11 @@ EXPECTED: dict[str, frozenset[str]] = {
 def _collect_api_routes() -> dict[str, frozenset[str]]:
     from main import app
 
-    got: dict[str, set[str]] = defaultdict(set)
-    for r in app.routes:
-        path = getattr(r, "path", None)
-        if not path:
-            continue
-        if path.startswith("/api") or path == "/health":
-            got[path] |= set(getattr(r, "methods", None) or [])
-    return {p: frozenset(m) for p, m in got.items()}
+    return {
+        path: frozenset(method.upper() for method in operations)
+        for path, operations in app.openapi()["paths"].items()
+        if path.startswith("/api") or path == "/health"
+    }
 
 
 def test_route_inventory_matches_golden():
