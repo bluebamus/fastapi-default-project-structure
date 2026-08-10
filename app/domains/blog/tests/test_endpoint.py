@@ -42,7 +42,8 @@ async def client():
 
 def test_blog_auto_registered():
     """디렉터리 컨벤션만으로 blog CRUD 라우터가 자동 발견·마운트된다."""
-    paths = {r.path for r in app.routes}
+    # app.routes 직접 순회는 FastAPI 버전에 따라 하위 라우터가 평탄화되지 않는다.
+    paths = set(app.openapi()["paths"])
     assert "/api/v1/blog/posts" in paths
     assert "/api/v1/blog/posts/{post_id}" in paths
 

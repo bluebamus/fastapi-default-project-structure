@@ -72,7 +72,7 @@ async def get_recent_access_logs(
     operation_id="getAccessLogsByIp",
 )
 async def get_access_logs_by_ip(
-    ip_address: str = Path(..., description="조회할 IP 주소", example="192.168.1.1"),
+    ip_address: str = Path(..., description="조회할 IP 주소", examples=["192.168.1.1"]),
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수"),
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
     service: UserAccessLogService = Depends(get_access_log_service),
