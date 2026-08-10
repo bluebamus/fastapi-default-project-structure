@@ -14,23 +14,28 @@ Django-style ``startapp`` equivalent. 표준 FastAPI 구조를 따르는 도메�
         schemas/ services/ repositories/ dependencies/ tests/
         admin.py (선택)         →  admin_views: list[type]
 
-생성 후 등록 (수동 — 표준 방식):
-    main.py 의 ``from app.domains import ...`` 와 ``APPS`` 목록에 <name> 을 추가한다.
-    (모델을 만들었다면 __init__.py 의 models import 주석을 해제한다.)
+생성 후 등록:
+    ``--register`` 를 주면 main.py 의 ``from app.domains import ...`` 와 ``APPS``
+    목록까지 갱신한다. 생략하면 기존처럼 수동으로 추가한다.
+    (모델을 만들었다면 __init__.py 의 models import 주석을 해제한다. Alembic 과
+    DEBUG 테이블 생성은 app/core/db/models_registry.py 가 디렉터리에서 자동
+    판별하므로 따로 등록할 곳이 없다.)
 
 Usage (CLI):
-    python -m scripts.new_app <name> [--with-admin]
+    python -m scripts.new_app <name> [--with-admin] [--register]
 
 Usage (API):
     from pathlib import Path
-    from scripts.new_app import scaffold
+    from scripts.new_app import register_app, scaffold
     scaffold("orders", root=Path.cwd())
+    register_app("orders", root=Path.cwd())
 """
 
 from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 
 # ---------------------------------------------------------------------------
 # Template constants
@@ -195,9 +200,73 @@ def scaffold(
     )
 
 
+def register_app(name: str, root: pathlib.Path) -> bool:
+    """main.py 의 도메인 import 와 ``APPS`` 목록에 *name* 을 등록한다.
+
+    P2-1 로 모델 import 목록이 models_registry 로 통합되어, 이제 도메인 등록에
+    손댈 파일은 main.py 하나뿐이다.
+
+    Args:
+        name: 등록할 앱 이름.
+        root: 프로젝트 루트(main.py 가 있는 디렉터리).
+
+    Returns:
+        실제로 파일을 고쳤으면 True, 이미 등록되어 있어 할 일이 없으면 False.
+        (멱등 — 두 번 실행해도 중복 등록되지 않는다.)
+
+    Raises:
+        RuntimeError: main.py 에서 등록 지점을 찾지 못한 경우. 배선이 바뀐 것이므로
+            조용히 넘어가지 않고 멈춘다 — 등록됐다고 착각하는 편이 더 위험하다.
+    """
+    main_py = root / "main.py"
+    source = main_py.read_text(encoding="utf-8")
+
+    import_match = _IMPORT_RE.search(source)
+    apps_match = _APPS_RE.search(source)
+    if import_match is None or apps_match is None:
+        raise RuntimeError(
+            f"{main_py} 에서 'from app.domains import ...' 또는 'APPS = [...]' 를 "
+            "찾지 못했다. 배선이 바뀌었다면 --register 대신 수동으로 등록할 것."
+        )
+
+    names = [n.strip() for n in import_match.group(1).split(",") if n.strip()]
+    apps = [a.strip() for a in apps_match.group(1).split(",") if a.strip()]
+    if name in names and name in apps:
+        return False
+
+    if name not in names:
+        merged = ", ".join(sorted({*names, name}))
+        source = (
+            source[: import_match.start()]
+            + f"from app.domains import {merged}"
+            + source[import_match.end() :]
+        )
+        # import 를 고쳤으니 APPS 위치가 밀렸다 — 다시 찾는다.
+        apps_match = _APPS_RE.search(source)
+        if apps_match is None:  # pragma: no cover - 위에서 이미 검증됨
+            raise RuntimeError(f"{main_py} 의 APPS 목록을 다시 찾지 못했다.")
+
+    if name not in apps:
+        # 등록 순서에 의미가 있을 수 있으므로 정렬하지 않고 끝에 붙인다.
+        merged = ", ".join([*apps, name])
+        source = (
+            source[: apps_match.start()]
+            + f"APPS = [{merged}]"
+            + source[apps_match.end() :]
+        )
+
+    main_py.write_text(source, encoding="utf-8")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+# main.py 의 등록 지점. 한 줄 형태만 지원한다 — 괄호로 감싼 다중 행 import 로
+# 바뀌면 위 register_app() 이 RuntimeError 로 멈춘다(조용한 오등록 방지).
+_IMPORT_RE = re.compile(r"^from app\.domains import (.+)$", re.MULTILINE)
+_APPS_RE = re.compile(r"^APPS = \[([^\]]*)\]", re.MULTILINE)
 
 
 def _touch_init_chain(base: pathlib.Path, rel: str) -> None:
@@ -224,6 +293,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("name", help="Snake-case app name (e.g. orders)")
     p.add_argument("--category", default="domain", help="Reserved (unused; kept for compatibility)")
     p.add_argument("--with-admin", action="store_true", help="Create admin.py")
+    p.add_argument(
+        "--register",
+        action="store_true",
+        help="main.py 의 import 와 APPS 목록에 자동 등록 (멱등)",
+    )
     return p
 
 
@@ -239,10 +313,19 @@ if __name__ == "__main__":
     class_name = "".join(part.capitalize() for part in name.split("_"))
     print(f"created app/domains/{name}")
     print()
-    print("등록하려면 main.py 를 수정하세요 (표준 방식):")
-    print(f"  1) from app.domains import ... , {name}")
-    print(f"  2) APPS = [..., {name}]   # 라우터가 /api 에 취합됨")
-    print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
+    if args.register:
+        changed = register_app(name, root=pathlib.Path.cwd())
+        print(
+            f"registered {name} in main.py"
+            if changed
+            else f"{name} 은 이미 main.py 에 등록되어 있습니다 (변경 없음)"
+        )
+        print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
+    else:
+        print("등록하려면 main.py 를 수정하세요 (또는 --register 사용):")
+        print(f"  1) from app.domains import ... , {name}")
+        print(f"  2) APPS = [..., {name}]   # 라우터가 /api 에 취합됨")
+        print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
     print(
         "  - models: models/ 에 ORM 모델 추가 후 __init__.py 의 import 주석 해제 (Base.metadata 등록)"
     )
