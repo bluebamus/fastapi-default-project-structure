@@ -46,6 +46,7 @@ async def create_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.create_user(payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 
@@ -100,6 +101,7 @@ async def update_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.update_user(user_id, payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 
@@ -116,3 +118,4 @@ async def delete_user(
     service: UserService = Depends(get_user_service),
 ) -> None:
     await service.delete_user(user_id)
+    await service.commit()

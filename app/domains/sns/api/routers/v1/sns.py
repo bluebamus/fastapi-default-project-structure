@@ -42,6 +42,7 @@ async def create_post(
     service: SnsService = Depends(get_sns_service),
 ) -> SnsPostResponse:
     post = await service.create_post(payload)
+    await service.commit()
     return SnsPostResponse.model_validate(post)
 
 
@@ -96,6 +97,7 @@ async def update_post(
     service: SnsService = Depends(get_sns_service),
 ) -> SnsPostResponse:
     post = await service.update_post(post_id, payload)
+    await service.commit()
     return SnsPostResponse.model_validate(post)
 
 
@@ -112,3 +114,4 @@ async def delete_post(
     service: SnsService = Depends(get_sns_service),
 ) -> None:
     await service.delete_post(post_id)
+    await service.commit()
