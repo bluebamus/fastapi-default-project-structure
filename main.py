@@ -12,7 +12,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -21,7 +20,7 @@ from app.core.exception import AppException, ErrorResponse, ValidationException
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
-from app.core.rate_limit import limiter
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.tags_metadata import tags_metadata
 from app.domains import auth, blog, home, reply, sns, user
 from app.utils.logs import get_logger
@@ -258,7 +257,7 @@ setup_user_info_middleware(app)
 
 # 레이트 리밋 (slowapi) — 데코레이터 기반. 라우트에 @limiter.limit(...) 로 적용한다.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # API 문서 상태 로깅
 if app_settings.DEBUG:
