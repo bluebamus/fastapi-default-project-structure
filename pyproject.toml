@@ -164,12 +164,16 @@ target-version = "py312"
 line-length = 100
 
 # 제외 경로
+# .pytest_tmp/.mypy_tmp 는 README 의 실행 명령이 저장소 안에 만드는 임시 산출물이다.
+# 테스트가 그 안에 .py 픽스처를 쓰면 ruff 가 그것까지 잡아 게이트가 빨개진다.
 exclude = [
     ".git",
     ".venv",
     "__pycache__",
     "migrations",
     "*.pyc",
+    ".pytest_tmp",
+    ".mypy_tmp",
 ]
 
 [tool.ruff.lint]
