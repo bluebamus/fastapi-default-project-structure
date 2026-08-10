@@ -7,7 +7,7 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.session import get_session
+from app.core.db.session import get_read_session, get_session
 from app.domains.auth.exceptions import InvalidTokenException
 from app.domains.auth.services.auth_service import AuthService
 from app.domains.user.models.models import User
@@ -28,7 +28,7 @@ async def get_auth_service(
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_read_session),
 ) -> User:
     """Bearer access token 을 검증해 현재 사용자를 반환한다(실패 시 401).
 
@@ -36,6 +36,15 @@ async def get_current_user(
     Service 를 구성한다. 이렇게 해야 인증+쓰기 의존성을 함께 쓰는 엔드포인트에서
     한 세션에 커밋 주체가 둘이 되는 이중 커밋(부분 저장) 위험이 사라지고,
     인증된 읽기 요청마다 불필요한 COMMIT 왕복도 없앤다(검수 W2/REQ-009).
+
+    세션도 읽기 전용을 쓴다(P4-3). 커밋을 안 하는 것만으로는 조회가 여전히
+    writer 로 가서, ``DB_ROUTER_ENABLED`` 를 켜도 인증 조회가 replica 로 분산되지
+    않는다. 다른 도메인의 ``get_<name>_service_readonly`` 와 같은 기준이다.
+
+    쓰기 의존성과 함께 쓰이는 라우트가 생기면 세션이 둘로 나뉜다(읽기용·쓰기용).
+    커밋 주체가 하나로 유지되므로 의도된 동작이지만, 인증 단계에서 읽은 객체를
+    쓰기 세션에서 수정하려 들면 다른 세션의 인스턴스라 반영되지 않는다. 그런
+    라우트를 만들 때는 쓰기 세션에서 다시 조회할 것.
     """
     service = AuthService(session)
     try:
