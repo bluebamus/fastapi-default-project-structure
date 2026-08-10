@@ -23,6 +23,7 @@
 | P4-3 auth 읽기 세션 정리 | ✅ 완료 | 조회 라우트 14개 전부 읽기 전용 세션 |
 | P1-3 명시적 트랜잭션 경계 | ✅ 완료 | 커밋을 핸들러 본문으로 이동 |
 | P5 FastAPI 상향 | ✅ **완료** | 0.115.14 → **0.141.1** (아래 P5 절) |
+| P6 응답 직렬화 전환 | ✅ 완료 | ORJSONResponse 제거, Pydantic 직접 직렬화 |
 
 게이트: `pytest 198 passed` (기준 177, xfail 0) · `ruff` 통과 · `mypy` 통과
 
@@ -144,6 +145,51 @@ P1-2의 4번이 실패하면 — 즉 커밋 실패가 응답 전송 후에 일�
 
 - 착수 전 판단 기준: P3-1 이후에도 "무겁다"는 실제 사용자 피드백이 반복되는가?
 - 착수한다면 브랜치 분기보다 **`scripts/`의 제거 스크립트**(선택 기능을 걷어내는 방향)가 3개 트리를 동기화하는 것보다 저렴하다.
+
+---
+
+## P6 — 응답 직렬화를 FastAPI 권장 경로로 전환 (2026-08-10 완료)
+
+P5 상향 후 남겨둔 `ORJSONResponse` deprecation 을 정리했다. FastAPI 0.141 은
+`response_model` 이 있으면 **Pydantic 이 JSON 바이트를 직접 생성**하므로 커스텀 응답
+클래스가 불필요한 우회가 된다.
+
+### 검수 (실측)
+
+| 항목 | 결과 |
+|---|---|
+| `default_response_class` 제거 시 응답 바이트 | **완전 동일** — datetime(tz 유무)·Decimal·float·null·비ASCII·content-type 전부 |
+| 이유 | `response_model` 이 있으면 Pydantic 이 먼저 직렬화 → orjson 은 이미 문자열인 값만 본다 |
+| `response_model` 없는 라우트 | 31개 중 5개(DELETE 4개는 204 무본문, `scalar_docs` 는 Response 직접 반환) → **영향 없음** |
+| 예외 핸들러 + 원시 타입 detail | ORJSON/JSON 동일 |
+| 예외 핸들러 + datetime·UUID detail | `JSONResponse` 단독은 **TypeError** ⚠️ |
+| 코드 내 `orjson` 직접 사용 | 없음 (의존성에만 존재) |
+
+유일한 위험은 예외 핸들러였다. `ErrorResponse.detail` 이 `Any` 라 임의 객체가 들어올
+수 있는데, 지금까지는 orjson 이 datetime/UUID 를 알아서 처리해 그 사실이 가려져 있었다.
+
+### 변경
+
+1. `default_response_class=ORJSONResponse` 삭제 — 기본 경로 사용
+2. 예외 핸들러 4개: `JSONResponse` + `model_dump(mode="json")`.
+   `jsonable_encoder` 를 덧붙이는 대신 Pydantic 네이티브 방식을 썼다(결과 동일, 호출 하나 적음)
+3. `orjson` 의존성 제거 (직접 사용처 없음)
+4. `tests/test_response_serialization.py` — ORJSON 시절 실측 바이트를 고정하는 스냅샷 +
+   비원시 detail 을 **실제 등록된 핸들러에 태우는** 회귀 테스트
+
+### 놓칠 뻔한 것
+
+처음 작성한 가드는 `ErrorResponse` 모델만 검사해서, `mode="json"` 을 빼도 통과했다.
+회귀를 일부러 주입해보고 나서야 드러났다. 실제 핸들러를 태우도록 고쳤고, 지금은
+`mode="json"` 을 제거하면 datetime·UUID 케이스가 실패한다.
+
+### 참고 — tz 표기 차이
+
+raw dict 의 datetime 을 orjson 이 쓰면 `+00:00`, Pydantic 경로는 `Z` 로 낸다. 현재
+코드의 detail 은 전부 문자열이라 차이가 나지 않지만, 앞으로 detail 에 datetime 을
+직접 넣으면 표기가 달라진다.
+
+검증: `pytest 205 passed` · `ruff` · `mypy` 통과 (FastAPI 0.141.1)
 
 ---
 
