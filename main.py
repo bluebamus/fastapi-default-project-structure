@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
 from slowapi.errors import RateLimitExceeded
@@ -72,7 +72,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     """4가지 글로벌 예외 핸들러를 등록합니다."""
 
     @app.exception_handler(AppException)
-    async def app_exception_handler(request: Request, exc: AppException) -> ORJSONResponse:
+    async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
         """
         애플리케이션 커스텀 예외 핸들러
 
@@ -89,15 +89,15 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 "detail": exc.detail,
             },
         )
-        return ORJSONResponse(
+        return JSONResponse(
             status_code=exc.status_code,
-            content=exc.to_response().model_dump(),
+            content=exc.to_response().model_dump(mode="json"),
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
-    ) -> ORJSONResponse:
+    ) -> JSONResponse:
         """
         요청 유효성 검증 예외 핸들러
 
@@ -124,15 +124,15 @@ def _register_exception_handlers(app: FastAPI) -> None:
             message="요청 데이터 유효성 검증에 실패했습니다.",
             detail=detail,
         )
-        return ORJSONResponse(
+        return JSONResponse(
             status_code=validation_exc.status_code,
-            content=validation_exc.to_response().model_dump(),
+            content=validation_exc.to_response().model_dump(mode="json"),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
         request: Request, exc: StarletteHTTPException
-    ) -> ORJSONResponse:
+    ) -> JSONResponse:
         """
         HTTP 예외 핸들러
 
@@ -148,17 +148,17 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 "status_code": exc.status_code,
             },
         )
-        return ORJSONResponse(
+        return JSONResponse(
             status_code=exc.status_code,
             content=ErrorResponse(
                 error_code=f"HTTP_{exc.status_code}",
                 message=str(exc.detail) if exc.detail else "HTTP 오류가 발생했습니다.",
                 detail=None,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
     @app.exception_handler(Exception)
-    async def general_exception_handler(request: Request, exc: Exception) -> ORJSONResponse:
+    async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         """
         일반 예외 핸들러
 
@@ -176,13 +176,13 @@ def _register_exception_handlers(app: FastAPI) -> None:
         )
         # DEBUG 모드에서만 상세 정보 노출 (운영 환경에서는 민감 정보 유출 방지)
         detail = str(exc) if app_settings.DEBUG else None
-        return ORJSONResponse(
+        return JSONResponse(
             status_code=500,
             content=ErrorResponse(
                 error_code="INTERNAL_SERVER_ERROR",
                 message="내부 서버 오류가 발생했습니다.",
                 detail=detail,
-            ).model_dump(),
+            ).model_dump(mode="json"),
         )
 
 
@@ -245,7 +245,10 @@ app = FastAPI(
     description=app_settings.DESCRIPTION,
     openapi_tags=tags_metadata,
     lifespan=lifespan,
-    default_response_class=ORJSONResponse,
+    # 응답 직렬화는 FastAPI 기본 경로(Pydantic 이 JSON 바이트를 직접 생성)를 쓴다.
+    # 이전에는 default_response_class=ORJSONResponse 였으나, response_model 이 있으면
+    # Pydantic 이 먼저 직렬화해 orjson 은 이미 문자열이 된 값만 보므로 이득이 없고
+    # FastAPI 0.141 에서 deprecated 됐다. 제거 전후 응답 바이트가 동일함을 확인했다.
     docs_url=None,  # Swagger UI 비활성화 (Scalar 사용)
     redoc_url=None,  # ReDoc 비활성화 (Scalar 사용)
     openapi_url="/openapi.json" if app_settings.DEBUG else None,
