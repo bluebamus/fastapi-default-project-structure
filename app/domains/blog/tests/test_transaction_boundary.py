@@ -16,16 +16,16 @@ FastAPI 의 yield dependency 종료 코드 실행 시점에 의존하므로, 버
 먼저 일어나 클라이언트는 5xx 를 받는다. 따라서 현재 핀에서 P1-3 은 불필요하다.
 FastAPI 를 올린 뒤 이 테스트가 빨간불이면 그때 P1-3 을 착수한다.
 
-1번은 xfail 로 남아 있다 — 아래 마커의 사유 참조.
+1번은 최초 측정에서 실패해 xfail 로 고정했다가, P4-1(읽기 전용 의존성 분리)로
+해소되어 마커를 제거했다.
 """
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_session
+from app.core.db.session import Base, get_read_session, get_session
 from app.domains.blog.models.models import Post  # noqa: F401  (register table)
 from main import app
 
@@ -70,7 +70,10 @@ async def tx_client():
             session.rollback = _counting_rollback  # type: ignore[method-assign]
             yield session
 
+    # 조회 엔드포인트는 get_read_session 을 쓴다. 같은 세션으로 오버라이드해야
+    # 읽기/쓰기 커밋 횟수를 한 카운터로 셀 수 있다.
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_read_session] = _override_get_session
     # raise_app_exceptions=False: 서버 예외를 그대로 던지지 않고 실제 응답으로 받아야
     # "클라이언트가 무엇을 보는가"를 검증할 수 있다.
     transport = ASGITransport(app=app, raise_app_exceptions=False)
@@ -80,18 +83,8 @@ async def tx_client():
     await engine.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "알려진 결함: blog 의 읽기 경로가 쓰기용 get_blog_service 를 공유해 매 조회마다 "
-        "커밋한다. auth 도메인은 /me 를 비커밋 의존성으로 분리해 이미 해결했으나 "
-        "blog/reply/sns/user 는 미적용이다. get_read_session 이 준비되어 있는데도 "
-        "어떤 도메인도 쓰지 않아 읽기가 replica 로 가지 않는 문제와 같은 뿌리다. "
-        "수정하면 이 xfail 이 XPASS 로 터지므로 마커를 제거할 것."
-    ),
-)
 async def test_read_path_does_not_commit(tx_client):
-    """목록 조회는 쓰기가 없으므로 커밋할 이유가 없다."""
+    """목록 조회는 쓰기가 없으므로 커밋할 이유가 없다 (P4-1 로 해소)."""
     client, calls = tx_client
 
     resp = await client.get("/api/v1/blog/posts")
