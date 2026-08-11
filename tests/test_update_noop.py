@@ -11,14 +11,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.exception import NotFoundException
-from app.modules.blog.schemas.blog_schema import PostUpdate
-from app.modules.blog.services.blog_service import BlogService
-from app.modules.reply.schemas.reply_schema import ReplyUpdate
-from app.modules.reply.services.reply_service import ReplyService
-from app.modules.sns.schemas.sns_schema import SnsPostUpdate
-from app.modules.sns.services.sns_service import SnsService
-from app.modules.user.schemas.user_schema import UserUpdate
-from app.modules.user.services.user_service import UserService
+from app.features.blog.schemas.blog_schema import PostUpdate
+from app.features.blog.services.blog_service import BlogService
+from app.features.reply.schemas.reply_schema import ReplyUpdate
+from app.features.reply.services.reply_service import ReplyService
+from app.features.sns.schemas.sns_schema import SnsPostUpdate
+from app.features.sns.services.sns_service import SnsService
+from app.features.user.schemas.user_schema import UserUpdate
+from app.features.user.services.user_service import UserService
 
 # (서비스 클래스, update 메서드명, 부분수정 스키마 인스턴스)
 _CASES = [

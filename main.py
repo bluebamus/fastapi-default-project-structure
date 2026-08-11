@@ -22,7 +22,7 @@ from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.tags_metadata import tags_metadata
-from app.modules import auth, blog, home, reply, sns, user
+from app.features import auth, blog, home, reply, sns, user
 from app.utils.logs import get_logger
 from config import app_settings
 
@@ -281,7 +281,7 @@ _add_health_and_docs(app)
 
 # SQLAdmin 관리자 페이지 (ADMIN 설정에 따라 활성화)
 if app_settings.ADMIN:
-    from app.internal.admin import register_admin
+    from app.features.admin import register_admin
 
     admin = register_admin(app, engine)
     logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")

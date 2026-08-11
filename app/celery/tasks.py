@@ -10,7 +10,7 @@ from typing import Any
 from app.celery.app import celery_app
 from app.celery.task import run_async
 from app.core.db.session import background_session
-from app.modules.home.services.user_access_log_service import UserAccessLogService
+from app.features.home.services.user_access_log_service import UserAccessLogService
 
 
 @celery_app.task(name="home.aggregate_access_stats")
