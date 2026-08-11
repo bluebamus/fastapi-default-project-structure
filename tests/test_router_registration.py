@@ -1,6 +1,6 @@
 """라우터 등록 누락 탐지 (표준 include_router 배선 기준).
 
-`app/features/` 의 각 기능 패키지가 공개하는 ``router`` 가 `main.app` 에 실제로
+`app/modules/` 의 각 기능 패키지가 공개하는 ``router`` 가 `main.app` 에 실제로
 마운트됐는지 대조한다. `main.py` 에서 `include_router` 한 줄을 빠뜨리면 그 기능의
 라우트가 조용히 사라지는데(늦게 발견되는 회귀), 이 테스트가 즉시 잡는다.
 
@@ -11,18 +11,18 @@
 import importlib
 import pkgutil
 
-import app.features
+import app.modules
 from app.core.db.models_registry import import_all_models, iter_model_modules
 from app.core.db.session import Base
 
 
-def _features_with_router() -> set[str]:
+def _modules_with_router() -> set[str]:
     """``router`` 를 공개하는 기능 패키지 이름 집합."""
     names: set[str] = set()
-    for info in pkgutil.iter_modules(app.features.__path__):
+    for info in pkgutil.iter_modules(app.modules.__path__):
         if not info.ispkg:
             continue
-        module = importlib.import_module(f"app.features.{info.name}")
+        module = importlib.import_module(f"app.modules.{info.name}")
         if getattr(module, "router", None) is not None:
             names.add(info.name)
     return names
@@ -42,9 +42,7 @@ def test_every_feature_router_is_mounted():
     """
     mounted = _mounted_paths()
     missing = {
-        name
-        for name in _features_with_router()
-        if not any(f"/{name}/" in path for path in mounted)
+        name for name in _modules_with_router() if not any(f"/{name}/" in path for path in mounted)
     }
     assert not missing, (
         f"main.py 에서 include_router 를 빠뜨린 기능: {sorted(missing)}. "
@@ -58,11 +56,11 @@ def test_every_model_is_in_metadata():
 
     import_all_models()
 
-    features_dir = pathlib.Path(app.features.__path__[0])
+    modules_dir = pathlib.Path(app.modules.__path__[0])
     with_models = {
         info.name
-        for info in pkgutil.iter_modules(app.features.__path__)
-        if info.ispkg and (features_dir / info.name / "models" / "models.py").is_file()
+        for info in pkgutil.iter_modules(app.modules.__path__)
+        if info.ispkg and (modules_dir / info.name / "models" / "models.py").is_file()
     }
     registered = {dotted.split(".")[2] for dotted in iter_model_modules()}
 

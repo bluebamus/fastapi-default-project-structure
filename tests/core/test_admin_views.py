@@ -121,7 +121,7 @@ def test_user_admin_creation_policy_matches_password_column() -> None:
     만들어진다. 모델이 nullable 이라 DB 는 받아주지만 auth 는 그런 계정을 영구히
     거부하므로(로그인 불가), 조용히 깨진 데이터가 쌓인다. 그래서 생성 자체를 막는다.
     """
-    from app.features.user.models.models import User
+    from app.modules.user.models.models import User
 
     view = _view_for(User)
     has_secret = bool(SECRET_COLUMNS & _column_names(User))
@@ -135,7 +135,7 @@ def test_user_admin_creation_policy_matches_password_column() -> None:
 # =============================================================================
 def test_access_log_admin_stays_immutable() -> None:
     """접속 로그는 미들웨어가 생성하고 사후 수정되지 않는다."""
-    from app.features.home.models.models import UserAccessLog
+    from app.modules.home.models.models import UserAccessLog
 
     view = _view_for(UserAccessLog)
     assert view.can_create is False
@@ -147,7 +147,7 @@ def test_content_admin_allows_full_crud(model_path: str) -> None:
     import importlib
 
     feature, class_name = model_path.split(".")
-    module = importlib.import_module(f"app.features.{feature}.models.models")
+    module = importlib.import_module(f"app.modules.{feature}.models.models")
     model = getattr(module, class_name)
     view = _view_for(model)
     assert view.can_create is True

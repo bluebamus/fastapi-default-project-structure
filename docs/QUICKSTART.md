@@ -121,15 +121,17 @@ uv run mypy . --cache-dir .mypy_tmp
 
 ## 새 도메인 추가
 
-```bash
-uv run python -m scripts.new_app orders --register
+`app/modules/<name>/` vertical slice 를 만든 뒤 `main.py` 에 두 줄을 추가한다:
+
+```python
+# main.py
+from app.modules import blog, home, reply, sns, user, orders   # ← import 추가
+app.include_router(orders.router, prefix="/api")               # ← 취합 한 줄 추가
 ```
 
-`--register` 가 `main.py` 의 import 와 `APPS` 목록까지 갱신한다(멱등 — 두 번 실행해도
-중복되지 않는다). 모델 등록은 `app/core/db/models_registry.py` 가 디렉터리에서 자동
-판별하므로 따로 손댈 곳이 없다.
-
-`--register` 없이 만들었다면 `tests/test_domain_registration.py` 가 등록 누락을 잡아준다.
+모델 등록은 `app/core/db/models_registry.py` 가 `app/modules/<name>/models/models.py` 를
+디렉터리 스캔으로 자동 판별하므로 따로 손댈 곳이 없다(도메인 `__init__.py` 에서 models import).
+등록 누락은 `tests/test_router_registration.py` 가 잡아준다.
 
 ---
 
@@ -140,7 +142,7 @@ uv run python -m scripts.new_app orders --register
 | startup 에서 `Can't connect to MySQL server` | `DEBUG=true` 기본값이 테이블 생성을 시도 | MySQL을 띄우거나 `DEBUG=false` |
 | `/docs` 가 404 | `DEBUG=false` 에서는 문서가 꺼진다 | `DEBUG=true` (MySQL 필요) |
 | 도메인 API만 500 | 앱은 떴지만 DB가 없다 | 2단계 진행 |
-| 새 도메인이 마운트 안 됨 | `main.py` 의 `APPS` 미등록 | `--register` 또는 수동 추가 |
+| 새 도메인이 마운트 안 됨 | `main.py` 에 `include_router` 미등록 | import + `app.include_router(<name>.router, prefix="/api")` 추가 |
 
 ---
 

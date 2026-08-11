@@ -24,11 +24,11 @@ import inspect
 from fastapi.routing import APIRoute
 
 from app.core.db.session import get_read_session, get_session
-from app.features.auth.dependencies.auth_dependencies import get_auth_service
-from app.features.blog.dependencies.blog_dependencies import get_blog_service
-from app.features.reply.dependencies.reply_dependencies import get_reply_service
-from app.features.sns.dependencies.sns_dependencies import get_sns_service
-from app.features.user.dependencies.user_dependencies import get_user_service
+from app.modules.auth.dependencies.auth_dependencies import get_auth_service
+from app.modules.blog.dependencies.blog_dependencies import get_blog_service
+from app.modules.reply.dependencies.reply_dependencies import get_reply_service
+from app.modules.sns.dependencies.sns_dependencies import get_sns_service
+from app.modules.user.dependencies.user_dependencies import get_user_service
 from main import app
 
 # 쓰기 세션(get_session)으로 서비스를 구성하는 의존성 전부.
