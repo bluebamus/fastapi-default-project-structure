@@ -56,7 +56,7 @@ fastapi-default-project-structure/
 │       ├── authenticator/           # 인증 (JWT·bcrypt)
 │       └── pagination/              # 페이지네이션 (순수 dataclass)
 │
-├── migrations/env.py                # 각 앱 models 모듈을 import 해 Base.metadata 수집
+├── migrations/env.py                # import_all_models()(SSOT) 로 전 도메인 모델 자동 수집
 ├── scripts/new_app.py               # 앱 스캐폴딩 생성기
 └── docs/
     ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
@@ -129,6 +129,7 @@ if app_settings.ADMIN:                    # SQLAdmin (앱별 admin_views 수집)
 ```bash
 uv run python -m scripts.new_app <name>              # 기본 구조
 uv run python -m scripts.new_app <name> --with-admin # SQLAdmin 포함
+uv run python -m scripts.new_app <name> --register   # + main.py 자동 등록(멱등)
 ```
 
 생성된 `__init__.py`가 `router`(선택 `admin_views`)를 공개합니다.
@@ -141,9 +142,9 @@ from app.domains import blog, home, reply, sns, user, <name>   # ← import 추�
 APPS = [home, blog, reply, sns, user, <name>]                  # ← 목록에 추가
 ```
 
+- `main.py` 편집은 `--register` 로 자동화됩니다(멱등). 수동 시 위 두 줄만 추가.
 - 라우터/Admin: `APPS` 순회로 자동 취합됩니다(추가 코드 불필요).
-- 모델(메타데이터): 앱 `__init__.py`의 `models` import(주석 해제)로 `Base.metadata`에 등록.
-- Alembic: `migrations/env.py`의 import 목록에도 새 앱 models 모듈을 추가합니다.
+- 모델(메타데이터): **SSOT(`import_all_models()`)가 `<name>/models/models.py` 를 자동 수집**하므로 `env.py`·`session.py`·`__init__.py` 를 손댈 필요가 없습니다.
 
 ### 3.3 필수/선택 파일 표
 
@@ -205,13 +206,13 @@ celery_app = Celery(
 
 ## 6. Alembic 마이그레이션
 
-`migrations/env.py`는 각 도메인 앱의 `models` 모듈을 명시적으로 import 해 메타데이터를 수집합니다.
+`migrations/env.py`는 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)로 전 도메인 모델을 자동 수집합니다. `app/domains/<name>/models/models.py` 가 있으면 자동 등록되므로 새 앱 추가 시 이 파일을 손댈 필요가 없습니다.
 
 ```python
 from app.core.db.session import Base
-import app.domains.blog.models.models   # noqa
-import app.domains.home.models.models   # noqa
-# ... 새 앱 추가 시 여기에 한 줄 추가
+from app.core.db.models_registry import import_all_models
+
+import_all_models()          # 디렉터리 스캔으로 전 도메인 models 자동 import
 target_metadata = Base.metadata
 ```
 
