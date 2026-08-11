@@ -8,10 +8,9 @@ import-time 부수효과로 access-log sink 를 미들웨어에 등록한다.
 """
 
 from app.features.home.access_log_sink import register_sink
-from app.features.home.admin import admin_views
 from app.features.home.api.routers.router import home_router as router
 from app.features.home.models import models as _models  # noqa: F401  (Base.metadata 등록)
 
 register_sink()
 
-__all__ = ["router", "admin_views"]
+__all__ = ["router"]

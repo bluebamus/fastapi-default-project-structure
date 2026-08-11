@@ -4,8 +4,7 @@
 모델 모듈을 import 하여 ``Base.metadata`` 에 테이블을 등록한다.
 """
 
-from app.features.sns.admin import admin_views
 from app.features.sns.api.routers.router import sns_router as router
 from app.features.sns.models import models as _models  # noqa: F401  (Base.metadata 등록)
 
-__all__ = ["admin_views", "router"]
+__all__ = ["router"]
