@@ -20,6 +20,17 @@ __pycache__/
 # Alembic scratch / local verification databases
 _scratch_alembic.db
 
+# 테스트가 만드는 임시 디렉터리.
+# 지금은 내용물이 전부 .env 파일이라 위 `.env` 규칙에 우연히 걸려 무시되고 있지만,
+# .env 아닌 파일이 하나라도 생기면 그대로 새어 나간다. 우연에 기대지 않도록 명시한다.
+# (.mypy_cache/.pytest_cache/.ruff_cache 는 도구가 자기 안에 .gitignore 를 직접 쓰므로 불필요)
+.pytest_tmp/
+
+# 커버리지 산출물
+.coverage
+.coverage.*
+htmlcov/
+
 # macOS
 .DS_Store
 .AppleDouble
