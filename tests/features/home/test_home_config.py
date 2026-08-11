@@ -11,7 +11,7 @@ def test_register_sink_installs_home_sink():
         get_access_log_sink,
         set_access_log_sink,
     )
-    from app.features.home.access_log_sink import HomeAccessLogSink, register_sink
+    from app.modules.home.access_log_sink import HomeAccessLogSink, register_sink
 
     original = get_access_log_sink()
     try:
@@ -23,8 +23,8 @@ def test_register_sink_installs_home_sink():
 
 
 def test_home_package_exposes_router_and_main_includes_it():
-    from app.features import home
-    from app.features.home.api.routers.router import home_router
+    from app.modules import home
+    from app.modules.home.api.routers.router import home_router
 
     # 패키지가 취합 라우터를 공개한다.
     assert home.router is home_router

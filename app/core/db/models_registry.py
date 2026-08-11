@@ -6,7 +6,7 @@ Alembic autogenerate 와 DEBUG 모드 테이블 생성은 둘 다 `Base.metadata
 어긋난다. 증상은 나중에 "마이그레이션이 비어 있음" 또는 "테이블이 안 생김" 으로
 나타나서 원인을 찾기 어렵다.
 
-그래서 목록 대신 **디렉터리 구조를 진실의 원천**으로 삼는다. `app/features/<name>/
+그래서 목록 대신 **디렉터리 구조를 진실의 원천**으로 삼는다. `app/modules/<name>/
 models/models.py` 가 있으면 등록 대상이고, 없으면(예: 모델이 없는 `auth`) 건너뛴다.
 새 도메인을 추가할 때 손댈 곳이 없다.
 """
@@ -24,13 +24,13 @@ def iter_model_modules() -> list[str]:
     """
     import pkgutil
 
-    import app.features
+    import app.modules
 
     modules: list[str] = []
-    for info in pkgutil.iter_modules(app.features.__path__):
+    for info in pkgutil.iter_modules(app.modules.__path__):
         if not info.ispkg:
             continue
-        dotted = f"app.features.{info.name}.{_MODELS_SUFFIX}"
+        dotted = f"app.modules.{info.name}.{_MODELS_SUFFIX}"
         try:
             exists = importlib.util.find_spec(dotted) is not None
         except ModuleNotFoundError:

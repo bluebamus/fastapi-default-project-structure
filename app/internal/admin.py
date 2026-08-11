@@ -22,11 +22,11 @@ from fastapi import FastAPI
 from sqladmin import Admin, ModelView
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.features.blog.models.models import Post
-from app.features.home.models.models import UserAccessLog
-from app.features.reply.models.models import Reply
-from app.features.sns.models.models import SnsPost
-from app.features.user.models.models import User
+from app.modules.blog.models.models import Post
+from app.modules.home.models.models import UserAccessLog
+from app.modules.reply.models.models import Reply
+from app.modules.sns.models.models import SnsPost
+from app.modules.user.models.models import User
 from config import app_settings
 
 
