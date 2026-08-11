@@ -218,17 +218,17 @@ async def create_db_tables() -> None:
     테이블을 생성합니다.
 
     Note:
-        새로운 도메인 앱은 app/domains/<name>/ 를 만들고 아래 import 목록과
-        main.py 의 APPS 목록에 추가합니다.
+        모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
+        자동으로 판별한다. 새 도메인 앱은 app/domains/<name>/ 를 만들고
+        main.py 의 APPS 목록에만 추가하면 된다.
     """
     import asyncio
 
+    from app.core.db.models_registry import import_all_models
+
     # 모델 메타데이터 등록: 각 앱 models 모듈 import -> Base.metadata 채움
-    import app.domains.blog.models.models  # noqa: F401
-    import app.domains.home.models.models  # noqa: F401
-    import app.domains.reply.models.models  # noqa: F401
-    import app.domains.sns.models.models  # noqa: F401
-    import app.domains.user.models.models  # noqa: F401
+    registered = import_all_models()
+    logger.info("[database] 모델 등록: %d개 모듈 %s", len(registered), registered)
 
     logger.info("Creating database tables...")
 

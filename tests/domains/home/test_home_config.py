@@ -32,5 +32,6 @@ def test_home_package_exposes_router_and_main_includes_it():
     # main.py 가 /api 프리픽스로 취합한다.
     from main import app
 
-    paths = {r.path for r in app.routes}
+    # app.routes 직접 순회는 FastAPI 버전에 따라 하위 라우터가 평탄화되지 않는다.
+    paths = set(app.openapi()["paths"])
     assert any(p.startswith("/api/v1/home") for p in paths)

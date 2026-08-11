@@ -43,7 +43,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 
 | 구분 | 기술 |
 |------|------|
-| Framework | FastAPI 0.115+ |
+| Framework | FastAPI 0.141+ |
 | ORM | SQLAlchemy 2.0 (async) |
 | Database | MySQL (aiomysql) |
 | Validation | Pydantic v2 |
@@ -155,7 +155,7 @@ fastapi-default-project-structure/
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
 | `app/domains/<name>/dependencies/` | 기능 의존성 — Service 구성 + 요청 성공 시 커밋(트랜잭션 경계) |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
-| `migrations/env.py` | 각 앱 `models` 모듈을 import 해 `Base.metadata` 수집 → Alembic autogenerate |
+| `migrations/env.py` | `import_all_models()`(SSOT) 로 전 도메인 모델을 자동 수집 → Alembic autogenerate |
 
 ### `app/` 구현 규칙 (Conventions)
 
@@ -168,7 +168,7 @@ domains → core → utils
 | 영역 | 역할 | 규칙 |
 |------|------|------|
 | `app/domains/<name>/` | 기능 단위 앱(도메인) | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 도메인은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
-| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 `domains`를 import하지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`(DEBUG 전용 테이블 자동 생성)가 메타데이터 등록을 위해 각 도메인 `models` 를 함수 내부에서 import 하는 것 |
+| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 `domains`를 import하지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`(DEBUG 전용 테이블 자동 생성)가 메타데이터 등록을 위해 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)를 함수 내부에서 호출하는 것 |
 | `app/utils/` | 순수 유틸리티 (로깅, 인증, 페이지네이션) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
 > 핵심 규칙: **`core`는 도메인을 모른다.** 도메인이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
@@ -403,6 +403,10 @@ users = await repo.get_all_with(
 ---
 
 ## 시작하기
+
+> **처음이라면 [docs/QUICKSTART.md](docs/QUICKSTART.md) 부터.** 인프라 없이 30초 만에
+> 기동을 확인하는 최소 경로와, 첫 실행에서 가장 자주 막히는 지점(`DEBUG=true` 기본값이
+> MySQL을 요구한다)을 다룬다. 아래는 전체 설치 절차다.
 
 ### 1. 저장소 클론
 
@@ -848,15 +852,24 @@ async def dispatch(self, request: Request, call_next: Callable):
 # 기본 구조 생성 (router + dependencies)
 uv run python -m scripts.new_app <name>
 
-# Celery 워커 + SQLAdmin 포함
+# SQLAdmin ModelView 포함
 uv run python -m scripts.new_app <name> --with-admin
+
+# 스캐폴딩 + main.py 자동 등록(import 라인 + APPS 목록, 멱등)
+uv run python -m scripts.new_app <name> --register
 ```
 
 ### 최소 절차 (3단계)
 
 **1. 스캐폴딩 생성 + 도메인 코드 작성** (`models/`, `schemas/`, `repositories/`, `services/`, `api/routers/`)
 
-**2. `main.py` 의 `APPS` 에 등록**
+**2. `main.py` 의 `APPS` 에 등록** — `--register` 로 자동화(수동 편집 대체, 멱등)
+
+```bash
+uv run python -m scripts.new_app <name> --register   # import 라인 + APPS 목록 자동 갱신
+```
+
+수동으로 할 경우:
 
 ```python
 # main.py
@@ -865,13 +878,13 @@ from app.domains import blog, home, reply, sns, user, <name>   # ← import 추�
 APPS = [home, blog, reply, sns, user, <name>]   # ← 목록에 추가 (순서 = 로드 순서)
 ```
 
-각 앱 패키지의 `__init__.py` 가 `router`(및 선택 `admin_views`)를 공개하므로, `main.py` 는 `APPS` 를 순회하며 `include_router(prefix="/api")` 로 취합합니다. 모델은 앱 `__init__.py` 의 models import(주석 해제)로 `Base.metadata` 에 등록됩니다.
+각 앱 패키지의 `__init__.py` 가 `router`(및 선택 `admin_views`)를 공개하므로, `main.py` 는 `APPS` 를 순회하며 `include_router(prefix="/api")` 로 취합합니다. **모델은 SSOT(`import_all_models()`)가 `<name>/models/models.py` 를 자동 수집**하므로 `Base.metadata` 등록에 별도 편집(`env.py`·`session.py`·`__init__.py`)이 필요 없습니다.
 
 **3. 서버 재시작** — `APPS` 에 추가한 앱의 라우터가 마운트됩니다.
 
 ### 개발 체크리스트
 
-- [ ] `main.py` 의 `APPS` 에 앱 등록 (라우터/Admin 취합) + `__init__.py` models import(메타데이터)
+- [ ] `main.py` 의 `APPS` 에 앱 등록 (`--register` 로 자동화 가능; 모델은 SSOT 자동 수집이라 수동 import 불필요)
 - [ ] `models/` — SQLAlchemy ORM 모델
 - [ ] `repositories/` — BaseRepository 확장
 - [ ] `dependencies/` — 기능 의존성(Service 구성 + 트랜잭션 경계)

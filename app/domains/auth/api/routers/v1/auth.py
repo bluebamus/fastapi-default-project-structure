@@ -53,6 +53,7 @@ async def register(
     service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
     user = await service.register(payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 

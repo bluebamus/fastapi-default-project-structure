@@ -8,14 +8,13 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi (>=0.115.11,<0.116.0)",
+    "fastapi (>=0.141.1,<0.142.0)",
     "sqlalchemy (>=2.0.38,<3.0.0)",
     "alembic (>=1.15.1,<2.0.0)",
     "pydantic (>=2.10.6,<3.0.0)",
     "pydantic-settings (>=2.8.1,<3.0.0)",
     "aiomysql (>=0.2.0,<0.3.0)",
     "uvicorn[standard] (>=0.34.0,<0.35.0)",
-    "orjson (>=3.10.0,<4.0.0)",
     "user-agents (>=2.2.0,<3.0.0)",
     "scalar-fastapi (>=1.0.0,<2.0.0)",
     "sqladmin (>=0.20.0,<1.0.0)",
@@ -164,12 +163,16 @@ target-version = "py312"
 line-length = 100
 
 # 제외 경로
+# .pytest_tmp/.mypy_tmp 는 README 의 실행 명령이 저장소 안에 만드는 임시 산출물이다.
+# 테스트가 그 안에 .py 픽스처를 쓰면 ruff 가 그것까지 잡아 게이트가 빨개진다.
 exclude = [
     ".git",
     ".venv",
     "__pycache__",
     "migrations",
     "*.pyc",
+    ".pytest_tmp",
+    ".mypy_tmp",
 ]
 
 [tool.ruff.lint]

@@ -10,7 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.domains.sns.dependencies.sns_dependencies import get_sns_service
+from app.domains.sns.dependencies.sns_dependencies import (
+    get_sns_service,
+    get_sns_service_readonly,
+)
 from app.domains.sns.schemas.sns_schema import (
     SnsPostCreate,
     SnsPostListResponse,
@@ -39,6 +42,7 @@ async def create_post(
     service: SnsService = Depends(get_sns_service),
 ) -> SnsPostResponse:
     post = await service.create_post(payload)
+    await service.commit()
     return SnsPostResponse.model_validate(post)
 
 
@@ -52,7 +56,7 @@ async def create_post(
 async def list_posts(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
-    service: SnsService = Depends(get_sns_service),
+    service: SnsService = Depends(get_sns_service_readonly),
 ) -> SnsPostListResponse:
     posts, total = await service.list_posts(skip=skip, limit=limit)
     return SnsPostListResponse(
@@ -73,7 +77,7 @@ async def list_posts(
 )
 async def get_post(
     post_id: str = Path(..., description="피드 게시물 ID(UUID)"),
-    service: SnsService = Depends(get_sns_service),
+    service: SnsService = Depends(get_sns_service_readonly),
 ) -> SnsPostResponse:
     post = await service.get_post(post_id)
     return SnsPostResponse.model_validate(post)
@@ -93,6 +97,7 @@ async def update_post(
     service: SnsService = Depends(get_sns_service),
 ) -> SnsPostResponse:
     post = await service.update_post(post_id, payload)
+    await service.commit()
     return SnsPostResponse.model_validate(post)
 
 
@@ -109,3 +114,4 @@ async def delete_post(
     service: SnsService = Depends(get_sns_service),
 ) -> None:
     await service.delete_post(post_id)
+    await service.commit()
