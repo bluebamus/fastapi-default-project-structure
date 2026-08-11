@@ -15,6 +15,8 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - [환경 설정](#환경-설정)
 - [로깅 시스템](#로깅-시스템)
 - [접속 로그 미들웨어](#접속-로그-미들웨어)
+- [인증 (JWT)](#인증-jwt)
+- [레이트 리밋](#레이트-리밋)
 - [신규 모듈 개발 가이드](#신규-모듈-개발-가이드)
 - [API 문서](#api-문서)
 
@@ -879,6 +881,130 @@ async def dispatch(self, request: Request, call_next: Callable):
     task.add_done_callback(self._background_tasks.discard)
     return response
 ```
+
+---
+
+## 인증 (JWT)
+
+OAuth2 **password flow** + JWT access/refresh 토큰. 비밀번호는 bcrypt 해시로 저장합니다.
+자격증명은 `user` 기능의 `User.hashed_password` 에 두고, `auth` 는 인증 로직만 담당합니다
+(횡단 관심사라 `auth → user` 의존은 의도된 예외입니다).
+
+- 도메인: `app/features/auth/`
+- 토큰 유틸: `app/utils/authenticator/`
+
+### 엔드포인트
+
+| 메서드 | 경로 | 인증 | 요청 | 성공 | 실패 |
+|---|---|---|---|---|---|
+| `POST` | `/api/v1/auth/register` | — | JSON | `201` | `409` 사용자명 중복 · `422` 검증 |
+| `POST` | `/api/v1/auth/login` | — | **form** | `200` | `401` 자격증명 불일치 · `422` |
+| `POST` | `/api/v1/auth/refresh` | — | JSON | `200` | `401` 토큰 무효·만료 · `422` |
+| `GET` | `/api/v1/auth/me` | Bearer | — | `200` | `401` |
+
+> `login` 만 `application/x-www-form-urlencoded` 입니다 — OAuth2 password flow 규격이라
+> `username`·`password` 를 form 필드로 받습니다. 나머지는 JSON 입니다.
+
+### 사용 예시
+
+```bash
+# 1) 가입 — 비밀번호는 8자 이상
+curl -X POST localhost:8000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","email":"alice@example.com","password":"secret-pw-1234"}'
+
+# 2) 로그인 — form 전송(-d 기본값이 form 이므로 헤더 불요)
+curl -X POST localhost:8000/api/v1/auth/login \
+  -d 'username=alice&password=secret-pw-1234'
+# → {"access_token":"eyJ...","refresh_token":"eyJ...","token_type":"bearer"}
+
+# 3) 보호 엔드포인트 호출
+curl localhost:8000/api/v1/auth/me -H 'Authorization: Bearer <access_token>'
+
+# 4) 재발급 — access 가 만료되면 refresh 로 둘 다 새로 받는다
+curl -X POST localhost:8000/api/v1/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"<refresh_token>"}'
+```
+
+### 토큰 정책
+
+| 설정 | 기본값 | 설명 |
+|---|---|---|
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Access Token 수명(분) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh Token 수명(일) |
+| `JWT_ALGORITHM` | `HS256` | 서명 알고리즘 |
+| `ACCESS_TOKEN_SECRET_KEY` | `change-this-...` | Access 서명 키 |
+| `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | Refresh 서명 키 (access 와 **다른 값** 권장) |
+
+- `refresh` 는 access·refresh 를 **둘 다** 새로 발급합니다(refresh 토큰 회전).
+- 토큰에는 종류 표식이 들어 있어 access 토큰을 refresh 자리에 넣으면 거부됩니다.
+- 비활성 사용자(`is_active=false`)는 재발급 단계에서 차단됩니다.
+
+> **운영 배포 전 필수:** 두 서명 키는 `.env` 에서 반드시 교체하세요. 기본값
+> (`change-this-...`)이 그대로면 누구나 토큰을 위조할 수 있습니다. 서버 측 토큰 폐기
+> 목록(블랙리스트)은 구현돼 있지 않으므로, 유출된 refresh 토큰은 만료까지 유효합니다 —
+> 짧은 수명이 필요하면 `REFRESH_TOKEN_EXPIRE_DAYS` 를 줄이세요.
+
+### 보안 설계 메모
+
+- **상수 시간 인증** — 사용자가 없어도 더미 해시로 bcrypt 검증을 상시 수행합니다. 응답
+  시간차로 사용자명 존재 여부를 알아내는 열거 공격을 막습니다.
+- **논블로킹 해싱** — bcrypt 는 `asyncio.to_thread` 로 격리합니다. 동기 호출하면 로그인마다
+  이벤트 루프가 수백 ms 멈춥니다.
+- **관리 화면 노출 차단** — `hashed_password` 는 SQLAdmin 의 목록·상세·폼·내보내기 어디에도
+  나오지 않으며, `User` 는 admin 생성이 막혀 있습니다(비밀번호 없이 만들면 로그인 불가
+  계정이 쌓입니다). 구조 증거: `tests/core/test_admin_views.py`.
+
+---
+
+## 레이트 리밋
+
+slowapi **데코레이터 기반**입니다. 전역 미들웨어(`SlowAPIMiddleware`)는 쓰지 않습니다 —
+라우트마다 한도를 달리 줄 수 있고, 어떤 엔드포인트가 보호되는지 코드에서 바로 보입니다.
+
+- 구현: `app/core/rate_limit.py`
+- 클라이언트 식별: `get_remote_address` (요청 IP)
+
+### 설정
+
+| 설정 | 기본값 | 설명 |
+|---|---|---|
+| `RATE_LIMIT_ENABLED` | `true` | 끄면 데코레이터가 무동작 |
+| `RATE_LIMIT_DEFAULT` | `100/minute` | 데코레이터 기본 한도 (slowapi 형식 `<count>/<period>`) |
+
+### 현재 적용 대상
+
+| 엔드포인트 | 한도 |
+|---|---|
+| `POST /api/v1/auth/register` | `RATE_LIMIT_DEFAULT` |
+| `POST /api/v1/auth/login` | `RATE_LIMIT_DEFAULT` |
+
+인증 진입점 두 곳에만 걸려 있습니다. 무차별 대입과 대량 가입이 실제 위험 지점이기 때문입니다.
+초과 시 `429 Too Many Requests` 를 반환합니다.
+
+### 새 라우트에 적용하기
+
+```python
+from fastapi import Request
+from app.core.rate_limit import limiter
+from config import middleware_settings
+
+
+@router.post("/items")
+@limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)   # 또는 "5/minute" 처럼 직접 지정
+async def create_item(request: Request, ...):            # request 파라미터 필수
+    ...
+```
+
+> **`request: Request` 파라미터가 반드시 있어야 합니다.** slowapi 가 이 인자에서 클라이언트
+> IP 를 꺼내므로, 빠뜨리면 기동 시점에 에러가 납니다.
+
+> **한계 — 카운터가 프로세스 메모리에 있습니다.** 워커를 여러 개 띄우면 각 워커가 자기
+> 카운터를 세므로 실질 한도가 워커 수만큼 늘어납니다. 정확한 전역 한도가 필요하면 slowapi 를
+> Redis 스토리지로 전환하거나 리버스 프록시 단에서 거세요. 테스트에서는
+> `RATE_LIMIT_ENABLED=false` 로 꺼 둡니다(in-memory 카운터가 테스트 간에 공유되면
+> 순서에 따라 실패합니다).
 
 ---
 
