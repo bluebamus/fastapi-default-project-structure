@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_session
+from app.core.db.session import Base, get_read_session, get_session
 from app.domains.sns.models.models import SnsPost  # noqa: F401  (register table)
 from main import app
 
@@ -29,7 +29,10 @@ async def client():
         async with maker() as session:
             yield session
 
+    # 조회 엔드포인트는 get_read_session 을 쓴다 — 함께 오버라이드하지 않으면
+    # 읽기 경로가 실제 MySQL 로 새어나간다.
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_read_session] = _override_get_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -39,7 +42,8 @@ async def client():
 
 def test_sns_auto_registered():
     """디렉터리 컨벤션만으로 sns CRUD 라우터가 자동 발견·마운트된다."""
-    paths = {r.path for r in app.routes}
+    # app.routes 직접 순회는 FastAPI 버전에 따라 하위 라우터가 평탄화되지 않는다.
+    paths = set(app.openapi()["paths"])
     assert "/api/v1/sns/posts" in paths
     assert "/api/v1/sns/posts/{post_id}" in paths
 

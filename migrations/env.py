@@ -14,15 +14,14 @@ if config.config_file_name is not None:
 
 # ---------------------------------------------------------------------------
 # Import Base and every domain app's models so that autogenerate discovers
-# ALL domain tables. 새 앱 추가 시 이 import 목록에 한 줄 추가한다.
+# ALL domain tables. 목록은 models_registry 가 디렉터리에서 판별하므로
+# 새 앱을 추가해도 이 파일은 손대지 않는다.
 # ---------------------------------------------------------------------------
-import app.domains.blog.models.models  # noqa: E402,F401
-import app.domains.home.models.models  # noqa: E402,F401
-import app.domains.reply.models.models  # noqa: E402,F401
-import app.domains.sns.models.models  # noqa: E402,F401
-import app.domains.user.models.models  # noqa: E402,F401
+from app.core.db.models_registry import import_all_models  # noqa: E402
 from app.core.db.session import Base  # noqa: E402
 from config import db_settings  # noqa: E402
+
+import_all_models()
 
 target_metadata = Base.metadata
 

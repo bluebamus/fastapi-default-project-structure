@@ -10,7 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.domains.user.dependencies.user_dependencies import get_user_service
+from app.domains.user.dependencies.user_dependencies import (
+    get_user_service,
+    get_user_service_readonly,
+)
 from app.domains.user.schemas.user_schema import (
     UserCreate,
     UserListResponse,
@@ -43,6 +46,7 @@ async def create_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.create_user(payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 
@@ -56,7 +60,7 @@ async def create_user(
 async def list_users(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
-    service: UserService = Depends(get_user_service),
+    service: UserService = Depends(get_user_service_readonly),
 ) -> UserListResponse:
     users, total = await service.list_users(skip=skip, limit=limit)
     return UserListResponse(
@@ -77,7 +81,7 @@ async def list_users(
 )
 async def get_user(
     user_id: str = Path(..., description="사용자 ID(UUID)"),
-    service: UserService = Depends(get_user_service),
+    service: UserService = Depends(get_user_service_readonly),
 ) -> UserResponse:
     user = await service.get_user(user_id)
     return UserResponse.model_validate(user)
@@ -97,6 +101,7 @@ async def update_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.update_user(user_id, payload)
+    await service.commit()
     return UserResponse.model_validate(user)
 
 
@@ -113,3 +118,4 @@ async def delete_user(
     service: UserService = Depends(get_user_service),
 ) -> None:
     await service.delete_user(user_id)
+    await service.commit()

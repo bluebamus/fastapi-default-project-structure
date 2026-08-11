@@ -1,5 +1,23 @@
 """Tests for scripts/new_app.py scaffolding generator (convention-based, gen-2)."""
 
+import pytest
+
+_MAIN_STUB = """\
+from fastapi import FastAPI
+
+from app.domains import auth, blog, home
+
+APPS = [home, blog, auth]
+
+app = FastAPI()
+"""
+
+
+def _make_root(tmp_path):
+    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "main.py").write_text(_MAIN_STUB, encoding="utf-8")
+    return tmp_path
+
 
 def test_generator_creates_bootable_app(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -96,3 +114,55 @@ def test_generator_multiword_pascal_case(tmp_path, monkeypatch):
         encoding="utf-8"
     )
     assert "user_profile_router = APIRouter()" in router_text
+
+
+# ---------------------------------------------------------------------------
+# --register (P2-2)
+# ---------------------------------------------------------------------------
+
+
+def test_register_adds_import_and_apps_entry(tmp_path):
+    """--register 는 main.py 의 import 와 APPS 양쪽을 갱신한다."""
+    root = _make_root(tmp_path)
+    from scripts.new_app import register_app
+
+    assert register_app("orders", root=root) is True
+
+    text = (root / "main.py").read_text(encoding="utf-8")
+    assert "from app.domains import auth, blog, home, orders" in text
+    assert "APPS = [home, blog, auth, orders]" in text
+
+
+def test_register_is_idempotent(tmp_path):
+    """두 번 실행해도 중복 등록되지 않는다 — 계획서 P2-2 완료 조건."""
+    root = _make_root(tmp_path)
+    from scripts.new_app import register_app
+
+    register_app("orders", root=root)
+    first = (root / "main.py").read_text(encoding="utf-8")
+
+    assert register_app("orders", root=root) is False
+    assert (root / "main.py").read_text(encoding="utf-8") == first
+    assert first.count("orders") == 2  # import 1회 + APPS 1회
+
+
+def test_register_keeps_imports_sorted(tmp_path):
+    """import 목록은 정렬 상태를 유지한다(ruff isort 게이트 통과용)."""
+    root = _make_root(tmp_path)
+    from scripts.new_app import register_app
+
+    register_app("aardvark", root=root)
+
+    text = (root / "main.py").read_text(encoding="utf-8")
+    assert "from app.domains import aardvark, auth, blog, home" in text
+
+
+def test_register_fails_loudly_on_unknown_wiring(tmp_path):
+    """등록 지점을 못 찾으면 조용히 넘어가지 않고 멈춘다."""
+    root = tmp_path
+    (root / "app" / "domains").mkdir(parents=True)
+    (root / "main.py").write_text("app = FastAPI()\n", encoding="utf-8")
+    from scripts.new_app import register_app
+
+    with pytest.raises(RuntimeError, match="찾지 못했다"):
+        register_app("orders", root=root)
