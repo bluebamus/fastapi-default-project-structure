@@ -7,8 +7,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.modules.auth.schemas.auth_schema import RegisterRequest
-from app.modules.user.schemas.user_schema import UserCreate
+from app.features.auth.schemas.auth_schema import RegisterRequest
+from app.features.user.schemas.user_schema import UserCreate
 
 _INVALID_EMAILS = [
     "notanemail",

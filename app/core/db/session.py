@@ -219,7 +219,7 @@ async def create_db_tables() -> None:
 
     Note:
         모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
-        자동으로 판별한다. 새 도메인 앱은 app/modules/<name>/ 를 만들고
+        자동으로 판별한다. 새 도메인 앱은 app/features/<name>/ 를 만들고
         main.py 의 APPS 목록에만 추가하면 된다.
     """
     import asyncio

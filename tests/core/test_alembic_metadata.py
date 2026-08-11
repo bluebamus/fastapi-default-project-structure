@@ -30,8 +30,8 @@ def test_registry_discovers_expected_domains():
     """
     modules = iter_model_modules()
 
-    assert "app.modules.blog.models.models" in modules
-    assert "app.modules.user.models.models" in modules
+    assert "app.features.blog.models.models" in modules
+    assert "app.features.user.models.models" in modules
     assert (
-        "app.modules.auth.models.models" not in modules
+        "app.features.auth.models.models" not in modules
     ), "auth 는 모델이 없다. 모델 없는 도메인을 등록 대상으로 잡으면 import 에러가 난다"

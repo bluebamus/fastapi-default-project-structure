@@ -121,15 +121,15 @@ uv run mypy . --cache-dir .mypy_tmp
 
 ## 새 도메인 추가
 
-`app/modules/<name>/` vertical slice 를 만든 뒤 `main.py` 에 두 줄을 추가한다:
+`app/features/<name>/` vertical slice 를 만든 뒤 `main.py` 에 두 줄을 추가한다:
 
 ```python
 # main.py
-from app.modules import blog, home, reply, sns, user, orders   # ← import 추가
+from app.features import blog, home, reply, sns, user, orders   # ← import 추가
 app.include_router(orders.router, prefix="/api")               # ← 취합 한 줄 추가
 ```
 
-모델 등록은 `app/core/db/models_registry.py` 가 `app/modules/<name>/models/models.py` 를
+모델 등록은 `app/core/db/models_registry.py` 가 `app/features/<name>/models/models.py` 를
 디렉터리 스캔으로 자동 판별하므로 따로 손댈 곳이 없다(도메인 `__init__.py` 에서 models import).
 등록 누락은 `tests/test_router_registration.py` 가 잡아준다.
 
