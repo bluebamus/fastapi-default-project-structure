@@ -10,7 +10,7 @@
 
 ## 2026-08-10 작업 요약
 
-P1~P4 전 항목 완료 (커밋 9개). 게이트: `pytest 198 passed` · `ruff` · `mypy` 통과.
+P1~P6 완료 (P3-2 프로필 분리만 의도적 보류). 게이트: `pytest 205 passed` · `ruff` · `mypy` Success(149). **main 병합 완료**(merge `746088c`).
 
 주요 변경:
 
