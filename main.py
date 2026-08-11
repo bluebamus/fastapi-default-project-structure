@@ -28,9 +28,6 @@ from config import app_settings
 
 logger = get_logger("main")
 
-# 최종 취합 대상 도메인 앱 (등록 순서 = 로드 순서). 새 앱은 여기에 추가한다.
-APPS = [home, blog, reply, sns, user, auth]
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -270,10 +267,14 @@ else:
 _register_exception_handlers(app)
 logger.info("글로벌 예외 핸들러 설정 완료")
 
-# 도메인 앱 라우터 최종 취합 (각 앱 패키지가 취합한 router 를 /api 에 마운트)
-for _app in APPS:
-    app.include_router(_app.router, prefix="/api")
-logger.info("registered %d app routers", len(APPS))
+# 라우터 취합 — 명시적 include_router (FastAPI 표준). 새 라우터는 여기에 한 줄 추가한다.
+app.include_router(home.router, prefix="/api")
+app.include_router(blog.router, prefix="/api")
+app.include_router(reply.router, prefix="/api")
+app.include_router(sns.router, prefix="/api")
+app.include_router(user.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+logger.info("라우터 include 완료")
 
 # 헬스체크 + Scalar 문서
 _add_health_and_docs(app)
@@ -283,8 +284,8 @@ if app_settings.ADMIN:
     from sqladmin import Admin
 
     admin = Admin(app, engine, title=f"{app_settings.PROJECT_NAME} Admin")
-    for _app in APPS:
-        for view in getattr(_app, "admin_views", []):
+    for module in (home, blog, reply, sns, user, auth):
+        for view in getattr(module, "admin_views", []):
             admin.add_view(view)
     logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
 else:
