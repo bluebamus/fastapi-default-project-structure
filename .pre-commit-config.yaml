@@ -1,0 +1,36 @@
+# 로컬 커밋 단계의 1차 차단막.
+#
+# 설치 (프로젝트 의존성에는 넣지 않는다 — 개발자 도구라 저장소 런타임과 무관하다):
+#     uv tool install pre-commit
+#     pre-commit install
+#
+# 여기에는 **빠른 검사만** 둔다. mypy·bandit·pytest 는 CI(.github/workflows/ci.yml)가 맡는다.
+# 매 커밋마다 수십 초씩 걸리면 개발자가 --no-verify 로 우회하기 시작하고, 그 순간 훅은
+# 있으나 마나가 된다. 느린 검사를 CI 로 미루는 편이 실제로 더 잘 막는다.
+#
+# 전체 게이트를 로컬에서 돌려보려면:
+#     uv run ruff check . && uv run ruff format --check . && uv run mypy . \
+#       && uv run bandit -ll -q -r app main.py config.py && uv run python -m pytest -q
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # pyproject.toml 의 ruff>=0.8.0,<0.9.0 과 맞춘다. 어긋나면 로컬과 CI 판정이 갈린다.
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      # 커밋 사고 방지 — 큰 바이너리와 병합 충돌 흔적.
+      # .pytest_tmp/*.db(SQLite 산출물) 3개가 실수로 커밋돼 있던 전례가 있다(ledger 참조).
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: detect-private-key
