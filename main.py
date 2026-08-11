@@ -22,7 +22,7 @@ from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.tags_metadata import tags_metadata
-from app.domains import auth, blog, home, reply, sns, user
+from app.features import auth, blog, home, reply, sns, user
 from app.utils.logs import get_logger
 from config import app_settings
 
@@ -130,9 +130,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(
-        request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         """
         HTTP 예외 핸들러
 

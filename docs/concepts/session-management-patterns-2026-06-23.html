@@ -214,7 +214,7 @@ sequenceDiagram
             <span class="k">await</span> self._session.close()       <span class="c"># 내가 만든 세션만 내가 닫는다</span></pre>
 
   <p>도메인 하위 클래스는 <b>Repository 목록만 선언</b>하면 됩니다.</p>
-  <pre class="code"><span class="c"># app/domains/home/unit_of_work.py</span>
+  <pre class="code"><span class="c"># app/features/home/unit_of_work.py</span>
 <span class="k">class</span> <span class="f">HomeUnitOfWork</span>(BaseUnitOfWork):
     user_access_logs: UserAccessLogRepository
     repositories = {<span class="s">"user_access_logs"</span>: UserAccessLogRepository}</pre>

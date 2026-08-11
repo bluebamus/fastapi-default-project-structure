@@ -24,11 +24,11 @@ import inspect
 from fastapi.routing import APIRoute
 
 from app.core.db.session import get_read_session, get_session
-from app.domains.auth.dependencies.auth_dependencies import get_auth_service
-from app.domains.blog.dependencies.blog_dependencies import get_blog_service
-from app.domains.reply.dependencies.reply_dependencies import get_reply_service
-from app.domains.sns.dependencies.sns_dependencies import get_sns_service
-from app.domains.user.dependencies.user_dependencies import get_user_service
+from app.features.auth.dependencies.auth_dependencies import get_auth_service
+from app.features.blog.dependencies.blog_dependencies import get_blog_service
+from app.features.reply.dependencies.reply_dependencies import get_reply_service
+from app.features.sns.dependencies.sns_dependencies import get_sns_service
+from app.features.user.dependencies.user_dependencies import get_user_service
 from main import app
 
 # 쓰기 세션(get_session)으로 서비스를 구성하는 의존성 전부.
@@ -100,9 +100,7 @@ def _api_routes() -> list[APIRoute]:
 
 
 def _read_routes() -> list[APIRoute]:
-    return [
-        r for r in _api_routes() if r.methods and r.methods <= {"GET", "HEAD", "OPTIONS"}
-    ]
+    return [r for r in _api_routes() if r.methods and r.methods <= {"GET", "HEAD", "OPTIONS"}]
 
 
 def _write_routes() -> list[APIRoute]:
@@ -136,8 +134,7 @@ def test_read_routes_do_not_use_writer_session():
     offenders = [
         _name(route)
         for route in _read_routes()
-        if get_session in _dependency_calls(route)
-        and _name(route) not in _WRITER_SESSION_BY_DESIGN
+        if get_session in _dependency_calls(route) and _name(route) not in _WRITER_SESSION_BY_DESIGN
     ]
 
     assert not offenders, (
@@ -200,9 +197,9 @@ def test_coverage_is_not_vacuous():
 
     라우팅이 바뀌어 _api_routes() 가 비면 위 테스트들은 조용히 통과한다.
     """
-    assert len(_read_routes()) >= 14, (
-        f"조회 라우트가 {len(_read_routes())}개뿐 — 검사가 비었을 수 있다"
-    )
-    assert len(_write_routes()) >= 15, (
-        f"쓰기 라우트가 {len(_write_routes())}개뿐 — 검사가 비었을 수 있다"
-    )
+    assert (
+        len(_read_routes()) >= 14
+    ), f"조회 라우트가 {len(_read_routes())}개뿐 — 검사가 비었을 수 있다"
+    assert (
+        len(_write_routes()) >= 15
+    ), f"쓰기 라우트가 {len(_write_routes())}개뿐 — 검사가 비었을 수 있다"

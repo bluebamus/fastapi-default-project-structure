@@ -73,7 +73,7 @@
 ### 작업 단위 로그 (2·5단계)
 
 #### WU-6 · `f850393` fix(async): bcrypt 스레드 격리
-- 대상: app/domains/auth/services/auth_service.py.
+- 대상: app/features/auth/services/auth_service.py.
 - 변경 전: register/authenticate 가 async 경로에서 bcrypt 동기 호출 → 이벤트 루프
   수백 ms 블로킹(동시 로그인/가입 시 전체 지연). **§2 async 블로킹 실제 이슈.**
 - 결정/근거: `asyncio.to_thread` 로 hash/verify 격리(결과 동일, 논블로킹). authenticate 는
@@ -89,7 +89,7 @@
 ### §5 설계·정합성 검수 결과(요약 — 상세는 AUDIT_REPORT.md)
 - 계층 경계(router→service→repository, 의존성 커밋)는 실제로 준수됨.
 - 도메인 격리: auth→user 만 교차 import(코드에 문서화된 횡단 예외). 나머지 격리.
-- core↛domains: session.py `create_db_tables`(DEBUG 전용, 함수 내부) 예외 1곳.
+- core↛features: session.py `create_db_tables`(DEBUG 전용, 함수 내부) 예외 1곳.
 - N+1: 도메인 모델에 ORM relationship 없음 → 현재 N+1 불가(eager 인프라는 미사용 제네릭).
 - 미적용(설계 결정 필요)로 남긴 항목: CORS `*`+credentials 가드, 사용자 열거 타이밍
   사이드채널, update 존재확인 중복 쿼리, B104 완전차단 여부.
@@ -143,7 +143,7 @@
 > 회귀 대조: 보류 #3/#4 미적용은 과거 결정 회귀 아님(신규 발견 문서화). #1/#2 는 신규 보안 강화.
 
 #### WU-9 · `0bcab15` fix(update): no-op PATCH 404 수정 (M4, 사용자 승인 후 적용)
-- 대상: blog/user/reply/sns services 의 update_*, tests/domains/test_update_noop.py(신규).
+- 대상: blog/user/reply/sns services 의 update_*, tests/features/test_update_noop.py(신규).
 - 변경 전: 존재확인 후 `repository.update` 가 None 이면 404. MySQL 은 동일 값 UPDATE 시
   rowcount=0 → None → 존재하는 리소스에 no-op PATCH 시 **잘못된 404**.
 - 결정/근거: 존재는 이미 `get_*` 로 보장 → update 가 None 이면 404 대신 현재 엔티티 반환.

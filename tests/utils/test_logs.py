@@ -10,12 +10,12 @@ from app.utils.logs import LOG_FORMAT, ContextFilter, LoggerMixin, TzFormatter, 
 from app.utils.logs.filters import _app_from_path
 
 
-def _rec(pathname="/x/app/domains/blog/services/item_service.py", func="create"):
+def _rec(pathname="/x/app/features/blog/services/item_service.py", func="create"):
     return logging.LogRecord("blog", logging.INFO, pathname, 10, "hello", (), None, func)
 
 
 def test_appname_from_path():
-    assert _app_from_path("/x/app/domains/blog/services/item_service.py") == "blog"
+    assert _app_from_path("/x/app/features/blog/services/item_service.py") == "blog"
     assert _app_from_path("C:\\x\\app\\core\\bootstrap.py") == "core"
     assert _app_from_path("/x/app/celery/tasks.py") == "celery"
 

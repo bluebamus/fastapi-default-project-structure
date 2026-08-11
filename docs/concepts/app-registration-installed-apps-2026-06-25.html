@@ -115,7 +115,7 @@
   <strong>결론 요약.</strong>
   <code>config.INSTALLED_APPS = ["home","blog","reply","sns","user"]</code> 다섯 앱이 등록되어 있고,
   부팅 시 <code>AppRegistry.discover()</code> 가 이 목록을 <strong>순서 그대로</strong> 읽어
-  각 앱을 <code>app/domains/&lt;name&gt;</code> 로 매핑합니다. 이후 라우터는 <code>/api/v1/&lt;name&gt;</code> 경로에 마운트되고,
+  각 앱을 <code>app/features/&lt;name&gt;</code> 로 매핑합니다. 이후 라우터는 <code>/api/v1/&lt;name&gt;</code> 경로에 마운트되고,
   각 요청은 <strong>View → Service → Repository → DB</strong> 계층을 타며, 트랜잭션 경계는
   <strong>의존성(dependency)</strong> 이 <code>yield</code> 후 커밋으로 책임집니다(과거의 UnitOfWork는 제거됨).
 </div>
@@ -157,7 +157,7 @@ flowchart TB
         IM["install_routers / import_models / install_admin"]
     end
 
-    subgraph DOM["도메인 앱 (app/domains/*)"]
+    subgraph DOM["도메인 앱 (app/features/*)"]
         H["home"]
         B["blog"]
         R["reply"]
@@ -203,7 +203,7 @@ flowchart TB
 </tbody>
 </table>
 <p>
-  표에서 가장 실무적으로 중요한 행은 <strong>"디스크 존재 ≠ 활성"</strong>입니다. <code>app/domains/</code> 아래에 폴더를 만들어 두기만 해서는 아무 일도 일어나지 않습니다.
+  표에서 가장 실무적으로 중요한 행은 <strong>"디스크 존재 ≠ 활성"</strong>입니다. <code>app/features/</code> 아래에 폴더를 만들어 두기만 해서는 아무 일도 일어나지 않습니다.
   반드시 <code>INSTALLED_APPS</code> 에 이름을 적어야 비로소 라우터가 마운트되고 테이블이 생성됩니다. 이것이 수동 등록의 본질이자, 의도된 안전장치입니다(원치 않는 앱이 우연히 켜지지 않는다).
 </p>
 
@@ -218,7 +218,7 @@ flowchart TB
 <div class="diagram">
 <pre class="mermaid">
 flowchart TB
-    ROOT["app/domains/blog/"]
+    ROOT["app/features/blog/"]
     ROOT --> INIT["__init__.py<br/>(import-time 부수효과 자리)"]
     ROOT --> API["api/routers/"]
     API --> RT["router.py 의 blog_router (집약)"]
@@ -244,7 +244,7 @@ flowchart TB
 <table>
 <thead><tr><th>구성요소</th><th>경로(컨벤션)</th><th>역할</th><th>레지스트리가 보는가?</th></tr></thead>
 <tbody>
-<tr><td>앱 패키지</td><td><code>app/domains/&lt;name&gt;/__init__.py</code></td><td>import-time 부수효과(예: sink 등록)</td><td>예 — discover가 import</td></tr>
+<tr><td>앱 패키지</td><td><code>app/features/&lt;name&gt;/__init__.py</code></td><td>import-time 부수효과(예: sink 등록)</td><td>예 — discover가 import</td></tr>
 <tr><td>라우터 집약</td><td><code>api/routers/router.py</code> 의 <code>&lt;name&gt;_router</code></td><td>버전별 서브라우터를 한데 모음</td><td>예 — <code>&lt;name&gt;_router</code> 규칙</td></tr>
 <tr><td>버전 뷰</td><td><code>api/routers/v1/&lt;name&gt;.py</code> 의 <code>router</code></td><td>실제 HTTP 엔드포인트(CRUD)</td><td>간접 — router가 include</td></tr>
 <tr><td>스키마</td><td><code>schemas/&lt;name&gt;_schema.py</code></td><td>Pydantic 요청/응답 검증·직렬화</td><td>아니오</td></tr>
@@ -272,7 +272,7 @@ flowchart TB
 <div class="diagram">
 <pre class="mermaid">
 flowchart LR
-    A["① 스캐폴딩<br/>python -m scripts.new_app blog"] --> B["app/domains/blog/ 골격 생성<br/>(router.py · dependencies · 디렉터리)"]
+    A["① 스캐폴딩<br/>python -m scripts.new_app blog"] --> B["app/features/blog/ 골격 생성<br/>(router.py · dependencies · 디렉터리)"]
     B --> C["② 본체 작성<br/>model · schema · repository<br/>service · v1 뷰 · 의존성"]
     C --> D["③ 등록<br/>config.INSTALLED_APPS 에<br/>blog 추가 — 사람이 한 줄"]
     D --> E["서버 재시작 → 자동 결선<br/>/api/v1/blog/... 마운트"]
@@ -324,14 +324,14 @@ classDiagram
         +install_admin(admin) int
     }
     AppRegistry "1" o-- "*" AppModule : 보유(_apps)
-    note for AppRegistry "main: discover()가 config.INSTALLED_APPS 를 읽는다 / feature: discover()가 app/domains/* 를 스캔한다 → 그 외 메서드는 두 브랜치 동일"
+    note for AppRegistry "main: discover()가 config.INSTALLED_APPS 를 읽는다 / feature: discover()가 app/features/* 를 스캔한다 → 그 외 메서드는 두 브랜치 동일"
 </pre>
 <span class="cap">그림 4. 레지스트리 클래스 다이어그램 — <code>AppModule</code> 은 "이름 하나로 라우터/모델/Admin을 찾는 법"을 안다. <code>AppRegistry</code> 는 목록을 만들고(discover) 결선한다(install_*).</span>
 </div>
 
 <p>
   <code>AppModule</code> 은 불변(frozen) 데이터클래스로, <strong>앱 이름과 패키지 경로만</strong> 가집니다. 그리고 그 이름으로부터 컨벤션에 따라 구성요소를 찾는 법을 압니다.
-  예를 들어 <code>name="blog"</code> 이면 <code>router_attr</code> 는 <code>"blog_router"</code> 이고, <code>load_router()</code> 는 <code>app.domains.blog.api.routers.router</code> 모듈에서 그 이름의 변수를 가져옵니다.
+  예를 들어 <code>name="blog"</code> 이면 <code>router_attr</code> 는 <code>"blog_router"</code> 이고, <code>load_router()</code> 는 <code>app.features.blog.api.routers.router</code> 모듈에서 그 이름의 변수를 가져옵니다.
   모듈이나 변수가 없으면 조용히 <code>None</code> 을 반환합니다(없는 것은 그냥 건너뜀).
 </p>
 
@@ -354,7 +354,7 @@ sequenceDiagram
     participant Reg as AppRegistry
     participant Cfg as config.INSTALLED_APPS
     participant Mod as AppModule
-    participant Pkg as app.domains.NAME
+    participant Pkg as app.features.NAME
 
     Boot->>Reg: discover()
     Reg->>Cfg: 목록 읽기 [home, blog, ...]
@@ -372,13 +372,13 @@ sequenceDiagram
 <thead><tr><th>단계</th><th>입력</th><th>처리</th><th>산출</th></tr></thead>
 <tbody>
 <tr><td>1. 목록 읽기</td><td><code>config.INSTALLED_APPS</code></td><td>리스트를 그대로(정렬 없이)</td><td>이름 시퀀스</td></tr>
-<tr><td>2. 매핑</td><td>이름 <code>"blog"</code></td><td><code>AppModule("blog", "app.domains.blog")</code></td><td>AppModule</td></tr>
+<tr><td>2. 매핑</td><td>이름 <code>"blog"</code></td><td><code>AppModule("blog", "app.features.blog")</code></td><td>AppModule</td></tr>
 <tr><td>3. 부수효과</td><td>패키지 경로</td><td><code>import_module(package)</code></td><td><code>__init__.py</code> 실행</td></tr>
 <tr><td>4. 보관</td><td>AppModule 리스트</td><td><code>self._apps = apps</code></td><td>이후 install_*에서 사용</td></tr>
 </tbody>
 </table>
 <p>
-  3단계의 "부수효과"가 중요합니다. <code>home</code> 앱은 접속 로그를 DB에 쓰는 sink를 미들웨어에 등록해야 하는데, 이 등록을 <code>app/domains/home/__init__.py</code> 의 import 시점에 수행합니다.
+  3단계의 "부수효과"가 중요합니다. <code>home</code> 앱은 접속 로그를 DB에 쓰는 sink를 미들웨어에 등록해야 하는데, 이 등록을 <code>app/features/home/__init__.py</code> 의 import 시점에 수행합니다.
   레지스트리가 앱 패키지를 import하는 순간 그 코드가 실행되어 sink가 자동으로 연결됩니다. 즉 <strong>"앱을 등록하면 그 앱의 초기화도 함께 일어난다"</strong>는 점이 이 import 한 줄에 담겨 있습니다.
 </p>
 
@@ -407,7 +407,7 @@ flowchart LR
 
 <p>이 3단 구조 덕분에 각 계층이 자신의 책임 범위만 압니다. 뷰는 <code>/posts</code> 만 알고, 앱 라우터는 버전·앱 이름만 붙이고, 레지스트리는 전역 <code>/api</code> 만 관리합니다. 코드로 보면:</p>
 
-<pre><code># app/domains/blog/api/routers/router.py (집약)
+<pre><code># app/features/blog/api/routers/router.py (집약)
 blog_router = APIRouter()
 blog_router.include_router(blog_v1.router, prefix="/v1/blog", tags=["Blog"])
 
@@ -523,7 +523,7 @@ classDiagram
 <span class="cap">그림 9. 서비스·리포지토리 클래스 다이어그램(blog 예) — 서비스는 <code>BaseService</code>(세션·로깅)를, 리포지토리는 <code>BaseRepository</code>(CRUD)를 상속한다. 서비스가 리포지토리를 합성한다.</span>
 </div>
 
-<pre><code># app/domains/blog/services/blog_service.py
+<pre><code># app/features/blog/services/blog_service.py
 class BlogService(BaseService):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)
@@ -559,7 +559,7 @@ class BlogService(BaseService):
   뷰는 "비즈니스 흐름을 정의하는 함수"(=의존성)를 주입받고, 그 의존성이 서비스를 만들어 건네준 뒤 <strong>요청이 성공하면 커밋</strong>합니다.
 </p>
 
-<pre><code># app/domains/blog/dependencies/blog_dependencies.py
+<pre><code># app/features/blog/dependencies/blog_dependencies.py
 async def get_blog_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[BlogService, None]:
@@ -567,7 +567,7 @@ async def get_blog_service(
     yield service                    # ② 뷰에 주입 (여기서 뷰 실행)
     await session.commit()           # ③ 뷰가 성공 반환하면 커밋 (트랜잭션 경계)
 
-# app/domains/blog/api/routers/v1/blog.py
+# app/features/blog/api/routers/v1/blog.py
 @router.post("/posts", response_model=PostResponse, status_code=201)
 async def create_post(
     payload: PostCreate,
@@ -733,7 +733,7 @@ sequenceDiagram
 <h2 id="10-newapp">10. 새 앱을 추가하는 실전 가이드</h2>
 <p>예를 들어 <code>order</code> 앱을 추가한다고 합시다. main 브랜치에서의 절차는 다음과 같습니다.</p>
 <ol>
-<li><strong>골격 생성</strong>: <code>python -m scripts.new_app order</code> → <code>app/domains/order/</code> 컨벤션 골격이 생긴다.</li>
+<li><strong>골격 생성</strong>: <code>python -m scripts.new_app order</code> → <code>app/features/order/</code> 컨벤션 골격이 생긴다.</li>
 <li><strong>본체 작성</strong>: <code>models/</code> 에 ORM, <code>schemas/</code> 에 Pydantic, <code>repositories/</code> · <code>services/</code> · <code>dependencies/</code> · <code>api/routers/v1/order.py</code> 작성. <code>router.py</code> 가 v1을 <code>/v1/order</code> 로 include하도록 한다.</li>
 <li><strong>등록 (수동·필수)</strong>: <code>config.INSTALLED_APPS</code> 에 <code>"order"</code> 를 추가한다. 위치(순서)가 로드 순서가 된다.</li>
 <li><strong>확인</strong>: 서버 재시작 후 <code>/api/v1/order/...</code> 가 마운트되고, DEBUG면 테이블이 생성된다.</li>
@@ -755,7 +755,7 @@ sequenceDiagram
 <table>
 <thead><tr><th>항목</th><th>main (이 문서)</th><th>feature</th></tr></thead>
 <tbody>
-<tr><td>앱 목록 출처</td><td><code>config.INSTALLED_APPS</code> (사람이 작성)</td><td><code>app/domains/*</code> 디렉터리 스캔</td></tr>
+<tr><td>앱 목록 출처</td><td><code>config.INSTALLED_APPS</code> (사람이 작성)</td><td><code>app/features/*</code> 디렉터리 스캔</td></tr>
 <tr><td>활성화 행위</td><td>목록에 이름 추가(명시적)</td><td>폴더 생성만으로 자동</td></tr>
 <tr><td>로드 순서</td><td>리스트 순서(명시 제어)</td><td>알파벳순</td></tr>
 <tr><td>"디스크 존재 = 활성"</td><td>아니오(목록이 게이트)</td><td>예(있으면 켜짐)</td></tr>
@@ -778,7 +778,7 @@ sequenceDiagram
 <p class="small" style="margin-top:32px">
   <strong>출처.</strong> 본 문서의 모든 코드 인용은 <code>main @ 6807bb3</code> 의 실제 소스입니다 —
   <span class="filepath">config.py</span>(INSTALLED_APPS) · <span class="filepath">app/core/registry.py</span> ·
-  <span class="filepath">app/core/bootstrap.py</span> · <span class="filepath">app/domains/blog/*</span> · <span class="filepath">scripts/new_app.py</span>.
+  <span class="filepath">app/core/bootstrap.py</span> · <span class="filepath">app/features/blog/*</span> · <span class="filepath">scripts/new_app.py</span>.
   코드와 문서가 다르면 코드가 정답입니다.
 </p>
 
