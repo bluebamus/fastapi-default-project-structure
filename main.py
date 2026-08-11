@@ -281,12 +281,9 @@ _add_health_and_docs(app)
 
 # SQLAdmin 관리자 페이지 (ADMIN 설정에 따라 활성화)
 if app_settings.ADMIN:
-    from sqladmin import Admin
+    from app.internal.admin import register_admin
 
-    admin = Admin(app, engine, title=f"{app_settings.PROJECT_NAME} Admin")
-    for module in (home, blog, reply, sns, user, auth):
-        for view in getattr(module, "admin_views", []):
-            admin.add_view(view)
+    admin = register_admin(app, engine)
     logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
 else:
     logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")
