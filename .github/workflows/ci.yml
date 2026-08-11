@@ -1,0 +1,93 @@
+# 품질 게이트 — docs/crp/groups/fastapi-standard-restructure/charter.md §3 (GATE 3) 자동화.
+#
+# 여기 있는 검사는 전부 charter 의 인수 기준을 1:1로 옮긴 것이다. 새 검사를 넣기 전에
+# charter §3 을 먼저 고친다 — CI 가 계약보다 앞서 나가면 "왜 막혔는지" 근거가 사라진다.
+#
+# 배포·빌드는 다루지 않는다. 이미지 빌드·푸시·릴리스는 별도 인프라 저장소 소관이다
+# (design-baseline C-5: 이 저장소는 FastAPI 코드/설정만 담는다).
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 같은 ref 에 연달아 푸시하면 앞선 실행은 취소한다(러너 낭비 방지).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: GATE 3 (charter §3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
+        with:
+          # 패키지 다운로드 캐시. mypy/pytest 결과에는 영향이 없다(아래 주석 참조).
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # .python-version(3.14)을 uv 가 읽어 인터프리터를 맞춘다.
+      # --frozen: uv.lock 을 그대로 쓰고, 락이 pyproject 와 어긋나면 실패한다(재현성).
+      - name: 의존성 설치
+        run: uv sync --frozen
+
+      # ── 정적 분석 ────────────────────────────────────────────────────────
+      - name: ruff (lint)
+        run: uv run ruff check .
+
+      - name: ruff (format)
+        run: uv run ruff format --check .
+
+      # mypy 캐시는 의도적으로 복원하지 않는다.
+      # 따뜻한 캐시의 결과를 게이트 결과로 기록해 3라운드 연속 오기한 적이 있다(ledger LEDGER-1).
+      # CI 는 매번 콜드 캐시로 도는 것이 그 사고에 대한 구조적 방어다.
+      - name: mypy (콜드 캐시)
+        run: uv run mypy .
+
+      # 실질 이슈만 막는다. LOW 는 테스트의 assert·문자열 상수 오탐이 대부분이라 게이트에서 뺀다
+      # (AUDIT_REPORT.md §7: LOW 113건 전수 검토 결과 실질 이슈 0건).
+      - name: bandit (MEDIUM 이상)
+        run: uv run bandit -ll -q -r app main.py config.py
+
+      # ── 테스트 ──────────────────────────────────────────────────────────
+      # -rsxX: 건너뛴 테스트를 로그에 드러낸다.
+      # charter §3 은 "조용한 SKIP·xfail 0" 을 인수 기준으로 둔다 — 통과 개수만 보고
+      # 넘어가면 비활성화된 테스트가 초록불 뒤에 숨는다. 그래서 요약을 직접 판정한다.
+      - name: pytest
+        run: |
+          set -o pipefail
+          uv run python -m pytest -q -rsxX | tee pytest.log
+
+      - name: SKIP·xfail 0건 확인 (charter §3)
+        run: |
+          if grep -qE '[0-9]+ (skipped|xfailed|xpassed|deselected)' pytest.log; then
+            echo "::error::charter §3 위반 — 조용한 SKIP/xfail 이 있습니다. 요약을 확인하세요."
+            grep -E '(skipped|xfailed|xpassed|deselected)' pytest.log || true
+            exit 1
+          fi
+          echo "SKIP·xfail 0건"
+
+      # ── 구조 무결성 ──────────────────────────────────────────────────────
+      # 마이그레이션 체인은 tests/core/test_migration_chain.py 가 이미 검증한다(INV-5).
+      # 여기서는 head 가 갈라지지 않았는지만 본다 — 리비전 병합 실수는 테스트로 안 잡힌다.
+      - name: alembic 단일 head
+        run: |
+          heads=$(uv run alembic heads 2>/dev/null | grep -c '(head)' || true)
+          echo "head 개수: ${heads}"
+          if [ "${heads}" -ne 1 ]; then
+            echo "::error::alembic head 가 ${heads} 개입니다. 단일 head 여야 합니다."
+            uv run alembic heads
+            exit 1
+          fi
