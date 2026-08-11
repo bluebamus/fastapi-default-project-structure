@@ -24,7 +24,7 @@ fastapi-default-project-structure/
 │   │   │   ├── schemas/             # Pydantic 요청/응답 스키마
 │   │   │   ├── services/            # 비즈니스 로직
 │   │   │   ├── repositories/        # 데이터 접근 계층
-│   │   │   ├── dependencies/        # FastAPI Depends 헬퍼 (서비스 구성 + 트랜잭션 경계)
+│   │   │   ├── dependencies/        # FastAPI Depends 헬퍼 (Service 구성 — 커밋은 핸들러)
 │   │   │   ├── admin.py             # SQLAdmin 뷰 (선택; 현재 home 만 구현)
 │   │   │   ├── exceptions.py        # 도메인 예외 (선택)
 │   │   │   └── tests/               # 도메인 테스트
@@ -151,26 +151,51 @@ app.include_router(<name>.router, prefix="/api")                     # ← 취�
 
 ## 4. 요청 처리 & 트랜잭션 경계 (UnitOfWork 미사용)
 
-UnitOfWork 패턴은 사용하지 않습니다. 트랜잭션 경계는 **기능 의존성**이 담당합니다.
+UnitOfWork 패턴은 사용하지 않습니다. 트랜잭션 경계는 **쓰기 핸들러 본문**이 담당하고,
+기능 의존성은 Service 구성만 합니다.
 
 ```
 Router(view) → Depends(get_<name>_service) → Service(session) → Repository → DB
+     ↑ commit() 은 여기서
 ```
 
 ```python
-# app/modules/<name>/dependencies/<name>_dependencies.py
+# app/modules/<name>/dependencies/<name>_dependencies.py — 구성만 한다
 async def get_<name>_service(
-    session: AsyncSession = Depends(get_session),
-) -> AsyncGenerator[<Name>Service, None]:
-    service = <Name>Service(session)
-    yield service
-    await session.commit()          # 요청 성공 시 커밋 = 트랜잭션 경계
+    session: AsyncSession = Depends(get_session),          # 쓰기용
+) -> <Name>Service:
+    return <Name>Service(session)
+
+
+async def get_<name>_service_readonly(
+    session: AsyncSession = Depends(get_read_session),     # 조회용
+) -> <Name>Service:
+    return <Name>Service(session)
+
+
+# app/modules/<name>/api/routers/v1/<name>.py — 커밋은 여기서
+async def create_<name>(
+    payload: <Name>Create,
+    service: <Name>Service = Depends(get_<name>_service),
+) -> <Name>Response:
+    obj = await service.create(payload)
+    await service.commit()          # 트랜잭션 경계 — 응답 생성 전에 끝난다
+    return <Name>Response.model_validate(obj)
 ```
 
-- 뷰(view)는 HTTP 역할만 합니다: 파라미터 수신 → 주입된 Service 호출 → 응답 변환.
-- 성공 시 의존성이 `commit()`, 예외 시 `get_session` teardown이 `rollback()`.
+- 뷰(view)는 HTTP 역할과 **커밋 시점 결정**을 맡습니다: 파라미터 수신 → 주입된 Service 호출
+  → (쓰기면) `await service.commit()` → 응답 변환.
+- 예외로 빠져나가면 `get_session` teardown이 `rollback()` 합니다.
+- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_session` 을 받고 커밋하지 않습니다.
+  `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅되며, 읽기 경로에서 쓰기를 시도하면
+  `ReadOnlyRoutingError` 로 즉시 실패합니다.
 - `Service`는 `BaseService`를, `Repository`는 `BaseRepository`(제네릭 CRUD)를 상속합니다.
 - 요청 밖(백그라운드/Celery) 세션은 `background_session()` 컨텍스트(별도 풀)를 씁니다.
+
+> **왜 의존성이 아니라 핸들러인가.** 이전에는 의존성이 `yield` 이후 커밋했습니다. 그런데
+> FastAPI 상위 버전에서 yield dependency 의 종료 코드가 **응답 전송 후에** 실행되도록 바뀌면서,
+> 커밋이 실패해도 클라이언트는 이미 `201` 을 받은 상태가 됩니다. 커밋을 핸들러 본문으로 옮기면
+> 실패가 응답 코드에 정직하게 반영됩니다. 구조 증거: `tests/test_read_path_no_commit.py`.
 
 ---
 
@@ -238,4 +263,5 @@ uv run alembic upgrade head
 | 2026-06-23 | 도메인 레지스트리 아키텍처로 전환, 이 문서 최초 작성 |
 | 2026-06-23 | 자동 발견 제거, `app/apps.py` 수동 등록 SSOT로 전환 |
 | 2026-07-01 | **표준 FastAPI 배선으로 전환**: `AppRegistry`/`bootstrap.create_app()`/`app/apps.py` 제거, 각 앱 `__init__.py`가 `router` 공개 + `main.py`의 `APPS`가 `include_router`로 취합. |
+| 2026-08-11 | **문서 드리프트 정정**: §4 와 README 가 P1-3 이전의 "의존성이 `yield` 후 커밋" 을 계속 설명하고 있었다(코드는 이미 핸들러 커밋). §4 예시를 실제 코드(쓰기/조회 의존성 분리 + 핸들러 `await service.commit()`)로 교체하고, `BaseService` 독스트링도 같이 정정. 감사 보고서류(`AUDIT_REPORT.md`·`AUDIT_LEDGER.md`·`docs/review/`·`docs/concepts/`)는 **시점 기록물이므로 의도적으로 미수정**. 아울러 재구조화 잔재 정리 — `tests/features/` 잔류분을 `app/modules/<도메인>/tests/` 로 통합, 이동 중 겹친 디렉터리 레벨과 빈 `tests/scripts/` 제거. |
 | 2026-08-11 | **Django 배선 제거 (구조는 vertical slice 유지)**: `APPS` 목록 순회 → 명시 `include_router`; 기능별 `admin.py` 자동수집(`admin_views`) → 중앙 `app/internal/admin.py`(`ADMIN_VIEWS`+`register_admin`); `scripts/new_app.py`(Django startapp 식 생성기) 제거. 도메인 폴더는 `app/features/` → `app/modules/` 로 리네임. 모델 등록은 `models_registry` 디렉터리 스캔 유지. 공개 API 경로·응답 스키마·SQLAdmin 보안 정책 불변. |
