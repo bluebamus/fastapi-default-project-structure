@@ -14,7 +14,7 @@ fastapi-default-project-structure/
 ├── pyproject.toml                   # 의존성 + [tool.uv] package = false
 │
 ├── app/
-│   ├── domains/                     # 기능 단위 앱 (도메인)
+│   ├── features/                    # 기능 단위 앱
 │   │   ├── home/                    # 예시 앱 — 접속 로그
 │   │   │   ├── __init__.py          # 하위 라우터를 취합한 router (+ home 은 admin_views) 공개
 │   │   │   ├── api/routers/
@@ -67,11 +67,11 @@ fastapi-default-project-structure/
 ### 의존 방향
 
 ```
-domains → core → utils
+features → core → utils
 ```
 
-`core`는 `utils`만 알고, `domains`는 `core`를 사용합니다.
-`core`는 절대로 `domains`를 import하지 않습니다(도메인이 미들웨어 등에 붙어야 하면
+`core`는 `utils`만 알고, `features`는 `core`를 사용합니다.
+`core`는 절대로 `features`를 import하지 않습니다(기능 앱이 미들웨어 등에 붙어야 하면
 등록 훅으로 연결 — 예: `access_log_sink.register_sink()`).
 
 ---
@@ -86,9 +86,9 @@ domains → core → utils
 ### 2.1 앱 패키지 — `router` 공개
 
 ```python
-# app/domains/<name>/__init__.py
-from app.domains.<name>.api.routers.router import <name>_router as router
-from app.domains.<name>.models import models as _models  # noqa: F401 (Base.metadata 등록)
+# app/features/<name>/__init__.py
+from app.features.<name>.api.routers.router import <name>_router as router
+from app.features.<name>.models import models as _models  # noqa: F401 (Base.metadata 등록)
 
 __all__ = ["router"]
 ```
@@ -100,7 +100,7 @@ __all__ = ["router"]
 ### 2.2 `main.py` — 최종 취합 + 앱 설정
 
 ```python
-from app.domains import blog, home, reply, sns, user
+from app.features import blog, home, reply, sns, user
 
 APPS = [home, blog, reply, sns, user]   # 등록 순서 = 로드 순서
 
@@ -138,7 +138,7 @@ uv run python -m scripts.new_app <name> --register   # + main.py 자동 등록(�
 
 ```python
 # main.py
-from app.domains import blog, home, reply, sns, user, <name>   # ← import 추가
+from app.features import blog, home, reply, sns, user, <name>   # ← import 추가
 APPS = [home, blog, reply, sns, user, <name>]                  # ← 목록에 추가
 ```
 
@@ -168,7 +168,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 ```
 
 ```python
-# app/domains/<name>/dependencies/<name>_dependencies.py
+# app/features/<name>/dependencies/<name>_dependencies.py
 async def get_<name>_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[<Name>Service, None]:
@@ -206,7 +206,7 @@ celery_app = Celery(
 
 ## 6. Alembic 마이그레이션
 
-`migrations/env.py`는 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)로 전 도메인 모델을 자동 수집합니다. `app/domains/<name>/models/models.py` 가 있으면 자동 등록되므로 새 앱 추가 시 이 파일을 손댈 필요가 없습니다.
+`migrations/env.py`는 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)로 전 도메인 모델을 자동 수집합니다. `app/features/<name>/models/models.py` 가 있으면 자동 등록되므로 새 앱 추가 시 이 파일을 손댈 필요가 없습니다.
 
 ```python
 from app.core.db.session import Base

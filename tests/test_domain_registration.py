@@ -1,6 +1,6 @@
 """도메인 등록 누락 탐지 (계획서 P2-3).
 
-`app/domains/` 디렉터리를 진실의 원천으로 삼아, 실제로 존재하는 도메인이 실행
+`app/features/` 디렉터리를 진실의 원천으로 삼아, 실제로 존재하는 도메인이 실행
 경로에 모두 연결되어 있는지 대조한다. 스캐폴딩 후 등록을 잊으면 라우터가 마운트
 되지 않거나 테이블이 생성되지 않는데, 둘 다 조용히 실패해서 늦게 발견된다.
 
@@ -11,7 +11,7 @@
 import pathlib
 import pkgutil
 
-import app.domains
+import app.features
 from app.core.db.models_registry import iter_model_modules
 from app.core.db.session import Base
 from main import APPS
@@ -23,15 +23,11 @@ _UNREGISTERED_BY_DESIGN: dict[str, str] = {}
 # 존재 여부로 판별하므로, 아래 테스트는 "models.py 가 있는데 빠졌는가"만 본다.
 
 
-_DOMAINS_DIR = pathlib.Path(app.domains.__path__[0])
+_DOMAINS_DIR = pathlib.Path(app.features.__path__[0])
 
 
 def _discovered_domains() -> set[str]:
-    return {
-        info.name
-        for info in pkgutil.iter_modules(app.domains.__path__)
-        if info.ispkg
-    }
+    return {info.name for info in pkgutil.iter_modules(app.features.__path__) if info.ispkg}
 
 
 def _registered_domains() -> set[str]:
@@ -73,9 +69,9 @@ def test_every_domain_with_models_is_in_metadata():
         if (_DOMAINS_DIR / name / "models" / "models.py").is_file()
     }
 
-    assert on_disk - registered == set(), (
-        f"models.py 가 있는데 등록되지 않은 도메인: {sorted(on_disk - registered)}"
-    )
+    assert (
+        on_disk - registered == set()
+    ), f"models.py 가 있는데 등록되지 않은 도메인: {sorted(on_disk - registered)}"
     assert Base.metadata.tables, "Base.metadata 가 비어 있다 — 마이그레이션이 빈 채로 생성된다"
 
 

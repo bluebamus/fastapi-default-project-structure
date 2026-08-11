@@ -6,7 +6,7 @@ Django-style ``startapp`` equivalent. 표준 FastAPI 구조를 따르는 도메�
 ``main.py`` 가 이를 ``include_router`` 로 최종 취합한다.
 
 컨벤션 (생성되는 구조):
-    app/domains/<name>/
+    app/features/<name>/
         __init__.py             →  router(+admin_views) 재노출
         api/routers/router.py   →  <name>_router: APIRouter   (하위 v1 라우터 취합)
         api/routers/v1/         →  버전별 서브라우터 위치
@@ -15,7 +15,7 @@ Django-style ``startapp`` equivalent. 표준 FastAPI 구조를 따르는 도메�
         admin.py (선택)         →  admin_views: list[type]
 
 생성 후 등록:
-    ``--register`` 를 주면 main.py 의 ``from app.domains import ...`` 와 ``APPS``
+    ``--register`` 를 주면 main.py 의 ``from app.features import ...`` 와 ``APPS``
     목록까지 갱신한다. 생략하면 기존처럼 수동으로 추가한다.
     (모델을 만들었다면 __init__.py 의 models import 주석을 해제한다. Alembic 과
     DEBUG 테이블 생성은 app/core/db/models_registry.py 가 디렉터리에서 자동
@@ -47,7 +47,7 @@ _ROUTER_TMPL = '''\
 
 컨벤션: 이 모듈의 ``{name}_router`` 를 패키지 ``__init__.py`` 가 ``router`` 로 재노출하고
 main.py 가 /api 에 마운트한다. 버전별 서브라우터를 여기에 include 한다. 예:
-    from app.domains.{name}.api.routers.v1 import {name} as {name}_v1
+    from app.features.{name}.api.routers.v1 import {name} as {name}_v1
     {name}_router.include_router({name}_v1.router, prefix="/v1/{name}", tags=["{Class}"])
 """
 
@@ -63,9 +63,9 @@ _INIT_TMPL = '''\
 추가하면 ``include_router`` 로 /api 에 취합된다.
 
 모델을 추가하면 아래 import 주석을 해제해 ``Base.metadata`` 에 등록한다:
-    from app.domains.{name}.models import models as _models  # noqa: F401
+    from app.features.{name}.models import models as _models  # noqa: F401
 """
-from app.domains.{name}.api.routers.router import {name}_router as router
+from app.features.{name}.api.routers.router import {name}_router as router
 
 __all__ = ["router"]
 '''
@@ -77,10 +77,10 @@ _INIT_ADMIN_TMPL = '''\
 목록에 이 패키지를 추가하면 라우터가 /api 에, admin_views 가 SQLAdmin 에 등록된다.
 
 모델을 추가하면 아래 import 주석을 해제해 ``Base.metadata`` 에 등록한다:
-    from app.domains.{name}.models import models as _models  # noqa: F401
+    from app.features.{name}.models import models as _models  # noqa: F401
 """
-from app.domains.{name}.admin import admin_views
-from app.domains.{name}.api.routers.router import {name}_router as router
+from app.features.{name}.admin import admin_views
+from app.features.{name}.api.routers.router import {name}_router as router
 
 __all__ = ["router", "admin_views"]
 '''
@@ -97,7 +97,7 @@ yield 후 성공 시 커밋 — 트랜잭션 경계를 담당한다(UnitOfWork �
     from fastapi import Depends
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.core.db.session import get_session
-    from app.domains.{name}.services.{name}_service import {Class}Service
+    from app.features.{name}.services.{name}_service import {Class}Service
 
     async def get_{name}_service(
         session: AsyncSession = Depends(get_session),
@@ -117,7 +117,7 @@ main.py 가 SQLAdmin 에 등록한다.
 
 활성화하려면 placeholder 를 실제 모델 기반 ModelView 로 교체한다:
     from sqladmin import ModelView
-    from app.domains.{name}.models.models import {Class}Model
+    from app.features.{name}.models.models import {Class}Model
 
     class {Class}Admin(ModelView, model={Class}Model):
         column_list = "__all__"
@@ -155,7 +155,7 @@ def scaffold(
     category: str = "domain",
     with_admin: bool = False,
 ) -> None:
-    """Generate ``app/domains/<name>/`` scaffolding under *root*.
+    """Generate ``app/features/<name>/`` scaffolding under *root*.
 
     Args:
         name: Snake-case app name (e.g. ``"orders"``).
@@ -167,7 +167,7 @@ def scaffold(
         생성된 앱은 main.py 의 ``APPS`` 목록에 <name> 을 추가해야 취합된다(표준 방식).
     """
     class_name = "".join(part.capitalize() for part in name.split("_"))
-    base = root / "app" / "domains" / name
+    base = root / "app" / "features" / name
 
     # Create required directory tree; each segment gets an __init__.py.
     for rel in _REQUIRED_DIRS:
@@ -225,7 +225,7 @@ def register_app(name: str, root: pathlib.Path) -> bool:
     apps_match = _APPS_RE.search(source)
     if import_match is None or apps_match is None:
         raise RuntimeError(
-            f"{main_py} 에서 'from app.domains import ...' 또는 'APPS = [...]' 를 "
+            f"{main_py} 에서 'from app.features import ...' 또는 'APPS = [...]' 를 "
             "찾지 못했다. 배선이 바뀌었다면 --register 대신 수동으로 등록할 것."
         )
 
@@ -238,7 +238,7 @@ def register_app(name: str, root: pathlib.Path) -> bool:
         merged = ", ".join(sorted({*names, name}))
         source = (
             source[: import_match.start()]
-            + f"from app.domains import {merged}"
+            + f"from app.features import {merged}"
             + source[import_match.end() :]
         )
         # import 를 고쳤으니 APPS 위치가 밀렸다 — 다시 찾는다.
@@ -249,11 +249,7 @@ def register_app(name: str, root: pathlib.Path) -> bool:
     if name not in apps:
         # 등록 순서에 의미가 있을 수 있으므로 정렬하지 않고 끝에 붙인다.
         merged = ", ".join([*apps, name])
-        source = (
-            source[: apps_match.start()]
-            + f"APPS = [{merged}]"
-            + source[apps_match.end() :]
-        )
+        source = source[: apps_match.start()] + f"APPS = [{merged}]" + source[apps_match.end() :]
 
     main_py.write_text(source, encoding="utf-8")
     return True
@@ -265,7 +261,7 @@ def register_app(name: str, root: pathlib.Path) -> bool:
 
 # main.py 의 등록 지점. 한 줄 형태만 지원한다 — 괄호로 감싼 다중 행 import 로
 # 바뀌면 위 register_app() 이 RuntimeError 로 멈춘다(조용한 오등록 방지).
-_IMPORT_RE = re.compile(r"^from app\.domains import (.+)$", re.MULTILINE)
+_IMPORT_RE = re.compile(r"^from app\.features import (.+)$", re.MULTILINE)
 _APPS_RE = re.compile(r"^APPS = \[([^\]]*)\]", re.MULTILINE)
 
 
@@ -311,7 +307,7 @@ if __name__ == "__main__":
     )
     name = args.name
     class_name = "".join(part.capitalize() for part in name.split("_"))
-    print(f"created app/domains/{name}")
+    print(f"created app/features/{name}")
     print()
     if args.register:
         changed = register_app(name, root=pathlib.Path.cwd())
@@ -323,7 +319,7 @@ if __name__ == "__main__":
         print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
     else:
         print("등록하려면 main.py 를 수정하세요 (또는 --register 사용):")
-        print(f"  1) from app.domains import ... , {name}")
+        print(f"  1) from app.features import ... , {name}")
         print(f"  2) APPS = [..., {name}]   # 라우터가 /api 에 취합됨")
         print(f"  - router: api/routers/router.py 의 {name}_router 를 __init__.py 가 재노출")
     print(

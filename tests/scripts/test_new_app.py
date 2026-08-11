@@ -5,7 +5,7 @@ import pytest
 _MAIN_STUB = """\
 from fastapi import FastAPI
 
-from app.domains import auth, blog, home
+from app.features import auth, blog, home
 
 APPS = [home, blog, auth]
 
@@ -14,42 +14,42 @@ app = FastAPI()
 
 
 def _make_root(tmp_path):
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     (tmp_path / "main.py").write_text(_MAIN_STUB, encoding="utf-8")
     return tmp_path
 
 
 def test_generator_creates_bootable_app(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     # run generator pointed at temp root
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    assert (tmp_path / "app/domains/widget/api/routers/router.py").exists()
+    assert (tmp_path / "app/features/widget/api/routers/router.py").exists()
 
 
 def test_generator_no_config_py(tmp_path, monkeypatch):
     """컨벤션 기반이므로 config.py 는 생성하지 않는다(디렉터리=앱 선언)."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    assert not (tmp_path / "app/domains/widget/config.py").exists()
+    assert not (tmp_path / "app/features/widget/config.py").exists()
 
 
 def test_generator_router_is_parameterized(tmp_path, monkeypatch):
     """Generated router.py must contain the correct router variable name."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, category="domain")
 
-    router_text = (tmp_path / "app/domains/widget/api/routers/router.py").read_text(
+    router_text = (tmp_path / "app/features/widget/api/routers/router.py").read_text(
         encoding="utf-8"
     )
     assert "widget_router = APIRouter()" in router_text
@@ -58,12 +58,12 @@ def test_generator_router_is_parameterized(tmp_path, monkeypatch):
 def test_generator_creates_all_required_dirs(tmp_path, monkeypatch):
     """All required subdirectories and __init__.py files are created."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path)
 
-    base = tmp_path / "app" / "domains" / "widget"
+    base = tmp_path / "app" / "features" / "widget"
     assert (base / "__init__.py").exists()
     assert (base / "models" / "__init__.py").exists()
     assert (base / "schemas" / "__init__.py").exists()
@@ -78,12 +78,12 @@ def test_generator_creates_all_required_dirs(tmp_path, monkeypatch):
 def test_generator_optional_admin(tmp_path, monkeypatch):
     """--with-admin flag creates admin.py with an admin_views list."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path, with_admin=True)
 
-    admin_path = tmp_path / "app/domains/widget/admin.py"
+    admin_path = tmp_path / "app/features/widget/admin.py"
     assert admin_path.exists()
     assert "admin_views" in admin_path.read_text(encoding="utf-8")
 
@@ -91,26 +91,26 @@ def test_generator_optional_admin(tmp_path, monkeypatch):
 def test_generator_no_worker_dir(tmp_path, monkeypatch):
     """worker/ 는 더 이상 생성하지 않는다(app/celery 가 대체)."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("widget", root=tmp_path)
 
-    assert not (tmp_path / "app/domains/widget/worker").exists()
+    assert not (tmp_path / "app/features/widget/worker").exists()
 
 
 def test_generator_multiword_pascal_case(tmp_path, monkeypatch):
     """Multi-word snake_case names are converted to proper PascalCase class names."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "app" / "domains").mkdir(parents=True)
+    (tmp_path / "app" / "features").mkdir(parents=True)
     from scripts.new_app import scaffold
 
     scaffold("user_profile", root=tmp_path, category="domain", with_admin=True)
 
-    admin_text = (tmp_path / "app/domains/user_profile/admin.py").read_text(encoding="utf-8")
+    admin_text = (tmp_path / "app/features/user_profile/admin.py").read_text(encoding="utf-8")
     assert "UserProfileModel" in admin_text
     assert "UserProfileAdmin" in admin_text
-    router_text = (tmp_path / "app/domains/user_profile/api/routers/router.py").read_text(
+    router_text = (tmp_path / "app/features/user_profile/api/routers/router.py").read_text(
         encoding="utf-8"
     )
     assert "user_profile_router = APIRouter()" in router_text
@@ -129,7 +129,7 @@ def test_register_adds_import_and_apps_entry(tmp_path):
     assert register_app("orders", root=root) is True
 
     text = (root / "main.py").read_text(encoding="utf-8")
-    assert "from app.domains import auth, blog, home, orders" in text
+    assert "from app.features import auth, blog, home, orders" in text
     assert "APPS = [home, blog, auth, orders]" in text
 
 
@@ -154,13 +154,13 @@ def test_register_keeps_imports_sorted(tmp_path):
     register_app("aardvark", root=root)
 
     text = (root / "main.py").read_text(encoding="utf-8")
-    assert "from app.domains import aardvark, auth, blog, home" in text
+    assert "from app.features import aardvark, auth, blog, home" in text
 
 
 def test_register_fails_loudly_on_unknown_wiring(tmp_path):
     """등록 지점을 못 찾으면 조용히 넘어가지 않고 멈춘다."""
     root = tmp_path
-    (root / "app" / "domains").mkdir(parents=True)
+    (root / "app" / "features").mkdir(parents=True)
     (root / "main.py").write_text("app = FastAPI()\n", encoding="utf-8")
     from scripts.new_app import register_app
 

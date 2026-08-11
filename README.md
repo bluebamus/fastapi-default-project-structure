@@ -1,7 +1,7 @@
 # FastAPI Default Project Structure
 
 Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝트 템플릿입니다.
-표준 FastAPI 배선을 따릅니다: 각 도메인 앱 패키지(`app/domains/<name>/__init__.py`)가 하위 뷰 라우터를 취합한 `router` 를 공개하고, `main.py` 가 이를 `include_router` 로 최종 취합하며 앱 설정을 구성합니다.
+표준 FastAPI 배선을 따릅니다: 각 도메인 앱 패키지(`app/features/<name>/__init__.py`)가 하위 뷰 라우터를 취합한 `router` 를 공개하고, `main.py` 가 이를 `include_router` 로 최종 취합하며 앱 설정을 구성합니다.
 
 ## 목차
 
@@ -116,7 +116,7 @@ fastapi-default-project-structure/
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
 │
 ├── app/
-│   ├── domains/                 # 기능 단위 앱 (__init__.py가 router 취합 → main.py APPS 에 등록)
+│   ├── features/                # 기능 단위 앱 (__init__.py가 router 취합 → main.py APPS 에 등록)
 │   │   └── <name>/              # 각 앱 디렉토리
 │   │       ├── __init__.py      # router(+선택 admin_views) 공개
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
@@ -151,9 +151,9 @@ fastapi-default-project-structure/
 | 파일 | 설명 |
 |------|------|
 | `main.py` | FastAPI 조립 — 각 앱 `router` 를 `include_router(prefix="/api")` 로 취합 + 미들웨어/예외/문서/lifespan/Admin 설정 |
-| `app/domains/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` (및 선택 `admin_views`) 공개 — `main.py` 의 `APPS` 가 이를 취합 |
+| `app/features/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` (및 선택 `admin_views`) 공개 — `main.py` 의 `APPS` 가 이를 취합 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
-| `app/domains/<name>/dependencies/` | 기능 의존성 — Service 구성 + 요청 성공 시 커밋(트랜잭션 경계) |
+| `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성 + 요청 성공 시 커밋(트랜잭션 경계) |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
 | `migrations/env.py` | `import_all_models()`(SSOT) 로 전 도메인 모델을 자동 수집 → Alembic autogenerate |
 
@@ -162,23 +162,23 @@ fastapi-default-project-structure/
 `app/` 아래는 **3개 영역**으로 나뉘며, 의존은 한 방향으로만 흐릅니다.
 
 ```
-domains → core → utils
+features → core → utils
 ```
 
 | 영역 | 역할 | 규칙 |
 |------|------|------|
-| `app/domains/<name>/` | 기능 단위 앱(도메인) | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 도메인은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
-| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 `domains`를 import하지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`(DEBUG 전용 테이블 자동 생성)가 메타데이터 등록을 위해 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)를 함수 내부에서 호출하는 것 |
+| `app/features/<name>/` | 기능 단위 앱 | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 기능 앱은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
+| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 `features`를 import하지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`(DEBUG 전용 테이블 자동 생성)가 메타데이터 등록을 위해 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)를 함수 내부에서 호출하는 것 |
 | `app/utils/` | 순수 유틸리티 (로깅, 인증, 페이지네이션) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
 > 핵심 규칙: **`core`는 도메인을 모른다.** 도메인이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
 
 #### 도메인 앱 표준 레이아웃
 
-새 앱은 아래 구조와 **파일 네이밍 표준**을 따릅니다. (기준 구현체: `app/domains/home/`)
+새 앱은 아래 구조와 **파일 네이밍 표준**을 따릅니다. (기준 구현체: `app/features/home/`)
 
 ```
-app/domains/<name>/
+app/features/<name>/
 ├── api/
 │   └── routers/
 │       ├── router.py          # 앱 루트 라우터 (v1/ 등을 묶음) — 필수
@@ -224,7 +224,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 
 #### 마지막 단계 — `main.py` 의 `APPS` 에 등록
 
-위 구조를 만든 뒤 `main.py` 의 `from app.domains import ...` 와 `APPS` 목록에 새 앱을 추가해야 라우터/Admin 이 연결됩니다. 모델은 앱 `__init__.py` 에서 import 하여 `Base.metadata` 에 등록합니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
+위 구조를 만든 뒤 `main.py` 의 `from app.features import ...` 와 `APPS` 목록에 새 앱을 추가해야 라우터/Admin 이 연결됩니다. 모델은 앱 `__init__.py` 에서 import 하여 `Base.metadata` 에 등록합니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
 
 ---
 
@@ -342,7 +342,7 @@ UnitOfWork 대신 **기능 의존성**이 세션으로 Service를 구성하고 �
 트랜잭션 경계가 요청 수명주기와 일치해 예측 가능합니다.
 
 ```python
-# app/domains/home/dependencies/access_log_dependencies.py
+# app/features/home/dependencies/access_log_dependencies.py
 async def get_access_log_service(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncGenerator[UserAccessLogService, None]:
@@ -367,7 +367,7 @@ class BaseService(LoggerMixin):
         self.session = session
 
 
-# app/domains/home/services/user_access_log_service.py - 도메인 Service
+# app/features/home/services/user_access_log_service.py - 도메인 Service
 class UserAccessLogService(BaseService):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)
@@ -873,7 +873,7 @@ uv run python -m scripts.new_app <name> --register   # import 라인 + APPS 목�
 
 ```python
 # main.py
-from app.domains import blog, home, reply, sns, user, <name>   # ← import 추가
+from app.features import blog, home, reply, sns, user, <name>   # ← import 추가
 
 APPS = [home, blog, reply, sns, user, <name>]   # ← 목록에 추가 (순서 = 로드 순서)
 ```

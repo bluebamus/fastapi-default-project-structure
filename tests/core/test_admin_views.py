@@ -33,8 +33,8 @@ from sqlalchemy import String
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-DOMAINS_PACKAGE = "app.domains"
-DOMAINS_DIR = Path(__file__).resolve().parents[2] / "app" / "domains"
+DOMAINS_PACKAGE = "app.features"
+DOMAINS_DIR = Path(__file__).resolve().parents[2] / "app" / "features"
 
 # 비밀번호 자격증명으로 취급하여 어떤 화면에도 노출을 금지하는 컬럼명.
 SECRET_COLUMNS = frozenset({"hashed_password", "password"})
@@ -47,7 +47,7 @@ CONTENT_DOMAINS = ("blog", "reply", "sns")
 # 헬퍼
 # =============================================================================
 def _domains_with_models() -> list[str]:
-    """``app/domains/<name>/models/`` 를 가진 도메인 이름(정렬).
+    """``app/features/<name>/models/`` 를 가진 도메인 이름(정렬).
 
     모델이 없는 도메인(예: default 의 auth)은 관리할 대상이 없으므로 제외한다.
     """
@@ -136,7 +136,7 @@ def test_domain_discovery_is_not_vacuous() -> None:
 @pytest.mark.parametrize("domain", _domains_with_models())
 def test_domain_with_models_exposes_admin_views(domain: str) -> None:
     views = _admin_views_of(domain)
-    assert views, f"app/domains/{domain}/admin.py 가 admin_views 를 노출하지 않습니다(빈 파일?)"
+    assert views, f"app/features/{domain}/admin.py 가 admin_views 를 노출하지 않습니다(빈 파일?)"
     for view in views:
         assert issubclass(view, ModelView), f"{view!r} 는 ModelView 가 아닙니다"
 
@@ -177,7 +177,7 @@ def test_user_admin_creation_policy_matches_password_column() -> None:
     거부하므로(로그인 불가), 조용히 깨진 데이터가 쌓인다. 그래서 생성 자체를 막는다.
     비밀번호 컬럼이 없는 저장소에서는 그런 위험이 없으므로 생성을 허용한다.
     """
-    from app.domains.user.models.models import User
+    from app.features.user.models.models import User
 
     view = _view_for(User)
     has_secret = bool(SECRET_COLUMNS & _column_names(User))
@@ -191,7 +191,7 @@ def test_user_admin_creation_policy_matches_password_column() -> None:
 # =============================================================================
 def test_access_log_admin_stays_immutable() -> None:
     """접속 로그는 미들웨어가 생성하고 사후 수정되지 않는다."""
-    from app.domains.home.models.models import UserAccessLog
+    from app.features.home.models.models import UserAccessLog
 
     view = _view_for(UserAccessLog)
     assert view.can_create is False

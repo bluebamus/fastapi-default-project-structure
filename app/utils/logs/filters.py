@@ -1,7 +1,7 @@
 """로그 컨텍스트 필터.
 
 record 에 두 필드를 주입한다.
-- appname: 소스 파일 경로에서 앱 식별(domains/<app>, core, celery, utils, shared).
+- appname: 소스 파일 경로에서 앱 식별(features/<app>, core, celery, utils, shared).
 - classname:
     · 방식 C — LoggerAdapter/extra 로 이미 주입돼 있으면 그대로 존중(오버헤드 0).
     · 방식 A — 없으면 호출 프레임에서 self/cls 를 찾아 클래스명을 자동 추출.
@@ -17,8 +17,8 @@ from types import FrameType
 
 def _app_from_path(pathname: str) -> str:
     p = pathname.replace("\\", "/")
-    if "/domains/" in p:
-        return p.split("/domains/", 1)[1].split("/", 1)[0]
+    if "/features/" in p:
+        return p.split("/features/", 1)[1].split("/", 1)[0]
     for seg in ("/app/core/", "/app/celery/", "/app/utils/"):
         if seg in p:
             return seg.strip("/").rsplit("/", 1)[-1]

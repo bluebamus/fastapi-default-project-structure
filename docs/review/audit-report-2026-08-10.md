@@ -26,7 +26,7 @@
 ```text
 main.py
   -> APPS 목록
-  -> 각 app.domains.<name>.router
+  -> 각 app.features.<name>.router
   -> app.include_router(..., prefix="/api")
 ```
 
@@ -41,7 +41,7 @@ Router -> Dependency -> Service -> Repository -> Database
 ```text
 app/
   core/       공통 인프라, DB 세션, 미들웨어, 예외, base class
-  domains/    기능 단위 도메인 앱
+  features/   기능 단위 앱
   utils/      로깅, 인증, 페이지네이션 등 공통 유틸리티
   celery/     중앙 Celery 앱과 태스크 브릿지
 ```
@@ -86,7 +86,7 @@ app/
 
 스캐폴딩 이후 다음 파일을 수동으로 수정해야 한다.
 
-- `main.py`: `from app.domains import ...` 및 `APPS` 목록
+- `main.py`: `from app.features import ...` 및 `APPS` 목록
 - `migrations/env.py`: Alembic autogenerate용 model import
 - `app/core/db/session.py`: DEBUG 모드 `create_db_tables()`용 model import
 - 각 도메인 `__init__.py`: model import 주석 해제

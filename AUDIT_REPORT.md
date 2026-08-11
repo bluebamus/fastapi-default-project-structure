@@ -41,7 +41,7 @@
 
 | # | 위치 | 문제 | 조치 |
 |---|---|---|---|
-| M1 | `app/domains/auth/services/auth_service.py` | `async` 라우트 경로에서 bcrypt(hash/verify)를 **동기 호출** → 로그인/가입 시 이벤트 루프 수백 ms 블로킹(동시성 저하) | **수정**: `asyncio.to_thread` 로 격리(결과 동일, 논블로킹). `fix(async)` |
+| M1 | `app/features/auth/services/auth_service.py` | `async` 라우트 경로에서 bcrypt(hash/verify)를 **동기 호출** → 로그인/가입 시 이벤트 루프 수백 ms 블로킹(동시성 저하) | **수정**: `asyncio.to_thread` 로 격리(결과 동일, 논블로킹). `fix(async)` |
 | M2 | `app/core/repositories/repository_base.py:117` | 중첩 관계 eager-loading(`"a.b"`)의 2번째 파트를 **문자열**로 `selectinload()` 에 전달 → SQLAlchemy 2.0 에서 런타임 오류(문자열 관계 로딩 제거). 문서엔 "중첩 지원"이라 표기됨(드리프트+잠재버그) | **수정**: mapper 를 따라 실제 관계 속성으로 해석. 현재 프로덕션 미사용(문서 예시만)이라 실사용 회귀 0. `fix(repo)` |
 | M3 | `main.py:300` | 바인딩 호스트 `0.0.0.0` 하드코딩 (Bandit B104) | **수정(부분)**: `SERVER_HOST/SERVER_PORT` 설정화(기본값 0.0.0.0 유지=동작 보존, env 로 제한 가능). 완전 차단은 §4 보류. `fix(security)` |
 
@@ -51,14 +51,14 @@
 |---|---|---|---|
 | L1 | `app/core/repositories/repository_base.py` (DML×6) | `Result.rowcount` 접근이 타입상 부정확(`CursorResult` 이어야) | **수정**: `cast("CursorResult[Any]", …)` (런타임 동일). `fix(repo)` |
 | L2 | 라우터 6종 `responses=` 상수 / pagination / bcrypt 반환 / middleware / celery / filters / admin | mypy 60건(대부분 제네릭·서드파티 스텁·타입 추론) | **수정**: 타입 명시·TypeVar 바운드·중간변수 타입화·표준 스타렛 타입. mypy override 에 slowapi/bcrypt/celery 추가. `fix(types)` |
-| L3 | `app/domains/auth/services/auth_service.py:authenticate` | 사용자 부재 시 bcrypt 미실행 → 응답 시간차로 **사용자명 열거** 가능(타이밍 사이드채널) | **수정**: 더미 해시 상시 검증으로 상수시간화(401 동일). `fix(security)` |
-| L4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | 존재확인 `get_*` 는 필요(제거 불가). **재분석 결과 별도 잠재버그 발견 → M4** | M4 참조 |
+| L3 | `app/features/auth/services/auth_service.py:authenticate` | 사용자 부재 시 bcrypt 미실행 → 응답 시간차로 **사용자명 열거** 가능(타이밍 사이드채널) | **수정**: 더미 해시 상시 검증으로 상수시간화(401 동일). `fix(security)` |
+| L4 | `app/features/{blog,user,reply,sns}/services` `update_*` | 존재확인 `get_*` 는 필요(제거 불가). **재분석 결과 별도 잠재버그 발견 → M4** | M4 참조 |
 
 ### Medium (심층 분석 중 신규 발견)
 
 | # | 위치 | 문제 | 조치 |
 |---|---|---|---|
-| M4 | `app/domains/{blog,user,reply,sns}/services` `update_*` | **MySQL 전용 no-op PATCH → 잘못된 404.** aiomysql 은 `CLIENT_FOUND_ROWS` 미설정이라 rowcount=변경행. 동일 값으로 PATCH 하면 rowcount=0 → `repository.update` 가 None → 서비스가 404. (SQLite 테스트는 no-op 도 rowcount=1 이라 이 버그를 가림) | **수정**(사용자 승인): 존재확인 후 update 가 None 이면 404 대신 현재 엔티티 반환(4도메인). 스텁 기반 회귀 테스트 8건 추가(현재 SQLite 하니스). [동작 변경 404→200] `fix(update)` |
+| M4 | `app/features/{blog,user,reply,sns}/services` `update_*` | **MySQL 전용 no-op PATCH → 잘못된 404.** aiomysql 은 `CLIENT_FOUND_ROWS` 미설정이라 rowcount=변경행. 동일 값으로 PATCH 하면 rowcount=0 → `repository.update` 가 None → 서비스가 404. (SQLite 테스트는 no-op 도 rowcount=1 이라 이 버그를 가림) | **수정**(사용자 승인): 존재확인 후 update 가 None 이면 404 대신 현재 엔티티 반환(4도메인). 스텁 기반 회귀 테스트 8건 추가(현재 SQLite 하니스). [동작 변경 404→200] `fix(update)` |
 
 ---
 
@@ -93,7 +93,7 @@
 | README `authenticator(스텁)` | **드리프트** — 실제 JWT/bcrypt 완전 구현 | 문서 정정 → 실제 구현 반영 |
 | 인증(JWT/OAuth2)·레이트리밋(slowapi) | **드리프트** — 코드엔 있으나 README 특징/스택 **미기재** | 문서에 항목 추가 |
 | "도메인은 서로 import 안 함" | **부분 위반(의도된 예외)** — `auth→user`(횡단 관심사, 코드에 명시) | 문서 규칙에 예외 명시 |
-| "core는 절대 domains import 안 함" | **부분 위반(실용 예외)** — `session.py create_db_tables`(DEBUG 전용, 함수 내부) | 문서 규칙에 예외 명시 |
+| "core는 절대 features import 안 함" | **부분 위반(실용 예외)** — `session.py create_db_tables`(DEBUG 전용, 함수 내부) | 문서 규칙에 예외 명시 |
 | 계층 경계(router→service→repo) | **일치** — 라우터는 HTTP 역할만, 비즈니스/트랜잭션은 service/dependency | 조치 불요 |
 | `response_model`·엔드포인트 | **일치** — 문서화된 CRUD 실제 구현·동작 | 조치 불요 |
 | N+1 "Eager Loading 내장" | **부분 드리프트** — 시설은 있으나 현 도메인은 relationship 없어 미사용(예시 코드의 `user.posts` 는 실제 모델에 없음) | 코드 예시는 설명용으로 유지, 보고서에 명시 |

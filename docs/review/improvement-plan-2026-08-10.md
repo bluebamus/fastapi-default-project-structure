@@ -59,7 +59,7 @@
 | `main.py:261` mypy 타입 오류 | 확인 — `app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)` |
 | 모델 import 목록 중복 | 확인 — `migrations/env.py:19-23`, `app/core/db/session.py:227-231` (동일 5개 도메인) |
 | `new_app.py`에 `--register` 없음 | 확인 — 인자는 `name`, `--category`, `--with-admin` 뿐 |
-| 트랜잭션 경계 테스트 부재 | **부분 부정** — `app/domains/auth/tests/test_transaction_boundary.py`에 읽기 경로 1건 존재. 쓰기 경로가 없음 |
+| 트랜잭션 경계 테스트 부재 | **부분 부정** — `app/features/auth/tests/test_transaction_boundary.py`에 읽기 경로 1건 존재. 쓰기 경로가 없음 |
 | 도메인 등록 지점 | `main.py:33 APPS`, `migrations/env.py`, `session.py:create_db_tables()`, 각 도메인 `__init__.py` = 4곳 |
 
 > 참고: `auth` 도메인은 모델이 없으므로 두 import 목록에서 빠진 것이 정상이다. SSOT 통합 시 "모델 없는 도메인"을 허용해야 한다.
@@ -80,7 +80,7 @@
 
 ### P1-2. `yield` dependency 커밋 시점 검증 테스트 보강
 
-- **대상**: `app/domains/<name>/tests/test_transaction_boundary.py` (auth 기존 파일 확장 + 쓰기 도메인 1곳 신규)
+- **대상**: `app/features/<name>/tests/test_transaction_boundary.py` (auth 기존 파일 확장 + 쓰기 도메인 1곳 신규)
 - **배경**: 현재 구조는 `get_<name>_service` 의존성이 `yield` 이후 `session.commit()`을 호출한다. FastAPI 상위 버전에서 `yield` 이후 코드의 실행 시점 / `Depends(scope=...)` 도입 시 이 경계가 바뀔 수 있다. 현재 핀: `fastapi (>=0.115.11,<0.116.0)`.
 - **작업**: 다음 3가지를 커밋 카운팅 fixture로 고정한다.
   1. 읽기 전용 경로에서 `commit()`이 호출되지 않는다 *(auth에 이미 존재 — 다른 도메인으로 확장)*
@@ -103,7 +103,7 @@ P1-2의 4번이 실패하면 — 즉 커밋 실패가 응답 전송 후에 일�
 
 - **대상**: `app/core/db/session.py`, `migrations/env.py`, (신규) `app/core/db/models_registry.py`
 - **현 상태**: 동일한 5줄짜리 import 목록이 두 파일에 복제되어 있다. 신규 도메인 추가 시 한쪽만 고치면 Alembic autogenerate 또는 DEBUG 테이블 생성 중 하나가 조용히 누락된다.
-- **작업**: `app/domains/` 하위를 순회하며 `<domain>/models/models.py`가 존재하면 import하는 함수 하나(`import_all_models()`)를 만들고, 두 곳 모두 이 함수를 호출하도록 교체한다. 모델이 없는 도메인(`auth`)은 건너뛴다.
+- **작업**: `app/features/` 하위를 순회하며 `<domain>/models/models.py`가 존재하면 import하는 함수 하나(`import_all_models()`)를 만들고, 두 곳 모두 이 함수를 호출하도록 교체한다. 모델이 없는 도메인(`auth`)은 건너뛴다.
 - **완료 조건**:
   - `Base.metadata.tables` 키 집합이 변경 전후 동일
   - `alembic revision --autogenerate` 결과가 비어 있음 (드리프트 없음)
@@ -114,14 +114,14 @@ P1-2의 4번이 실패하면 — 즉 커밋 실패가 응답 전송 후에 일�
 - **대상**: `scripts/new_app.py`, `tests/scripts/`
 - **작업**: `--register` 플래그를 추가해 스캐폴딩 후 `main.py`의 import 라인과 `APPS` 리스트까지 자동 갱신한다.
   - P2-1을 먼저 적용하면 `migrations/env.py`와 `session.py`는 손댈 필요가 없어진다 → **P2-1 이후에 착수한다.**
-  - 텍스트 치환 대상은 `main.py` 한 곳으로 축소. `APPS = [...]` 한 줄과 `from app.domains import ...` 한 줄만 편집.
+  - 텍스트 치환 대상은 `main.py` 한 곳으로 축소. `APPS = [...]` 한 줄과 `from app.features import ...` 한 줄만 편집.
   - 이미 등록된 이름이면 멱등하게 no-op.
 - **완료 조건**: 임시 디렉터리에 앱을 스캐폴딩한 뒤 `--register`를 적용하면 `APPS`에 이름이 1회만 추가되고, 두 번 실행해도 중복되지 않는다.
 
 ### P2-3. 도메인 등록 누락 탐지 테스트
 
 - **대상**: `tests/test_route_inventory.py` 또는 신규 `tests/test_domain_registration.py`
-- **작업**: `app/domains/` 디렉터리 목록을 진실의 원천으로 삼아 다음을 대조한다.
+- **작업**: `app/features/` 디렉터리 목록을 진실의 원천으로 삼아 다음을 대조한다.
   - 모든 도메인 패키지가 `main.py`의 `APPS`에 존재하는가
   - `models/models.py`를 가진 모든 도메인이 `Base.metadata`에 반영되었는가 (P2-1의 함수 경유)
   - 의도적으로 제외할 도메인은 테스트 내 명시적 allowlist로만 허용 (조용한 누락과 의도적 제외를 구분)
@@ -240,7 +240,7 @@ P1-2 의 안전망이 갖춰져 상향을 실제로 시도했다. 첫 시도는 
 ### 차단 요인 3 — Deprecation 2건
 
 - `ORJSONResponse` — FastAPI 가 Pydantic 으로 직접 직렬화하므로 불필요해졌다
-- `Path(..., example=...)` — `examples` 로 교체 (`app/domains/home/api/routers/v1/home.py:75`)
+- `Path(..., example=...)` — `examples` 로 교체 (`app/features/home/api/routers/v1/home.py:75`)
 
 ### 해소 과정 (실행 순서)
 
@@ -271,7 +271,7 @@ P1~P3 실행 도중 실측으로 드러난 두 건. 검수 보고서에는 없�
 ### P4-1. 읽기 경로의 불필요한 커밋 제거 + `get_read_session` 실사용
 
 - **증상**: 모든 도메인의 읽기 엔드포인트가 쓰기용 커밋 의존성을 공유해 **매 조회마다 COMMIT** 한다.
-  `app/domains/blog/tests/test_transaction_boundary.py` 의 `strict xfail` 이 이를 고정하고 있다.
+  `app/features/blog/tests/test_transaction_boundary.py` 의 `strict xfail` 이 이를 고정하고 있다.
 - **뿌리**: `get_read_session()` 이 replica 라우팅 + 쓰기 차단까지 갖추고 준비되어 있는데
   **어떤 도메인도 쓰지 않는다.** 그래서 도메인 읽기가 전부 writer 로 간다.
 - **선례**: `auth` 는 `get_current_user` 를 커밋하지 않는 의존성으로 분리해 이미 해결했다(W2/REQ-009).

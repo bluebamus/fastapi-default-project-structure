@@ -165,7 +165,7 @@ class BaseUnitOfWork:
 도메인 하위 클래스는 **Repository 목록만 선언**하면 됩니다.
 
 ```python
-# app/domains/home/unit_of_work.py
+# app/features/home/unit_of_work.py
 class HomeUnitOfWork(BaseUnitOfWork):
     user_access_logs: UserAccessLogRepository
     repositories = {"user_access_logs": UserAccessLogRepository}
