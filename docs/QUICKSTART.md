@@ -146,7 +146,7 @@ uv run python -m scripts.new_app orders --register
 
 ## 검증 상태
 
-이 문서의 명령 중 다음은 실제로 실행해 확인했다(2026-08-10, FastAPI 0.115.x, Python 3.14):
+이 문서의 명령 중 다음은 실제로 실행해 확인했다(2026-08-10 최초 확인, FastAPI 0.141.x, Python 3.14):
 
 - `DEBUG=false` 기동 → `/health` 200, 도메인 API 500 — **확인**
 - 기본값(`DEBUG=true`) + MySQL 없음 → startup 실패 — **확인**

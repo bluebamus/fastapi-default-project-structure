@@ -139,7 +139,7 @@ fastapi-default-project-structure/
 │   ├── celery/                  # 중앙 Celery 앱 + tasks.py + run_async 브릿지
 │   └── utils/                   # logs(구조화 로깅), authenticator(JWT·bcrypt 인증), pagination(페이지네이션)
 │
-├── migrations/                  # Alembic (env.py가 각 앱 models import로 메타데이터 수집)
+├── migrations/                  # Alembic (env.py가 import_all_models() SSOT로 메타데이터 수집)
 └── docs/
     ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
     ├── concepts/                # 개념·패턴 심화 해설

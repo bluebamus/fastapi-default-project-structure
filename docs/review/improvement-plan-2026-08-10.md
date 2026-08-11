@@ -25,7 +25,7 @@
 | P5 FastAPI 상향 | ✅ **완료** | 0.115.14 → **0.141.1** (아래 P5 절) |
 | P6 응답 직렬화 전환 | ✅ 완료 | ORJSONResponse 제거, Pydantic 직접 직렬화 |
 
-게이트: `pytest 198 passed` (기준 177, xfail 0) · `ruff` 통과 · `mypy` 통과
+게이트(P6까지 반영, FastAPI 0.141.1): `pytest 205 passed` (기준 177, xfail 0) · `ruff` 통과 · `mypy` Success(149) · **main 병합 완료**(merge `746088c`)
 
 ### 계획과 달랐던 점 (3건)
 
