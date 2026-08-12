@@ -5,6 +5,7 @@
 
 import io
 import logging
+import pathlib
 
 from app.utils.logs import LOG_FORMAT, ContextFilter, LoggerMixin, TzFormatter, get_logger
 from app.utils.logs.filters import _app_from_path
@@ -18,6 +19,30 @@ def test_appname_from_path():
     assert _app_from_path("/x/app/features/blog/services/item_service.py") == "blog"
     assert _app_from_path("C:\\x\\app\\core\\bootstrap.py") == "core"
     assert _app_from_path("/x/app/celery/tasks.py") == "celery"
+    assert _app_from_path("/x/app/utils/pagination/paginator.py") == "utils"
+    assert _app_from_path("/x/migrations/env.py") == "migrations"
+
+
+def test_repo_root_modules_are_not_labeled_external():
+    """저장소 루트의 모듈이 'ext'(서드파티)로 분류되면 안 된다 (LOG-2).
+
+    ``main.py``·``config.py`` 는 경로에 ``/app/`` 조각이 없어서, 예전 판별식에서
+    서드파티로 빠졌다. 그러면 appname 으로 '우리 코드'를 거를 수 없다.
+    이 테스트는 ``filters.py`` 가 다른 깊이로 옮겨져 ``_REPO_ROOT`` 계산이
+    어긋나는 경우도 함께 잡는다.
+    """
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    for name in ("main.py", "config.py"):
+        assert (repo_root / name).is_file(), f"{name} 이 저장소 루트에 없다 — 테스트 전제 붕괴"
+        assert _app_from_path(str(repo_root / name)) == "app"
+
+
+def test_installed_packages_are_external():
+    """저장소 루트 **안**의 .venv 도 서드파티로 분류된다."""
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    vendored = repo_root / ".venv" / "Lib" / "site-packages" / "sqlalchemy" / "engine.py"
+    assert _app_from_path(str(vendored)) == "ext"
+    assert _app_from_path("/opt/py/lib/python3.14/site-packages/httpx/_client.py") == "ext"
 
 
 class _Caller:
