@@ -1,6 +1,6 @@
 """FastAPI 진입점.
 
-표준 FastAPI 구조: 각 도메인 앱 패키지가 취합한 ``router`` 를 여기서 ``include_router`` 로
+표준 FastAPI 구조: 각 기능 패키지가 취합한 ``router`` 를 여기서 ``include_router`` 로
 최종 취합하고, 애플리케이션의 주요 설정(미들웨어·예외 핸들러·문서·lifespan·Admin)을 구성한다.
 """
 

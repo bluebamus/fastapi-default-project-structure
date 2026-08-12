@@ -27,7 +27,7 @@ curl http://127.0.0.1:8000/health
 | | 동작 | 이유 |
 |---|---|---|
 | `GET /health` | ✅ | DB를 건드리지 않는다 |
-| `GET /api/v1/blog/posts` 등 도메인 API | ❌ 500 | MySQL 연결이 필요하다 |
+| `GET /api/v1/blog/posts` 등 기능 API | ❌ 500 | MySQL 연결이 필요하다 |
 | `GET /docs` (Scalar), `/openapi.json` | ❌ 404 | **`DEBUG=false` 가 문서를 끈다** (운영 보안 기본값) |
 
 > API 문서를 보려면 `DEBUG=true` 여야 하고, `DEBUG=true` 는 MySQL을 요구한다(2단계).
@@ -35,7 +35,7 @@ curl http://127.0.0.1:8000/health
 
 ---
 
-## 2단계 — 도메인 API까지 쓰려면 MySQL 하나
+## 2단계 — 기능 API까지 쓰려면 MySQL 하나
 
 ### 왜 필요한가
 
@@ -66,7 +66,7 @@ uv run uvicorn main:app --reload --port 8000
 ```
 
 - API 문서: <http://127.0.0.1:8000/docs>
-- 도메인 API: `GET /api/v1/blog/posts`
+- 기능 API: `GET /api/v1/blog/posts`
 
 ---
 
@@ -119,7 +119,7 @@ uv run mypy . --cache-dir .mypy_tmp
 
 ---
 
-## 새 도메인 추가
+## 새 기능 추가
 
 `app/features/<name>/` vertical slice 를 만든 뒤 `main.py` 에 두 줄을 추가한다:
 
@@ -130,7 +130,7 @@ app.include_router(orders.router, prefix="/api")               # ← 취합 한 
 ```
 
 모델 등록은 `app/core/db/models_registry.py` 가 `app/features/<name>/models/models.py` 를
-디렉터리 스캔으로 자동 판별하므로 따로 손댈 곳이 없다(도메인 `__init__.py` 에서 models import).
+디렉터리 스캔으로 자동 판별하므로 따로 손댈 곳이 없다(기능 `__init__.py` 에서 models import).
 등록 누락은 `tests/test_router_registration.py` 가 잡아준다.
 
 ---
@@ -141,8 +141,8 @@ app.include_router(orders.router, prefix="/api")               # ← 취합 한 
 |---|---|---|
 | startup 에서 `Can't connect to MySQL server` | `DEBUG=true` 기본값이 테이블 생성을 시도 | MySQL을 띄우거나 `DEBUG=false` |
 | `/docs` 가 404 | `DEBUG=false` 에서는 문서가 꺼진다 | `DEBUG=true` (MySQL 필요) |
-| 도메인 API만 500 | 앱은 떴지만 DB가 없다 | 2단계 진행 |
-| 새 도메인이 마운트 안 됨 | `main.py` 에 `include_router` 미등록 | import + `app.include_router(<name>.router, prefix="/api")` 추가 |
+| 기능 API만 500 | 앱은 떴지만 DB가 없다 | 2단계 진행 |
+| 새 기능이 마운트 안 됨 | `main.py` 에 `include_router` 미등록 | import + `app.include_router(<name>.router, prefix="/api")` 추가 |
 
 ---
 
@@ -150,7 +150,7 @@ app.include_router(orders.router, prefix="/api")               # ← 취합 한 
 
 이 문서의 명령 중 다음은 실제로 실행해 확인했다(2026-08-10 최초 확인, FastAPI 0.141.x, Python 3.14):
 
-- `DEBUG=false` 기동 → `/health` 200, 도메인 API 500 — **확인**
+- `DEBUG=false` 기동 → `/health` 200, 기능 API 500 — **확인**
 - 기본값(`DEBUG=true`) + MySQL 없음 → startup 실패 — **확인**
 - pytest / ruff / mypy — **확인**
 

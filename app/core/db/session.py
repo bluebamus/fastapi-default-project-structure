@@ -214,13 +214,13 @@ async def create_db_tables() -> None:
     데이터베이스 테이블을 생성합니다.
 
     애플리케이션 시작 시 lifespan에서 호출됩니다.
-    각 도메인 앱의 models 모듈을 import 하여 Base.metadata에 모든 테이블을 등록한 후
+    각 기능 앱의 models 모듈을 import 하여 Base.metadata에 모든 테이블을 등록한 후
     테이블을 생성합니다.
 
     Note:
         모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
-        자동으로 판별한다. 새 도메인 앱은 app/features/<name>/ 를 만들고
-        main.py 의 APPS 목록에만 추가하면 된다.
+        자동으로 판별한다. 새 기능은 app/features/<name>/ 를 만들고
+        라우터는 main.py 에 명시적으로 include_router 한 줄을 추가한다.
     """
     import asyncio
 
@@ -260,7 +260,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     Note:
         - 세션은 요청 범위(request scope)로 관리됩니다
         - 한 요청 내에서 여러 번 호출해도 같은 세션을 반환하지 않습니다
-        - 트랜잭션 경계는 기능 의존성(dependencies)이 yield 후 커밋으로 관리합니다
+        - 트랜잭션 경계는 쓰기 핸들러 본문이 `await service.commit()` 으로 관리합니다
     """
     start_time = time.perf_counter()
 
