@@ -26,11 +26,11 @@ fastapi-default-project-structure/
 │   │   │   ├── repositories/        # 데이터 접근 계층
 │   │   │   ├── dependencies/        # FastAPI Depends 헬퍼 (Service 구성 — 커밋은 핸들러)
 │   │   │   ├── admin.py             # SQLAdmin ModelView + admin_views (모델이 있으면 필수)
-│   │   │   ├── exceptions.py        # 도메인 예외 (선택)
-│   │   │   └── tests/               # 도메인 테스트
+│   │   │   ├── exceptions.py        # 기능 예외 (선택)
+│   │   │   └── tests/               # 기능 테스트
 │   │   └── <name>/                  # 추가 앱은 같은 구조를 따름
 │   │
-│   ├── core/                        # 프레임워크 인프라 (도메인이 의존)
+│   ├── core/                        # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py             # 공통 예외 계층 + ErrorResponse
 │   │   ├── tags_metadata.py         # OpenAPI 태그 메타데이터
 │   │   ├── db/
@@ -46,9 +46,9 @@ fastapi-default-project-structure/
 │   │       ├── user_info_middleware.py
 │   │       └── access_log_sink.py
 │   │
-│   ├── celery/                      # 중앙 Celery (도메인 worker/ 미사용)
+│   ├── celery/                      # 중앙 Celery (기능별 worker/ 미사용)
 │   │   ├── app.py                   # Celery 앱 (include=["app.celery.tasks"])
-│   │   ├── tasks.py                 # 중앙 태스크 모듈 (모든 도메인 백그라운드 작업)
+│   │   ├── tasks.py                 # 중앙 태스크 모듈 (모든 기능 백그라운드 작업)
 │   │   └── task.py                  # run_async() 동기 브릿지
 │   │
 │   └── utils/                       # 순수 유틸 (외부·상위 계층 의존 없음)
@@ -56,11 +56,10 @@ fastapi-default-project-structure/
 │       ├── authenticator/           # 인증 (JWT·bcrypt)
 │       └── pagination/              # 페이지네이션 (순수 dataclass)
 │
-├── migrations/env.py                # import_all_models()(SSOT) 로 전 도메인 모델 자동 수집
+├── migrations/env.py                # import_all_models()(SSOT) 로 전 기능 모델 자동 수집
 └── docs/
     ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
-    ├── concepts/                    # 개념·패턴 심화 해설
-    └── refactoring/                 # 변경 기록
+    └── QUICKSTART.md                # 최소 실행 경로
 ```
 
 ### 의존 방향
@@ -77,8 +76,8 @@ features → core → utils
 
 ## 2. 표준 FastAPI 배선 (include_router)
 
-자동 스캔(pkgutil/registry)이나 중앙 `app/apps.py` SSOT는 사용하지 않습니다.
-각 도메인 앱 패키지의 `__init__.py`가 하위 뷰 라우터를 취합한 `router`를 공개하고,
+라우터 등록에는 자동 스캔이나 중앙 `app/apps.py` SSOT를 사용하지 않습니다.
+각 기능 패키지의 `__init__.py`가 하위 뷰 라우터를 취합한 `router`를 공개하고,
 `main.py`가 이를 명시적으로 import 해 `include_router`로 최종 취합합니다.
 이것이 FastAPI 공식(Bigger Applications) 패턴입니다.
 
@@ -106,7 +105,7 @@ CustomCORSMiddleware(app).configure_cors()
 setup_user_info_middleware(app)
 _register_exception_handlers(app)         # 4개 글로벌 핸들러
 
-app.include_router(home.router, prefix="/api")   # 도메인마다 한 줄
+app.include_router(home.router, prefix="/api")   # 기능마다 한 줄
 app.include_router(blog.router, prefix="/api")
 # ... reply, sns, user, auth
 
@@ -120,9 +119,9 @@ if app_settings.ADMIN:                    # SQLAdmin
 
 ---
 
-## 3. 새 도메인 추가 — `main.py`에 명시 등록
+## 3. 새 기능 추가 — `main.py`에 명시 등록
 
-새 도메인은 `app/features/<name>/` vertical slice 를 만든 뒤, **`main.py`에 직접 등록**합니다.
+새 기능은 `app/features/<name>/` vertical slice 를 만든 뒤, **`main.py`에 직접 등록**합니다.
 
 ### 3.1 등록 단계
 
@@ -132,8 +131,8 @@ from app.features import auth, blog, home, reply, sns, user, <name>   # ← impo
 app.include_router(<name>.router, prefix="/api")                     # ← 취합 한 줄 추가
 ```
 
-- 라우터: 위 두 줄을 직접 추가합니다(도메인 `__init__.py` 가 `router` 공개).
-- 모델(메타데이터): **`models_registry`(SSOT)가 `app/features/<name>/models/models.py` 를 자동 수집**하므로 `env.py`·`session.py` 를 손댈 필요가 없습니다. 도메인 `__init__.py` 에서 models 를 import 합니다.
+- 라우터: 위 두 줄을 직접 추가합니다(기능 `__init__.py` 가 `router` 공개).
+- 모델(메타데이터): **`models_registry`(SSOT)가 `app/features/<name>/models/models.py` 를 자동 수집**하므로 `env.py`·`session.py` 를 손댈 필요가 없습니다. 기능 `__init__.py` 에서 models 를 import 합니다.
 - Admin: `app/features/<name>/admin.py` 에 ModelView + `admin_views` 를 만들고 `__init__.py` 에서
   재노출한 뒤, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다.
 
@@ -142,10 +141,10 @@ app.include_router(<name>.router, prefix="/api")                     # ← 취�
 | 파일/디렉토리 | 필수 | 설명 |
 |--------------|------|------|
 | `__init__.py` | ✅ | `router` 공개 + `models` import |
-| `api/routers/router.py` + `v1/` | ✅ | 도메인 루트 라우터 + 버전별 엔드포인트 |
+| `api/routers/router.py` + `v1/` | ✅ | 기능 루트 라우터 + 버전별 엔드포인트 |
 | `models/` `schemas/` `services/` `repositories/` `dependencies/` | ✅ | 데이터/로직 계층 |
 | `tests/` | ✅ | pytest 테스트 |
-| `exceptions.py` | 선택 | 도메인 예외 |
+| `exceptions.py` | 선택 | 기능 예외 |
 | `admin.py` | 선택 | 기능 소유 ModelView + `admin_views` (모델이 있으면 사실상 필수 — `tests/test_admin_wiring.py` 가 강제) |
 
 ---
@@ -202,7 +201,7 @@ async def create_<name>(
 
 ## 5. Celery 태스크 — 중앙 집중 include
 
-`app/celery/app.py`는 중앙 태스크 모듈 하나만 `include`합니다(도메인 `worker/` 미사용).
+`app/celery/app.py`는 중앙 태스크 모듈 하나만 `include`합니다(기능별 `worker/` 미사용).
 
 ```python
 celery_app = Celery(
@@ -213,7 +212,7 @@ celery_app = Celery(
 )
 ```
 
-- 모든 도메인 백그라운드 태스크는 `app/celery/tasks.py`에 `@celery_app.task`로 정의합니다.
+- 모든 기능 백그라운드 태스크는 `app/celery/tasks.py`에 `@celery_app.task`로 정의합니다.
   (예: `home.aggregate_access_stats`)
 - 동기 워커에서 async 코루틴 실행: `app/celery/task.py`의 `run_async(coro)`.
 - 태스크 내 DB 세션: `background_session()` 컨텍스트.
@@ -222,13 +221,13 @@ celery_app = Celery(
 
 ## 6. Alembic 마이그레이션
 
-`migrations/env.py`는 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)로 전 도메인 모델을 자동 수집합니다. `app/features/<name>/models/models.py` 가 있으면 자동 등록되므로 새 앱 추가 시 이 파일을 손댈 필요가 없습니다.
+`migrations/env.py`는 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)로 전 기능 모델을 자동 수집합니다. `app/features/<name>/models/models.py` 가 있으면 자동 등록되므로 새 앱 추가 시 이 파일을 손댈 필요가 없습니다.
 
 ```python
 from app.core.db.session import Base
 from app.core.db.models_registry import import_all_models
 
-import_all_models()          # 디렉터리 스캔으로 전 도메인 models 자동 import
+import_all_models()          # 디렉터리 스캔으로 전 기능 models 자동 import
 target_metadata = Base.metadata
 ```
 
@@ -261,9 +260,10 @@ uv run alembic upgrade head
 
 | 날짜 | 변경 내용 |
 |------|----------|
-| 2026-06-23 | 도메인 레지스트리 아키텍처로 전환, 이 문서 최초 작성 |
+| 2026-06-23 | 기능 모델 레지스트리 아키텍처로 전환, 이 문서 최초 작성 |
 | 2026-06-23 | 자동 발견 제거, `app/apps.py` 수동 등록 SSOT로 전환 |
-| 2026-07-01 | **표준 FastAPI 배선으로 전환**: `AppRegistry`/`bootstrap.create_app()`/`app/apps.py` 제거, 각 앱 `__init__.py`가 `router` 공개 + `main.py`의 `APPS`가 `include_router`로 취합. |
-| 2026-08-11 | **`app/modules/` → `app/features/` 환원 + SQLAdmin 소유권을 기능으로 이전**: 폴더·import·문서 참조 70개 파일 일괄 정정. `app/internal/` 삭제 — ModelView 는 모델과 같은 폴더에 있어야 컬럼 변경이 함께 눈에 들어오고 기능 단위 복사·삭제 시 따라온다. `app/features/<name>/admin.py` 가 ModelView 와 `admin_views` 를 소유하고, 신설 `app/features/admin.py` 가 **명시 import** 로 `ADMIN_VIEWS` 에 취합한다(과거 `getattr(module, "admin_views", [])` 관용 수집은 빈 `admin.py` 를 무신호로 건너뛰어 ADMIN-1 을 낳았으므로 복원하지 않음). 회귀 가드 `tests/test_admin_wiring.py` 에 "모델을 가진 기능은 자기 `admin.py` 를 갖는다" 검사 추가. C-7 자격증명 비노출·생성차단 정책과 공개 API 경로·응답 스키마 불변. |
-| 2026-08-11 | **문서 드리프트 정정**: §4 와 README 가 P1-3 이전의 "의존성이 `yield` 후 커밋" 을 계속 설명하고 있었다(코드는 이미 핸들러 커밋). §4 예시를 실제 코드(쓰기/조회 의존성 분리 + 핸들러 `await service.commit()`)로 교체하고, `BaseService` 독스트링도 같이 정정. 감사 보고서류(`AUDIT_REPORT.md`·`AUDIT_LEDGER.md`·`docs/review/`·`docs/concepts/`)는 **시점 기록물이므로 의도적으로 미수정**. 아울러 재구조화 잔재 정리 — `tests/features/` 잔류분을 `app/features/<도메인>/tests/` 로 통합, 이동 중 겹친 디렉터리 레벨과 빈 `tests/scripts/` 제거. |
-| 2026-08-11 | **Django 배선 제거 (구조는 vertical slice 유지)**: `APPS` 목록 순회 → 명시 `include_router`; 기능별 `admin.py` 자동수집(`admin_views`) → 중앙 `app/internal/admin.py`(`ADMIN_VIEWS`+`register_admin`); `scripts/new_app.py`(Django startapp 식 생성기) 제거. 도메인 폴더는 `app/features/` → `app/modules/` 로 리네임. 모델 등록은 `models_registry` 디렉터리 스캔 유지. 공개 API 경로·응답 스키마·SQLAdmin 보안 정책 불변. |
+| 2026-07-01 | **표준 FastAPI 배선으로 전환**: `AppRegistry`/`bootstrap.create_app()`/`app/apps.py` 제거, 각 앱 `__init__.py`가 `router` 공개 + `main.py`가 명시 `include_router`로 취합. |
+| 2026-08-11 | **`app/features/` 명칭 확정 + SQLAdmin 소유권을 기능으로 이전**: 폴더·import·문서 참조 70개 파일 일괄 정정. 과거 중앙 관리자 패키지 삭제 — ModelView 는 모델과 같은 폴더에 있어야 컬럼 변경이 함께 눈에 들어오고 기능 단위 복사·삭제 시 따라온다. `app/features/<name>/admin.py` 가 ModelView 와 `admin_views` 를 소유하고, 신설 `app/features/admin.py` 가 **명시 import** 로 `ADMIN_VIEWS` 에 취합한다(과거 `getattr(module, "admin_views", [])` 관용 수집은 빈 `admin.py` 를 무신호로 건너뛰어 ADMIN-1 을 낳았으므로 복원하지 않음). 회귀 가드 `tests/test_admin_wiring.py` 에 "모델을 가진 기능은 자기 `admin.py` 를 갖는다" 검사 추가. C-7 자격증명 비노출·생성차단 정책과 공개 API 경로·응답 스키마 불변. |
+| 2026-08-11 | **문서 드리프트 정정**: §4 와 README 가 P1-3 이전의 "의존성이 `yield` 후 커밋" 을 계속 설명하고 있었다(코드는 이미 핸들러 커밋). §4 예시를 실제 코드(쓰기/조회 의존성 분리 + 핸들러 `await service.commit()`)로 교체하고, `BaseService` 독스트링도 같이 정정. 아울러 재구조화 잔재 정리 — `tests/features/` 잔류분을 `app/features/<name>/tests/` 로 통합, 이동 중 겹친 디렉터리 레벨과 빈 `tests/scripts/` 제거. |
+| 2026-08-11 | **Django 배선 제거 (구조는 vertical slice 유지)**: 옛 중앙 목록 순회 → 명시 `include_router`; 기능별 `admin.py` 관용 수집(`getattr(..., "admin_views", [])`) → 중앙 `app/features/admin.py`의 명시 import(`ADMIN_VIEWS`+`register_admin`); `scripts/new_app.py` 제거. 폴더는 실제 코드 기준 `app/features/` 를 유지한다. 모델 등록은 `models_registry` 디렉터리 스캔 유지. 공개 API 경로·응답 스키마·SQLAdmin 보안 정책 불변. |
+| 2026-08-11 | **문서 정합성 재정리**: 삭제된 심화·리팩터링 문서 참조, 존재하지 않는 과거 모듈·관리자 경로 참조, 제거된 중앙 목록 설명을 실제 코드 기준으로 정정. |

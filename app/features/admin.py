@@ -15,6 +15,12 @@
     2. ``app/features/<name>/__init__.py`` 에서 ``admin_views`` 를 재노출한다.
     3. 이 파일의 import 와 ``ADMIN_VIEWS`` 에 한 줄씩 더한다.
 
+URL 등록:
+    ``main.py`` 는 ADMIN=true 일 때 ``register_admin(app, engine)`` 만 호출한다.
+    이 함수 안에서 SQLAdmin 의 ``Admin(app, engine, ...)`` 인스턴스를 만들면
+    SQLAdmin 이 Starlette/FastAPI 앱에 ``/admin`` 라우트를 마운트한다. 별도의
+    ``include_router()`` 나 URL 패턴 등록은 필요하지 않다.
+
 Note:
     SQLAdmin 은 ADMIN 설정으로 제어된다 (DEBUG 와 독립적).
     ADMIN=True: /admin 접근 가능, ADMIN=False: /admin 접근 차단.

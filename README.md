@@ -1,7 +1,7 @@
 # FastAPI Default Project Structure
 
 Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝트 템플릿입니다.
-표준 FastAPI 배선을 따릅니다: 각 도메인 앱 패키지(`app/features/<name>/__init__.py`)가 하위 뷰 라우터를 취합한 `router` 를 공개하고, `main.py` 가 이를 `include_router` 로 최종 취합하며 앱 설정을 구성합니다.
+표준 FastAPI 배선을 따릅니다: 각 기능 패키지(`app/features/<name>/__init__.py`)가 하위 뷰 라우터를 취합한 `router` 를 공개하고, `main.py` 가 이를 명시적 `include_router` 호출로 최종 취합하며 앱 설정을 구성합니다.
 
 ## 목차
 
@@ -31,7 +31,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - **계층 분리 아키텍처**: Router → Service → Repository → Database
 - **명시적 트랜잭션 경계**: 기능 의존성(`get_<name>_service`)은 Service 구성만 담당하고, 커밋은 **쓰기 핸들러 본문**이 `await service.commit()` 로 수행(UnitOfWork 미사용)
 - **읽기/쓰기 세션 분리**: 조회 전용 의존성(`get_<name>_service_readonly`)은 `get_read_session` 을 받아 커밋하지 않음 — 예외 시 세션 teardown이 롤백
-- **인증(JWT)**: OAuth2 Password 플로우 + JWT access/refresh 토큰, bcrypt 비밀번호 해시 (`auth` 도메인, `app/utils/authenticator/`)
+- **인증(JWT)**: OAuth2 Password 플로우 + JWT access/refresh 토큰, bcrypt 비밀번호 해시 (`auth` 기능, `app/utils/authenticator/`)
 - **레이트 리밋**: slowapi 데코레이터 기반 라우트별 한도(`app/core/rate_limit.py`, `RATE_LIMIT_ENABLED` 로 토글)
 - **N+1 문제 해결**: Eager Loading 전략 내장 (selectin, joined, subquery)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
@@ -120,20 +120,19 @@ fastapi-default-project-structure/
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
 │
 ├── app/
-│   ├── modules/                 # 기능(도메인) 단위 vertical slice — main.py 가 include_router 로 취합
-│   │   └── <name>/              # 각 도메인 디렉토리
-│   │       ├── __init__.py      # router + admin_views 공개
+│   ├── features/                # 기능 단위 vertical slice — main.py 가 include_router 로 취합
+│   │   ├── admin.py             # SQLAdmin 취합 (ADMIN_VIEWS + register_admin)
+│   │   └── <name>/              # 각 기능 디렉토리
+│   │       ├── __init__.py      # router 공개 + models import (+ 선택 admin_views 재노출)
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
 │   │       ├── models/          # SQLAlchemy ORM 모델
 │   │       ├── schemas/         # Pydantic 스키마
 │   │       ├── services/        # 비즈니스 로직
 │   │       ├── repositories/    # 데이터 접근 계층
 │   │       ├── dependencies/    # 기능 의존성 (Service 구성 — 커밋은 핸들러)
-│   │       ├── exceptions.py    # 도메인 예외 (선택)
+│   │       ├── exceptions.py    # 기능 예외 (선택)
 │   │       └── tests/           # 테스트
-│   ├── features/admin.py        # SQLAdmin 취합 (ADMIN_VIEWS + register_admin)
-│   │
-│   ├── core/                    # 프레임워크 인프라 (도메인이 의존)
+│   ├── core/                    # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── db/                  # 세션, 커넥션 풀, background_session, redis(스텁)
 │   │   ├── models/              # SQLAlchemy Base
@@ -147,22 +146,21 @@ fastapi-default-project-structure/
 ├── migrations/                  # Alembic (env.py가 import_all_models() SSOT로 메타데이터 수집)
 └── docs/
     ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-    ├── concepts/                # 개념·패턴 심화 해설
-    └── refactoring/             # 변경 기록
+    └── QUICKSTART.md            # 최소 실행 경로
 ```
 
 ### 핵심 파일 설명
 
 | 파일 | 설명 |
 |------|------|
-| `main.py` | FastAPI 조립 — 각 도메인 `router` 를 명시 `include_router(prefix="/api")` 로 취합 + 미들웨어/예외/문서/lifespan/Admin 설정 |
+| `main.py` | FastAPI 조립 — 각 기능 `router` 를 명시 `include_router(prefix="/api")` 로 취합 + 미들웨어/예외/문서/lifespan/Admin 설정 |
 | `app/features/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` 공개 — `main.py` 가 명시 import 후 `include_router` 로 취합 |
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
 | `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합 — `ADMIN_VIEWS` + `register_admin(app, engine)` |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
 | `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_session` / 조회용 `get_read_session`). 커밋은 핸들러가 수행 |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
-| `migrations/env.py` | `import_all_models()`(SSOT) 로 전 도메인 모델을 자동 수집 → Alembic autogenerate |
+| `migrations/env.py` | `import_all_models()`(SSOT) 로 전 기능 모델을 자동 수집 → Alembic autogenerate |
 
 ### `app/` 구현 규칙 (Conventions)
 
@@ -175,12 +173,12 @@ features → core → utils
 | 영역 | 역할 | 규칙 |
 |------|------|------|
 | `app/features/<name>/` | 기능 단위 앱 | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 기능 앱은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
-| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 `modules`를 import하지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`(DEBUG 전용 테이블 자동 생성)가 메타데이터 등록을 위해 `import_all_models()`(SSOT, `app/core/db/models_registry.py`)를 함수 내부에서 호출하는 것 |
+| `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 기능 구현을 직접 알지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`가 메타데이터 등록을 위해 `import_all_models()`를 함수 내부에서 호출하는 것 |
 | `app/utils/` | 순수 유틸리티 (로깅, 인증, 페이지네이션) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
-> 핵심 규칙: **`core`는 도메인을 모른다.** 도메인이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
+> 핵심 규칙: **`core`는 기능 구현을 직접 결합하지 않는다.** 기능이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
 
-#### 도메인 앱 표준 레이아웃
+#### 기능 앱 표준 레이아웃
 
 새 앱은 아래 구조와 **파일 네이밍 표준**을 따릅니다. (기준 구현체: `app/features/home/`)
 
@@ -197,20 +195,20 @@ app/features/<name>/
 ├── dependencies/              # 기능 의존성 (Service 구성 — 커밋은 핸들러) — 필수
 │   └── <name>_dependencies.py
 ├── tests/                     # pytest — 필수
-├── exceptions.py              # 도메인 예외 — 선택
+├── exceptions.py              # 기능 예외 — 선택
 └── admin.py                   # SQLAdmin ModelView — 선택
 
-# Celery 태스크는 도메인이 아니라 중앙 app/celery/tasks.py 에 정의한다.
+# Celery 태스크는 기능별 worker/가 아니라 중앙 app/celery/tasks.py 에 정의한다.
 ```
 
 **파일 네이밍 표준 (반드시 준수):**
 
 | 용도 | 올바른 이름 | 쓰지 말 것 |
 |------|------------|-----------|
-| 도메인 예외 | `exceptions.py` | `<name>_exception.py` |
+| 기능 예외 | `exceptions.py` | `<name>_exception.py` |
 | FastAPI 의존성 | `dependencies.py` | `dependency.py` |
 | SQLAdmin 뷰 | `admin.py` | `api/<name>_admin.py` |
-| Celery 태스크 | 중앙 `app/celery/tasks.py` | 도메인별 `worker/` |
+| Celery 태스크 | 중앙 `app/celery/tasks.py` | 기능별 `worker/` |
 | 기능 의존성 | `dependencies/` 패키지 | 단일 `dependencies.py`도 허용 |
 
 #### 계층별 책임과 호출 규칙
@@ -234,7 +232,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 
 #### 마지막 단계 — `main.py` 에 라우터 명시 등록
 
-위 구조를 만든 뒤 `main.py` 의 `from app.features import ...` 에 이름을 추가하고 `app.include_router(<name>.router, prefix="/api")` 한 줄을 넣어야 라우터가 연결됩니다. 모델은 도메인 `__init__.py` 에서 import 하므로 `models_registry` 가 자동 수집합니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
+위 구조를 만든 뒤 `main.py` 의 `from app.features import ...` 에 이름을 추가하고 `app.include_router(<name>.router, prefix="/api")` 한 줄을 넣어야 라우터가 연결됩니다. 모델은 기능 `__init__.py` 에서 import 하며, `models_registry` 가 `app/features/<name>/models/models.py` 를 자동 수집합니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
 
 ---
 
@@ -301,7 +299,7 @@ async def get_access_logs(
 
 ### 트랜잭션 & 롤백
 
-- **성공**: 뷰가 정상 반환 → `get_<name>_service` 가 `session.commit()`.
+- **성공**: 쓰기 핸들러가 응답 생성 전에 `await service.commit()` 을 호출한다.
 - **예외**: 뷰/Service 에서 예외 발생 → 커밋이 실행되지 않고 `get_session` teardown 이 `session.rollback()`.
 - **요청 밖(Celery/백그라운드)**: `async with background_session() as session:` 컨텍스트로 커밋/롤백을 직접 관리(별도 풀).
 
@@ -412,7 +410,7 @@ class BaseService(LoggerMixin):
         self.session = session
 
 
-# app/features/home/services/user_access_log_service.py - 도메인 Service
+# app/features/home/services/user_access_log_service.py - 기능 Service
 class UserAccessLogService(BaseService):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)
@@ -527,7 +525,7 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ## 로깅 시스템
 
-이 프로젝트는 Django 스타일의 구조화된 로깅 시스템을 제공합니다.
+이 프로젝트는 구조화된 로깅 시스템을 제공합니다.
 
 ### 아키텍처
 
@@ -1012,7 +1010,7 @@ async def create_item(request: Request, ...):            # request 파라미터 
 
 > 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
 
-새 도메인은 `app/features/<name>/` vertical slice 를 만든 뒤 **`main.py` 에 라우터를 명시 등록**합니다.
+새 기능은 `app/features/<name>/` vertical slice 를 만든 뒤 **`main.py` 에 라우터를 명시 등록**합니다.
 등록을 빠뜨리면 라우터가 연결되지 않습니다.
 
 ### 최소 절차 (3단계)
@@ -1029,7 +1027,7 @@ from app.features import blog, home, reply, sns, user, <name>   # ← import 추
 app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 ```
 
-각 도메인 `__init__.py` 가 `router` 를 공개하므로 `main.py` 가 명시 `include_router` 로 취합합니다. **모델은 `models_registry`(SSOT)가 `app/features/<name>/models/models.py` 를 자동 수집**하므로 `Base.metadata` 등록에 별도 편집이 필요 없습니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다.
+각 기능 `__init__.py` 가 `router` 를 공개하므로 `main.py` 가 명시 `include_router` 로 취합합니다. **모델은 `models_registry`(SSOT)가 `app/features/<name>/models/models.py` 를 자동 수집**하므로 `Base.metadata` 등록에 별도 편집이 필요 없습니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다.
 
 **3. 서버 재시작** — 등록한 라우터가 마운트됩니다.
 
