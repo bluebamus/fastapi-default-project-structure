@@ -7,7 +7,16 @@ import io
 import logging
 import pathlib
 
-from app.utils.logs import LOG_FORMAT, ContextFilter, LoggerMixin, TzFormatter, get_logger
+from app.utils.logs import (
+    LOG_FORMAT,
+    ContextFilter,
+    LoggerMixin,
+    TzFormatter,
+    get_logger,
+    setup_uvicorn_logging,
+)
+from app.utils.logs import config as logs_config
+from app.utils.logs import setup as logs_setup
 from app.utils.logs.filters import _app_from_path
 
 
@@ -97,3 +106,123 @@ def test_get_logger_end_to_end():
     text = buf.getvalue()
     assert "hello world" in text
     assert "app=" in text
+
+
+# =============================================================================
+# 환경별 dictConfig 구성
+#
+# staging/production 가지는 로컬·CI 에서 실행되지 않는다 — 즉 운영에서 처음 도는
+# 코드다. dictConfig 를 실제로 적용하지 않고 **빌더가 만든 dict 만** 검사하므로
+# 파일 핸들러가 열리지 않는다(파일 I/O 없음).
+# =============================================================================
+def _build_with(monkeypatch, tmp_path, **overrides):
+    """ENV·로그 설정을 바꿔 build_dictconfig() 결과를 얻는다.
+
+    빌더가 모듈 전역 settings 를 읽으므로 그 속성을 monkeypatch 로 갈아끼운다
+    (monkeypatch 가 테스트 종료 시 되돌린다 — 싱글턴 오염 없음).
+    """
+    env = overrides.pop("env", "development")
+    monkeypatch.setattr(logs_config.app_settings, "ENV", env, raising=False)
+    # 로그 디렉터리는 tmp 로 — get_log_dir() 이 mkdir 을 하므로 저장소를 더럽히지 않게.
+    monkeypatch.setattr(logs_config.log_settings, "LOG_DIR", str(tmp_path), raising=False)
+    for key, value in overrides.items():
+        monkeypatch.setattr(logs_config.log_settings, key, value, raising=False)
+    return logs_config.build_dictconfig()
+
+
+def test_production_adds_rotating_file_handlers(monkeypatch, tmp_path):
+    """production 에서는 콘솔에 더해 회전 파일·에러 파일 핸들러가 붙고 UTC 를 쓴다."""
+    cfg = _build_with(monkeypatch, tmp_path, env="production", LOG_FILE_ENABLED=True)
+
+    assert set(cfg["handlers"]) == {"console", "file", "error_file"}
+    assert cfg["root"]["handlers"] == ["console", "file", "error_file"]
+    assert cfg["formatters"]["app"]["use_utc"] is True
+
+    for name in ("file", "error_file"):
+        handler = cfg["handlers"][name]
+        assert handler["class"] == "logging.handlers.RotatingFileHandler"
+        assert handler["backupCount"] == logs_config.log_settings.LOG_BACKUP_COUNT
+        assert handler["maxBytes"] == logs_config.log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
+        # 핸들러마다 컨텍스트 필터가 붙어야 appname/classname 이 채워진다.
+        assert handler["filters"] == ["context"]
+        assert str(tmp_path) in handler["filename"]
+
+    # 에러 전용 파일은 ERROR 만 받아야 의미가 있다.
+    assert cfg["handlers"]["error_file"]["level"] == "ERROR"
+
+
+def test_development_is_console_only_and_local_time(monkeypatch, tmp_path):
+    """개발에서는 파일 핸들러를 붙이지 않고 로컬 TZ + 밀리초를 쓴다."""
+    cfg = _build_with(monkeypatch, tmp_path, env="development")
+
+    assert set(cfg["handlers"]) == {"console"}
+    assert cfg["root"]["handlers"] == ["console"]
+    assert cfg["formatters"]["app"]["use_utc"] is False
+    assert cfg["formatters"]["app"]["with_ms"] is True
+
+
+def test_file_logging_can_be_disabled_in_production(monkeypatch, tmp_path):
+    """production 이라도 LOG_FILE_ENABLED=False 면 파일 핸들러를 만들지 않는다.
+
+    읽기 전용 파일시스템(컨테이너)에서 기동이 깨지지 않으려면 이 스위치가 살아 있어야 한다.
+    """
+    cfg = _build_with(monkeypatch, tmp_path, env="production", LOG_FILE_ENABLED=False)
+
+    assert set(cfg["handlers"]) == {"console"}
+    assert cfg["root"]["handlers"] == ["console"]
+    assert cfg["formatters"]["app"]["use_utc"] is True  # UTC 는 파일 여부와 무관
+
+
+def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
+    """ADR-019 — 앱별 로거를 **등록하지 않는다**(핸들러는 root 에만).
+
+    이 프로젝트는 Django 의 ``settings.LOGGING["loggers"]`` 식 등록을 쓰지 않고
+    소스 경로에서 앱을 판별한다. ``loggers`` 키가 생기면 그 설계가 바뀐 것이므로,
+    코드보다 charter §2-4 비목표를 먼저 고쳐야 한다. 이 테스트가 그 관문이다.
+    """
+    for env in ("development", "test", "staging", "production"):
+        cfg = _build_with(monkeypatch, tmp_path, env=env)
+        assert "loggers" not in cfg, (
+            f"ENV={env} 의 dictConfig 에 loggers 키가 생겼습니다. "
+            "앱별 로거 등록은 ADR-019 의 비목표입니다 — charter §2-4 를 먼저 개정하세요."
+        )
+        assert cfg["root"]["handlers"], "root 에 핸들러가 없으면 아무 로그도 나가지 않는다"
+
+
+def test_uvicorn_config_isolates_three_loggers():
+    """uvicorn 3종 로거가 각자 핸들러를 갖고 root 로 전파하지 않는다.
+
+    propagate=True 면 앱 root 핸들러가 같은 줄을 한 번 더 찍어 중복 출력이 된다.
+    """
+    cfg = setup_uvicorn_logging()
+
+    assert set(cfg["loggers"]) == {"uvicorn", "uvicorn.error", "uvicorn.access"}
+    for name, spec in cfg["loggers"].items():
+        assert spec["propagate"] is False, f"{name} 이 root 로 전파되면 로그가 중복된다"
+        assert spec["handlers"], f"{name} 에 핸들러가 없다"
+
+    # access 로그만 전용 포맷(요청 라인)을 쓴다.
+    assert cfg["loggers"]["uvicorn.access"]["handlers"] == ["access"]
+    assert "request_line" in cfg["formatters"]["access"]["fmt"]
+    for handler in cfg["handlers"].values():
+        assert handler["filters"] == ["context"]
+
+
+def test_configure_logging_applies_once(monkeypatch):
+    """configure_logging() 은 여러 번 불러도 dictConfig 를 1회만 적용한다.
+
+    get_logger() 가 매번 호출하므로, 여기서 idempotent 가 깨지면 로거를 만들 때마다
+    전체 로깅이 재구성되어 런타임에 붙인 핸들러가 사라진다.
+    """
+    calls = []
+    monkeypatch.setattr(logs_setup, "dictConfig", lambda cfg: calls.append(cfg))
+    monkeypatch.setattr(logs_setup, "_configured", False, raising=False)
+
+    logs_setup.configure_logging()
+    logs_setup.configure_logging()
+    get_logger("test.idempotent")
+    assert len(calls) == 1
+
+    # force=True 는 의도적 재적용이므로 통과해야 한다.
+    logs_setup.configure_logging(force=True)
+    assert len(calls) == 2
