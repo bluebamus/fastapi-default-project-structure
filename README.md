@@ -503,7 +503,7 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | 설정 | 기본값 | 설명 |
 |------|--------|------|
 | `DEBUG` | `true` | 디버그 모드 (로그 레벨, 테이블 자동 생성, API 문서) |
-| `ADMIN` | `true` | 관리자 페이지 활성화 (DEBUG와 독립적) |
+| `ADMIN` | `true` | 관리자 페이지 활성화 (DEBUG와 독립적). **인증 없음** — 운영은 `false` 명시 |
 | `ENV` | `development` | 환경 (development, staging, production) |
 | `MYSQL_HOST` | `localhost` | MySQL 호스트 |
 | `MYSQL_PORT` | `3306` | MySQL 포트 |
@@ -1054,8 +1054,13 @@ app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 |------|-----|------|
 | Scalar API 문서 | http://localhost:8000/docs | DEBUG=true |
 | OpenAPI JSON | http://localhost:8000/openapi.json | DEBUG=true |
-| 관리자 페이지 | http://localhost:8000/admin | ADMIN=true |
+| 관리자 페이지 | http://localhost:8000/admin | ADMIN=true (인증 없음 — 아래 주의) |
 | 헬스체크 | http://localhost:8000/health | 항상 |
+
+> **⚠️ `/admin` 에는 인증이 없습니다.** 로그인 화면을 두지 않기로 확정했습니다(`/admin/login` 은 503).
+> `ADMIN=true` 이면 자격증명 없이 사용자·게시글·댓글·접속로그의 조회·수정·삭제와 CSV 내보내기가
+> 가능합니다(비밀번호 해시만 제외). 기본값이 `true` 인 것은 **개발 편의를 우선한 의도된 선택**이며,
+> **운영·스테이징에서는 `ADMIN=false` 를 명시**하거나 리버스 프록시에서 `/admin` 을 차단하세요.
 
 ### 현재 구현된 API
 

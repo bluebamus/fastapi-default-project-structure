@@ -145,11 +145,20 @@ class AppSettings(BaseSettings):
     )
 
     # 관리자 페이지 활성화 (DEBUG와 독립적으로 동작)
-    # True: /admin 접근 가능
-    # False: /admin 접근 차단
+    # True: /admin 마운트  /  False: /admin 자체가 없음(404)
+    #
+    # 기본값이 True 인 것은 의도다 — 이 저장소는 개발을 우선 고려한 레퍼런스 구조라,
+    # 받자마자 /admin 으로 DB 를 들여다볼 수 있어야 한다. "보안 기본값"으로 보고
+    # False 로 되돌리지 말 것(결정: 2026-08-12).
+    #
+    # 다만 대가를 알고 켜야 한다: 이 프로젝트는 SQLAdmin 에 인증 백엔드를 붙이지
+    # 않기로 확정했다(영구 비목표). 즉 ADMIN=True 이면 /admin 이 **자격증명 없이**
+    # 열리고, 게시글·댓글·사용자·접속로그의 조회·수정·삭제와 CSV 내보내기가 가능하다
+    # (비밀번호 해시만 SQLAdmin 설정으로 제외된다).
+    # → 운영·스테이징은 ADMIN=false 를 **명시적으로** 넘기거나, 프록시에서 /admin 을 막는다.
     ADMIN: bool = Field(
         default=True,
-        description="관리자 페이지 활성화",
+        description="관리자 페이지 활성화 (인증 없음 — 운영에서는 false 권장)",
     )
 
     # 실행 환경 (헬스체크 응답에 포함)
