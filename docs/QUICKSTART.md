@@ -78,10 +78,17 @@ uv run uvicorn main:app --reload --port 8000
 | 변수 | 기본값 | 첫 실행에서의 의미 |
 |---|---|---|
 | `DEBUG` | `true` | **가장 중요.** true=테이블 자동 생성 + `/docs` 켜짐(MySQL 필요) / false=둘 다 꺼짐(인프라 불필요) |
+| `ADMIN` | `true` | `/admin` 관리 화면이 **기본으로 켜진다**. ⚠️ **인증이 없다** — 아래 주의 참고 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / `""` / `fastapi_db` | 위 docker 명령과 맞춰져 있다 |
-| `RATE_LIMIT_ENABLED` | — | 끄면 rate limit 데코레이터가 무동작 |
+| `RATE_LIMIT_ENABLED` | `true` | 켜져 있다. 끄면 rate limit 데코레이터가 무동작 |
 | `DB_ROUTER_ENABLED` | `false` | 기본은 단일 엔진. read/write 분리는 선택 기능 |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 로컬은 그대로 둬도 되지만 **배포 전 반드시 교체** |
+
+> **⚠️ `ADMIN=true` 가 기본값이고 `/admin` 에는 인증이 없습니다.**
+> 로컬 개발에서 바로 DB 를 들여다볼 수 있도록 한 **의도된 기본값**이지만, 그 말은
+> 앱에 도달할 수 있는 누구나 사용자·게시글·접속로그를 조회·수정·삭제하고 CSV 로
+> 내보낼 수 있다는 뜻입니다(비밀번호 해시만 제외). **운영·스테이징은 `ADMIN=false`**
+> 를 명시하거나 리버스 프록시에서 `/admin` 을 막으세요.
 
 전체 목록은 [`.env.example`](../.env.example).
 
@@ -97,13 +104,13 @@ cp .env.example .env
 
 기본 실행 경로에 **필요 없는** 것들이다. 필요해질 때 해당 문서를 보면 된다.
 
-| 기능 | 필요 인프라 | 언제 보면 되나 |
-|---|---|---|
-| Celery 비동기 태스크 | Redis | 백그라운드 작업이 필요해질 때 |
-| SQLAdmin 관리자 화면 | (앱 내장) | 관리 UI가 필요할 때 |
-| DB read/write 라우팅 | replica MySQL | 읽기 부하 분리가 필요할 때 |
-| Alembic 마이그레이션 | MySQL | 운영 배포 시 (`DEBUG=false` 면 테이블 자동 생성이 꺼진다) |
-| rate limit | (앱 내장) | 공개 API를 노출할 때 |
+| 기능 | 필요 인프라 | 기본 상태 | 언제 보면 되나 |
+|---|---|---|---|
+| Celery 비동기 태스크 | Redis | 꺼짐(워커 미기동) | 백그라운드 작업이 필요해질 때 |
+| DB read/write 라우팅 | replica MySQL | 꺼짐 | 읽기 부하 분리가 필요할 때 |
+| Alembic 마이그레이션 | MySQL | — | 운영 배포 시 (`DEBUG=false` 면 테이블 자동 생성이 꺼진다) |
+| SQLAdmin 관리자 화면 | (앱 내장) | **켜짐** | `/admin` 으로 바로 접근. 인증 없음(위 주의) |
+| rate limit | (앱 내장) | **켜짐** (`100/minute`) | 회원가입·로그인에만 적용. 다른 라우트로 넓힐 때 |
 
 ---
 
@@ -112,10 +119,18 @@ cp .env.example .env
 테스트는 in-memory SQLite를 쓰므로 MySQL 없이 그대로 돌아간다.
 
 ```bash
-uv run pytest --basetemp .pytest_tmp
+uv run python -m pytest --basetemp .pytest_tmp
 uv run ruff check .
 uv run mypy . --cache-dir .mypy_tmp
 ```
+
+> `pytest` 가 아니라 **`python -m pytest`** 를 쓴다. 콘솔 스크립트(`uv run pytest`)가
+> 다른 인터프리터를 집어 import 가 어긋난 전례가 있어 이쪽을 표준으로 삼는다.
+> CI(`.github/workflows/ci.yml`)도 같은 형태로 돌린다.
+>
+> `--cache-dir .mypy_tmp` 는 로컬 편의용이다. **게이트 판정용 mypy 는 캐시를 지우고**
+> 돌린 결과만 유효하다 — 따뜻한 캐시가 통과로 잘못 기록된 전례가 있어 CI 는 캐시를
+> 복원하지 않는다.
 
 ---
 
@@ -125,8 +140,8 @@ uv run mypy . --cache-dir .mypy_tmp
 
 ```python
 # main.py
-from app.features import blog, home, reply, sns, user, orders   # ← import 추가
-app.include_router(orders.router, prefix="/api")               # ← 취합 한 줄 추가
+from app.features import auth, blog, home, reply, sns, user, orders   # ← import 추가
+app.include_router(orders.router, prefix="/api")                      # ← 취합 한 줄 추가
 ```
 
 모델 등록은 `app/core/db/models_registry.py` 가 `app/features/<name>/models/models.py` 를
@@ -148,11 +163,16 @@ app.include_router(orders.router, prefix="/api")               # ← 취합 한 
 
 ## 검증 상태
 
-이 문서의 명령 중 다음은 실제로 실행해 확인했다(2026-08-10 최초 확인, FastAPI 0.141.x, Python 3.14):
+**최종 확인: 2026-08-12** (FastAPI 0.141.x, Python 3.14). 아래는 실제로 실행하거나
+설정값을 읽어 대조한 결과다.
 
-- `DEBUG=false` 기동 → `/health` 200, 기능 API 500 — **확인**
-- 기본값(`DEBUG=true`) + MySQL 없음 → startup 실패 — **확인**
-- pytest / ruff / mypy — **확인**
+| 항목 | 방법 | 결과 |
+|---|---|---|
+| `DEBUG=false` 기동 → `/health` | 요청 | **200** `{"status":"healthy","version":"0.1.0"}` — 위 응답 예시와 일치 |
+| `DEBUG=false` → `/docs` · `/openapi.json` | 요청 | **404** 둘 다 |
+| 기본값(`DEBUG=true`) + MySQL 없음 → startup 실패 | 기동 | 확인 |
+| 표의 기본값 전부 | `config.py` 필드 기본값 직접 읽기 | 일치 (`DEBUG`·`ADMIN`·MySQL 4종·`RATE_LIMIT_ENABLED`·`DB_ROUTER_ENABLED`·토큰 키 2종) |
+| pytest / ruff / mypy | 실행 | 186 passed · 청정 · 146 files Success |
 
-MySQL `docker run` 이후 경로는 이 환경에 Docker가 없어 실행 확인하지 못했다. 설정
+MySQL `docker run` 이후 경로는 이 환경에 Docker 가 없어 **실행 확인하지 못했다.** 설정
 기본값과 대조해 작성했으므로, 다를 경우 이 문서를 고쳐 주기 바란다.
