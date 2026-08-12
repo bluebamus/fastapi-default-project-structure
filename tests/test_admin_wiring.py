@@ -20,10 +20,14 @@ import importlib
 import pathlib
 import subprocess
 import sys
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
+from sqladmin import Admin
 
 from app.core.db.models_registry import iter_model_modules
+from app.core.db.session import engine as _ENGINE
 
 EXPECTED_MANAGED_MODELS = {"Post", "Reply", "SnsPost", "User", "UserAccessLog"}
 
@@ -108,3 +112,105 @@ def test_admin_page_is_mounted() -> None:
     import main
 
     assert any(getattr(route, "path", "") == "/admin" for route in main.app.routes)
+
+
+# =============================================================================
+# 조립 함수의 책임 분리
+#
+# register_admin() 은 두 내부 함수에 위임한다. 아래 검사는 "둘이 각자 하나씩만
+# 한다"를 강제한다 — 책임이 섞이면(생성 함수가 뷰를 등록하거나, 등록 함수가 앱을
+# 건드리면) 실패한다. 이 함수들은 SQLAdmin 공식 API 가 아니라 프로젝트 내부
+# 조립 함수다.
+# =============================================================================
+def _fresh_app() -> FastAPI:
+    """부팅된 main.app 을 오염시키지 않도록 매번 새 앱을 쓴다."""
+    return FastAPI()
+
+
+def test_create_admin_interface_mounts_but_registers_nothing() -> None:
+    """생성 함수는 /admin 을 붙이되 ModelView 는 하나도 등록하지 않는다."""
+    from app.features.admin import create_admin_interface
+
+    app = _fresh_app()
+    admin = create_admin_interface(app, _ENGINE)
+
+    assert isinstance(admin, Admin)
+    assert any(
+        getattr(route, "path", "") == "/admin" for route in app.routes
+    ), "create_admin_interface() 가 /admin 을 마운트하지 않았습니다"
+    assert (
+        list(admin._views) == []
+    ), "create_admin_interface() 가 뷰를 등록했습니다 — 등록은 register_admin_views() 의 책임입니다"
+
+
+def test_register_admin_views_registers_every_view_once_in_order() -> None:
+    """등록 함수는 ADMIN_VIEWS 를 선언 순서대로 정확히 한 번씩 등록한다."""
+    from app.features.admin import ADMIN_VIEWS, register_admin_views
+
+    calls: list[type] = []
+
+    class _Recorder:
+        def add_view(self, view: type) -> None:
+            calls.append(view)
+
+    assert register_admin_views(cast(Admin, _Recorder())) is None
+    assert calls == list(ADMIN_VIEWS), "등록 순서 또는 구성이 ADMIN_VIEWS 와 다릅니다"
+    assert len(calls) == len(set(calls)), f"중복 등록된 뷰가 있습니다: {calls}"
+
+
+def test_register_admin_views_does_not_touch_app_or_engine() -> None:
+    """등록 함수는 Admin 의 add_view 외에 아무것도 요구하지 않는다.
+
+    앱·엔진·설정을 참조하면 이 스텁으로는 통과할 수 없다 — 그 의존이 생기면
+    단독 검증이 불가능해지므로 여기서 막는다.
+    """
+    from app.features.admin import register_admin_views
+
+    class _OnlyAddView:
+        """add_view 하나만 가진 최소 스텁."""
+
+        def __init__(self) -> None:
+            self.count = 0
+
+        def add_view(self, view: type) -> None:
+            self.count += 1
+
+    stub = _OnlyAddView()
+    register_admin_views(cast(Admin, stub))
+    assert stub.count > 0
+
+
+def test_register_admin_creates_then_registers_and_returns_same_admin(monkeypatch) -> None:
+    """조합 함수는 생성 → 등록 순서로 부르고, 생성된 Admin 을 그대로 돌려준다.
+
+    순서가 뒤집히면 등록 대상 Admin 이 아직 없다. monkeypatch 로 두 함수를 갈아끼워
+    호출 순서와 인자 전달을 직접 확인한다.
+    """
+    from app.features import admin as admin_module
+
+    order: list[str] = []
+    sentinel = object()
+
+    def fake_create(app_arg, engine_arg):
+        order.append("create")
+        return sentinel
+
+    def fake_register(admin_arg):
+        order.append("register")
+        assert admin_arg is sentinel, "생성된 Admin 이 등록 함수로 전달되지 않았습니다"
+
+    monkeypatch.setattr(admin_module, "create_admin_interface", fake_create)
+    monkeypatch.setattr(admin_module, "register_admin_views", fake_register)
+
+    returned = admin_module.register_admin(_fresh_app(), _ENGINE)
+
+    assert order == ["create", "register"], f"호출 순서가 생성→등록이 아닙니다: {order}"
+    assert returned is sentinel, "register_admin() 이 생성된 Admin 을 반환하지 않았습니다"
+
+
+def test_register_admin_end_to_end_matches_expected_models() -> None:
+    """조합 결과가 기대 모델 전체를 담는다(위임이 실제로 동작하는지)."""
+    from app.features.admin import register_admin
+
+    admin = register_admin(_fresh_app(), _ENGINE)
+    assert {view.model.__name__ for view in admin._views} == EXPECTED_MANAGED_MODELS
