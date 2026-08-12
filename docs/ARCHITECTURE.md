@@ -33,10 +33,12 @@ fastapi-default-project-structure/
 │   ├── core/                        # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py             # 공통 예외 계층 + ErrorResponse
 │   │   ├── tags_metadata.py         # OpenAPI 태그 메타데이터
+│   │   ├── rate_limit.py            # slowapi limiter + 초과 핸들러
 │   │   ├── db/
 │   │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀, background_session
-│   │   │   └── redis.py             # Redis 연결 (현재 미구현 스텁)
-│   │   ├── models/models_base.py    # SQLAlchemy Base (declarative)
+│   │   │   ├── router.py            # 읽기/쓰기 라우팅 (RoutingSession)
+│   │   │   └── models_registry.py   # 모델 import 단일 지점 (SSOT)
+│   │   ├── models/models_base.py    # SQLAlchemy Base (declarative) + Timestamp·UUID Mixin
 │   │   ├── repositories/
 │   │   │   ├── repository_base.py   # BaseRepository
 │   │   │   └── crud_base.py         # 제네릭 CRUD 메서드
@@ -44,6 +46,7 @@ fastapi-default-project-structure/
 │   │   └── middlewares/
 │   │       ├── cors_middleware.py
 │   │       ├── user_info_middleware.py
+│   │       ├── background_tasks.py  # 응답 후 태스크 추적 (누수 방지)
 │   │       └── access_log_sink.py
 │   │
 │   ├── celery/                      # 중앙 Celery (기능별 worker/ 미사용)
@@ -54,13 +57,22 @@ fastapi-default-project-structure/
 │   └── utils/                       # 순수 유틸 (외부·상위 계층 의존 없음)
 │       ├── logs/                    # 구조화 로깅 (get_logger, setup_uvicorn_logging)
 │       ├── authenticator/           # 인증 (JWT·bcrypt)
-│       └── pagination/              # 페이지네이션 (순수 dataclass)
+│       ├── pagination/              # 페이지네이션 (순수 dataclass)
+│       └── validators.py            # 공통 값 검증
+│
+├── tests/                           # 횡단 테스트 (core 계약·배선·교차 기능)
+│   ├── core/                        # 설정 계약, admin 뷰 정책, 마이그레이션 체인
+│   └── utils/                       # 로깅·인증·페이지네이션
 │
 ├── migrations/env.py                # import_all_models()(SSOT) 로 전 기능 모델 자동 수집
+├── .github/workflows/ci.yml         # CI 게이트 (ruff·format·mypy 콜드캐시·pytest·bandit·alembic)
 └── docs/
     ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
     └── QUICKSTART.md                # 최소 실행 경로
 ```
+
+> 기능 테스트는 `app/features/<name>/tests/`, 횡단 테스트는 최상위 `tests/` 에 둡니다.
+> `pytest` 가 양쪽을 모두 수집합니다.
 
 ### 의존 방향
 

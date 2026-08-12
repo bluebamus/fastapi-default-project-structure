@@ -17,7 +17,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - [접속 로그 미들웨어](#접속-로그-미들웨어)
 - [인증 (JWT)](#인증-jwt)
 - [레이트 리밋](#레이트-리밋)
-- [신규 모듈 개발 가이드](#신규-모듈-개발-가이드)
+- [신규 기능 개발 가이드](#신규-기능-개발-가이드)
 - [API 문서](#api-문서)
 
 ---
@@ -50,7 +50,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 | Database | MySQL (aiomysql) |
 | Validation | Pydantic v2 |
 | Migration | Alembic |
-| Cache | Redis |
+| Message Broker | Redis (Celery 브로커·결과 백엔드 전용 — 앱 캐시로는 쓰지 않음) |
 | Admin | SQLAdmin |
 | API Docs | Scalar |
 | Task Queue | Celery + Redis |
@@ -115,15 +115,19 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 ```
 fastapi-default-project-structure/
-├── main.py                      # 진입점: 각 앱 router 를 include_router 로 취합 + 앱 설정
-├── config.py                    # 환경 설정 (Pydantic Settings)
+├── main.py                      # 진입점: 각 기능의 router 를 include_router 로 취합 + 앱 설정
+├── config.py                    # 환경 설정 (Pydantic Settings) — 설정 단일 출처
 ├── pyproject.toml               # 의존성 및 도구 설정 ([tool.uv] package = false)
+├── alembic.ini                  # Alembic 설정
+├── .env.example                 # 설정 예시 (config.py 와 양방향 일치를 테스트가 강제)
+├── .pre-commit-config.yaml      # ruff + 기본 위생 훅
 │
 ├── app/
 │   ├── features/                # 기능 단위 vertical slice — main.py 가 include_router 로 취합
 │   │   ├── admin.py             # SQLAdmin 취합 (ADMIN_VIEWS + register_admin)
 │   │   └── <name>/              # 각 기능 디렉토리
 │   │       ├── __init__.py      # router 공개 + models import (admin 은 재노출하지 않음)
+│   │       ├── admin.py         # 이 기능 모델의 ModelView + admin_views (선택)
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
 │   │       ├── models/          # SQLAlchemy ORM 모델
 │   │       ├── schemas/         # Pydantic 스키마
@@ -131,23 +135,39 @@ fastapi-default-project-structure/
 │   │       ├── repositories/    # 데이터 접근 계층
 │   │       ├── dependencies/    # 기능 의존성 (Service 구성 — 커밋은 핸들러)
 │   │       ├── exceptions.py    # 기능 예외 (선택)
-│   │       └── tests/           # 테스트
+│   │       └── tests/           # 이 기능의 테스트
 │   ├── core/                    # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py         # 공통 예외 계층
-│   │   ├── db/                  # 세션, 커넥션 풀, background_session, redis(스텁)
-│   │   ├── models/              # SQLAlchemy Base
+│   │   ├── rate_limit.py        # slowapi limiter + 초과 핸들러
+│   │   ├── tags_metadata.py     # OpenAPI 태그 설명
+│   │   ├── db/                  # 세션·라우팅·모델 등록
+│   │   │   ├── session.py       # 엔진, get_session / get_read_session, background_session
+│   │   │   ├── router.py        # 읽기/쓰기 라우팅 (RoutingSession)
+│   │   │   └── models_registry.py  # 모델 import 단일 지점 (SSOT)
+│   │   ├── models/models_base.py   # SQLAlchemy Base + TimestampMixin·UUIDMixin
 │   │   ├── repositories/        # BaseRepository (제네릭 CRUD)
 │   │   ├── services/            # BaseService
-│   │   └── middlewares/         # CORS, UserInfo, AccessLogSink
+│   │   └── middlewares/         # CORS, UserInfo, AccessLogSink, background_tasks
 │   │
 │   ├── celery/                  # 중앙 Celery 앱 + tasks.py + run_async 브릿지
-│   └── utils/                   # logs(구조화 로깅), authenticator(JWT·bcrypt 인증), pagination(페이지네이션)
+│   └── utils/                   # logs(구조화 로깅) · authenticator(JWT·bcrypt) ·
+│                                #   pagination · validators
 │
-├── migrations/                  # Alembic (env.py가 import_all_models() SSOT로 메타데이터 수집)
-└── docs/
-    ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-    └── QUICKSTART.md            # 최소 실행 경로
+├── tests/                       # 횡단 테스트 — core 계약·배선·교차 기능
+│   ├── core/                    # 설정 계약, admin 뷰 정책, 마이그레이션 체인 등
+│   ├── utils/                   # 로깅·인증·페이지네이션 유틸
+│   └── test_*.py                # 라우터/admin 배선, 응답 직렬화, 레이트리밋 등
+│
+├── migrations/                  # Alembic (env.py 가 import_all_models() SSOT 로 메타데이터 수집)
+├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
+├── docs/
+│   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
+│   └── QUICKSTART.md            # 최소 실행 경로
+└── logs/ media/ static/ poc/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
 ```
+
+> 기능 테스트는 `app/features/<name>/tests/` 에, 여러 기능에 걸치거나 `core` 계약을 보는 테스트는
+> 최상위 `tests/` 에 둡니다. `pytest` 는 양쪽을 모두 수집합니다.
 
 ### 핵심 파일 설명
 
@@ -172,13 +192,13 @@ features → core → utils
 
 | 영역 | 역할 | 규칙 |
 |------|------|------|
-| `app/features/<name>/` | 기능 단위 앱 | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 기능 앱은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
+| `app/features/<name>/` | 기능 단위 vertical slice | 비즈니스 코드는 전부 여기. `core`를 사용하고 다른 기능은 import하지 않음(예외: `auth` 는 횡단 관심사로 `user` 의 식별 모델·리포지토리에 의존 — `auth_service` 에 명시) |
 | `app/core/` | 프레임워크 인프라 (Base*, db, 미들웨어) | 원칙적으로 기능 구현을 직접 알지 않는다. 유일한 예외는 `db/session.py` 의 `create_db_tables()`가 메타데이터 등록을 위해 `import_all_models()`를 함수 내부에서 호출하는 것 |
 | `app/utils/` | 순수 유틸리티 (로깅, 인증, 페이지네이션) | 외부·상위 계층 의존 없음. 누구나 import 가능 |
 
 > 핵심 규칙: **`core`는 기능 구현을 직접 결합하지 않는다.** 기능이 `core`의 미들웨어 등에 자신을 연결해야 할 때는 직접 import가 아니라 등록 훅(예: `access_log_sink.register_sink()`)을 통한다.
 
-#### 기능 앱 표준 레이아웃
+#### 기능 표준 레이아웃
 
 새 앱은 아래 구조와 **파일 네이밍 표준**을 따릅니다. (기준 구현체: `app/features/home/`)
 
@@ -232,7 +252,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 
 #### 마지막 단계 — `main.py` 에 라우터 명시 등록
 
-위 구조를 만든 뒤 `main.py` 의 `from app.features import ...` 에 이름을 추가하고 `app.include_router(<name>.router, prefix="/api")` 한 줄을 넣어야 라우터가 연결됩니다. 모델은 기능 `__init__.py` 에서 import 하며, `models_registry` 가 `app/features/<name>/models/models.py` 를 자동 수집합니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다. (절차는 아래 [신규 모듈 개발 가이드](#신규-모듈-개발-가이드) 참고)
+위 구조를 만든 뒤 `main.py` 의 `from app.features import ...` 에 이름을 추가하고 `app.include_router(<name>.router, prefix="/api")` 한 줄을 넣어야 라우터가 연결됩니다. 모델은 기능 `__init__.py` 에서 import 하며, `models_registry` 가 `app/features/<name>/models/models.py` 를 자동 수집합니다. Admin 은 `app/features/<name>/admin.py` 에 ModelView 와 `admin_views` 를 만들고, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다. (절차는 아래 [신규 기능 개발 가이드](#신규-기능-개발-가이드) 참고)
 
 ---
 
@@ -337,7 +357,7 @@ class BaseRepository(Generic[ModelType]):
 ```
 
 ```python
-# 모듈별 Repository 확장
+# 기능별 Repository 확장
 class UserAccessLogRepository(BaseRepository[UserAccessLog]):
     """접속 로그 Repository"""
 
@@ -584,7 +604,7 @@ DEBUG=false → 로그 레벨: INFO (INFO 이상만 출력)
 ```python
 from app.utils.logs import get_logger
 
-# 모듈별 로거 생성 (이름으로 로그 출처 구분)
+# 기능별 로거 생성 (이름으로 로그 출처 구분)
 logger = get_logger("my_module")
 
 # 로그 레벨별 출력
@@ -618,8 +638,8 @@ except Exception as e:
 #### 3. 서비스별 로거 활용
 
 ```python
-# 각 서비스/모듈에서 고유 이름으로 로거 생성
-# 이렇게 하면 로그에서 어떤 모듈에서 발생했는지 쉽게 구분 가능
+# 각 서비스/기능에서 고유 이름으로 로거 생성
+# 이렇게 하면 로그에서 어떤 기능에서 발생했는지 쉽게 구분 가능
 
 # app/product/services/product_service.py
 logger = get_logger("product_service")
@@ -661,7 +681,7 @@ logs/
 
 ### 로거 이름 규칙
 
-별도의 상수 없이 모듈/출처를 나타내는 문자열로 로거를 만든다(예: `"home"`, `"database"`,
+별도의 상수 없이 기능/출처를 나타내는 문자열로 로거를 만든다(예: `"home"`, `"database"`,
 `"celery"`). 로그 헤더의 `[app=..]` 세그먼트가 소스 경로에서 앱을 자동 식별한다.
 
 ```python
@@ -810,7 +830,7 @@ ACCESS_LOG_EXCLUDE_EXTENSIONS=[".css", ".js", ".ico", ".png", ".woff2", ".map"]
 |--------|------|------|
 | GET | `/api/v1/home/access-logs` | 접속 로그 목록 (페이지네이션) |
 | GET | `/api/v1/home/access-logs/recent` | 최근 접속 로그 |
-| GET | `/api/v1/home/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-ip/{ip_address}` | IP별 접속 로그 |
 | GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
 | GET | `/api/v1/home/access-logs/stats` | 접속 통계 (장치, OS, 브라우저별) |
 
@@ -888,7 +908,7 @@ OAuth2 **password flow** + JWT access/refresh 토큰. 비밀번호는 bcrypt 해
 자격증명은 `user` 기능의 `User.hashed_password` 에 두고, `auth` 는 인증 로직만 담당합니다
 (횡단 관심사라 `auth → user` 의존은 의도된 예외입니다).
 
-- 도메인: `app/features/auth/`
+- 기능: `app/features/auth/`
 - 토큰 유틸: `app/utils/authenticator/`
 
 ### 엔드포인트
@@ -1006,7 +1026,7 @@ async def create_item(request: Request, ...):            # request 파라미터 
 
 ---
 
-## 신규 모듈 개발 가이드
+## 신규 기능 개발 가이드
 
 > 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
 
@@ -1064,15 +1084,58 @@ app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 
 ### 현재 구현된 API
 
-#### Home 모듈 (접속 로그)
+> 아래는 `app.openapi()` 로 실측한 전량입니다 — **18 경로 / 30 오퍼레이션**.
+> 새 라우트를 추가하면 이 표도 갱신하세요(`tests/test_route_inventory.py` 가 경로 목록을 고정합니다).
+
+#### 콘텐츠 기능 — blog · reply · sns
+
+세 기능이 같은 CRUD 형태를 공유합니다.
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | `/api/v1/blog/posts` | 게시글 목록 (페이지네이션) |
+| POST | `/api/v1/blog/posts` | 게시글 생성 |
+| GET | `/api/v1/blog/posts/{post_id}` | 게시글 단건 |
+| PATCH | `/api/v1/blog/posts/{post_id}` | 게시글 부분 수정 |
+| DELETE | `/api/v1/blog/posts/{post_id}` | 게시글 삭제 |
+| GET · POST | `/api/v1/reply/replies` | 댓글 목록 · 생성 |
+| GET · PATCH · DELETE | `/api/v1/reply/replies/{reply_id}` | 댓글 단건 · 수정 · 삭제 |
+| GET · POST | `/api/v1/sns/posts` | SNS 게시글 목록 · 생성 |
+| GET · PATCH · DELETE | `/api/v1/sns/posts/{post_id}` | SNS 게시글 단건 · 수정 · 삭제 |
+
+#### 사용자 — user
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET · POST | `/api/v1/user/users` | 사용자 목록 · 생성 |
+| GET · PATCH · DELETE | `/api/v1/user/users/{user_id}` | 사용자 단건 · 수정 · 삭제 |
+
+#### 인증 — auth
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | `/api/v1/auth/register` | 회원 가입 (JSON) |
+| POST | `/api/v1/auth/login` | 로그인 — **form-urlencoded** |
+| POST | `/api/v1/auth/refresh` | 액세스 토큰 재발급 (JSON) |
+| GET | `/api/v1/auth/me` | 내 정보 (Bearer) |
+
+> 요청·응답 형식과 토큰 정책은 [인증 (JWT)](#인증-jwt) 절을 참고하세요.
+
+#### 접속 로그 — home
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
 | GET | `/api/v1/home/access-logs` | 접속 로그 목록 (페이지네이션) |
 | GET | `/api/v1/home/access-logs/recent` | 최근 접속 로그 |
-| GET | `/api/v1/home/access-logs/by-ip/{ip}` | IP별 접속 로그 |
+| GET | `/api/v1/home/access-logs/by-ip/{ip_address}` | IP별 접속 로그 |
 | GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
 | GET | `/api/v1/home/access-logs/stats` | 접속 통계 |
+
+#### 그 외
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | `/health` | 헬스체크 — DB 를 건드리지 않아 항상 응답 |
 
 ---
 
