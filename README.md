@@ -123,7 +123,7 @@ fastapi-default-project-structure/
 │   ├── features/                # 기능 단위 vertical slice — main.py 가 include_router 로 취합
 │   │   ├── admin.py             # SQLAdmin 취합 (ADMIN_VIEWS + register_admin)
 │   │   └── <name>/              # 각 기능 디렉토리
-│   │       ├── __init__.py      # router 공개 + models import (+ 선택 admin_views 재노출)
+│   │       ├── __init__.py      # router 공개 + models import (admin 은 재노출하지 않음)
 │   │       ├── api/routers/     # router.py + v1/ 엔드포인트
 │   │       ├── models/          # SQLAlchemy ORM 모델
 │   │       ├── schemas/         # Pydantic 스키마
