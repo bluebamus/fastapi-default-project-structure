@@ -1,5 +1,5 @@
 """
-Reply 모듈 SQLAdmin 설정
+Reply 기능 SQLAdmin 설정
 
 SQLAdmin 을 사용한 Reply 모델의 관리자 인터페이스를 정의한다.
 
@@ -105,5 +105,7 @@ class ReplyAdmin(ModelView, model=Reply):
     }
 
 
-# 컨벤션: 패키지 __init__.py 가 이 리스트를 재노출하면 main.py 가 SQLAdmin 에 등록한다.
+# 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.
+# 패키지 __init__.py 로 재노출하지 않는다 — 그러면 라우터만 필요한 import 에도
+# sqladmin 이 딸려 와 ADMIN=false 가 무의미해진다(가드: tests/test_admin_wiring.py).
 admin_views: list[type] = [ReplyAdmin]

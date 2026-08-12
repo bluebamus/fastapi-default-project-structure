@@ -133,8 +133,10 @@ app.include_router(<name>.router, prefix="/api")                     # ← 취�
 
 - 라우터: 위 두 줄을 직접 추가합니다(기능 `__init__.py` 가 `router` 공개).
 - 모델(메타데이터): **`models_registry`(SSOT)가 `app/features/<name>/models/models.py` 를 자동 수집**하므로 `env.py`·`session.py` 를 손댈 필요가 없습니다. 기능 `__init__.py` 에서 models 를 import 합니다.
-- Admin: `app/features/<name>/admin.py` 에 ModelView + `admin_views` 를 만들고 `__init__.py` 에서
-  재노출한 뒤, `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다.
+- Admin: `app/features/<name>/admin.py` 에 ModelView + `admin_views` 를 만들고,
+  `app/features/admin.py` 의 import 와 `ADMIN_VIEWS` 에 한 줄씩 더합니다. 기능 `__init__.py`
+  로는 **재노출하지 않습니다** — 재노출하면 라우터만 필요한 import 에도 sqladmin 이 딸려 와
+  `ADMIN=false` 가 무의미해집니다.
 
 ### 3.2 필수/선택 파일 표
 

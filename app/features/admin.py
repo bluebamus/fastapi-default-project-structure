@@ -12,8 +12,16 @@
 
 새 기능의 관리 화면을 추가하려면:
     1. ``app/features/<name>/admin.py`` 에 ModelView 와 ``admin_views`` 를 만든다.
-    2. ``app/features/<name>/__init__.py`` 에서 ``admin_views`` 를 재노출한다.
-    3. 이 파일의 import 와 ``ADMIN_VIEWS`` 에 한 줄씩 더한다.
+    2. 이 파일의 import 와 ``ADMIN_VIEWS`` 에 한 줄씩 더한다.
+
+기능 패키지 ``__init__.py`` 로는 재노출하지 않는다:
+    수집은 위처럼 ``app.features.<name>.admin`` **모듈**에서 직접 한다. 패키지가
+    ``admin_views`` 를 재노출하면 ``main.py`` 가 라우터를 얻으려고 패키지를 import 하는
+    것만으로 관리 화면이 딸려 와, ADMIN=false 인데도 sqladmin 과 ModelView 가 전부
+    메모리에 올라간다(ADMIN-2, 실측). 그러면 ADMIN=false 는 "라우트만 안 붙임" 이 되고,
+    sqladmin 을 선택적 의존성으로 분리할 수도 없다. 재노출된 이름을 읽는 코드는 앱에
+    하나도 없었으므로 비용만 남는 별명이었다.
+    회귀 가드: ``tests/test_admin_wiring.py`` 의 ADMIN=false 미로드 검사.
 
 URL 등록:
     ``main.py`` 는 ADMIN=true 일 때 ``register_admin(app, engine)`` 만 호출한다.
