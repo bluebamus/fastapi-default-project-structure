@@ -123,7 +123,7 @@ app.include_router(blog.router, prefix="/api")
 
 _add_health_and_docs(app)                 # /health + Scalar
 if app_settings.ADMIN:                    # SQLAdmin
-    register_admin(app, engine)           # app/features/admin.py 의 ADMIN_VIEWS 등록
+    register_admin(app, engine)           # app/features/admin.py — 조립 진입점
 ```
 
 라우터·미들웨어·예외 핸들러·문서·lifespan·Admin 등록이 전부 `main.py`에서 일어납니다.
@@ -150,7 +150,37 @@ app.include_router(<name>.router, prefix="/api")                     # ← 취�
   로는 **재노출하지 않습니다** — 재노출하면 라우터만 필요한 import 에도 sqladmin 이 딸려 와
   `ADMIN=false` 가 무의미해집니다.
 
-### 3.2 필수/선택 파일 표
+### 3.2 SQLAdmin 조립 구조
+
+`main.py` 는 `ADMIN=true` 일 때 `register_admin(app, engine)` **하나만** 호출합니다.
+그 안에서 두 단계로 나뉩니다.
+
+```text
+main.py
+  └─ register_admin(app, engine)          외부 진입점 (조립부가 아는 유일한 이름)
+       ├─ create_admin_interface(...)     Admin 생성 + /admin 마운트
+       └─ register_admin_views(admin)     ADMIN_VIEWS 등록
+            └─ ADMIN_VIEWS                등록 대상 SSOT
+```
+
+| 함수 | 책임 | 아는 것 |
+|---|---|---|
+| `create_admin_interface(app, engine)` | `Admin` 생성 → SQLAdmin 이 `/admin` 마운트 | 앱·엔진·제목 (향후 `authentication_backend`) |
+| `register_admin_views(admin)` | `ADMIN_VIEWS` 를 선언 순서대로 등록 | 뷰 목록만 — 앱·엔진·설정을 참조하지 않음 |
+| `register_admin(app, engine)` | 위 둘을 생성 → 등록 순으로 호출 | 조립 순서 |
+
+> 세 함수는 **SQLAdmin 이나 FastAPI 의 공식 API 가 아니라 이 프로젝트 내부의 조립 함수**입니다.
+> 공식 객체는 `Admin` 과 `Admin.add_view()` 뿐이고, 위 함수들은 그 호출 위치를 정리한 것입니다.
+>
+> 나눈 이유는 두 책임이 서로 다른 것을 알아야 하기 때문입니다 — 생성 쪽은 앱·엔진을,
+> 등록 쪽은 뷰 목록만 압니다. 나뉘어 있으면 각각 단독으로 검증할 수 있고, 나중에 인증
+> 백엔드를 붙일 자리도 `create_admin_interface()` 하나로 정해집니다(인증 백엔드는 `Admin`
+> 생성 인자라 등록 쪽에는 넣을 수 없습니다).
+>
+> `main.py` 가 두 내부 함수를 직접 부르지 않는 것이 계약입니다. 조립부가 SQLAdmin 의
+> 생성·등록 순서를 알 필요가 없습니다. 회귀 가드: `tests/test_admin_wiring.py`.
+
+### 3.3 필수/선택 파일 표
 
 | 파일/디렉토리 | 필수 | 설명 |
 |--------------|------|------|

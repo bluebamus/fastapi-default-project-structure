@@ -124,7 +124,7 @@ fastapi-default-project-structure/
 │
 ├── app/
 │   ├── features/                # 기능 단위 vertical slice — main.py 가 include_router 로 취합
-│   │   ├── admin.py             # SQLAdmin 취합 (ADMIN_VIEWS + register_admin)
+│   │   ├── admin.py             # SQLAdmin 취합 — ADMIN_VIEWS + 조립 함수 3종
 │   │   └── <name>/              # 각 기능 디렉토리
 │   │       ├── __init__.py      # router 공개 + models import (admin 은 재노출하지 않음)
 │   │       ├── admin.py         # 이 기능 모델의 ModelView + admin_views (선택)
@@ -176,7 +176,7 @@ fastapi-default-project-structure/
 | `main.py` | FastAPI 조립 — 각 기능 `router` 를 명시 `include_router(prefix="/api")` 로 취합 + 미들웨어/예외/문서/lifespan/Admin 설정 |
 | `app/features/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` 공개 — `main.py` 가 명시 import 후 `include_router` 로 취합 |
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
-| `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합 — `ADMIN_VIEWS` + `register_admin(app, engine)` |
+| `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합(`ADMIN_VIEWS`). `main.py` 는 `register_admin(app, engine)` 하나만 호출하고, 내부에서 `create_admin_interface()`(생성·마운트) → `register_admin_views()`(등록) 순으로 위임 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
 | `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_session` / 조회용 `get_read_session`). 커밋은 핸들러가 수행 |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
