@@ -53,6 +53,112 @@ def test_admin_views_cover_expected_models() -> None:
     assert managed == EXPECTED_MANAGED_MODELS
 
 
+# =============================================================================
+# 중앙 registry 완전성
+#
+# 위 검사는 **고정 목록**(EXPECTED_MANAGED_MODELS)과 대조한다. 그래서 새 기능에
+# 모델 + admin.py + admin_views 를 만들고 중앙 취합만 빠뜨리면, 위 검사도
+# test_feature_with_model_owns_admin_module 도 전부 통과한다 — 고정 목록에 새 모델이
+# 없으니 비교 대상 자체가 안 늘어나기 때문이다. 새 모델만 /admin 에서 조용히 사라진다.
+#
+# 아래는 기대 목록을 **기능 디렉터리에서 독립적으로 만들어** 중앙 목록과 맞춘다.
+# 자동 스캔은 여기(테스트)에만 있고 런타임 registry 는 명시 import 를 유지한다.
+# =============================================================================
+def _feature_admin_views() -> list[type]:
+    """모델을 가진 각 기능의 ``admin.py`` 에서 ``admin_views`` 를 기능명 순으로 모은다.
+
+    중앙 ``ADMIN_VIEWS`` 를 참조하지 않는다 — 참조하면 두 목록이 같은 출처가 되어
+    비교가 무의미해진다.
+    """
+    views: list[type] = []
+    for feature in _features_with_models():
+        module = importlib.import_module(f"app.features.{feature}.admin")
+        views.extend(module.admin_views)
+    return views
+
+
+def _registry_diff(expected: list[type], actual: list[type]) -> dict[str, object]:
+    """두 뷰 목록의 차이를 진단 가능한 형태로 돌려주는 **순수 함수**.
+
+    모델 이름이 아니라 **클래스 자체**로 비교한다 — 서로 다른 클래스가 우연히 같은
+    모델을 가리키는 경우를 구분하기 위해서다.
+    이 함수 자체의 정확성은 아래 ``test_registry_diff_*`` 가 합성 입력으로 검증한다.
+    """
+    return {
+        "missing": [v for v in expected if v not in actual],
+        "unexpected": [v for v in actual if v not in expected],
+        "duplicated": sorted({v.__name__ for v in actual if actual.count(v) > 1}),
+        "order_only": set(expected) == set(actual) and expected != actual,
+    }
+
+
+def test_central_registry_contains_every_feature_admin_view() -> None:
+    """중앙 ADMIN_VIEWS 가 기능별 admin_views 전량과 **순서까지** 일치한다.
+
+    순서를 계약에 넣는 이유: SQLAdmin 사이드바 메뉴가 ``add_view()`` 호출 순서를
+    따르므로 순서가 사용자에게 보인다. 의도적으로 메뉴 순서를 바꾸고 싶다면
+    ``ADMIN_VIEWS`` 와 함께 이 계약(기능명 사전순)을 먼저 고쳐야 한다.
+    """
+    from app.features.admin import ADMIN_VIEWS
+
+    expected = _feature_admin_views()
+    actual = list(ADMIN_VIEWS)
+    diff = _registry_diff(expected, actual)
+
+    assert not diff["missing"], (
+        f"기능에는 있는데 중앙 ADMIN_VIEWS 에 없는 뷰: "
+        f"{[v.__name__ for v in cast(list, diff['missing'])]}. "
+        "app/features/admin.py 의 import 와 ADMIN_VIEWS 에 한 줄씩 추가하세요."
+    )
+    assert not diff["unexpected"], (
+        f"중앙 ADMIN_VIEWS 에만 있는 뷰: " f"{[v.__name__ for v in cast(list, diff['unexpected'])]}"
+    )
+    assert not diff["duplicated"], f"중앙 ADMIN_VIEWS 에 중복 등록된 뷰: {diff['duplicated']}"
+    assert not diff["order_only"], (
+        f"구성은 같으나 순서가 다릅니다. 기대(기능명 사전순): "
+        f"{[v.__name__ for v in expected]} / 실제: {[v.__name__ for v in actual]}"
+    )
+    assert actual == expected
+
+
+# --- 위 검사가 쓰는 비교 로직 자체의 유효성 (헛통과 방지) ---
+class _VA:
+    pass
+
+
+class _VB:
+    pass
+
+
+class _VC:
+    pass
+
+
+def test_registry_diff_detects_missing_view() -> None:
+    """기능에는 있는데 중앙에 없는 뷰를 잡는다 — 이 계획의 핵심 사각지대."""
+    diff = _registry_diff([_VA, _VB], [_VA])
+    assert diff["missing"] == [_VB]
+    assert diff["unexpected"] == []
+
+
+def test_registry_diff_detects_unexpected_and_duplicate() -> None:
+    diff = _registry_diff([_VA], [_VA, _VB, _VB])
+    assert diff["unexpected"] == [_VB, _VB]
+    assert diff["duplicated"] == ["_VB"]
+
+
+def test_registry_diff_detects_order_only_difference() -> None:
+    """구성이 같고 순서만 다른 경우를 별도로 식별한다."""
+    diff = _registry_diff([_VA, _VB], [_VB, _VA])
+    assert diff["order_only"] is True
+    assert diff["missing"] == [] and diff["unexpected"] == []
+
+
+def test_registry_diff_reports_nothing_when_identical() -> None:
+    diff = _registry_diff([_VA, _VB, _VC], [_VA, _VB, _VC])
+    assert diff == {"missing": [], "unexpected": [], "duplicated": [], "order_only": False}
+
+
 def test_feature_list_is_not_vacuous() -> None:
     """탐지 대상이 비어 있으면 아래 테스트가 헛통과한다."""
     assert len(_features_with_models()) >= 5

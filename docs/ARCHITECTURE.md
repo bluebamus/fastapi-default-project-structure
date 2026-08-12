@@ -16,7 +16,7 @@ fastapi-default-project-structure/
 ├── app/
 │   ├── features/                    # 기능 단위 앱
 │   │   ├── home/                    # 예시 앱 — 접속 로그
-│   │   │   ├── __init__.py          # router + admin_views 공개 + models import
+│   │   │   ├── __init__.py          # router 공개 + models import (admin_views 재노출 금지)
 │   │   │   ├── api/routers/
 │   │   │   │   ├── router.py        # 앱 루트 라우터 (<name>_router: v1 취합)
 │   │   │   │   └── v1/              # 버전별 엔드포인트 (뷰는 HTTP 역할만)
