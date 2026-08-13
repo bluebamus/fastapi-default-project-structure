@@ -86,6 +86,11 @@ def _run_probe(tmp_path: Path, env_body: str) -> subprocess.CompletedProcess[str
         env=child_env,
         capture_output=True,
         text=True,
+        # 자식은 UTF-8 로 쓴다. 인코딩을 지정하지 않으면 Windows 가 기본 코덱(cp949)으로
+        # 디코딩을 시도하다 한글 로그/트레이스백에서 UnicodeDecodeError 를 내고,
+        # reader thread 가 죽어 stdout 이 None 이 된다.
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
 
