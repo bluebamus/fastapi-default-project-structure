@@ -1,0 +1,2888 @@
+{
+  "components": {
+    "schemas": {
+      "AccessLogStats": {
+        "description": "접속 로그 통계 응답 스키마",
+        "properties": {
+          "browsers": {
+            "description": "브라우저별 통계",
+            "items": {
+              "$ref": "#/components/schemas/BrowserStats"
+            },
+            "title": "Browsers",
+            "type": "array"
+          },
+          "device_types": {
+            "description": "장치 유형별 통계",
+            "items": {
+              "$ref": "#/components/schemas/DeviceTypeStats"
+            },
+            "title": "Device Types",
+            "type": "array"
+          },
+          "os_list": {
+            "description": "OS별 통계",
+            "items": {
+              "$ref": "#/components/schemas/OSStats"
+            },
+            "title": "Os List",
+            "type": "array"
+          },
+          "total_count": {
+            "description": "전체 접속 수",
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_count",
+          "device_types",
+          "os_list",
+          "browsers"
+        ],
+        "title": "AccessLogStats",
+        "type": "object"
+      },
+      "Body_authLogin": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          },
+          "grant_type": {
+            "anyOf": [
+              {
+                "pattern": "^password$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "password": {
+            "format": "password",
+            "title": "Password",
+            "type": "string"
+          },
+          "scope": {
+            "default": "",
+            "title": "Scope",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_authLogin",
+        "type": "object"
+      },
+      "BrowserStats": {
+        "description": "브라우저별 통계 스키마",
+        "properties": {
+          "browser_name": {
+            "description": "브라우저 이름",
+            "title": "Browser Name",
+            "type": "string"
+          },
+          "count": {
+            "description": "접속 수",
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "browser_name",
+          "count"
+        ],
+        "title": "BrowserStats",
+        "type": "object"
+      },
+      "DeviceTypeStats": {
+        "description": "장치 유형별 통계 스키마",
+        "properties": {
+          "count": {
+            "description": "접속 수",
+            "title": "Count",
+            "type": "integer"
+          },
+          "device_type": {
+            "description": "장치 유형",
+            "title": "Device Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_type",
+          "count"
+        ],
+        "title": "DeviceTypeStats",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "API 에러 응답 스키마",
+        "example": {
+          "detail": {
+            "id": 1,
+            "resource": "User"
+          },
+          "error_code": "NOT_FOUND",
+          "message": "리소스를 찾을 수 없습니다."
+        },
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "error_code": {
+            "title": "Error Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "헬스체크 응답 스키마",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "OSStats": {
+        "description": "OS별 통계 스키마",
+        "properties": {
+          "count": {
+            "description": "접속 수",
+            "title": "Count",
+            "type": "integer"
+          },
+          "os_name": {
+            "description": "OS 이름",
+            "title": "Os Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "os_name",
+          "count"
+        ],
+        "title": "OSStats",
+        "type": "object"
+      },
+      "PostCreate": {
+        "description": "게시글 생성 요청.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "title": {
+            "description": "제목",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "PostCreate",
+        "type": "object"
+      },
+      "PostListResponse": {
+        "description": "게시글 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PostResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PostListResponse",
+        "type": "object"
+      },
+      "PostResponse": {
+        "description": "게시글 응답.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "제목",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PostResponse",
+        "type": "object"
+      },
+      "PostUpdate": {
+        "description": "게시글 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자",
+            "title": "Author"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "본문",
+            "title": "Content"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "제목",
+            "title": "Title"
+          }
+        },
+        "title": "PostUpdate",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "description": "토큰 재발급 요청.",
+        "properties": {
+          "refresh_token": {
+            "description": "유효한 Refresh Token",
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "description": "회원가입 요청.",
+        "properties": {
+          "email": {
+            "description": "이메일",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "description": "비밀번호(8자 이상)",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "description": "사용자명(고유)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "ReplyCreate": {
+        "description": "댓글 생성 요청.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "댓글 본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "post_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "대상 게시글 ID(선택)",
+            "title": "Post Id"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "ReplyCreate",
+        "type": "object"
+      },
+      "ReplyListResponse": {
+        "description": "댓글 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReplyResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "ReplyListResponse",
+        "type": "object"
+      },
+      "ReplyResponse": {
+        "description": "댓글 응답.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "댓글 본문",
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "post_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "대상 게시글 ID(선택)",
+            "title": "Post Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReplyResponse",
+        "type": "object"
+      },
+      "ReplyUpdate": {
+        "description": "댓글 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자",
+            "title": "Author"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "댓글 본문",
+            "title": "Content"
+          }
+        },
+        "title": "ReplyUpdate",
+        "type": "object"
+      },
+      "SnsPostCreate": {
+        "description": "피드 게시물 생성 요청.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "게시물 본문",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "SnsPostCreate",
+        "type": "object"
+      },
+      "SnsPostListResponse": {
+        "description": "피드 게시물 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SnsPostResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "SnsPostListResponse",
+        "type": "object"
+      },
+      "SnsPostResponse": {
+        "description": "피드 게시물 응답.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자(선택)",
+            "title": "Author"
+          },
+          "content": {
+            "description": "게시물 본문",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "like_count": {
+            "title": "Like Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "like_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SnsPostResponse",
+        "type": "object"
+      },
+      "SnsPostUpdate": {
+        "description": "피드 게시물 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "작성자",
+            "title": "Author"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "본문",
+            "title": "Content"
+          }
+        },
+        "title": "SnsPostUpdate",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "description": "토큰 응답(OAuth2 bearer).",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "UserAccessLogListResponse": {
+        "description": "UserAccessLog 목록 응답 스키마",
+        "properties": {
+          "items": {
+            "description": "로그 목록",
+            "items": {
+              "$ref": "#/components/schemas/UserAccessLogResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "description": "조회 개수",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "description": "건너뛴 개수",
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "description": "전체 개수",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "UserAccessLogListResponse",
+        "type": "object"
+      },
+      "UserAccessLogResponse": {
+        "description": "UserAccessLog 응답 스키마",
+        "properties": {
+          "browser_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "브라우저 이름",
+            "title": "Browser Name"
+          },
+          "browser_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "브라우저 버전",
+            "title": "Browser Version"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "도시",
+            "title": "City"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "국가",
+            "title": "Country"
+          },
+          "created_at": {
+            "description": "생성 시간",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "장치 브랜드",
+            "title": "Device Brand"
+          },
+          "device_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "장치 유형",
+            "title": "Device Type"
+          },
+          "id": {
+            "description": "로그 ID",
+            "title": "Id",
+            "type": "string"
+          },
+          "ip_address": {
+            "description": "IP 주소",
+            "title": "Ip Address",
+            "type": "string"
+          },
+          "is_bot": {
+            "description": "봇 여부",
+            "title": "Is Bot",
+            "type": "boolean"
+          },
+          "os_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "운영체제 이름",
+            "title": "Os Name"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "운영체제 버전",
+            "title": "Os Version"
+          },
+          "request_method": {
+            "description": "HTTP 메서드",
+            "title": "Request Method",
+            "type": "string"
+          },
+          "request_path": {
+            "description": "요청 경로",
+            "title": "Request Path",
+            "type": "string"
+          },
+          "response_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "응답 상태 코드",
+            "title": "Response Status"
+          },
+          "response_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "응답 시간 (ms)",
+            "title": "Response Time Ms"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "사용자 ID",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "ip_address",
+          "is_bot",
+          "request_path",
+          "request_method",
+          "created_at"
+        ],
+        "title": "UserAccessLogResponse",
+        "type": "object"
+      },
+      "UserCreate": {
+        "description": "사용자 생성 요청.",
+        "properties": {
+          "email": {
+            "description": "이메일",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "username": {
+            "description": "사용자명(고유)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email"
+        ],
+        "title": "UserCreate",
+        "type": "object"
+      },
+      "UserListResponse": {
+        "description": "사용자 목록 응답(페이지네이션).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/app__features__user__schemas__user_schema__UserResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "UserListResponse",
+        "type": "object"
+      },
+      "UserUpdate": {
+        "description": "사용자 수정 요청 — 전달된 필드만 부분 수정한다.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "이메일",
+            "title": "Email"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "활성 여부",
+            "title": "Is Active"
+          }
+        },
+        "title": "UserUpdate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "app__features__auth__schemas__auth_schema__UserResponse": {
+        "description": "사용자 응답(민감 정보 제외).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "email",
+          "is_active"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
+      "app__features__user__schemas__user_schema__UserResponse": {
+        "description": "사용자 응답.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "description": "이메일",
+            "maxLength": 255,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
+            "description": "사용자명(고유)",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "email",
+          "id",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/login"
+          }
+        },
+        "type": "oauth2"
+      }
+    }
+  },
+  "info": {
+    "description": "\n## FastAPI Default Project Structure\n\nRepository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.\n\n### 주요 기능\n\n- **접속 로그 수집**: 모든 API 요청에 대한 접속 로그 자동 수집\n- **사용자 정보 파싱**: User-Agent 기반 OS, 브라우저, 장치 정보 분석\n- **통계 API**: 장치 유형, OS, 브라우저별 접속 통계\n\n### 아키텍처\n\n```\nRouter → Service → Repository → Database\n           ↑\n      UnitOfWork (트랜잭션 관리)\n```\n\n### 기술 스택\n\n- **FastAPI**: 고성능 비동기 웹 프레임워크\n- **SQLAlchemy 2.0**: 비동기 ORM (aiomysql)\n- **Pydantic v2**: 데이터 검증 및 설정 관리\n- **Scalar**: API 문서 UI\n\n### 환경 설정\n\n| 설정 | 설명 |\n|------|------|\n| `DEBUG=true` | 개발 모드 (DEBUG 로그, 테이블 자동 생성) |\n| `DEBUG=false` | 운영 모드 (INFO 로그, Alembic 마이그레이션 사용) |\n",
+    "title": "FastAPI Project",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "username/password(form)로 access·refresh 토큰을 발급합니다.",
+        "operationId": "authLogin",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_authLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "인증 실패"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "로그인(OAuth2 password)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "Bearer access token 으로 현재 로그인 사용자를 반환합니다(보호 엔드포인트).",
+        "operationId": "authMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__features__auth__schemas__auth_schema__UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "인증 실패"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "현재 사용자",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Refresh Token 으로 새 access·refresh 토큰을 발급합니다.",
+        "operationId": "authRefresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "인증 실패"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "토큰 재발급",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "사용자명·이메일·비밀번호로 사용자를 생성합니다.",
+        "operationId": "authRegister",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__features__auth__schemas__auth_schema__UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자명 중복"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "회원가입",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/blog/posts": {
+      "get": {
+        "description": "게시글 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listPosts",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 목록 조회",
+        "tags": [
+          "Blog"
+        ]
+      },
+      "post": {
+        "description": "새 게시글을 생성합니다.",
+        "operationId": "createPost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 생성",
+        "tags": [
+          "Blog"
+        ]
+      }
+    },
+    "/api/v1/blog/posts/{post_id}": {
+      "delete": {
+        "description": "게시글을 삭제합니다.",
+        "operationId": "deletePost",
+        "parameters": [
+          {
+            "description": "게시글 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "게시글 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "게시글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 삭제",
+        "tags": [
+          "Blog"
+        ]
+      },
+      "get": {
+        "description": "ID로 게시글을 조회합니다.",
+        "operationId": "getPost",
+        "parameters": [
+          {
+            "description": "게시글 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "게시글 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "게시글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 단건 조회",
+        "tags": [
+          "Blog"
+        ]
+      },
+      "patch": {
+        "description": "게시글을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updatePost",
+        "parameters": [
+          {
+            "description": "게시글 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "게시글 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "게시글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "게시글 수정",
+        "tags": [
+          "Blog"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs": {
+      "get": {
+        "description": "접속 로그 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "getAccessLogs",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAccessLogListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "접속 로그 목록 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/by-ip/{ip_address}": {
+      "get": {
+        "description": "특정 IP 주소의 접속 로그를 조회합니다.",
+        "operationId": "getAccessLogsByIp",
+        "parameters": [
+          {
+            "description": "조회할 IP 주소",
+            "in": "path",
+            "name": "ip_address",
+            "required": true,
+            "schema": {
+              "description": "조회할 IP 주소",
+              "examples": [
+                "192.168.1.1"
+              ],
+              "title": "Ip Address",
+              "type": "string"
+            }
+          },
+          {
+            "description": "건너뛸 레코드 수",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAccessLogResponse"
+                  },
+                  "title": "Response Getaccesslogsbyip",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "IP별 접속 로그 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/by-user/{user_id}": {
+      "get": {
+        "description": "특정 사용자의 접속 로그를 조회합니다.",
+        "operationId": "getAccessLogsByUser",
+        "parameters": [
+          {
+            "description": "조회할 사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "조회할 사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "건너뛸 레코드 수",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAccessLogResponse"
+                  },
+                  "title": "Response Getaccesslogsbyuser",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "사용자별 접속 로그 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/recent": {
+      "get": {
+        "description": "최근 접속 로그를 시간 역순으로 조회합니다.",
+        "operationId": "getRecentAccessLogs",
+        "parameters": [
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserAccessLogResponse"
+                  },
+                  "title": "Response Getrecentaccesslogs",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "최근 접속 로그 조회",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/home/access-logs/stats": {
+      "get": {
+        "description": "장치 유형/OS/브라우저별 접속 로그 통계를 조회합니다.",
+        "operationId": "getAccessLogStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessLogStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "서버 내부 오류"
+          }
+        },
+        "summary": "접속 로그 통계",
+        "tags": [
+          "Home"
+        ]
+      }
+    },
+    "/api/v1/reply/replies": {
+      "get": {
+        "description": "댓글 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listReplies",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 목록 조회",
+        "tags": [
+          "Reply"
+        ]
+      },
+      "post": {
+        "description": "새 댓글을 생성합니다.",
+        "operationId": "createReply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 생성",
+        "tags": [
+          "Reply"
+        ]
+      }
+    },
+    "/api/v1/reply/replies/{reply_id}": {
+      "delete": {
+        "description": "댓글을 삭제합니다.",
+        "operationId": "deleteReply",
+        "parameters": [
+          {
+            "description": "댓글 ID(UUID)",
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "description": "댓글 ID(UUID)",
+              "title": "Reply Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "댓글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 삭제",
+        "tags": [
+          "Reply"
+        ]
+      },
+      "get": {
+        "description": "ID로 댓글을 조회합니다.",
+        "operationId": "getReply",
+        "parameters": [
+          {
+            "description": "댓글 ID(UUID)",
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "description": "댓글 ID(UUID)",
+              "title": "Reply Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "댓글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 단건 조회",
+        "tags": [
+          "Reply"
+        ]
+      },
+      "patch": {
+        "description": "댓글을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateReply",
+        "parameters": [
+          {
+            "description": "댓글 ID(UUID)",
+            "in": "path",
+            "name": "reply_id",
+            "required": true,
+            "schema": {
+              "description": "댓글 ID(UUID)",
+              "title": "Reply Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "댓글을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "댓글 수정",
+        "tags": [
+          "Reply"
+        ]
+      }
+    },
+    "/api/v1/sns/posts": {
+      "get": {
+        "description": "피드 게시물 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listSnsPosts",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 목록 조회",
+        "tags": [
+          "SNS"
+        ]
+      },
+      "post": {
+        "description": "새 피드 게시물을 생성합니다.",
+        "operationId": "createSnsPost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnsPostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 생성",
+        "tags": [
+          "SNS"
+        ]
+      }
+    },
+    "/api/v1/sns/posts/{post_id}": {
+      "delete": {
+        "description": "피드 게시물을 삭제합니다.",
+        "operationId": "deleteSnsPost",
+        "parameters": [
+          {
+            "description": "피드 게시물 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "피드 게시물 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "피드 게시물을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 삭제",
+        "tags": [
+          "SNS"
+        ]
+      },
+      "get": {
+        "description": "ID로 피드 게시물을 조회합니다.",
+        "operationId": "getSnsPost",
+        "parameters": [
+          {
+            "description": "피드 게시물 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "피드 게시물 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "피드 게시물을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 단건 조회",
+        "tags": [
+          "SNS"
+        ]
+      },
+      "patch": {
+        "description": "피드 게시물을 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateSnsPost",
+        "parameters": [
+          {
+            "description": "피드 게시물 ID(UUID)",
+            "in": "path",
+            "name": "post_id",
+            "required": true,
+            "schema": {
+              "description": "피드 게시물 ID(UUID)",
+              "title": "Post Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnsPostUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnsPostResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "피드 게시물을 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "피드 게시물 수정",
+        "tags": [
+          "SNS"
+        ]
+      }
+    },
+    "/api/v1/user/users": {
+      "get": {
+        "description": "사용자 목록을 페이지네이션하여 조회합니다.",
+        "operationId": "listUsers",
+        "parameters": [
+          {
+            "description": "건너뛸 레코드 수(offset)",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "건너뛸 레코드 수(offset)",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "조회할 레코드 수(1-100)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "조회할 레코드 수(1-100)",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 목록 조회",
+        "tags": [
+          "User"
+        ]
+      },
+      "post": {
+        "description": "새 사용자를 생성합니다. 사용자명은 고유해야 합니다.",
+        "operationId": "createUser",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__features__user__schemas__user_schema__UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자명 중복"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 생성",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/api/v1/user/users/{user_id}": {
+      "delete": {
+        "description": "사용자를 삭제합니다.",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "description": "사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자를 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 삭제",
+        "tags": [
+          "User"
+        ]
+      },
+      "get": {
+        "description": "ID로 사용자를 조회합니다.",
+        "operationId": "getUser",
+        "parameters": [
+          {
+            "description": "사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__features__user__schemas__user_schema__UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자를 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 단건 조회",
+        "tags": [
+          "User"
+        ]
+      },
+      "patch": {
+        "description": "사용자를 부분 수정합니다(전달한 필드만).",
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "description": "사용자 ID(UUID)",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "사용자 ID(UUID)",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__features__user__schemas__user_schema__UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "사용자를 찾을 수 없음"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "사용자 수정",
+        "tags": [
+          "User"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "서버의 정상 동작 여부를 확인합니다.",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "헬스체크",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "\n**서버 상태 확인 API**\n\n서버의 정상 동작 여부를 확인합니다.\n\n- 로드 밸런서 헬스체크\n- 모니터링 시스템 연동\n- 서버 버전 및 환경 정보 확인\n        ",
+      "name": "Health"
+    },
+    {
+      "description": "\n**접속 로그 관리 API**\n\n사용자 접속 로그 조회 및 통계 기능을 제공합니다.\n\n### 주요 기능\n- 접속 로그 목록 조회 (페이지네이션)\n- 최근 접속 로그 조회\n- IP별/사용자별 접속 로그 필터링\n- 접속 통계 (장치 유형, OS, 브라우저별)\n\n### 수집 정보\n- IP 주소 (X-Forwarded-For, X-Real-IP 지원)\n- User-Agent 파싱 (OS, 브라우저, 장치 정보)\n- 요청 경로 및 응답 시간\n        ",
+      "name": "Home"
+    },
+    {
+      "description": "\n**사용자 관리 API**\n\n회원가입, 로그인, 프로필 관리 등 사용자 관련 기능을 제공합니다.\n\n### 주요 기능 (예정)\n- 회원가입 / 로그인 / 로그아웃\n- 프로필 조회 및 수정\n- 비밀번호 변경\n- 계정 삭제\n        ",
+      "name": "User"
+    },
+    {
+      "description": "\n**블로그 게시글 API**\n\n게시글 CRUD 및 관련 기능을 제공합니다.\n\n### 주요 기능 (예정)\n- 게시글 목록 조회 (페이지네이션, 검색)\n- 게시글 상세 조회\n- 게시글 작성 / 수정 / 삭제\n- 게시글 좋아요 / 북마크\n        ",
+      "name": "Blog"
+    },
+    {
+      "description": "\n**댓글 API**\n\n댓글 및 대댓글 CRUD 기능을 제공합니다.\n\n### 주요 기능 (예정)\n- 댓글 목록 조회\n- 댓글 작성 / 수정 / 삭제\n- 대댓글 지원\n- 댓글 좋아요\n        ",
+      "name": "Reply"
+    },
+    {
+      "description": "\n**SNS 연동 API**\n\n소셜 미디어 연동 및 공유 기능을 제공합니다.\n\n### 주요 기능 (예정)\n- 소셜 로그인 (Google, Kakao, Naver)\n- 게시글 공유\n- 소셜 미디어 연동 관리\n        ",
+      "name": "SNS"
+    },
+    {
+      "description": "\n**분석 API**\n\n접속 통계 및 사용자 행동 분석 기능을 제공합니다.\n\n### 주요 기능 (예정)\n- 일별/주별/월별 접속 통계\n- 페이지별 조회수 분석\n- 사용자 행동 패턴 분석\n- 리포트 생성 및 다운로드\n        ",
+      "name": "Analytics"
+    }
+  ]
+}

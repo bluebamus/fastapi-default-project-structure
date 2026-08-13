@@ -1,0 +1,164 @@
+﻿
+=== OpenAPI 기준선 ===
+paths: 18  operations: 30
+tags(실사용): ['Auth', 'Blog', 'Health', 'Home', 'Reply', 'SNS', 'User']
+operationId 누락: 0 []
+operationId 중복: 없음
+tags_metadata 선언: ['Analytics', 'Blog', 'Health', 'Home', 'Reply', 'SNS', 'User']
+  선언됐지만 미사용: ['Analytics']
+  사용되지만 미선언: ['Auth']
+
+--- 경로 목록 ---
+  POST   /api/v1/auth/login                            authLogin
+  GET    /api/v1/auth/me                               authMe
+  POST   /api/v1/auth/refresh                          authRefresh
+  POST   /api/v1/auth/register                         authRegister
+  GET    /api/v1/blog/posts                            listPosts
+  POST   /api/v1/blog/posts                            createPost
+  DELETE /api/v1/blog/posts/{post_id}                  deletePost
+  GET    /api/v1/blog/posts/{post_id}                  getPost
+  PATCH  /api/v1/blog/posts/{post_id}                  updatePost
+  GET    /api/v1/home/access-logs                      getAccessLogs
+  GET    /api/v1/home/access-logs/by-ip/{ip_address}   getAccessLogsByIp
+  GET    /api/v1/home/access-logs/by-user/{user_id}    getAccessLogsByUser
+  GET    /api/v1/home/access-logs/recent               getRecentAccessLogs
+  GET    /api/v1/home/access-logs/stats                getAccessLogStats
+  GET    /api/v1/reply/replies                         listReplies
+  POST   /api/v1/reply/replies                         createReply
+  DELETE /api/v1/reply/replies/{reply_id}              deleteReply
+  GET    /api/v1/reply/replies/{reply_id}              getReply
+  PATCH  /api/v1/reply/replies/{reply_id}              updateReply
+  GET    /api/v1/sns/posts                             listSnsPosts
+  POST   /api/v1/sns/posts                             createSnsPost
+  DELETE /api/v1/sns/posts/{post_id}                   deleteSnsPost
+  GET    /api/v1/sns/posts/{post_id}                   getSnsPost
+  PATCH  /api/v1/sns/posts/{post_id}                   updateSnsPost
+  GET    /api/v1/user/users                            listUsers
+  POST   /api/v1/user/users                            createUser
+  DELETE /api/v1/user/users/{user_id}                  deleteUser
+  GET    /api/v1/user/users/{user_id}                  getUser
+  PATCH  /api/v1/user/users/{user_id}                  updateUser
+  GET    /health                                       healthCheck
+
+=== BaseRepository / CRUDBase 공개 API ===
+CRUDBase 전체 메서드(5): ['__init__', '_get', '_add', '_update', '_delete']
+BaseRepository 공개 메서드(28):
+  - create
+  - bulk_create
+  - get_by_id
+  - get_by_id_or_raise
+  - get_one
+  - get_many
+  - get_all
+  - count
+  - exists
+  - exists_by
+  - get_by_id_with
+  - get_one_with
+  - get_many_with
+  - get_all_with
+  - get_by_ids_with
+  - get_partial
+  - get_by_id_partial
+  - get_in_batches
+  - get_with_join
+  - count_with_relation
+  - update
+  - bulk_update
+  - update_by
+  - delete
+  - bulk_delete
+  - delete_by
+  - get_or_create
+  - update_or_create
+
+=== BaseRepository 공개 메서드 사용처 ===
+create (10)  
+    tests/utils/test_pagination.py:8
+    tests/utils/test_pagination.py:20
+    tests/utils/test_pagination.py:28
+    tests/utils/test_pagination.py:57
+    app/features/user/services/user_service.py:34
+    app/features/sns/services/sns_service.py:29
+    app/features/reply/services/reply_service.py:29
+    app/features/home/services/user_access_log_service.py:41
+    app/features/blog/services/blog_service.py:29
+    app/features/auth/services/auth_service.py:44
+bulk_create (0)  ← 사용처 0건
+get_by_id (4)  
+    app/features/user/services/user_service.py:39
+    app/features/sns/services/sns_service.py:34
+    app/features/reply/services/reply_service.py:34
+    app/features/blog/services/blog_service.py:34
+get_by_id_or_raise (0)  ← 사용처 0건
+get_one (2)  
+    app/features/user/repositories/user_repository.py:17
+    app/features/auth/services/auth_service.py:72
+get_many (0)  ← 사용처 0건
+get_all (5)  
+    app/features/user/services/user_service.py:51
+    app/features/sns/services/sns_service.py:46
+    app/features/reply/services/reply_service.py:46
+    app/features/home/services/user_access_log_service.py:50
+    app/features/blog/services/blog_service.py:46
+count (17)  
+    config.py:222
+    tests/test_admin_wiring.py:289
+    tests/test_admin_wiring.py:282
+    tests/test_admin_wiring.py:285
+    tests/test_admin_wiring.py:90
+    tests/core/test_admin_views.py:101
+    tests/core/test_background_tasks.py:22
+    app/features/user/services/user_service.py:52
+    app/features/sns/services/sns_service.py:47
+    app/features/reply/services/reply_service.py:47
+    app/features/home/repositories/user_access_log_repository.py:150
+    app/features/home/repositories/user_access_log_repository.py:168
+    app/features/home/repositories/user_access_log_repository.py:184
+    app/features/home/services/user_access_log_service.py:51
+    app/features/home/services/user_access_log_service.py:100
+    app/features/home/tests/test_access_log_service.py:55
+    app/features/blog/services/blog_service.py:47
+exists (1)  
+    tests/core/test_settings_contract.py:66
+exists_by (0)  ← 사용처 0건
+get_by_id_with (0)  ← 사용처 0건
+get_one_with (0)  ← 사용처 0건
+get_many_with (0)  ← 사용처 0건
+get_all_with (0)  ← 사용처 0건
+get_by_ids_with (0)  ← 사용처 0건
+get_partial (0)  ← 사용처 0건
+get_by_id_partial (0)  ← 사용처 0건
+get_in_batches (0)  ← 사용처 0건
+get_with_join (0)  ← 사용처 0건
+count_with_relation (0)  ← 사용처 0건
+update (6)  
+    app/celery/app.py:17
+    app/utils/authenticator/auth.py:59
+    app/features/user/services/user_service.py:59
+    app/features/sns/services/sns_service.py:54
+    app/features/reply/services/reply_service.py:54
+    app/features/blog/services/blog_service.py:54
+bulk_update (0)  ← 사용처 0건
+update_by (0)  ← 사용처 0건
+delete (13)  
+    app/features/user/services/user_service.py:67
+    app/features/user/tests/test_endpoint.py:93
+    app/features/user/api/routers/v1/user.py:108
+    app/features/sns/services/sns_service.py:62
+    app/features/sns/tests/test_endpoint.py:89
+    app/features/sns/api/routers/v1/sns.py:104
+    app/features/reply/services/reply_service.py:62
+    app/features/reply/tests/test_endpoint.py:89
+    app/features/reply/api/routers/v1/reply.py:104
+    app/features/blog/services/blog_service.py:62
+    app/features/blog/tests/test_endpoint.py:92
+    app/features/blog/api/routers/v1/blog.py:104
+    app/core/repositories/crud_base.py:95
+bulk_delete (0)  ← 사용처 0건
+delete_by (0)  ← 사용처 0건
+get_or_create (0)  ← 사용처 0건
+update_or_create (0)  ← 사용처 0건
+
+
+
