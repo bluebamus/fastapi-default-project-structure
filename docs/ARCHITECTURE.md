@@ -319,7 +319,7 @@ celery_app = Celery(
 - 모든 기능 백그라운드 태스크는 `app/celery/tasks.py`에 `@celery_app.task`로 정의합니다.
   (예: `home.aggregate_access_stats`)
 - 동기 워커에서 async 코루틴 실행: `app/celery/task.py`의 `run_async(coro)`.
-- 태스크 내 DB 세션: `background_session()` 컨텍스트.
+- 태스크 내 DB 세션: `background_db_session()` 컨텍스트.
 
 ---
 

@@ -1,7 +1,7 @@
 """update_* 서비스의 no-op PATCH 처리 회귀 테스트 (M4).
 
 MySQL(aiomysql, CLIENT_FOUND_ROWS 미설정)은 동일 값 UPDATE 시 rowcount=0 을 반환한다.
-이때 repository.update 는 None 을 돌려주는데, 서비스는 존재를 이미 확인했으므로 404 가
+이때 repository.update_by_id 는 None 을 돌려주는데, 서비스는 존재를 이미 확인했으므로 404 가
 아니라 현재 엔티티를 반환해야 한다. 테스트 하니스는 SQLite 라 이 조건이 자연 발생하지
 않으므로, repository 를 스텁하여 'None 반환(no-op)'과 '부재(get_by_id=None)'를 분리 검증한다.
 """
@@ -30,7 +30,7 @@ _CASES = [
 
 
 class _StubRepo:
-    """get_by_id 는 엔티티를, update 는 None(변경행 0=no-op)을 반환하는 스텁."""
+    """get_by_id 는 엔티티를, update_by_id 는 None(변경행 0=no-op)을 반환하는 스텁."""
 
     def __init__(self, entity):
         self.entity = entity
@@ -38,7 +38,7 @@ class _StubRepo:
     async def get_by_id(self, _id):
         return self.entity
 
-    async def update(self, _id, _data):
+    async def update_by_id(self, _id, _data):
         return None
 
 
@@ -48,7 +48,7 @@ class _MissingRepo:
     async def get_by_id(self, _id):
         return None
 
-    async def update(self, _id, _data):  # pragma: no cover - 호출 전 404
+    async def update_by_id(self, _id, _data):  # pragma: no cover - 호출 전 404
         return None
 
 

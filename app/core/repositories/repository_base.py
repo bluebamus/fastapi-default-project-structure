@@ -200,33 +200,3 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
             result = cast("CursorResult[Any]", await self.db_session.execute(statement))
             await self._flush()
             return result.rowcount > 0
-
-    # ========================================================================
-    # Deprecated 별칭 — 호출부 전환 기간에만 유지한다 (MIG-002 단계 9 에서 제거)
-    #
-    # 실제 호출처가 있는 이름만 남긴다. 호출처가 0건이던 고급 메서드 20종
-    # (eager loading·partial column·batch·join·bulk·upsert)은 이 단계에서
-    # 제거했다 — Base 에 도메인 지식이 새어 들어오는 통로였고, 필요해지면
-    # 기능 Repository 가 명시적 메서드로 소유한다(ORM-REP-005).
-    # ========================================================================
-    async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[ModelType]:
-        """Deprecated — ``list()`` 를 쓸 것."""
-        return await self.list(skip=skip, limit=limit)
-
-    async def update(self, id: PrimaryKeyT, data: dict[str, Any]) -> ModelType | None:
-        """Deprecated — ``update_by_id()`` 를 쓸 것."""
-        return await self.update_by_id(id, data)
-
-    async def delete(self, id: PrimaryKeyT) -> bool:
-        """Deprecated — ``delete_by_id()`` 를 쓸 것."""
-        return await self.delete_by_id(id)
-
-    async def get_one(self, **filters: Any) -> ModelType | None:
-        """Deprecated — 조건 조회는 기능 Repository 의 명시적 메서드로 옮길 것.
-
-        문자열 컬럼명을 받는 범용 필터라 오타가 실행 시점에만 드러난다.
-        """
-        with self._translated_errors("get_one"):
-            statement = select(self.model).filter_by(**filters)
-            result = await self.db_session.execute(statement)
-            return result.scalar_one_or_none()
