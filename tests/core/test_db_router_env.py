@@ -77,6 +77,11 @@ def _run_probe(tmp_path: Path, env_body: str) -> subprocess.CompletedProcess[str
         if key.startswith(("DB_", "MYSQL_")):
             del child_env[key]
     child_env["PYTHONPATH"] = str(PROJECT_ROOT)
+    # 자식의 stdout/stderr 인코딩을 UTF-8 로 **고정**한다. 지정하지 않으면 Windows 에서
+    # 콘솔 코드페이지(cp949)로 쓰는데, 아래 `encoding="utf-8"` 로 디코딩하므로 한글이
+    # 대체문자(U+FFFD)가 되어 "메시지에 이 단어가 있는가" 류 검증이 조용히 실패한다.
+    # 결과가 주변 환경(콘솔 코드페이지·PYTHONUTF8)에 좌우되지 않도록 여기서 못 박는다.
+    child_env["PYTHONIOENCODING"] = "utf-8"
 
     # 인터프리터·스크립트가 모두 이 파일 안에 고정되어 있고 셸을 거치지 않는다.
     return subprocess.run(  # noqa: S603
@@ -85,9 +90,9 @@ def _run_probe(tmp_path: Path, env_body: str) -> subprocess.CompletedProcess[str
         env=child_env,
         capture_output=True,
         text=True,
-        # 자식은 UTF-8 로 쓴다. 인코딩을 지정하지 않으면 Windows 가 기본 코덱(cp949)으로
-        # 디코딩을 시도하다 한글 로그/트레이스백에서 UnicodeDecodeError 를 내고,
-        # reader thread 가 죽어 stdout 이 None 이 된다.
+        # 자식은 위 PYTHONIOENCODING 으로 UTF-8 을 쓴다. 여기서 인코딩을 지정하지 않으면
+        # Windows 가 기본 코덱(cp949)으로 디코딩을 시도하다 한글 로그/트레이스백에서
+        # UnicodeDecodeError 를 내고, reader thread 가 죽어 stdout 이 None 이 된다.
         encoding="utf-8",
         errors="replace",
         timeout=120,

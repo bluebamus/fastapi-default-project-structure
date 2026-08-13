@@ -16,10 +16,10 @@ from app.features.auth.dependencies.auth_dependencies import (
 )
 from app.features.auth.exceptions import InvalidTokenException
 from app.features.auth.schemas.auth_schema import (
+    AuthUserResponse,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
-    UserResponse,
 )
 from app.features.auth.services.auth_service import AuthService
 from app.features.user.models.models import User
@@ -37,7 +37,7 @@ _CONFLICT: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/register",
-    response_model=UserResponse,
+    response_model=AuthUserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="회원가입",
     description="사용자명·이메일·비밀번호로 사용자를 생성합니다.",
@@ -47,10 +47,10 @@ _CONFLICT: dict[int | str, dict[str, Any]] = {
 async def register(
     payload: RegisterRequest,
     service: AuthService = Depends(get_auth_service),
-) -> UserResponse:
+) -> AuthUserResponse:
     user = await service.register(payload)
     await service.commit()
-    return UserResponse.model_validate(user)
+    return AuthUserResponse.model_validate(user)
 
 
 @router.post(
@@ -99,11 +99,11 @@ async def refresh(
 
 @router.get(
     "/me",
-    response_model=UserResponse,
+    response_model=AuthUserResponse,
     summary="현재 사용자",
     description="Bearer access token 으로 현재 로그인 사용자를 반환합니다(보호 엔드포인트).",
     operation_id="authMe",
     responses=_UNAUTH,
 )
-async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+async def me(current_user: User = Depends(get_current_user)) -> AuthUserResponse:
+    return AuthUserResponse.model_validate(current_user)

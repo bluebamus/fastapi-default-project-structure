@@ -27,6 +27,10 @@
 | F-013 | MED | 통합 환경 — MySQL 8.4 접속 가능 | Fix | Fixed | `pyproject.toml` `cryptography>=43.0.0` | MySQL 8.4 기본 인증(`caching_sha2_password`)에는 PyMySQL/aiomysql 이 `cryptography` 를 필요로 한다. 없으면 접속 자체가 실패 |
 | F-014 | LOW | 통합 테스트 격리 — 스키마 초기화가 alembic 상태와 어긋나면 안 된다 | Fix | Fixed | `tests/integration/conftest.py` `drop_all_tables_sync()` + `mysql_empty_schema` | metadata 기준 초기화는 `alembic_version` 을 남겨, alembic 이 "base 상태"로 오인하고 이미 있는 테이블을 다시 만들다 1050 으로 깨졌다. 실제 존재하는 테이블 전부를 지우고, migration 테스트는 빈 스키마 fixture 를 쓰도록 분리 |
 
+| F-015 | MED | DOC-003 — 공개 스키마는 문서에서 식별 가능한 이름을 가진다 | Fix | Fixed | `auth_schema.AuthUserResponse` + `test_schema_names_are_not_module_qualified` | auth 와 user 양쪽에 `UserResponse` 가 있어 FastAPI 가 충돌을 피하려고 `app__features__auth__schemas__auth_schema__UserResponse` 라는 키를 만들었다. 이 이름이 **Scalar 문서와 생성 SDK 에 그대로 노출**된다. auth 쪽을 `AuthUserResponse` 로 개명하고, 스키마 키에 `__` 가 나타나면 실패하는 규칙을 추가 |
+| F-016 | MED | 테스트 결정성 — 검증 결과가 주변 환경에 좌우되면 안 된다 | Fix | Fixed | `tests/core/test_db_router_env.py` `PYTHONIOENCODING=utf-8` | 자식 프로세스의 stderr 를 utf-8 로 디코딩하는데 자식은 Windows 콘솔 코드페이지(cp949)로 썼다. 한글이 U+FFFD 로 바뀌어 "오류 메시지에 이 단어가 있는가" 검증이 조용히 실패했다. ASCII 를 보는 형제 케이스는 통과해서 더 늦게 드러났다. 자식의 stdio 인코딩을 명시해 환경 의존을 제거 |
+| F-017 | **HIGH** | ADR-006 — 게이트는 결함을 **보고**해야 한다 | Fix | Fixed | `scripts/review_gate.py` stdout UTF-8 재설정 | 게이트가 실패 상세를 출력하는 순간 cp949 로 em dash 를 못 써 `UnicodeEncodeError` 로 **죽었다**. 전건 통과일 때만 정상 종료하는 게이트여서, 실패를 "게이트가 깨졌다"로 오인할 수 있었다. 검수 장치가 초록일 때만 동작하면 검수가 아니다. 실제로 이번에 mypy 3건이 이 크래시에 가려져 있었다 |
+
 ## 검수 라운드 기록
 
 | 라운드 | 시점 | 범위 | 게이트 결과 | 신규 finding |
@@ -36,6 +40,7 @@
 | R-3 | 2026-08-13 | Phase 3 (ORM Repository) | 전건 통과 (274 tests) | F-004, F-005, F-006, F-007 |
 | R-4 | 2026-08-13 | Phase 4 (Raw Base) | 전건 통과 (308 tests) | F-008(CRIT), F-009, F-010 |
 | R-5 | 2026-08-13 | Phase 5 (시나리오 2종 + MySQL 8.4) | 전건 통과 (364 tests, MySQL 통합 6건 실제 실행) | F-011(HIGH), F-012, F-013, F-014 |
+| R-6 | 2026-08-13 | Phase 6 (Scalar/OpenAPI) | 전건 통과 (373 tests) | F-015, F-016, F-017(HIGH) |
 
 <!--
 규칙:
