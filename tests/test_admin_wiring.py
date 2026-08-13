@@ -194,6 +194,9 @@ def test_admin_layer_is_not_loaded_when_disabled() -> None:
         ],
         capture_output=True,
         text=True,
+        # 자식이 UTF-8 로 쓰므로 명시한다. 생략하면 Windows 가 cp949 로 디코딩해
+        # 실패 시 한글 stderr 가 깨진 채로만 보인다.
+        encoding="utf-8",
         errors="replace",
         cwd=_REPO_ROOT,
     )
