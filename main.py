@@ -14,11 +14,11 @@ from pydantic import BaseModel
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.db.session import create_db_tables, dispose_engine, engine
+from app.core.db.session import engine
 from app.core.exception import AppException, ErrorResponse, ValidationException
-from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
+from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, home, reply, sns, user
 from app.utils.logs import get_logger
@@ -29,38 +29,15 @@ logger = get_logger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """애플리케이션 수명 주기 — 자원 관리자 호출만 담당한다 (AR-005).
+
+    무엇을 어떤 순서로 만들고 해제하는지는 전부
+    ``app/core/resources.py`` 의 ``manage_application_resources()`` 에 있다.
+    자원별 코드를 여기 나열하면 종료 순서가 암묵적이 되고 startup 중간 실패에서
+    이미 만든 자원이 새는 경로가 생긴다.
     """
-    애플리케이션 수명 주기 관리
-
-    시작 시:
-        - DEBUG=True: 데이터베이스 테이블 자동 생성 (개발 환경용)
-        - DEBUG=False: 테이블 생성 건너뜀 (운영 환경은 Alembic 사용)
-
-    종료 시:
-        - 데이터베이스 엔진 리소스 정리
-    """
-    logger.info("[Startup] 애플리케이션 시작 (DEBUG=%s)", app_settings.DEBUG)
-
-    # DEBUG 모드일 때만 테이블 자동 생성
-    # 운영 환경에서는 Alembic 마이그레이션 사용 권장
-    if app_settings.DEBUG:
-        try:
-            await create_db_tables()
-            logger.info("[Startup] 데이터베이스 테이블 생성 완료 (DEBUG 모드)")
-        except Exception as e:
-            logger.error("[Startup] 데이터베이스 테이블 생성 실패: %s", e)
-            raise
-    else:
-        logger.info("[Startup] 테이블 자동 생성 건너뜀 (DEBUG=False, Alembic 사용)")
-
-    yield
-
-    logger.info("[Shutdown] 애플리케이션 종료 시작")
-    # 엔진 정리 전에 진행 중인 백그라운드 로그 태스크를 drain (W1) —
-    # dispose 와의 경합으로 인한 마지막 로그 유실을 줄인다.
-    await access_log_tasks.drain()
-    await dispose_engine()
-    logger.info("[Shutdown] 애플리케이션 종료 완료")
+    async with manage_application_resources(app):
+        yield
 
 
 def _register_exception_handlers(app: FastAPI) -> None:

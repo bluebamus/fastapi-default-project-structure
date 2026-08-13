@@ -209,13 +209,17 @@ async def background_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-async def create_db_tables() -> None:
+async def create_db_tables(import_models: bool = True) -> None:
     """
     데이터베이스 테이블을 생성합니다.
 
-    애플리케이션 시작 시 lifespan에서 호출됩니다.
-    각 기능 앱의 models 모듈을 import 하여 Base.metadata에 모든 테이블을 등록한 후
-    테이블을 생성합니다.
+    애플리케이션 시작 시 자원 관리자(app/core/resources.py)에서 호출됩니다.
+
+    Args:
+        import_models: 모델 모듈을 여기서 import 할지 여부. 호출자가 이미
+            ``import_all_models()`` 를 실행해 ``Base.metadata`` 를 채웠다면
+            ``False`` 를 준다. 같은 startup 에서 discovery 를 두 번 돌리면
+            로그의 모듈 수·소요 시간이 실제와 어긋난다(AR-007).
 
     Note:
         모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
@@ -224,11 +228,12 @@ async def create_db_tables() -> None:
     """
     import asyncio
 
-    from app.core.db.models_registry import import_all_models
+    if import_models:
+        from app.core.db.models_registry import import_all_models
 
-    # 모델 메타데이터 등록: 각 앱 models 모듈 import -> Base.metadata 채움
-    registered = import_all_models()
-    logger.info("[database] 모델 등록: %d개 모듈 %s", len(registered), registered)
+        # 모델 메타데이터 등록: 각 앱 models 모듈 import -> Base.metadata 채움
+        registered = import_all_models()
+        logger.info("[database] 모델 등록: %d개 모듈 %s", len(registered), registered)
 
     logger.info("Creating database tables...")
 
