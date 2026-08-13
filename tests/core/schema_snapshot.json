@@ -1,0 +1,719 @@
+{
+  "blog_posts": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": true,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "title",
+        "type": "VARCHAR(200)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "content",
+        "type": "TEXT",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "author",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": true,
+        "comment": null
+      }
+    ],
+    "indexes": [],
+    "primary_key": [
+      "id"
+    ]
+  },
+  "replies": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": true,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "content",
+        "type": "TEXT",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "author",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "post_id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": true,
+        "comment": null
+      }
+    ],
+    "indexes": [],
+    "primary_key": [
+      "id"
+    ]
+  },
+  "sns_posts": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": true,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "content",
+        "type": "TEXT",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "author",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "like_count",
+        "type": "INTEGER",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": true,
+        "comment": null
+      }
+    ],
+    "indexes": [],
+    "primary_key": [
+      "id"
+    ]
+  },
+  "user_access_logs": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": true,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "ip_address",
+        "type": "VARCHAR(45)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "forwarded_for",
+        "type": "VARCHAR(255)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "X-Forwarded-For 헤더 값"
+      },
+      {
+        "name": "real_ip",
+        "type": "VARCHAR(45)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "X-Real-IP 헤더 값"
+      },
+      {
+        "name": "user_agent",
+        "type": "TEXT",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "os_name",
+        "type": "VARCHAR(50)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "os_version",
+        "type": "VARCHAR(50)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "browser_name",
+        "type": "VARCHAR(50)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "browser_version",
+        "type": "VARCHAR(50)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "device_type",
+        "type": "VARCHAR(20)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "desktop, mobile, tablet"
+      },
+      {
+        "name": "device_brand",
+        "type": "VARCHAR(50)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "device_model",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "is_bot",
+        "type": "BOOLEAN",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "country",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "country_code",
+        "type": "VARCHAR(3)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "city",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "referer",
+        "type": "TEXT",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "request_path",
+        "type": "VARCHAR(2048)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "request_method",
+        "type": "VARCHAR(10)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "query_string",
+        "type": "TEXT",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "response_status",
+        "type": "INTEGER",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "response_time_ms",
+        "type": "INTEGER",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "응답 시간 (밀리초)"
+      },
+      {
+        "name": "session_id",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "user_id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "accept_language",
+        "type": "VARCHAR(255)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ix_user_access_logs_browser_name",
+        "unique": false,
+        "columns": [
+          "browser_name"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_country",
+        "unique": false,
+        "columns": [
+          "country"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_created_at",
+        "unique": false,
+        "columns": [
+          "created_at"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_device_type",
+        "unique": false,
+        "columns": [
+          "device_type"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_ip_address",
+        "unique": false,
+        "columns": [
+          "ip_address"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_os_name",
+        "unique": false,
+        "columns": [
+          "os_name"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_session_id",
+        "unique": false,
+        "columns": [
+          "session_id"
+        ]
+      },
+      {
+        "name": "ix_user_access_logs_user_id",
+        "unique": false,
+        "columns": [
+          "user_id"
+        ]
+      }
+    ],
+    "primary_key": [
+      "id"
+    ]
+  },
+  "users": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "VARCHAR(36)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": true,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "username",
+        "type": "VARCHAR(100)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": true,
+        "index": true,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "email",
+        "type": "VARCHAR(255)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "hashed_password",
+        "type": "VARCHAR(255)",
+        "timezone": null,
+        "nullable": true,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "is_active",
+        "type": "BOOLEAN",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": false,
+        "comment": null
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": true,
+        "has_onupdate": true,
+        "comment": null
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ix_users_username",
+        "unique": true,
+        "columns": [
+          "username"
+        ]
+      }
+    ],
+    "primary_key": [
+      "id"
+    ]
+  }
+}
