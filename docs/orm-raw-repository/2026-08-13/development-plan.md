@@ -30,7 +30,9 @@
 
 ### 2.2 보강해야 하는 항목
 
-1. `repository_base.py`가 1,012줄이며 서로 다른 책임이 한 클래스에 집중되어 있다.
+1. `repository_base.py`가 서로 다른 책임을 한 클래스에 모으고 있다.
+   (계획 시점 기재는 1,012줄이었으나 착수 시 실측은 **823줄**이다. 결론은 같아 계획을
+   유지했다. 실제 결과: 최소 CRUD 8개로 좁혀 **185줄**.)
    기본 CRUD, eager loading, 부분 컬럼, join, batch, bulk, upsert를 분류하고 공개 계약을
    줄여야 한다.
 2. `crud_base.py`는 네 개의 protected 메서드만 제공한다. 이름은 CRUD Base이지만 실제
