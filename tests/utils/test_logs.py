@@ -112,8 +112,8 @@ def test_get_logger_end_to_end():
 # 환경별 dictConfig 구성
 #
 # staging/production 가지는 로컬·CI 에서 실행되지 않는다 — 즉 운영에서 처음 도는
-# 코드다. dictConfig 를 실제로 적용하지 않고 **빌더가 만든 dict 만** 검사하므로
-# 파일 핸들러가 열리지 않는다(파일 I/O 없음).
+# 코드다. dictConfig 를 실제로 **적용하지 않고** 빌더가 만든 dict 만 검사하므로
+# 핸들러도 listener 스레드도 만들어지지 않는다(부작용 없음).
 # =============================================================================
 def _build_with(monkeypatch, tmp_path, **overrides):
     """ENV·로그 설정을 바꿔 build_dictconfig() 결과를 얻는다.
@@ -123,54 +123,66 @@ def _build_with(monkeypatch, tmp_path, **overrides):
     """
     env = overrides.pop("env", "development")
     monkeypatch.setattr(logs_config.app_settings, "ENV", env, raising=False)
-    # 로그 디렉터리는 tmp 로 — get_log_dir() 이 mkdir 을 하므로 저장소를 더럽히지 않게.
-    monkeypatch.setattr(logs_config.log_settings, "LOG_DIR", str(tmp_path), raising=False)
     for key, value in overrides.items():
         monkeypatch.setattr(logs_config.log_settings, key, value, raising=False)
     return logs_config.build_dictconfig()
 
 
-def test_production_adds_rotating_file_handlers(monkeypatch, tmp_path):
-    """production 에서는 콘솔에 더해 회전 파일·에러 파일 핸들러가 붙고 UTC 를 쓴다."""
-    cfg = _build_with(monkeypatch, tmp_path, env="production", LOG_FILE_ENABLED=True)
+def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
+    """root 에는 queue 핸들러 하나만 붙는다 (NFR-009).
 
-    assert set(cfg["handlers"]) == {"console", "file", "error_file"}
-    assert cfg["root"]["handlers"] == ["console", "file", "error_file"]
-    assert cfg["formatters"]["app"]["use_utc"] is True
-
-    for name in ("file", "error_file"):
-        handler = cfg["handlers"][name]
-        assert handler["class"] == "logging.handlers.RotatingFileHandler"
-        assert handler["backupCount"] == logs_config.log_settings.LOG_BACKUP_COUNT
-        assert handler["maxBytes"] == logs_config.log_settings.LOG_MAX_SIZE_MB * 1024 * 1024
-        # 핸들러마다 컨텍스트 필터가 붙어야 appname/classname 이 채워진다.
-        assert handler["filters"] == ["context"]
-        assert str(tmp_path) in handler["filename"]
-
-    # 에러 전용 파일은 ERROR 만 받아야 의미가 있다.
-    assert cfg["handlers"]["error_file"]["level"] == "ERROR"
+    요청 event loop 에서 동기 write/flush 가 일어나지 않으려면 root 에 출력
+    핸들러가 직접 붙어서는 안 된다. stdout/stderr 쓰기는 listener 스레드의 몫이다.
+    """
+    for env in ("development", "test", "staging", "production"):
+        cfg = _build_with(monkeypatch, tmp_path, env=env)
+        assert cfg["root"]["handlers"] == [
+            "queue"
+        ], f"ENV={env} 의 root 에 queue 외 핸들러가 붙었다 — event loop 를 막는다"
+        queue_handler = cfg["handlers"]["queue"]
+        assert queue_handler["()"] == "app.utils.logs.queue_handler.build_queue_handler"
+        # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
+        assert queue_handler["filters"] == ["context"]
 
 
-def test_development_is_console_only_and_local_time(monkeypatch, tmp_path):
-    """개발에서는 파일 핸들러를 붙이지 않고 로컬 TZ + 밀리초를 쓴다."""
+def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
+    """어느 환경에도 애플리케이션 파일 핸들러를 만들지 않는다 (NFR-009).
+
+    저장·rotation 은 Docker/Kubernetes/운영 agent 가 담당한다. 파일 핸들러가
+    다시 생기면 요청 스레드가 동기 rotation 을 수행하게 되므로 이 테스트가 관문이다.
+    """
+    for env in ("development", "test", "staging", "production"):
+        cfg = _build_with(monkeypatch, tmp_path, env=env)
+        for name, handler in cfg["handlers"].items():
+            assert "File" not in handler.get(
+                "class", ""
+            ), f"ENV={env} 에 파일 핸들러 {name} 이 생겼다"
+
+
+def test_production_separates_errors_to_stderr(monkeypatch, tmp_path):
+    """production/staging 은 stdout 에 더해 ERROR 전용 stderr 출력을 갖고 UTC 를 쓴다."""
+    for env in ("production", "staging"):
+        cfg = _build_with(monkeypatch, tmp_path, env=env)
+
+        assert set(cfg["handlers"]) == {"queue", "console", "error_console"}
+        assert cfg["formatters"]["app"]["use_utc"] is True
+
+        assert cfg["handlers"]["console"]["stream"] == "ext://sys.stdout"
+        assert cfg["handlers"]["error_console"]["stream"] == "ext://sys.stderr"
+        assert cfg["handlers"]["error_console"]["level"] == "ERROR"
+
+        # listener 가 두 출력 모두를 위임받아야 한다.
+        assert logs_config.listener_handler_names(env) == ["console", "error_console"]
+
+
+def test_development_is_stdout_only_and_local_time(monkeypatch, tmp_path):
+    """개발에서는 stdout 하나만 쓰고 로컬 TZ + 밀리초를 쓴다."""
     cfg = _build_with(monkeypatch, tmp_path, env="development")
 
-    assert set(cfg["handlers"]) == {"console"}
-    assert cfg["root"]["handlers"] == ["console"]
+    assert set(cfg["handlers"]) == {"queue", "console"}
     assert cfg["formatters"]["app"]["use_utc"] is False
     assert cfg["formatters"]["app"]["with_ms"] is True
-
-
-def test_file_logging_can_be_disabled_in_production(monkeypatch, tmp_path):
-    """production 이라도 LOG_FILE_ENABLED=False 면 파일 핸들러를 만들지 않는다.
-
-    읽기 전용 파일시스템(컨테이너)에서 기동이 깨지지 않으려면 이 스위치가 살아 있어야 한다.
-    """
-    cfg = _build_with(monkeypatch, tmp_path, env="production", LOG_FILE_ENABLED=False)
-
-    assert set(cfg["handlers"]) == {"console"}
-    assert cfg["root"]["handlers"] == ["console"]
-    assert cfg["formatters"]["app"]["use_utc"] is True  # UTC 는 파일 여부와 무관
+    assert logs_config.listener_handler_names("development") == ["console"]
 
 
 def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
@@ -189,23 +201,40 @@ def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
         assert cfg["root"]["handlers"], "root 에 핸들러가 없으면 아무 로그도 나가지 않는다"
 
 
-def test_uvicorn_config_isolates_three_loggers():
-    """uvicorn 3종 로거가 각자 핸들러를 갖고 root 로 전파하지 않는다.
+def test_uvicorn_shares_the_app_queue(monkeypatch):
+    """uvicorn 3종 로거가 앱과 **같은** queue 로 나가고 root 로 전파하지 않는다.
 
     propagate=True 면 앱 root 핸들러가 같은 줄을 한 번 더 찍어 중복 출력이 된다.
+    핸들러는 앱과 공유하므로 ``app=uvicorn`` 라벨은 **로거** 필터로 찍어야 한다 —
+    공유 핸들러에 붙이면 앱 로그까지 uvicorn 으로 라벨링된다.
     """
     cfg = setup_uvicorn_logging()
 
     assert set(cfg["loggers"]) == {"uvicorn", "uvicorn.error", "uvicorn.access"}
     for name, spec in cfg["loggers"].items():
         assert spec["propagate"] is False, f"{name} 이 root 로 전파되면 로그가 중복된다"
-        assert spec["handlers"], f"{name} 에 핸들러가 없다"
+        assert spec["handlers"] == ["queue"], f"{name} 이 공유 queue 를 쓰지 않는다"
+        assert spec["filters"] == ["uvicorn_app"], f"{name} 의 app 라벨 필터가 없다"
 
-    # access 로그만 전용 포맷(요청 라인)을 쓴다.
-    assert cfg["loggers"]["uvicorn.access"]["handlers"] == ["access"]
-    assert "request_line" in cfg["formatters"]["access"]["fmt"]
-    for handler in cfg["handlers"].values():
-        assert handler["filters"] == ["context"]
+    assert cfg["handlers"]["queue"]["()"] == "app.utils.logs.setup.get_shared_queue_handler"
+    assert cfg["filters"]["uvicorn_app"]["appname"] == "uvicorn"
+    # 공유 핸들러를 오염시키면 안 되므로 핸들러에는 필터를 두지 않는다.
+    assert "filters" not in cfg["handlers"]["queue"]
+
+
+def test_shared_queue_handler_is_the_app_queue_handler():
+    """uvicorn 이 받는 핸들러가 앱이 쓰는 바로 그 인스턴스여야 한다.
+
+    두 개가 되면 queue 도 listener 도 둘이 되어 출력 순서와 종료 시점이 갈린다.
+    (root 로거 자체는 pytest 의 로그 캡처가 가로채므로 여기서 단언하지 않는다 —
+    root 배선은 ``test_root_uses_queue_handler_only`` 가 dictConfig 로 검증한다.)
+    """
+    from app.utils.logs.queue_handler import BoundedQueueHandler
+    from app.utils.logs.setup import get_queue_handler, get_shared_queue_handler
+
+    handler = get_queue_handler()
+    assert isinstance(handler, BoundedQueueHandler)
+    assert get_shared_queue_handler() is handler
 
 
 def test_configure_logging_applies_once(monkeypatch):

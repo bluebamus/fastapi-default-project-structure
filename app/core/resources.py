@@ -36,7 +36,7 @@ from app.core.db.models_registry import import_all_models
 from app.core.db.session import create_db_tables, dispose_engine
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.models.models_base import Base
-from app.utils.logs import get_logger
+from app.utils.logs import get_logger, start_log_listener, stop_log_listener_async
 from config import app_settings
 
 logger = get_logger("resources")
@@ -59,6 +59,7 @@ class ApplicationResources:
     model_modules: tuple[str, ...] = ()
     table_count: int = 0
     tables_created: bool = False
+    log_listener: object | None = None
     _extra: dict[str, object] = field(default_factory=dict, repr=False)
 
 
@@ -96,6 +97,14 @@ async def _drain_background_tasks() -> None:
 
 async def _dispose_db_engines() -> None:
     await _run_cleanup("DB engine", dispose_engine, DB_DISPOSE_TIMEOUT_SECONDS)
+
+
+async def _stop_log_listener() -> None:
+    await _run_cleanup(
+        "logging listener",
+        stop_log_listener_async,
+        LOGGING_DRAIN_TIMEOUT_SECONDS,
+    )
 
 
 async def _prepare_database(resources: ApplicationResources) -> None:
@@ -137,8 +146,14 @@ async def manage_application_resources(
     try:
         async with AsyncExitStack() as cleanup:
             # 등록 역순으로 실행된다 → 원하는 종료 순서의 역순으로 등록한다.
+            # listener 를 가장 먼저 등록해 **가장 마지막에** 멈춘다. 그래야 위
+            # 두 단계가 남기는 종료 로그까지 받아 출력한다.
+            cleanup.push_async_callback(_stop_log_listener)  # 3번째로 실행
             cleanup.push_async_callback(_dispose_db_engines)  # 2번째로 실행
             cleanup.push_async_callback(_drain_background_tasks)  # 1번째로 실행
+
+            # 이미 살아 있으면(모듈 import 시 시작됨) 그대로 쓴다 — 소유권만 여기로.
+            resources.log_listener = start_log_listener()
 
             await _prepare_database(resources)
 

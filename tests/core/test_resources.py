@@ -61,10 +61,20 @@ def wiring(monkeypatch):
         state["imported"] += 1
         return ["app.features.demo.models.models"]
 
+    async def fake_stop_listener() -> None:
+        calls.append("listener_stop")
+
+    def fake_start_listener() -> str:
+        calls.append("listener_start")
+        return "listener"
+
     monkeypatch.setattr(resources, "dispose_engine", fake_dispose)
     monkeypatch.setattr(resources, "create_db_tables", fake_create)
     monkeypatch.setattr(resources, "import_all_models", fake_import)
     monkeypatch.setattr(resources, "access_log_tasks", _FakeRunner(calls))
+    # 실제 listener 를 멈추면 이후 테스트의 로그 소비자가 사라진다.
+    monkeypatch.setattr(resources, "stop_log_listener_async", fake_stop_listener)
+    monkeypatch.setattr(resources, "start_log_listener", fake_start_listener)
     return calls, state
 
 
@@ -139,8 +149,11 @@ async def test_model_discovery_runs_once_per_startup(monkeypatch, wiring):
 # =============================================================================
 # AR-008 — 종료 순서와 실패 안전 cleanup
 # =============================================================================
-async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
-    """종료 순서는 background drain → DB dispose 다."""
+async def test_shutdown_order_is_drain_dispose_then_listener(monkeypatch, wiring):
+    """종료 순서는 background drain → DB dispose → logging listener stop 이다.
+
+    listener 를 마지막에 멈춰야 앞 두 단계가 남기는 종료 로그가 출력된다.
+    """
     calls, _ = wiring
     _use_tables(monkeypatch, 1)
     _set_debug(monkeypatch, False)
@@ -149,7 +162,12 @@ async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls == ["drain", "dispose"], f"종료 순서가 어긋났다: {calls}"
+    assert calls == [
+        "listener_start",
+        "drain",
+        "dispose",
+        "listener_stop",
+    ], f"종료 순서가 어긋났다: {calls}"
 
 
 async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
@@ -163,7 +181,11 @@ async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls == ["drain", "dispose"], "drain 실패 후 DB dispose 가 생략됐다 (AR-008 위반)"
+    assert calls[-3:] == [
+        "drain",
+        "dispose",
+        "listener_stop",
+    ], "drain 실패 후 뒤따르는 cleanup 이 생략됐다 (AR-008 위반)"
 
 
 async def test_startup_failure_still_runs_cleanup(monkeypatch, wiring):
@@ -211,7 +233,7 @@ async def test_lifespan_reentry_leaves_no_leak(monkeypatch, wiring):
             pass
         assert app.state.resources is None
 
-    assert calls == ["drain", "dispose", "drain", "dispose"]
+    assert calls == ["listener_start", "drain", "dispose", "listener_stop"] * 2
 
 
 async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
@@ -232,7 +254,11 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls == ["drain", "dispose"], "timeout 후 다음 cleanup 이 실행되지 않았다"
+    assert calls[-3:] == [
+        "drain",
+        "dispose",
+        "listener_stop",
+    ], "timeout 후 다음 cleanup 이 실행되지 않았다"
 
 
 def test_shutdown_timeout_budget_fits_total():

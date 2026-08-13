@@ -59,7 +59,6 @@ print("__REPORT__" + json.dumps(report))
 # 모든 시나리오 공통 .env 머리말 — 로그 출력이 리포트를 어지럽히지 않도록 끈다.
 ENV_HEADER = """
 LOG_CONSOLE_ENABLED=false
-LOG_FILE_ENABLED=false
 MYSQL_HOST=primary.example.com
 MYSQL_PORT=3306
 MYSQL_USER=app

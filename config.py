@@ -17,7 +17,6 @@
 
 from datetime import datetime
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -539,7 +538,11 @@ class LogSettings(BaseSettings):
     """
     로깅 설정
 
-    콘솔 및 파일 로깅을 설정합니다.
+    출력은 stdout/stderr 로만 나가며 저장·rotation 은 컨테이너 런타임이나 운영
+    agent 가 담당한다(NFR-009). 애플리케이션 파일 핸들러와 rotation 설정은
+    제거됐다 — 요청 event loop 에서 동기 파일 write/flush 가 일어나지 않게 하려는
+    것이다. 실제 쓰기는 QueueListener 스레드가 수행한다.
+
     DEBUG 모드에 따라 로그 레벨이 자동 결정됩니다.
 
     로그 레벨:
@@ -563,12 +566,6 @@ class LogSettings(BaseSettings):
         description="콘솔 로그 활성화",
     )
 
-    # 파일 로그 출력 활성화
-    LOG_FILE_ENABLED: bool = Field(
-        default=True,
-        description="파일 로그 활성화",
-    )
-
     # === 로그 레벨 설정 ===
     # None이면 DEBUG 설정에 따라 자동 결정
     LOG_LEVEL: str | None = Field(
@@ -582,43 +579,6 @@ class LogSettings(BaseSettings):
         description="콘솔 로그 레벨",
     )
 
-    # 파일 로그 레벨
-    LOG_FILE_LEVEL: str = Field(
-        default="INFO",
-        description="파일 로그 레벨",
-    )
-
-    # === 파일 설정 ===
-    # 로그 파일 저장 디렉토리
-    LOG_DIR: str = Field(
-        default="logs",
-        description="로그 디렉토리 경로",
-    )
-
-    # 앱 로그 파일명 패턴 ({date}는 YYYY-MM-DD로 치환)
-    LOG_APP_FILENAME: str = Field(
-        default="{date}_app.log",
-        description="앱 로그 파일명 패턴",
-    )
-
-    # 에러 로그 파일명 패턴 ({date}는 YYYY-MM-DD로 치환)
-    LOG_ERROR_FILENAME: str = Field(
-        default="{date}_error.log",
-        description="에러 로그 파일명 패턴",
-    )
-
-    # 단일 로그 파일 최대 크기 (MB)
-    LOG_MAX_SIZE_MB: int = Field(
-        default=10,
-        description="로그 파일 최대 크기(MB)",
-    )
-
-    # 보관할 백업 로그 파일 개수
-    LOG_BACKUP_COUNT: int = Field(
-        default=5,
-        description="백업 로그 파일 개수",
-    )
-
     # === 포맷 설정 ===
     # 콘솔 로그 출력 형식
     LOG_CONSOLE_FORMAT: str = Field(
@@ -626,23 +586,11 @@ class LogSettings(BaseSettings):
         description="콘솔 로그 포맷",
     )
 
-    # 파일 로그 출력 형식
-    LOG_FILE_FORMAT: str = Field(
-        default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="파일 로그 포맷",
-    )
-
     # 날짜 출력 형식
     LOG_DATE_FORMAT: str = Field(
         default="%Y-%m-%d %H:%M:%S",
         description="날짜 포맷",
     )
-
-    def get_log_dir(self) -> Path:
-        """로그 디렉토리 경로 반환 (없으면 생성)"""
-        log_dir = Path(self.LOG_DIR)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        return log_dir
 
     def get_effective_log_level(self, debug: bool) -> str:
         """
