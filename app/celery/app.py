@@ -6,6 +6,9 @@
 
 from celery import Celery
 
+# import 만으로 worker_process_init/shutdown 시그널이 등록된다.
+# worker 는 이 모듈을 진입점으로 로드하므로 여기가 등록의 유일한 지점이다(AR-010).
+from app.celery import lifecycle  # noqa: F401 - 시그널 등록 부작용이 목적
 from config import redis_settings, timezone_settings
 
 celery_app = Celery(

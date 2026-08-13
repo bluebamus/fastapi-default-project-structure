@@ -31,3 +31,18 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
         _worker_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(_worker_loop)
     return _worker_loop.run_until_complete(coro)
+
+
+def get_worker_loop() -> asyncio.AbstractEventLoop | None:
+    """이 워커 프로세스의 영속 루프(아직 만들지 않았으면 None).
+
+    루프에 바인딩된 DB pool 을 정리해야 하는 종료 훅(app/celery/lifecycle.py)이
+    쓴다. 루프 소유권은 이 모듈에 있고, 종료 순서는 lifecycle 이 결정한다.
+    """
+    return _worker_loop
+
+
+def clear_worker_loop() -> None:
+    """루프 참조를 비운다. 다음 ``run_async`` 가 새 루프를 만든다."""
+    global _worker_loop
+    _worker_loop = None

@@ -7,14 +7,14 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.db.session import engine
+from app.core.db.session import READINESS_TIMEOUT_SECONDS, engine, ping_writer_db
 from app.core.exception import AppException, ErrorResponse, ValidationException
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
@@ -157,34 +157,75 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 class HealthResponse(BaseModel):
-    """헬스체크 응답 스키마"""
+    """헬스체크(liveness) 응답 스키마"""
 
-    status: str
-    version: str
+    status: str = Field(description="프로세스 상태", examples=["healthy"])
+    version: str = Field(description="애플리케이션 버전", examples=["0.1.0"])
+
+
+class ReadyResponse(BaseModel):
+    """준비 상태(readiness) 응답 스키마"""
+
+    status: str = Field(description="준비 상태", examples=["ready"])
 
 
 def _add_health_and_docs(app: FastAPI) -> None:
-    """헬스체크 엔드포인트와 Scalar API 문서를 등록합니다."""
+    """liveness·readiness 엔드포인트와 Scalar API 문서를 등록합니다."""
 
     @app.get(
         "/health",
         response_model=HealthResponse,
         tags=["Health"],
-        summary="헬스체크",
-        description="서버의 정상 동작 여부를 확인합니다.",
+        summary="헬스체크(liveness)",
+        description=(
+            "프로세스가 살아 있는지만 확인합니다. **외부 연결을 검사하지 않습니다** — "
+            "DB 가 잠깐 흔들릴 때 이 엔드포인트까지 실패하면 살아 있는 프로세스가 "
+            "재시작됩니다. 의존 자원 준비 여부는 `/ready` 를 사용하세요."
+        ),
         operation_id="healthCheck",
     )
     async def health_check() -> HealthResponse:
-        """
-        헬스체크 엔드포인트
-
-        Returns:
-            서버 상태 정보
-        """
+        """프로세스 생존 여부만 반환한다."""
         return HealthResponse(
             status="healthy",
             version=app_settings.VERSION,
         )
+
+    @app.get(
+        "/ready",
+        response_model=ReadyResponse,
+        tags=["Health"],
+        summary="준비 상태(readiness)",
+        description=(
+            "트래픽을 받을 준비가 됐는지 확인합니다. writer DB 에 `SELECT 1` 을 "
+            f"최대 {READINESS_TIMEOUT_SECONDS:.0f}초 안에 실행하고, 실패하거나 "
+            "시간을 넘기면 503 을 반환합니다."
+        ),
+        operation_id="readinessCheck",
+        responses={
+            503: {
+                "model": ErrorResponse,
+                "description": "DB 를 사용할 수 없거나 응답이 늦어 준비되지 않음",
+            }
+        },
+    )
+    async def readiness_check() -> ReadyResponse:
+        """writer DB 를 확인하고 준비 상태를 반환한다."""
+        try:
+            await ping_writer_db()
+        except Exception as exc:
+            # 상세는 서버 로그에만 남긴다. 헬스 엔드포인트는 보통 인증 없이 열려
+            # 있어, 응답에 DSN·자격증명·드라이버 오류 원문이 실리면 그대로 유출된다.
+            logger.warning(
+                "[Readiness] DB 준비 확인 실패: %s",
+                type(exc).__name__,
+                extra={"exception_type": type(exc).__name__},
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="서비스가 아직 요청을 받을 준비가 되지 않았습니다.",
+            ) from exc
+        return ReadyResponse(status="ready")
 
     # Scalar API 문서 (DEBUG 모드에서만 활성화)
     if app_settings.DEBUG:

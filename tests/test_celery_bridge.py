@@ -45,3 +45,91 @@ def test_run_async_returns_coroutine_result() -> None:
         return 21 * 2
 
     assert run_async(compute()) == 42
+
+
+# =============================================================================
+# AR-010 — worker 프로세스 종료 시 async 자원 해제
+#
+# FastAPI lifespan 은 Celery worker 프로세스에서 실행되지 않는다. worker 가 만든
+# 영속 루프와 그 루프에 바인딩된 DB pool 을 아무도 닫지 않으면, 종료 시 커넥션이
+# 서버 쪽에 남고 "Event loop is closed" 경고가 쏟아진다.
+# =============================================================================
+def test_worker_shutdown_disposes_db_before_closing_loop(monkeypatch) -> None:
+    """DB dispose 는 루프가 **살아 있는 동안** 실행돼야 한다.
+
+    루프를 먼저 닫으면 dispose 가 실행될 자리가 사라진다 — async pool 정리는
+    코루틴이라 루프가 필요하다.
+    """
+    from app.celery import lifecycle
+
+    order: list[str] = []
+    observed: dict[str, bool] = {}
+
+    async def fake_dispose() -> None:
+        order.append("dispose")
+        observed["loop_alive"] = not asyncio.get_running_loop().is_closed()
+
+    monkeypatch.setattr(lifecycle, "dispose_engine", fake_dispose)
+
+    run_async(asyncio.sleep(0))  # 워커 루프 생성
+    lifecycle.shutdown_worker_resources()
+
+    assert order == ["dispose"]
+    assert observed["loop_alive"] is True
+    assert lifecycle.get_worker_loop() is None, "종료 후 전역 루프 참조가 남아 있다"
+
+
+def test_worker_shutdown_closes_loop_and_is_idempotent(monkeypatch) -> None:
+    """루프를 닫고 참조를 비운다. 두 번 불러도 터지지 않는다."""
+    from app.celery import lifecycle
+
+    async def fake_dispose() -> None:
+        return None
+
+    monkeypatch.setattr(lifecycle, "dispose_engine", fake_dispose)
+
+    run_async(asyncio.sleep(0))
+    loop = lifecycle.get_worker_loop()
+    assert loop is not None and not loop.is_closed()
+
+    lifecycle.shutdown_worker_resources()
+    assert loop.is_closed(), "worker 루프가 닫히지 않았다"
+
+    lifecycle.shutdown_worker_resources()  # 재호출 안전
+
+
+def test_worker_shutdown_without_loop_is_noop(monkeypatch) -> None:
+    """태스크를 한 번도 실행하지 않은 worker 에서도 안전해야 한다."""
+    from app.celery import lifecycle
+
+    called: list[str] = []
+
+    async def fake_dispose() -> None:
+        called.append("dispose")
+
+    monkeypatch.setattr(lifecycle, "dispose_engine", fake_dispose)
+
+    lifecycle.shutdown_worker_resources()  # 남아 있으면 먼저 정리
+    called.clear()
+    lifecycle.shutdown_worker_resources()  # 이제 루프가 없다
+
+    assert called == [], "루프가 없는데 DB dispose 를 시도했다"
+
+
+def test_dispose_failure_still_closes_loop(monkeypatch) -> None:
+    """dispose 가 실패해도 루프는 닫아야 한다 — 안 닫으면 프로세스가 안 죽는다."""
+    from app.celery import lifecycle
+
+    async def boom() -> None:
+        raise RuntimeError("dispose 실패(의도적)")
+
+    monkeypatch.setattr(lifecycle, "dispose_engine", boom)
+
+    run_async(asyncio.sleep(0))
+    loop = lifecycle.get_worker_loop()
+    assert loop is not None
+
+    lifecycle.shutdown_worker_resources()
+
+    assert loop.is_closed()
+    assert lifecycle.get_worker_loop() is None
