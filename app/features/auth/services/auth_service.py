@@ -31,9 +31,9 @@ _DUMMY_PASSWORD_HASH = hash_password("constant-time-dummy-password")
 class AuthService(BaseService):
     """인증 비즈니스 로직(세션 기반). 커밋은 의존성이 담당."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session)
-        self.users = UserRepository(session)
+    def __init__(self, db_session: AsyncSession) -> None:
+        super().__init__(db_session)
+        self.users = UserRepository(db_session)
 
     async def register(self, data: RegisterRequest) -> User:
         """사용자를 생성한다(사용자명 중복 시 409)."""

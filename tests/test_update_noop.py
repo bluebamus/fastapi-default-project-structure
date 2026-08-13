@@ -53,7 +53,7 @@ class _MissingRepo:
 
 
 def _build(service_cls, repo):
-    service = service_cls(session=None)  # DB 없이 구성(트랜잭션 경계 불필요)
+    service = service_cls(db_session=None)  # DB 없이 구성(트랜잭션 경계 불필요)
     service.repository = repo
     return service
 

@@ -30,7 +30,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_session, get_session
+from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.blog.models.models import Post  # noqa: F401  (register table)
 from main import app
 
@@ -75,10 +75,10 @@ async def tx_client():
             session.rollback = _counting_rollback  # type: ignore[method-assign]
             yield session
 
-    # 조회 엔드포인트는 get_read_session 을 쓴다. 같은 세션으로 오버라이드해야
+    # 조회 엔드포인트는 get_read_only_db_session 을 쓴다. 같은 세션으로 오버라이드해야
     # 읽기/쓰기 커밋 횟수를 한 카운터로 셀 수 있다.
-    app.dependency_overrides[get_session] = _override_get_session
-    app.dependency_overrides[get_read_session] = _override_get_session
+    app.dependency_overrides[get_writer_db_session] = _override_get_session
+    app.dependency_overrides[get_read_only_db_session] = _override_get_session
     # raise_app_exceptions=False: 서버 예외를 그대로 던지지 않고 실제 응답으로 받아야
     # "클라이언트가 무엇을 보는가"를 검증할 수 있다.
     transport = ASGITransport(app=app, raise_app_exceptions=False)

@@ -11,7 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_session, get_session
+from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.user.models.models import User  # noqa: F401  (register table)
 from main import app
 
@@ -42,10 +42,10 @@ async def counting_client():
             session.commit = _counting_commit  # type: ignore[method-assign]
             yield session
 
-    # get_current_user 는 get_read_session 을 쓴다. 같은 세션으로 오버라이드해야
+    # get_current_user 는 get_read_only_db_session 을 쓴다. 같은 세션으로 오버라이드해야
     # 인증 경로의 커밋 횟수를 한 카운터로 셀 수 있다.
-    app.dependency_overrides[get_session] = _override_get_session
-    app.dependency_overrides[get_read_session] = _override_get_session
+    app.dependency_overrides[get_writer_db_session] = _override_get_session
+    app.dependency_overrides[get_read_only_db_session] = _override_get_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c, counter
