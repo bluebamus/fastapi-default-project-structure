@@ -8,7 +8,7 @@
 from typing import Any
 
 from fastapi import status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # =============================================================================
@@ -17,9 +17,15 @@ from pydantic import BaseModel
 class ErrorResponse(BaseModel):
     """API 에러 응답 스키마"""
 
-    error_code: str
-    message: str
-    detail: Any | None = None
+    error_code: str = Field(..., description="기계 판독용 에러 코드 — 클라이언트 분기에 사용")
+    message: str = Field(..., description="사용자에게 보여줄 수 있는 에러 메시지")
+    detail: Any | None = Field(
+        None,
+        description=(
+            "부가 정보(선택). 어떤 리소스·연산이었는지 같은 **식별 정보만** 담는다 — "
+            "드라이버 원문이나 SQL 파라미터는 서버 로그로만 남는다(F-006)."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {

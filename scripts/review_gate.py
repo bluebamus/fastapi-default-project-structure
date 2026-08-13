@@ -43,10 +43,18 @@ SKIP_PARTS = {
 
 failures: list[str] = []
 
+# Windows 콘솔 기본 코드페이지(cp949)로는 한글·em dash 를 못 쓴다. 게이트가 **실패를
+# 보고하려는 순간** UnicodeEncodeError 로 죽으면, 초록일 때만 동작하는 게이트가 된다.
+# 표준 출력 자체를 UTF-8 로 바꾸고, 그마저 안 되면 대체문자로라도 반드시 보고한다.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if _reconfigure is not None:
+        _reconfigure(encoding="utf-8", errors="replace")
+
 
 def report(name: str, ok: bool, detail: str = "") -> None:
     mark = "PASS" if ok else "FAIL"
-    print(f"[{mark}] {name}{'  — ' + detail if detail else ''}")
+    print(f"[{mark}] {name}{'  - ' + detail if detail else ''}")
     if not ok:
         failures.append(f"{name}: {detail}" if detail else name)
 
