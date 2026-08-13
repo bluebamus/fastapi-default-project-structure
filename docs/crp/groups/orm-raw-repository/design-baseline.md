@@ -36,6 +36,7 @@
 |---|---|---|---|---|---|
 | REQ-001 | 2026-08-13 | `docs/orm-raw-repository/2026-08-13` 문서 기반 시나리오 개발 진행, 이후 테스트·검수로 서비스에 문제 없도록 | 세 문서가 정의한 **Phase 0~7 전체** 구현 + 전체 품질 게이트 통과 | Active | ADR-001 |
 | REQ-002 | 2026-08-13 | MySQL 통합 검증을 WSL 컨테이너로 고려 | MySQL 8.4 **전용 컨테이너 신규 생성**, 포트 변경(3307), 기존 3306 공유 인스턴스 무접촉 | Active | ADR-002 |
+| REQ-003 | 2026-08-13 | 각 단계 진행 후 테스트·검수 수행, 버그/문제를 지속 관리해 코드 품질 유지 | Phase 종료마다 **검수 게이트 의무화**: 품질 게이트 4종 + 불변식 점검 + 발견 문제를 `ledger.md` 에 누적. Open Fix 0 이 아니면 다음 Phase 로 넘어가지 않는다 | Active | ADR-006 |
 
 ## 3. 설계 결정 기록 (ADR — 확정 후 불변)
 
@@ -46,6 +47,7 @@
 | ADR-003 | 2026-08-13 | Raw 원본 테이블명은 **`sales_orders`** 로 확정. | requirements SCN-RAW-001 및 plan Phase 5 가 `sales_orders` 로 명시. workflow-guide §4.3 의 `orders` 는 예시 오기로 판단하며 요구 명세가 우선한다. | Accepted | — |
 | ADR-004 | 2026-08-13 | Phase 1 의 로깅 계약 파괴(production/staging 파일 핸들러 제거, Queue 전환)를 승인 범위에 포함한다. 단 **독립 커밋**으로 분리하고 `tests/utils/test_logs.py` 를 재작성한다. | NFR-009 가 명시적으로 요구. 되돌리기 쉽도록 커밋을 분리한다. | Accepted | — |
 | ADR-005 | 2026-08-13 | 기준선 테스트 수는 **201개**로 확정. | 인코딩 결함 수정 후 실측: 201 collected / 201 passed. 문서의 "201개" 와 일치. | Accepted | — |
+| ADR-006 | 2026-08-13 | Phase 종료마다 **검수 게이트**를 통과해야 다음 Phase 로 넘어간다. 게이트 = ①pytest 전건 통과 ②ruff check ③ruff format --check ④mypy ⑤해당 Phase 의 불변식 점검 ⑥`baseline/openapi.json` 대비 기존 30개 operation 불변 ⑦ledger Open Fix 0. | 단계마다 검수하지 않으면 결함이 다음 단계 코드에 섞여 원인 격리가 불가능해진다. 발견 문제는 즉시 ledger 에 기록해 "나중에" 로 흘리지 않는다. | Accepted | — |
 
 ## 4. 불가침 제약 (INVARIANT REQUIREMENTS — 추가 작업이 위반 금지)
 
