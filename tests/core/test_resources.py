@@ -261,6 +261,70 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
     ], "timeout 후 다음 cleanup 이 실행되지 않았다"
 
 
+async def test_drain_gets_headroom_to_finish_cancellation(monkeypatch, wiring):
+    """drain 에 준 시간은 바깥 예산보다 짧아야 한다 (F-001).
+
+    같은 값을 주면 drain 이 timeout 에 도달해 pending 을 취소하고 회수(gather)하려는
+    순간 바깥 timeout 이 끊는다. 그러면 취소된 태스크의 finally — 세션 rollback/close
+    — 가 실행되지 못한 채 곧바로 DB dispose 로 넘어간다(AR-009 보장 붕괴).
+    """
+    calls, _ = wiring
+    seen: dict[str, float | None] = {}
+
+    class _RecordingRunner:
+        async def drain(self, timeout: float | None = None) -> None:
+            calls.append("drain")
+            seen["timeout"] = timeout
+
+    monkeypatch.setattr(resources, "access_log_tasks", _RecordingRunner())
+    _use_tables(monkeypatch, 1)
+    _set_debug(monkeypatch, False)
+
+    app = FastAPI()
+    async with resources.manage_application_resources(app):
+        pass
+
+    drain_timeout = seen["timeout"]
+    assert drain_timeout is not None
+    assert (
+        drain_timeout < resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS
+    ), "drain 에 바깥 예산과 같은 값을 주면 취소 회수 도중 잘린다"
+
+
+async def test_cancelled_task_cleanup_survives_the_outer_timeout(monkeypatch, wiring):
+    """실제 러너로, 예산 안에서 취소된 태스크의 finally 가 끝까지 실행되는지 본다."""
+    from app.core.middlewares.background_tasks import BackgroundTaskRunner
+
+    calls, _ = wiring
+    cleaned: list[str] = []
+    started = asyncio.Event()
+
+    runner = BackgroundTaskRunner(max_concurrent=5)
+
+    async def with_cleanup() -> None:
+        started.set()
+        try:
+            await asyncio.sleep(3600)
+        finally:
+            await asyncio.sleep(0)  # 취소 후에도 await 지점이 남아 있는 경우
+            cleaned.append("cleanup")
+
+    assert runner.spawn(with_cleanup()) is True
+    await started.wait()
+
+    monkeypatch.setattr(resources, "access_log_tasks", runner)
+    monkeypatch.setattr(resources, "BACKGROUND_DRAIN_TIMEOUT_SECONDS", 0.2)
+    _use_tables(monkeypatch, 1)
+    _set_debug(monkeypatch, False)
+
+    app = FastAPI()
+    async with resources.manage_application_resources(app):
+        pass
+
+    assert cleaned == ["cleanup"], "취소된 태스크의 정리가 바깥 timeout 에 잘렸다"
+    assert runner.active == 0
+
+
 def test_shutdown_timeout_budget_fits_total():
     """자원별 timeout 합이 전체 shutdown 예산을 넘지 않는다 (확정 정책 6)."""
     per_resource = (

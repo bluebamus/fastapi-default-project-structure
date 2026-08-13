@@ -47,6 +47,11 @@ DB_DISPOSE_TIMEOUT_SECONDS = 10.0
 LOGGING_DRAIN_TIMEOUT_SECONDS = 5.0
 SHUTDOWN_TOTAL_TIMEOUT_SECONDS = 20.0
 
+# drain 예산 중 "완료를 기다리는" 몫. 나머지는 timeout 이후 pending 을 취소하고
+# 회수(gather)하는 데 쓴다. 바깥 guard 와 같은 값을 주면 취소 회수 도중 잘려,
+# 태스크의 finally(세션 rollback/close)가 실행되지 못한 채 DB dispose 로 넘어간다.
+DRAIN_WAIT_RATIO = 0.8
+
 
 @dataclass(slots=True)
 class ApplicationResources:
@@ -88,9 +93,10 @@ async def _run_cleanup(
 
 
 async def _drain_background_tasks() -> None:
+    wait_timeout = BACKGROUND_DRAIN_TIMEOUT_SECONDS * DRAIN_WAIT_RATIO
     await _run_cleanup(
         "background task",
-        lambda: access_log_tasks.drain(timeout=BACKGROUND_DRAIN_TIMEOUT_SECONDS),
+        lambda: access_log_tasks.drain(timeout=wait_timeout),
         BACKGROUND_DRAIN_TIMEOUT_SECONDS,
     )
 
