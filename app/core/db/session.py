@@ -52,10 +52,12 @@ DB 세션 Dependency (정식 이름 — TX-005):
             await db_session.commit()
 """
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -358,6 +360,27 @@ async def get_background_db_session() -> AsyncGenerator[AsyncSession, None]:
                 f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
             )
             raise e
+
+
+# readiness 검사 예산 (확정 정책 5). 넘기면 준비되지 않은 것으로 본다 —
+# 오케스트레이터를 기다리게 하는 것보다 503 을 빨리 돌려주는 편이 낫다.
+READINESS_TIMEOUT_SECONDS = 2.0
+
+
+async def ping_writer_db(timeout: float = READINESS_TIMEOUT_SECONDS) -> None:
+    """writer DB 에 ``SELECT 1`` 을 실행한다 (readiness 용).
+
+    replica 가 아니라 **writer** 를 보는 이유는, 쓰기가 불가능한 인스턴스로
+    트래픽이 들어오는 것이 준비 실패의 실질적 의미이기 때문이다.
+
+    Raises:
+        TimeoutError: ``timeout`` 안에 응답하지 못한 경우.
+        Exception: 연결·쿼리 실패 시 드라이버 예외를 그대로 올린다. 호출자가
+            사용자 응답에 내용을 싣지 않도록 주의해야 한다(DSN·자격증명 노출).
+    """
+    async with asyncio.timeout(timeout):
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
 
 
 async def dispose_engine() -> None:

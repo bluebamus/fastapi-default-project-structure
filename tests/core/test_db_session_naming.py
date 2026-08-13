@@ -33,9 +33,9 @@ def test_canonical_dependencies_exist():
     for name in CANONICAL_DEPENDENCIES:
         dependency = getattr(db_session_module, name, None)
         assert dependency is not None, f"정식 Dependency {name} 이 없다"
-        assert inspect.isasyncgenfunction(dependency), (
-            f"{name} 은 요청 종료 시 세션을 닫아야 하므로 async generator 여야 한다"
-        )
+        assert inspect.isasyncgenfunction(
+            dependency
+        ), f"{name} 은 요청 종료 시 세션을 닫아야 하므로 async generator 여야 한다"
 
 
 def test_background_context_manager_is_renamed():
@@ -50,9 +50,9 @@ def test_deprecated_aliases_are_the_same_object():
     두 개 열린다(커밋 주체가 둘이 되는 사고로 이어진다).
     """
     for old, new in DEPRECATED_ALIASES.items():
-        assert getattr(db_session_module, old) is getattr(db_session_module, new), (
-            f"{old} 이 {new} 와 다른 객체다 — Depends 캐시 키가 갈라진다"
-        )
+        assert getattr(db_session_module, old) is getattr(
+            db_session_module, new
+        ), f"{old} 이 {new} 와 다른 객체다 — Depends 캐시 키가 갈라진다"
 
 
 def test_application_code_uses_canonical_names_only():
