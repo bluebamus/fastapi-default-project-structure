@@ -47,7 +47,7 @@ class UserAccessLogService(BaseService):
     ) -> tuple[Sequence[UserAccessLog], int]:
         """접속 로그 목록과 전체 개수를 조회한다."""
         self.log.debug("접속 로그 목록 조회: skip=%s, limit=%s", skip, limit)
-        logs = await self.repository.get_all(skip=skip, limit=limit)
+        logs = await self.repository.list(skip=skip, limit=limit)
         total = await self.repository.count()
         return logs, total
 

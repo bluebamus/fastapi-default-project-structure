@@ -31,6 +31,8 @@
 | F-016 | MED | 테스트 결정성 — 검증 결과가 주변 환경에 좌우되면 안 된다 | Fix | Fixed | `tests/core/test_db_router_env.py` `PYTHONIOENCODING=utf-8` | 자식 프로세스의 stderr 를 utf-8 로 디코딩하는데 자식은 Windows 콘솔 코드페이지(cp949)로 썼다. 한글이 U+FFFD 로 바뀌어 "오류 메시지에 이 단어가 있는가" 검증이 조용히 실패했다. ASCII 를 보는 형제 케이스는 통과해서 더 늦게 드러났다. 자식의 stdio 인코딩을 명시해 환경 의존을 제거 |
 | F-017 | **HIGH** | ADR-006 — 게이트는 결함을 **보고**해야 한다 | Fix | Fixed | `scripts/review_gate.py` stdout UTF-8 재설정 | 게이트가 실패 상세를 출력하는 순간 cp949 로 em dash 를 못 써 `UnicodeEncodeError` 로 **죽었다**. 전건 통과일 때만 정상 종료하는 게이트여서, 실패를 "게이트가 깨졌다"로 오인할 수 있었다. 검수 장치가 초록일 때만 동작하면 검수가 아니다. 실제로 이번에 mypy 3건이 이 크래시에 가려져 있었다 |
 
+| F-018 | MED | 문서 정합성 — 문서대로 따라 하면 동작해야 한다 | Fix | Fixed | README·ARCHITECTURE·QUICKSTART 갱신 (커밋 `bbce6a3`) | 문서가 코드보다 오래되어 **따라 하면 깨지는** 것들이 있었다: ①제거된 `get_all_with()` 를 N+1 해법으로 안내 ②`BaseRepository` 공개 메서드 목록이 옛것(get_or_create·bulk_create 등 없는 메서드) ③세션 헬퍼 이름 23곳이 deprecated alias ④**존재하지 않는 환경변수 8개**(`LOG_FILE_ENABLED`·`LOG_DIR`·`LOG_MAX_SIZE_MB` …)를 로깅 설정표에 문서화 — Phase 1 에서 파일 핸들러를 없앴는데 표만 남아, 설정한 사람은 파일 로그가 생길 거라 믿었을 것이다. 문서가 참조하는 파일 경로를 전수 검사해 실재 확인 |
+
 ## 검수 라운드 기록
 
 | 라운드 | 시점 | 범위 | 게이트 결과 | 신규 finding |
@@ -41,6 +43,9 @@
 | R-4 | 2026-08-13 | Phase 4 (Raw Base) | 전건 통과 (308 tests) | F-008(CRIT), F-009, F-010 |
 | R-5 | 2026-08-13 | Phase 5 (시나리오 2종 + MySQL 8.4) | 전건 통과 (364 tests, MySQL 통합 6건 실제 실행) | F-011(HIGH), F-012, F-013, F-014 |
 | R-6 | 2026-08-13 | Phase 6 (Scalar/OpenAPI) | 전건 통과 (373 tests) | F-015, F-016, F-017(HIGH) |
+| R-7 | 2026-08-13 | Phase 7 (문서 + 호환 이름 제거) | 전건 통과 (373 tests) | F-018 |
+
+**Open 인 Fix: 0건.** 잔여 위험 6건과 미검사 항목은 `residual-risk.md` 에 있다.
 
 <!--
 규칙:

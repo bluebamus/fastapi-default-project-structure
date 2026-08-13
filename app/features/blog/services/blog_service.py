@@ -43,7 +43,7 @@ class BlogService(BaseService):
     ) -> tuple[Sequence[Post], int]:
         """게시글 목록과 전체 개수를 조회한다."""
         self.log.debug("게시글 목록 조회: skip=%s limit=%s", skip, limit)
-        posts = await self.repository.get_all(skip=skip, limit=limit)
+        posts = await self.repository.list(skip=skip, limit=limit)
         total = await self.repository.count()
         return posts, total
 
@@ -51,7 +51,7 @@ class BlogService(BaseService):
         """게시글을 부분 수정한다. 없으면 PostNotFoundException."""
         self.log.debug("게시글 수정: id=%s", post_id)
         existing = await self.get_post(post_id)  # 존재 보장(없으면 404)
-        updated = await self.repository.update(post_id, data.model_dump(exclude_unset=True))
+        updated = await self.repository.update_by_id(post_id, data.model_dump(exclude_unset=True))
         # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
         # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
         return updated if updated is not None else existing
@@ -59,6 +59,6 @@ class BlogService(BaseService):
     async def delete_post(self, post_id: str) -> None:
         """게시글을 삭제한다. 없으면 PostNotFoundException."""
         self.log.debug("게시글 삭제: id=%s", post_id)
-        deleted = await self.repository.delete(post_id)
+        deleted = await self.repository.delete_by_id(post_id)
         if not deleted:
             raise PostNotFoundException(detail={"id": post_id})

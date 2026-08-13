@@ -19,8 +19,7 @@ DB 세션 Dependency (정식 이름 — TX-005):
     - background_db_session():     요청 밖 context manager (Celery 등)
 
     이름에 ``db_session`` 을 넣는 이유는 사용자 세션·HTTP 세션과 구분하기 위해서다.
-    옛 이름(get_session/get_read_session/get_write_session/get_background_session/
-    background_session)은 전환 기간의 deprecated 별칭이며 신규 코드에서 쓰지 않는다.
+    전환 기간에 두었던 짧은 옛 이름들은 제거했다 — 위 5개가 공개 이름의 전부다.
 
 커넥션 풀 분리 이유:
     백그라운드 태스크(예: 접속 로그 저장)가 메인 API 요청의 커넥션 풀을
@@ -278,7 +277,7 @@ async def get_routed_db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception as e:
             await session.rollback()
             logger.error(
-                f"[get_session] ROLLBACK - error: {type(e).__name__}: {e}, "
+                f"[get_routed_db_session] ROLLBACK - error: {type(e).__name__}: {e}, "
                 f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
             )
             raise e
@@ -355,7 +354,7 @@ async def get_background_db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception as e:
             await session.rollback()
             logger.error(
-                f"[get_background_session] ROLLBACK - "
+                f"[get_background_db_session] ROLLBACK - "
                 f"error: {type(e).__name__}: {e}, "
                 f"duration: {(time.perf_counter() - start_time)*1000:.1f}ms"
             )
@@ -405,16 +404,3 @@ async def dispose_engine() -> None:
 
     await background_engine.dispose()
     logger.info("[dispose_engine] Background engine disposed - ALL DONE")
-
-
-# =============================================================================
-# Deprecated 별칭 — 호출부 전환 기간에만 유지한다 (TX-005 / MIG-002 단계 9)
-# =============================================================================
-# 새 이름이 정식 API 다. 옛 이름은 **같은 함수 객체**를 가리키게 둔다 — 별도 래퍼로
-# 감싸면 FastAPI 의 의존성 캐시 키(callable 자체)가 달라져, 전환 중 한 요청에서
-# 세션이 둘로 갈라진다. 전체 호출부 전환과 사용처 0건 확인 후 별도 단계에서 지운다.
-get_session = get_routed_db_session
-get_read_session = get_read_only_db_session
-get_write_session = get_writer_db_session
-get_background_session = get_background_db_session
-background_session = background_db_session

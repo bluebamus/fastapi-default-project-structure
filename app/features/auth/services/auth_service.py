@@ -69,4 +69,4 @@ class AuthService(BaseService):
 
     async def get_user_by_id(self, user_id: str) -> User | None:
         """ID 로 사용자를 조회한다."""
-        return await self.users.get_one(id=user_id)
+        return await self.users.get_by_id(user_id)

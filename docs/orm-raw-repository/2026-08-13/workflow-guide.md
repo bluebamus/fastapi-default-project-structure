@@ -61,7 +61,8 @@ Raw 조회 전용 기능은 결과용 ORM 모델을 만들지 않는다. DB 테�
 Dependency 인자와 Service/Repository 생성자 및 속성은 `db_session`과
 `self.db_session`을 사용한다. 기존 `get_session`, `get_read_session`,
 `get_write_session`, `get_background_session`, `background_session`은 마이그레이션 기간의
-deprecated alias이며 신규 코드에서는 사용하지 않는다.
+deprecated alias였으며 **MIG-002 단계 9에서 제거했다**. 위 표의 이름이 전부다.
+(되살아나지 않도록 `tests/core/test_db_session_naming.py`가 검사한다.)
 
 JWT는 향후 기본 인증 방식으로 적용하지만 이 지침의 현재 구현 범위에는 포함하지 않는다.
 기존 인증 회귀만 보호하며 token lifecycle과 권한 정책은 별도 후속 명세로 관리한다.

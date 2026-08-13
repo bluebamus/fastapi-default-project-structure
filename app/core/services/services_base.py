@@ -16,7 +16,7 @@
 
         async def list(self, skip: int, limit: int):
             self.log.debug("목록 조회 skip=%s limit=%s", skip, limit)
-            return await self.repository.get_all(skip=skip, limit=limit)
+            return await self.repository.list(skip=skip, limit=limit)
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
