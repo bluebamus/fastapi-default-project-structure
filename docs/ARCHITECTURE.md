@@ -33,7 +33,6 @@ fastapi-default-project-structure/
 │   ├── core/                        # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py             # 공통 예외 계층 + ErrorResponse
 │   │   ├── tags_metadata.py         # OpenAPI 태그 메타데이터
-│   │   ├── rate_limit.py            # slowapi limiter + 초과 핸들러
 │   │   ├── db/
 │   │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀, background_session
 │   │   │   ├── router.py            # 읽기/쓰기 라우팅 (RoutingSession)

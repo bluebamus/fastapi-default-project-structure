@@ -16,7 +16,6 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - [로깅 시스템](#로깅-시스템)
 - [접속 로그 미들웨어](#접속-로그-미들웨어)
 - [인증 (JWT)](#인증-jwt)
-- [레이트 리밋](#레이트-리밋)
 - [신규 기능 개발 가이드](#신규-기능-개발-가이드)
 - [API 문서](#api-문서)
 
@@ -32,7 +31,6 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - **명시적 트랜잭션 경계**: 기능 의존성(`get_<name>_service`)은 Service 구성만 담당하고, 커밋은 **쓰기 핸들러 본문**이 `await service.commit()` 로 수행(UnitOfWork 미사용)
 - **읽기/쓰기 세션 분리**: 조회 전용 의존성(`get_<name>_service_readonly`)은 `get_read_session` 을 받아 커밋하지 않음 — 예외 시 세션 teardown이 롤백
 - **인증(JWT)**: OAuth2 Password 플로우 + JWT access/refresh 토큰, bcrypt 비밀번호 해시 (`auth` 기능, `app/utils/authenticator/`)
-- **레이트 리밋**: slowapi 데코레이터 기반 라우트별 한도(`app/core/rate_limit.py`, `RATE_LIMIT_ENABLED` 로 토글)
 - **N+1 문제 해결**: Eager Loading 전략 내장 (selectin, joined, subquery)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
 - **구조화된 로깅**: 콘솔/파일 로그 분리, 자동 로그 로테이션
@@ -55,7 +53,6 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 | API Docs | Scalar |
 | Task Queue | Celery + Redis |
 | Auth | OAuth2 Password + JWT(PyJWT) + bcrypt |
-| Rate Limit | slowapi |
 
 ---
 
@@ -138,7 +135,6 @@ fastapi-default-project-structure/
 │   │       └── tests/           # 이 기능의 테스트
 │   ├── core/                    # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py         # 공통 예외 계층
-│   │   ├── rate_limit.py        # slowapi limiter + 초과 핸들러
 │   │   ├── tags_metadata.py     # OpenAPI 태그 설명
 │   │   ├── db/                  # 세션·라우팅·모델 등록
 │   │   │   ├── session.py       # 엔진, get_session / get_read_session, background_session
@@ -973,56 +969,6 @@ curl -X POST localhost:8000/api/v1/auth/refresh \
 - **관리 화면 노출 차단** — `hashed_password` 는 SQLAdmin 의 목록·상세·폼·내보내기 어디에도
   나오지 않으며, `User` 는 admin 생성이 막혀 있습니다(비밀번호 없이 만들면 로그인 불가
   계정이 쌓입니다). 구조 증거: `tests/core/test_admin_views.py`.
-
----
-
-## 레이트 리밋
-
-slowapi **데코레이터 기반**입니다. 전역 미들웨어(`SlowAPIMiddleware`)는 쓰지 않습니다 —
-라우트마다 한도를 달리 줄 수 있고, 어떤 엔드포인트가 보호되는지 코드에서 바로 보입니다.
-
-- 구현: `app/core/rate_limit.py`
-- 클라이언트 식별: `get_remote_address` (요청 IP)
-
-### 설정
-
-| 설정 | 기본값 | 설명 |
-|---|---|---|
-| `RATE_LIMIT_ENABLED` | `true` | 끄면 데코레이터가 무동작 |
-| `RATE_LIMIT_DEFAULT` | `100/minute` | 데코레이터 기본 한도 (slowapi 형식 `<count>/<period>`) |
-
-### 현재 적용 대상
-
-| 엔드포인트 | 한도 |
-|---|---|
-| `POST /api/v1/auth/register` | `RATE_LIMIT_DEFAULT` |
-| `POST /api/v1/auth/login` | `RATE_LIMIT_DEFAULT` |
-
-인증 진입점 두 곳에만 걸려 있습니다. 무차별 대입과 대량 가입이 실제 위험 지점이기 때문입니다.
-초과 시 `429 Too Many Requests` 를 반환합니다.
-
-### 새 라우트에 적용하기
-
-```python
-from fastapi import Request
-from app.core.rate_limit import limiter
-from config import middleware_settings
-
-
-@router.post("/items")
-@limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)   # 또는 "5/minute" 처럼 직접 지정
-async def create_item(request: Request, ...):            # request 파라미터 필수
-    ...
-```
-
-> **`request: Request` 파라미터가 반드시 있어야 합니다.** slowapi 가 이 인자에서 클라이언트
-> IP 를 꺼내므로, 빠뜨리면 기동 시점에 에러가 납니다.
-
-> **한계 — 카운터가 프로세스 메모리에 있습니다.** 워커를 여러 개 띄우면 각 워커가 자기
-> 카운터를 세므로 실질 한도가 워커 수만큼 늘어납니다. 정확한 전역 한도가 필요하면 slowapi 를
-> Redis 스토리지로 전환하거나 리버스 프록시 단에서 거세요. 테스트에서는
-> `RATE_LIMIT_ENABLED=false` 로 꺼 둡니다(in-memory 카운터가 테스트 간에 공유되면
-> 순서에 따라 실패합니다).
 
 ---
 
