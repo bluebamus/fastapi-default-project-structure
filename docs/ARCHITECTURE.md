@@ -15,6 +15,8 @@ fastapi-default-project-structure/
 │
 ├── app/
 │   ├── features/                    # 기능 단위 앱
+│   │   ├── catalog/                 # 참조 예제 — ORM Repository (상품 CRUD)
+│   │   ├── reports/                 # 참조 예제 — Raw SQL Repository (일별 매출 집계)
 │   │   ├── home/                    # 예시 앱 — 접속 로그
 │   │   │   ├── __init__.py          # router 공개 + models import (admin_views 재노출 금지)
 │   │   │   ├── api/routers/
@@ -33,14 +35,17 @@ fastapi-default-project-structure/
 │   ├── core/                        # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py             # 공통 예외 계층 + ErrorResponse
 │   │   ├── tags_metadata.py         # OpenAPI 태그 메타데이터
+│   │   ├── resources.py             # lifespan 자원 관리 (기동 준비·역순 종료)
 │   │   ├── db/
-│   │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀, background_session
+│   │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀, background_db_session
 │   │   │   ├── router.py            # 읽기/쓰기 라우팅 (RoutingSession)
 │   │   │   └── models_registry.py   # 모델 import 단일 지점 (SSOT)
-│   │   ├── models/models_base.py    # SQLAlchemy Base (declarative) + Timestamp·UUID Mixin
+│   │   ├── models/models_base.py    # Base + UUID·Timestamp Mixin, UUIDTimestampModel
 │   │   ├── repositories/
-│   │   │   ├── repository_base.py   # BaseRepository
-│   │   │   └── crud_base.py         # 제네릭 CRUD 메서드
+│   │   │   ├── crud_base.py         # ORM 제네릭 CRUD (SQLAlchemy 구문 조립)
+│   │   │   ├── repository_base.py   # BaseRepository — ORM 공개 계약(최소 CRUD 8개)
+│   │   │   ├── raw_crud_base.py     # Raw SQL 실행·관측 (text() + named bind)
+│   │   │   └── raw_repository_base.py # RawRepositoryBase — Raw 공개 계약
 │   │   ├── services/services_base.py # BaseService
 │   │   └── middlewares/
 │   │       ├── cors_middleware.py
@@ -54,20 +59,24 @@ fastapi-default-project-structure/
 │   │   └── task.py                  # run_async() 동기 브릿지
 │   │
 │   └── utils/                       # 순수 유틸 (외부·상위 계층 의존 없음)
-│       ├── logs/                    # 구조화 로깅 (get_logger, setup_uvicorn_logging)
+│       ├── logs/                    # 구조화 로깅 (get_logger, 큐 기반 비차단 핸들러)
 │       ├── authenticator/           # 인증 (JWT·bcrypt)
 │       ├── pagination/              # 페이지네이션 (순수 dataclass)
 │       └── validators.py            # 공통 값 검증
 │
 ├── tests/                           # 횡단 테스트 (core 계약·배선·교차 기능)
 │   ├── core/                        # 설정 계약, admin 뷰 정책, 마이그레이션 체인
+│   ├── integration/                 # 실제 MySQL 8.4 대상 (@pytest.mark.mysql, 미가용 시 skip)
 │   └── utils/                       # 로깅·인증·페이지네이션
 │
+├── scripts/review_gate.py           # 단계별 결정적 검수 게이트 (정적분석 + 불변식 + API 불변)
+├── compose.test.yaml                # 통합 테스트용 MySQL 8.4 (호스트 포트 3308, tmpfs)
 ├── migrations/env.py                # import_all_models()(SSOT) 로 전 기능 모델 자동 수집
 ├── .github/workflows/ci.yml         # CI 게이트 (ruff·format·mypy 콜드캐시·pytest·bandit·alembic)
 └── docs/
     ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
-    └── QUICKSTART.md                # 최소 실행 경로
+    ├── QUICKSTART.md                # 최소 실행 경로
+    └── crp/groups/                  # 작업 그룹별 설계 기준선·결함 원장
 ```
 
 > 기능 테스트는 `app/features/<name>/tests/`, 횡단 테스트는 최상위 `tests/` 에 둡니다.
@@ -109,7 +118,7 @@ __all__ = ["router"]
 ### 2.2 `main.py` — 최종 취합 + 앱 설정
 
 ```python
-from app.features import auth, blog, home, reply, sns, user
+from app.features import auth, blog, catalog, home, reply, reports, sns, user
 
 app = FastAPI(...)                        # 인스턴스 + lifespan + 문서 설정
 CustomCORSMiddleware(app).configure_cors()
@@ -118,9 +127,9 @@ _register_exception_handlers(app)         # 4개 글로벌 핸들러
 
 app.include_router(home.router, prefix="/api")   # 기능마다 한 줄
 app.include_router(blog.router, prefix="/api")
-# ... reply, sns, user, auth
+# ... reply, sns, user, auth, catalog, reports
 
-_add_health_and_docs(app)                 # /health + Scalar
+_add_health_and_docs(app)                 # /health + /ready + Scalar
 if app_settings.ADMIN:                    # SQLAdmin
     register_admin(app, engine)           # app/features/admin.py — 조립 진입점
 ```
@@ -138,7 +147,7 @@ if app_settings.ADMIN:                    # SQLAdmin
 
 ```python
 # main.py
-from app.features import auth, blog, home, reply, sns, user, <name>   # ← import 추가
+from app.features import auth, blog, catalog, home, reply, reports, sns, user, <name>  # ← 추가
 app.include_router(<name>.router, prefix="/api")                     # ← 취합 한 줄 추가
 ```
 
@@ -205,15 +214,15 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 ```python
 # app/features/<name>/dependencies/<name>_dependencies.py — 구성만 한다
 async def get_<name>_service(
-    session: AsyncSession = Depends(get_session),          # 쓰기용
+    db_session: AsyncSession = Depends(get_writer_db_session),      # 쓰기용
 ) -> <Name>Service:
-    return <Name>Service(session)
+    return <Name>Service(db_session)
 
 
 async def get_<name>_service_readonly(
-    session: AsyncSession = Depends(get_read_session),     # 조회용
+    db_session: AsyncSession = Depends(get_read_only_db_session),   # 조회용
 ) -> <Name>Service:
-    return <Name>Service(session)
+    return <Name>Service(db_session)
 
 
 # app/features/<name>/api/routers/v1/<name>.py — 커밋은 여기서
@@ -228,17 +237,69 @@ async def create_<name>(
 
 - 뷰(view)는 HTTP 역할과 **커밋 시점 결정**을 맡습니다: 파라미터 수신 → 주입된 Service 호출
   → (쓰기면) `await service.commit()` → 응답 변환.
-- 예외로 빠져나가면 `get_session` teardown이 `rollback()` 합니다.
-- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_session` 을 받고 커밋하지 않습니다.
-  `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅되며, 읽기 경로에서 쓰기를 시도하면
-  `ReadOnlyRoutingError` 로 즉시 실패합니다.
-- `Service`는 `BaseService`를, `Repository`는 `BaseRepository`(제네릭 CRUD)를 상속합니다.
-- 요청 밖(백그라운드/Celery) 세션은 `background_session()` 컨텍스트(별도 풀)를 씁니다.
+- 예외로 빠져나가면 `get_writer_db_session` teardown이 `rollback()` 합니다.
+- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_only_db_session` 을 받고 커밋하지
+  않습니다. `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅되며, 읽기 경로에서 쓰기를
+  시도하면 `ReadOnlyRoutingError` 로 즉시 실패합니다 — ORM 구문이든 `text()` 로 쓴 Raw DML
+  이든 동일합니다.
+- `Service`는 `BaseService`를, Repository 는 데이터 접근 방식에 따라 `BaseRepository`(ORM)
+  또는 `RawRepositoryBase`(Raw SQL)를 상속합니다. **둘은 서로 상속하지 않습니다** — §4.1.
+- 요청 밖(백그라운드/Celery) 세션은 `background_db_session()` 컨텍스트(별도 풀)를 씁니다.
+
+### 4.1 ORM Repository vs Raw Repository
+
+데이터 접근 방식은 **Repository 계층에서만** 갈립니다. 위 그림에서 달라지는 상자는 하나뿐이고,
+Dependency 조립·Service 유스케이스·트랜잭션 경계·Pydantic 응답 검증·OpenAPI 메타데이터는
+그대로입니다. 실물 비교는 `app/features/catalog/`(ORM) 와 `app/features/reports/`(Raw) 입니다.
+
+| | `BaseRepository` (ORM) | `RawRepositoryBase` (Raw SQL) |
+|---|---|---|
+| 언제 | 엔티티 생명주기를 다룰 때 (CRUD, 관계 적재) | 집계·리포트·방언 특화 구문 |
+| 구문 | SQLAlchemy 표현식 | `sqlalchemy.text()` + **named bind parameter** |
+| 반환 | ORM 인스턴스 | `RowMapping` → Service 가 Pydantic DTO 로 검증 |
+| 공개 계약 | 최소 CRUD 8개 + 기능별 도메인 메서드 | `fetch_one` / `fetch_all` / `fetch_scalar` / `execute` |
+
+- 두 Base 는 **상속 관계가 없습니다**. Raw 쪽이 ORM Base 를 상속하면 매핑되지 않은 결과에
+  ORM 의미(identity map·flush)가 딸려 들어옵니다. 회귀 가드: `scripts/review_gate.py` 의 INV-5.
+- Raw 구문에 **문자열 포매팅을 쓰지 않습니다.** 값은 전부 bind parameter 이고, 값으로 바인딩할
+  수 없는 자리(컬럼명·정렬 방향)는 `resolve_identifier()` / `resolve_sort_direction()` 로
+  **허용 목록에 대조**해서 고릅니다.
+- 집계 **결과** 전용 ORM 모델은 만들지 않습니다. 다만 집계의 **원본 테이블**은 이 프로젝트가
+  생명주기를 소유하므로 ORM 모델을 둡니다 — `Base.metadata` 에 없으면 Alembic 이 "지워야 할
+  테이블" 로 판단합니다(`reports` 의 `SalesOrder`).
 
 > **왜 의존성이 아니라 핸들러인가.** 이전에는 의존성이 `yield` 이후 커밋했습니다. 그런데
 > FastAPI 상위 버전에서 yield dependency 의 종료 코드가 **응답 전송 후에** 실행되도록 바뀌면서,
 > 커밋이 실패해도 클라이언트는 이미 `201` 을 받은 상태가 됩니다. 커밋을 핸들러 본문으로 옮기면
 > 실패가 응답 코드에 정직하게 반영됩니다. 구조 증거: `tests/test_read_path_no_commit.py`.
+
+---
+
+## 4.2 Lifespan 자원 관리 — 기동 준비와 역순 종료
+
+프로세스 수명에 묶인 자원(로그 리스너·DB 엔진·백그라운드 태스크)은 `main.py` 가 아니라
+`app/core/resources.py` 의 `manage_application_resources()` 하나가 관리합니다.
+
+```python
+# main.py
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with manage_application_resources(app):
+        yield
+```
+
+- 종료는 **획득의 역순**이며 `AsyncExitStack` 이 순서를 강제합니다:
+  백그라운드 태스크 드레인 → DB 엔진 dispose → 로그 리스너 정지.
+  순서가 중요합니다 — 태스크가 아직 세션을 쥔 채 엔진을 닫으면 커넥션이 강제로 끊기고,
+  로그 리스너를 먼저 내리면 그 과정에서 나는 오류가 어디에도 남지 않습니다.
+- 각 단계에 **개별 타임아웃**이 있고 전체에도 상한이 있습니다. 하나가 늦어도 나머지 정리는
+  진행됩니다.
+- 드레인은 자기 몫의 타임아웃보다 **짧게** 기다립니다(`DRAIN_WAIT_RATIO`). 남는 시간은 취소된
+  태스크의 `finally`(세션 rollback·close)가 실제로 실행될 여유입니다 — 같은 값을 주면 취소
+  직후 바깥 guard 가 끊어 정리가 실행되지 못합니다.
+- 로그는 큐 기반 핸들러를 씁니다. 이벤트 루프가 파일·소켓 I/O 로 막히지 않도록 핸들러는
+  큐에 넣기만 하고 별도 스레드가 소비합니다. 큐가 가득 차면 ERROR 이상은 stderr 로 흘리고
+  그 아래는 버립니다 — **로깅이 요청 처리를 막지 않는 것**이 우선입니다.
 
 ---
 
@@ -294,6 +355,12 @@ uv run alembic upgrade head
 | `uv run alembic upgrade head` | DB 마이그레이션 적용 |
 | `uv run pytest` | 테스트 실행 |
 | `uv run ruff check .` / `uv run mypy .` | 정적 분석 |
+| `docker compose -f compose.test.yaml up -d` | 통합 테스트용 MySQL 8.4 기동(포트 3308) |
+| `uv run python scripts/review_gate.py` | 검수 게이트 — 정적분석 + 계층 불변식 + 공개 API 불변 |
+
+> 통합 테스트는 MySQL 이 없으면 **skip** 됩니다(실패가 아닙니다). 스키마 검증만 필요하면
+> 컨테이너 없이 `uv run pytest` 로 충분하고, Raw SQL 의 실제 방언 동작까지 확인하려면
+> 컨테이너를 띄웁니다. 포트 3308 은 다른 로컬 MySQL 과 겹치지 않도록 고른 값입니다.
 
 `[tool.uv] package = false` — 루트 패키지 빌드 없이 의존성만 설치(flat layout).
 
@@ -310,3 +377,4 @@ uv run alembic upgrade head
 | 2026-08-11 | **문서 드리프트 정정**: §4 와 README 가 P1-3 이전의 "의존성이 `yield` 후 커밋" 을 계속 설명하고 있었다(코드는 이미 핸들러 커밋). §4 예시를 실제 코드(쓰기/조회 의존성 분리 + 핸들러 `await service.commit()`)로 교체하고, `BaseService` 독스트링도 같이 정정. 아울러 재구조화 잔재 정리 — `tests/features/` 잔류분을 `app/features/<name>/tests/` 로 통합, 이동 중 겹친 디렉터리 레벨과 빈 `tests/scripts/` 제거. |
 | 2026-08-11 | **Django 배선 제거 (구조는 vertical slice 유지)**: 옛 중앙 목록 순회 → 명시 `include_router`; 기능별 `admin.py` 관용 수집(`getattr(..., "admin_views", [])`) → 중앙 `app/features/admin.py`의 명시 import(`ADMIN_VIEWS`+`register_admin`); `scripts/new_app.py` 제거. 폴더는 실제 코드 기준 `app/features/` 를 유지한다. 모델 등록은 `models_registry` 디렉터리 스캔 유지. 공개 API 경로·응답 스키마·SQLAdmin 보안 정책 불변. |
 | 2026-08-11 | **문서 정합성 재정리**: 삭제된 심화·리팩터링 문서 참조, 존재하지 않는 과거 모듈·관리자 경로 참조, 제거된 중앙 목록 설명을 실제 코드 기준으로 정정. |
+| 2026-08-13 | **ORM/Raw Repository 이원화 + 런타임·문서 정비**(§4.1·§4.2 신설). ① lifespan 자원 관리를 `app/core/resources.py` 로 모으고 역순 종료·개별 타임아웃을 강제, 로깅을 큐 기반 비차단 핸들러로 전환. ② 모델 공통 컬럼을 Mixin 으로 정리(스키마 diff 0 을 스냅샷으로 증명). ③ `BaseRepository` 공개 계약을 최소 CRUD 8개로 좁히고(823→185줄) 예외 변환을 전 경로에 통일. ④ `RawRepositoryBase` 신설 — ORM Base 와 상속 관계 없음(INV-5). ⑤ 참조 예제 2종(`catalog`=ORM, `reports`=Raw) + MySQL 8.4 통합 테스트 환경. ⑥ OpenAPI 문서 계약을 규칙 테스트로 고정. 공개 API 경로·응답 스키마는 신규 추가분 외 불변. 결함 17건(CRIT 2·HIGH 5)을 `docs/crp/groups/orm-raw-repository/ledger.md` 에 기록. |

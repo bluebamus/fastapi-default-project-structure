@@ -29,12 +29,13 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 
 - **계층 분리 아키텍처**: Router → Service → Repository → Database
 - **명시적 트랜잭션 경계**: 기능 의존성(`get_<name>_service`)은 Service 구성만 담당하고, 커밋은 **쓰기 핸들러 본문**이 `await service.commit()` 로 수행(UnitOfWork 미사용)
-- **읽기/쓰기 세션 분리**: 조회 전용 의존성(`get_<name>_service_readonly`)은 `get_read_session` 을 받아 커밋하지 않음 — 예외 시 세션 teardown이 롤백
+- **읽기/쓰기 세션 분리**: 조회 전용 의존성(`get_<name>_service_readonly`)은 `get_read_only_db_session` 을 받아 커밋하지 않음 — 예외 시 세션 teardown이 롤백
 - **인증(JWT)**: OAuth2 Password 플로우 + JWT access/refresh 토큰, bcrypt 비밀번호 해시 (`auth` 기능, `app/utils/authenticator/`)
-- **N+1 문제 해결**: Eager Loading 전략 내장 (selectin, joined, subquery)
+- **ORM / Raw SQL 두 가지 Repository**: `BaseRepository`(ORM)와 `RawRepositoryBase`(집계·리포트).
+  참조 예제가 나란히 있습니다 — `app/features/catalog/`(ORM), `app/features/reports/`(Raw)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
-- **구조화된 로깅**: 콘솔/파일 로그 분리, 자동 로그 로테이션
-- **API 문서**: Scalar UI 기반 인터랙티브 문서
+- **구조화된 로깅**: 큐 기반 비차단 핸들러 → stdout/stderr (파일 로그 없음)
+- **API 문서**: Scalar UI 기반 인터랙티브 문서 + OpenAPI 정합성 규칙 테스트
 - **관리자 페이지**: SQLAdmin 통합
 
 ---
@@ -99,9 +100,9 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 트랜잭션 경계는 **쓰기 핸들러 본문**이 담당합니다. `get_<name>_service` 가 세션으로 Service를
 구성해 뷰에 주입하면, 핸들러가 작업을 마친 뒤 응답을 만들기 전에 `await service.commit()` 을
-호출합니다(예외 시 `get_session` teardown 이 롤백). 조회 엔드포인트는
-`get_<name>_service_readonly` 를 써서 `get_read_session` 을 받고 커밋하지 않습니다.
-요청 밖(백그라운드/Celery)에서는 `background_session()` 컨텍스트(별도 풀)를 사용해
+호출합니다(예외 시 `get_writer_db_session` teardown 이 롤백). 조회 엔드포인트는
+`get_<name>_service_readonly` 를 써서 `get_read_only_db_session` 을 받고 커밋하지 않습니다.
+요청 밖(백그라운드/Celery)에서는 `background_db_session()` 컨텍스트(별도 풀)를 사용해
 메인 API 풀 고갈을 방지합니다.
 
 ---
@@ -137,11 +138,11 @@ fastapi-default-project-structure/
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── tags_metadata.py     # OpenAPI 태그 설명
 │   │   ├── db/                  # 세션·라우팅·모델 등록
-│   │   │   ├── session.py       # 엔진, get_session / get_read_session, background_session
+│   │   │   ├── session.py       # 엔진, get_writer_db_session / get_read_only_db_session, background_db_session
 │   │   │   ├── router.py        # 읽기/쓰기 라우팅 (RoutingSession)
 │   │   │   └── models_registry.py  # 모델 import 단일 지점 (SSOT)
-│   │   ├── models/models_base.py   # SQLAlchemy Base + TimestampMixin·UUIDMixin
-│   │   ├── repositories/        # BaseRepository (제네릭 CRUD)
+│   │   ├── models/models_base.py   # Base + UUID·Timestamp Mixin, UUIDTimestampModel
+│   │   ├── repositories/        # BaseRepository(ORM) + RawRepositoryBase(Raw SQL)
 │   │   ├── services/            # BaseService
 │   │   └── middlewares/         # CORS, UserInfo, AccessLogSink, background_tasks
 │   │
@@ -152,14 +153,19 @@ fastapi-default-project-structure/
 ├── tests/                       # 횡단 테스트 — core 계약·배선·교차 기능
 │   ├── core/                    # 설정 계약, admin 뷰 정책, 마이그레이션 체인 등
 │   ├── utils/                   # 로깅·인증·페이지네이션 유틸
-│   └── test_*.py                # 라우터/admin 배선, 응답 직렬화, 레이트리밋 등
+│   ├── integration/             # 실제 MySQL 8.4 대상 (없으면 skip)
+│   └── test_*.py                # 라우터/admin 배선, 응답 직렬화, OpenAPI 계약 등
 │
 ├── migrations/                  # Alembic (env.py 가 import_all_models() SSOT 로 메타데이터 수집)
 ├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
+├── scripts/review_gate.py       # 검수 게이트 (정적분석 + 계층 불변식 + 공개 API 불변)
+├── compose.test.yaml            # 통합 테스트용 MySQL 8.4 (호스트 포트 3308)
 ├── docs/
 │   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-│   └── QUICKSTART.md            # 최소 실행 경로
-└── logs/ media/ static/ poc/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
+│   ├── QUICKSTART.md            # 최소 실행 경로
+│   └── crp/groups/              # 작업 그룹별 설계 기준선·결함 원장
+└── media/ static/ poc/ logs/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
+                                 #   logs/ 는 파일 로깅 제거 후 남은 예약 자리다
 ```
 
 > 기능 테스트는 `app/features/<name>/tests/` 에, 여러 기능에 걸치거나 `core` 계약을 보는 테스트는
@@ -173,8 +179,8 @@ fastapi-default-project-structure/
 | `app/features/<name>/__init__.py` | 하위 뷰 라우터를 취합한 `router` 공개 — `main.py` 가 명시 import 후 `include_router` 로 취합 |
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
 | `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합(`ADMIN_VIEWS`). `main.py` 는 `register_admin(app, engine)` 하나만 호출하고, 내부에서 `create_admin_interface()`(생성·마운트) → `register_admin_views()`(등록) 순으로 위임 |
-| `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_session` |
-| `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_session` / 조회용 `get_read_session`). 커밋은 핸들러가 수행 |
+| `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_db_session` |
+| `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_writer_db_session` / 조회용 `get_read_only_db_session`). 커밋은 핸들러가 수행 |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
 | `migrations/env.py` | `import_all_models()`(SSOT) 로 전 기능 모델을 자동 수집 → Alembic autogenerate |
 
@@ -238,9 +244,9 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 | 계층 | 하는 일 | 하지 말 것 |
 |------|---------|-----------|
 | **Router** | 입력 검증(Pydantic), `Depends(get_<name>_service)`로 Service 주입, Service 호출 → **쓰기면 `await service.commit()`** → 응답 변환 | 직접 ORM 쿼리 |
-| **Dependency** | 세션 주입(쓰기 `get_session` / 조회 `get_read_session`) → `Service(session)` 구성 후 **반환**(`yield` 아님) | 비즈니스 로직·커밋 |
+| **Dependency** | 세션 주입(쓰기 `get_writer_db_session` / 조회 `get_read_only_db_session`) → `Service(session)` 구성 후 **반환**(`yield` 아님) | 비즈니스 로직·커밋 |
 | **Service** | `BaseService` 상속, `self.session`/Repository로 데이터 접근·비즈니스 로직 | 커밋 시점 결정(핸들러가 담당) |
-| **Repository** | `BaseRepository` 상속, 쿼리 캡슐화, N+1 회피(`get_all_with`) | 비즈니스 로직·커밋 |
+| **Repository** | `BaseRepository`(ORM) 또는 `RawRepositoryBase`(Raw SQL) 상속, 쿼리 캡슐화, Eager Loading 조회 명시 | 비즈니스 로직·커밋 |
 
 > **주의:** `Service`는 세션을 주입받아 구성됩니다(`Service(session)`). 트랜잭션 커밋은 Service 도 의존성도 아닌 **쓰기 핸들러 본문**이 응답 반환 직전에 수행합니다.
 >
@@ -269,7 +275,7 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
        ↓
 6. 응답 반환 (Pydantic 직렬화)
        ↓
-7. 의존성 teardown — 예외로 빠져나갔다면 get_session 이 rollback()
+7. 의존성 teardown — 예외로 빠져나갔다면 get_writer_db_session 이 rollback()
 ```
 
 ### 코드 예시
@@ -277,13 +283,13 @@ Router  →  Depends(get_<name>_service)  →  Service(session)  →  Repository
 ```python
 # dependencies — Service 구성만 담당(커밋하지 않는다)
 async def get_blog_service(
-    session: AsyncSession = Depends(get_session),          # 쓰기용
+    session: AsyncSession = Depends(get_writer_db_session),          # 쓰기용
 ) -> BlogService:
     return BlogService(session)
 
 
 async def get_blog_service_readonly(
-    session: AsyncSession = Depends(get_read_session),     # 조회용 — 커밋 없음
+    session: AsyncSession = Depends(get_read_only_db_session),     # 조회용 — 커밋 없음
 ) -> BlogService:
     return BlogService(session)
 
@@ -316,8 +322,8 @@ async def get_access_logs(
 ### 트랜잭션 & 롤백
 
 - **성공**: 쓰기 핸들러가 응답 생성 전에 `await service.commit()` 을 호출한다.
-- **예외**: 뷰/Service 에서 예외 발생 → 커밋이 실행되지 않고 `get_session` teardown 이 `session.rollback()`.
-- **요청 밖(Celery/백그라운드)**: `async with background_session() as session:` 컨텍스트로 커밋/롤백을 직접 관리(별도 풀).
+- **예외**: 뷰/Service 에서 예외 발생 → 커밋이 실행되지 않고 `get_writer_db_session` teardown 이 `session.rollback()`.
+- **요청 밖(Celery/백그라운드)**: `async with background_db_session() as session:` 컨텍스트로 커밋/롤백을 직접 관리(별도 풀).
 
 ---
 
@@ -325,57 +331,91 @@ async def get_access_logs(
 
 ### 1. Repository 패턴
 
-데이터 접근 로직을 캡슐화하여 비즈니스 로직과 분리합니다.
+데이터 접근 로직을 캡슐화하여 비즈니스 로직과 분리합니다. 접근 방식에 따라 상속할 Base 가
+두 개이고, **둘 사이에 상속 관계는 없습니다**.
+
+#### 1-1. ORM — `BaseRepository`
+
+공개 계약은 **최소 CRUD 8개**입니다. 여기에 없는 조회는 기능 Repository 가 SQLAlchemy 로
+직접 씁니다 — Base 에 문자열 컬럼명을 받는 범용 필터를 두면 오타가 실행 시점에만 드러납니다.
 
 ```python
 # app/core/repositories/repository_base.py (+ crud_base.py)
-class BaseRepository(Generic[ModelType]):
-    """제네릭 기본 Repository"""
+class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
+    """모델 하나에 대한 최소 공개 CRUD."""
 
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    model: type[ModelType]
 
-    # CRUD 기본 메서드
-    async def create(self, data: dict) -> ModelType: ...
-    async def get_by_id(self, id: str) -> ModelType | None: ...
-    async def get_all(self, skip: int, limit: int) -> Sequence[ModelType]: ...
-    async def update(self, id: str, data: dict) -> ModelType | None: ...
-    async def delete(self, id: str) -> bool: ...
+    async def create(self, data: dict[str, Any]) -> ModelType: ...
+    async def get_by_id(self, pk: PrimaryKeyT) -> ModelType | None: ...
+    async def get_by_id_or_raise(self, pk: PrimaryKeyT) -> ModelType: ...
+    async def list(self, skip: int = 0, limit: int = 100) -> Sequence[ModelType]: ...
+    async def count(self, **filters: Any) -> int: ...
+    async def exists(self, pk: PrimaryKeyT) -> bool: ...
+    async def update_by_id(self, pk: PrimaryKeyT, data: dict[str, Any]) -> ModelType | None: ...
+    async def delete_by_id(self, pk: PrimaryKeyT) -> bool: ...
+```
 
-    # N+1 문제 해결 메서드
-    async def get_by_id_with(self, id: str, relations: list[str]) -> ModelType | None: ...
-    async def get_all_with(self, relations: list[str], strategy: str) -> Sequence[ModelType]: ...
+- `PrimaryKeyT` 는 기본값이 `str`(문자열 UUID)이라 `BaseRepository[Post]` 처럼 생략할 수 있습니다.
+- 모든 공개 경로가 **같은 예외 변환**을 지납니다: `IntegrityError` → `DuplicateException`,
+  그 밖의 `SQLAlchemyError` → `DatabaseException`. 응답 `detail` 에는 모델명·연산명만 담고
+  드라이버 원문은 넣지 않습니다 — 무결성 위반 메시지에는 **위반한 값 자체**(중복된 이메일
+  등)가 들어 있어 그대로 유출됩니다.
+- `get_all` / `update` / `delete` / `get_one` 은 이전 이름의 **얇은 별칭**으로만 남아 있습니다.
+  새 코드는 위 8개를 씁니다.
 
-    # 고급 쿼리
-    async def get_or_create(self, filters: dict, defaults: dict) -> tuple[ModelType, bool]: ...
-    async def update_or_create(self, filters: dict, data: dict) -> tuple[ModelType, bool]: ...
-    async def bulk_create(self, items: list[dict]) -> list[ModelType]: ...
+```python
+# 기능별 Repository 확장 — Base 에 없는 조회는 여기서 명시적으로
+class ProductRepository(BaseRepository[Product, str]):
+    model = Product
+
+    async def list_active(self, *, skip: int = 0, limit: int = 100) -> Sequence[Product]:
+        statement = (
+            select(Product)
+            .where(Product.is_active.is_(True))       # 문자열 컬럼명이 아니라 속성으로
+            .order_by(Product.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.db_session.execute(statement)
+        return result.scalars().all()
+```
+
+#### 1-2. Raw SQL — `RawRepositoryBase`
+
+집계·리포트처럼 ORM 으로 표현할 이유가 없는 질의는 `text()` 로 직접 씁니다.
+
+```python
+# app/core/repositories/raw_repository_base.py (+ raw_crud_base.py)
+class RawRepositoryBase(RawCRUDBase):
+    async def fetch_one(self, statement, params=None, *, query_name) -> RowMapping | None: ...
+    async def fetch_all(self, statement, params=None, *, query_name) -> Sequence[RowMapping]: ...
+    async def fetch_scalar(self, statement, params=None, *, query_name) -> Any: ...
+    async def execute(self, statement, params=None, *, query_name) -> int: ...
 ```
 
 ```python
-# 기능별 Repository 확장
-class UserAccessLogRepository(BaseRepository[UserAccessLog]):
-    """접속 로그 Repository"""
-
-    model = UserAccessLog
-
-    async def get_by_ip(self, ip_address: str) -> Sequence[UserAccessLog]:
-        """IP 주소로 조회"""
-        stmt = select(UserAccessLog).where(
-            UserAccessLog.ip_address == ip_address
-        )
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
-
-    async def count_by_device_type(self) -> dict[str, int]:
-        """장치 유형별 통계"""
-        stmt = select(
-            UserAccessLog.device_type,
-            func.count().label("count")
-        ).group_by(UserAccessLog.device_type)
-        result = await self.session.execute(stmt)
-        return {row[0]: row[1] for row in result.all()}
+_DAILY_SALES_SQL = text("""
+    SELECT DATE(o.created_at) AS sales_date,
+           COUNT(*)           AS order_count,
+           COALESCE(SUM(o.total_amount), 0) AS gross_amount
+      FROM sales_orders AS o
+     WHERE o.created_at >= :start_at AND o.created_at < :end_at    -- named bind
+     GROUP BY DATE(o.created_at)
+     ORDER BY sales_date ASC
+""")
 ```
+
+- **값은 전부 bind parameter** 입니다. 문자열 포매팅으로 SQL 을 만들지 않습니다.
+- 값으로 바인딩할 수 없는 자리(컬럼명·정렬 방향)는 `resolve_identifier()` /
+  `resolve_sort_direction()` 로 **허용 목록에 대조**해 고릅니다.
+- 반환은 `RowMapping` 이고, Service 가 Pydantic DTO 로 검증해 내보냅니다. 집계 **결과** 전용
+  ORM 모델은 만들지 않습니다.
+- `query_name` 이 필수 키워드인 이유는 관측 때문입니다 — 느린 질의를 SQL 본문 없이
+  이름과 소요시간만으로 식별합니다(로그에 파라미터를 남기지 않습니다).
+
+> 실물 비교: `app/features/catalog/`(ORM) 와 `app/features/reports/`(Raw). 두 기능은
+> Repository 구현만 다르고 Dependency·Service·트랜잭션 경계·응답 검증이 동일합니다.
 
 ### 2. 트랜잭션 경계 — 쓰기 핸들러 (UnitOfWork 대체)
 
@@ -386,13 +426,13 @@ UnitOfWork 대신 **쓰기 핸들러**가 커밋 시점을 쥡니다. 기능 의
 ```python
 # app/features/blog/dependencies/blog_dependencies.py — 구성만 한다
 async def get_blog_service(
-    session: AsyncSession = Depends(get_session),          # 쓰기용
+    session: AsyncSession = Depends(get_writer_db_session),          # 쓰기용
 ) -> BlogService:
     return BlogService(session)
 
 
 async def get_blog_service_readonly(
-    session: AsyncSession = Depends(get_read_session),     # 조회용
+    session: AsyncSession = Depends(get_read_only_db_session),     # 조회용
 ) -> BlogService:
     return BlogService(session)
 
@@ -403,14 +443,14 @@ async def create_post(
     service: BlogService = Depends(get_blog_service),
 ) -> PostResponse:
     post = await service.create_post(payload)
-    await service.commit()          # 예외 시 get_session teardown 이 롤백
+    await service.commit()          # 예외 시 get_writer_db_session teardown 이 롤백
     return PostResponse.model_validate(post)
 ```
 
-- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_session` 을 받습니다. 불필요한
+- 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_only_db_session` 을 받습니다. 불필요한
   COMMIT 왕복이 사라지고, `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅됩니다.
   읽기 핸들러가 몰래 쓰기를 시도하면 `ReadOnlyRoutingError` 로 즉시 실패합니다.
-- 요청 밖(Celery/백그라운드)에서는 `async with background_session() as session:` 컨텍스트로
+- 요청 밖(Celery/백그라운드)에서는 `async with background_db_session() as session:` 컨텍스트로
   커밋/롤백을 직접 관리합니다(별도 풀 → 메인 API 풀 고갈 방지).
 
 ### 3. Service 패턴
@@ -435,29 +475,43 @@ class UserAccessLogService(BaseService):
     async def get_access_logs(
         self, skip: int = 0, limit: int = 50
     ) -> tuple[Sequence[UserAccessLog], int]:
-        logs = await self.repository.get_all(skip=skip, limit=limit)
+        logs = await self.repository.list(skip=skip, limit=limit)
         total = await self.repository.count()
         return logs, total
 ```
 
 ### 4. N+1 문제 해결
 
+관계를 함께 적재하는 조회는 **기능 Repository 가 직접** 씁니다. Base 에 문자열 관계명을
+받는 범용 메서드(`get_all_with(relations=[...])`)를 두지 않는 이유는, 오타나 이름이 바뀐
+관계가 **실행 시점에야** 드러나기 때문입니다. SQLAlchemy 속성으로 쓰면 정적 검사에 걸립니다.
+
 ```python
 # 문제: N+1 쿼리 발생
 for user in users:
     print(user.posts)  # 각 사용자마다 추가 쿼리 발생
 
-# 해결: Eager Loading
-users = await repo.get_all_with(
-    relations=["posts", "profile"],
-    strategy="selectin"  # SELECT IN 전략
-)
 
-# Eager Loading 전략
-# - selectin: SELECT ... WHERE id IN (...) - 대부분의 경우 권장
-# - joined: LEFT OUTER JOIN - 1:1 관계에 적합
-# - subquery: 서브쿼리 사용 - 복잡한 관계에 적합
+# 해결: 기능 Repository 에 Eager Loading 조회를 명시한다
+class UserRepository(BaseRepository[User]):
+    model = User
+
+    async def list_with_posts(self, *, skip: int = 0, limit: int = 100) -> Sequence[User]:
+        statement = (
+            select(User)
+            .options(selectinload(User.posts))   # 관계를 속성으로 지정
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.db_session.execute(statement)
+        return result.scalars().all()
 ```
+
+| 전략 | 발행 쿼리 | 적합한 경우 |
+|---|---|---|
+| `selectinload` | `SELECT ... WHERE id IN (...)` | 1:N — 대부분의 경우 권장 |
+| `joinedload` | `LEFT OUTER JOIN` | 1:1, 또는 항상 함께 쓰는 소수 행 |
+| `subqueryload` | 서브쿼리 | 중첩이 깊은 관계 |
 
 ---
 
@@ -525,7 +579,9 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 | `MYSQL_PORT` | `3306` | MySQL 포트 |
 | `MYSQL_DATABASE` | `fastapi_db` | 데이터베이스 이름 |
 | `REDIS_HOST` | `localhost` | Redis 호스트 |
-| `LOG_FILE_ENABLED` | `true` | 파일 로그 활성화 |
+| `LOG_CONSOLE_ENABLED` | `true` | 콘솔 로그 활성화 (로그는 파일이 아닌 stdout/stderr 로 나갑니다) |
+| `LOG_SQL_ECHO_ENABLED` | `false` | SQL·바인딩 값 로깅. **운영에서 켜지 마세요** |
+| `DB_ROUTER_ENABLED` | `false` | 읽기/쓰기 세션 라우팅 (기본은 단일 엔진) |
 
 ### DEBUG 모드에 따른 동작
 
@@ -556,33 +612,44 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 │          app/utils/logs/ (캐싱된 로거 반환)                   │
 └─────────────────────────────────────────────────────────────┘
                               ↓
+┌─────────────────────────────────────────────────────────────┐
+│              BoundedQueueHandler (put_nowait)                │
+│   요청 스레드는 큐에 넣기만 하고 즉시 돌아온다 — I/O 로 막지 않는다  │
+└─────────────────────────────────────────────────────────────┘
+                              ↓  (별도 스레드가 소비)
+┌─────────────────────────────────────────────────────────────┐
+│                        QueueListener                         │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
               ┌───────────────┴───────────────┐
               ↓                               ↓
-┌─────────────────────────┐     ┌─────────────────────────┐
-│    Console Handler       │     │     File Handlers        │
-│  (stdout, 색상 지원)      │     │  (Rotating, 자동 분리)    │
-└─────────────────────────┘     └─────────────────────────┘
-              ↓                               ↓
-         터미널 출력               ┌──────────┴──────────┐
-                                  ↓                     ↓
-                         logs/{date}_app.log    logs/{date}_error.log
-                            (INFO+)                (ERROR+)
+    console (stdout)                 error_console (stderr)
+    INFO+ / 색상                      ERROR+ (staging·production)
 ```
+
+**로그를 파일에 쓰지 않습니다.** 컨테이너에서는 stdout/stderr 가 표준 수집 경로이고,
+파일로 쓰면 로테이션·디스크 관리·수집기 연동이 전부 애플리케이션 책임이 됩니다.
+파일이 필요하면 수집 계층에서 처리하세요.
+
+**큐가 가득 차면** ERROR·CRITICAL 은 stderr 로 직접 흘리고(로깅 API 를 다시 타지 않습니다 —
+재진입하면 같은 큐에서 다시 막힙니다), 그 아래 레벨은 버리고 누락 사실만 주기적으로 알립니다.
+로깅이 요청 처리를 막지 않는 것이 우선입니다.
 
 ### 환경 변수 설정
 
 | 환경변수 | 기본값 | 설명 |
 |---------|--------|------|
-| `LOG_CONSOLE_ENABLED` | `true` | 콘솔(터미널) 로그 출력 활성화 |
-| `LOG_FILE_ENABLED` | `true` | 파일 로그 출력 활성화 |
+| `LOG_CONSOLE_ENABLED` | `true` | 콘솔(stdout/stderr) 로그 출력 활성화 |
+| `LOG_SQL_ECHO_ENABLED` | `false` | **SQL 과 바인딩된 값**을 로그로 내보낼지. 로컬 디버깅 전용 |
 | `LOG_LEVEL` | - | 전역 로그 레벨 (미설정 시 DEBUG 모드에 따라 자동 결정) |
 | `LOG_CONSOLE_LEVEL` | - | 콘솔 로그 레벨 (미설정 시 자동 결정) |
-| `LOG_FILE_LEVEL` | `INFO` | 파일 로그 레벨 |
-| `LOG_DIR` | `logs` | 로그 파일 저장 디렉토리 |
-| `LOG_APP_FILENAME` | `{date}_app.log` | 일반 로그 파일명 패턴 |
-| `LOG_ERROR_FILENAME` | `{date}_error.log` | 에러 로그 파일명 패턴 |
-| `LOG_MAX_SIZE_MB` | `10` | 단일 로그 파일 최대 크기 (MB) |
-| `LOG_BACKUP_COUNT` | `5` | 보관할 백업 로그 파일 개수 |
+| `LOG_CONSOLE_FORMAT` | (아래 포맷) | 콘솔 로그 포맷 문자열 |
+| `LOG_DATE_FORMAT` | - | 시각 포맷 |
+
+> **`LOG_SQL_ECHO_ENABLED` 를 운영에서 켜지 마세요.** 켜면 SQLAlchemy 와 DB 드라이버가
+> 실행 SQL 과 **바인딩된 파라미터 값**을 그대로 기록합니다. 그 값에는 비밀번호 해시·토큰·
+> 검색어가 들어 있고, 로그는 대개 외부 수집기로 흘러갑니다. 기본값이 `false` 인 이유이고,
+> 꺼져 있으면 WARNING 미만의 SQL 로그는 레벨과 무관하게 차단됩니다(장애는 계속 보입니다).
 
 ### 자동 로그 레벨 결정
 
@@ -637,28 +704,17 @@ except Exception as e:
 # 각 서비스/기능에서 고유 이름으로 로거 생성
 # 이렇게 하면 로그에서 어떤 기능에서 발생했는지 쉽게 구분 가능
 
-# app/product/services/product_service.py
+# app/features/catalog/services/catalog_service.py
 logger = get_logger("product_service")
 logger.info(f"상품 생성 완료: {product.id}")
 
-# app/user/services/user_service.py
+# app/features/user/services/user_service.py
 logger = get_logger("user_service")
 logger.info(f"사용자 로그인: {user.email}")
 
 # 출력 예시:
 # [2024-01-15 10:30:00] INFO     [product_service:create:45] 상품 생성 완료: abc123
 # [2024-01-15 10:30:01] INFO     [user_service:login:78] 사용자 로그인: user@example.com
-```
-
-### 로그 파일 구조
-
-```
-logs/
-├── 2024-01-15_app.log      # 일반 로그 (INFO 이상)
-├── 2024-01-15_app.log.1    # 로테이션된 백업 파일
-├── 2024-01-15_app.log.2
-├── 2024-01-15_error.log    # 에러 로그 (ERROR 이상)
-└── 2024-01-15_error.log.1
 ```
 
 ### 로그 포맷
@@ -872,7 +928,7 @@ suspicious = [log for log in logs if log.is_bot and log.response_status == 403]
 
 1. **Non-blocking 저장**: 접속 로그는 `asyncio.create_task()`로 백그라운드에서 저장되어 API 응답 시간에 영향을 주지 않습니다.
 
-2. **분리된 커넥션 풀**: 접속 로그 sink는 `background_session()`(별도 백그라운드 풀)을 사용하여 메인 API 풀 고갈을 방지합니다.
+2. **분리된 커넥션 풀**: 접속 로그 sink는 `background_db_session()`(별도 백그라운드 풀)을 사용하여 메인 API 풀 고갈을 방지합니다.
 
 3. **제외 설정 최적화**: 헬스체크, 정적 파일 등 빈번한 요청은 기본적으로 제외됩니다.
 
@@ -988,7 +1044,7 @@ curl -X POST localhost:8000/api/v1/auth/refresh \
 
 ```python
 # main.py
-from app.features import blog, home, reply, sns, user, <name>   # ← import 추가
+from app.features import blog, catalog, home, reply, reports, sns, user, <name>  # ← 추가
 
 app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 ```

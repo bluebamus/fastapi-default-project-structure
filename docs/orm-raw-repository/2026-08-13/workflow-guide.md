@@ -356,23 +356,26 @@ from app.core.repositories.raw_repository_base import RawRepositoryBase
 
 
 class SalesReportRawRepository(RawRepositoryBase):
-    async def daily_sales(self, *, start_date: date, end_date: date):
+    async def daily_sales(self, *, start_at: datetime, end_at: datetime):
+        # 기간은 **반열린 구간** [start_at, end_at) 으로 받는다. "종료일 포함"이라는
+        # 사용자 규칙을 SQL 이 아니라 Service 가 해석하므로(4.4), 여기에는 DATE_ADD
+        # 같은 방언 함수가 필요 없고 규칙이 SQL 안에 숨지 않는다.
         statement = text(
             """
             SELECT
                 DATE(o.created_at) AS sales_date,
                 COUNT(*) AS order_count,
                 COALESCE(SUM(o.total_amount), 0) AS gross_amount
-            FROM orders AS o
-            WHERE o.created_at >= :start_date
-              AND o.created_at < DATE_ADD(:end_date, INTERVAL 1 DAY)
+            FROM sales_orders AS o
+            WHERE o.created_at >= :start_at
+              AND o.created_at < :end_at
             GROUP BY DATE(o.created_at)
             ORDER BY sales_date ASC
             """
         )
         return await self.fetch_all(
             statement,
-            {"start_date": start_date, "end_date": end_date},
+            {"start_at": start_at, "end_at": end_at},
             query_name="sales_report.daily_sales",
         )
 ```

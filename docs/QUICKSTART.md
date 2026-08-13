@@ -27,8 +27,14 @@ curl http://127.0.0.1:8000/health
 | | 동작 | 이유 |
 |---|---|---|
 | `GET /health` | ✅ | DB를 건드리지 않는다 |
+| `GET /ready` | ❌ 503 | writer DB 에 `SELECT 1` 을 실제로 던진다 |
 | `GET /api/v1/blog/posts` 등 기능 API | ❌ 500 | MySQL 연결이 필요하다 |
 | `GET /docs` (Scalar), `/openapi.json` | ❌ 404 | **`DEBUG=false` 가 문서를 끈다** (운영 보안 기본값) |
+
+> `/health` 와 `/ready` 는 일부러 다릅니다. `/health` 는 **프로세스 생존**만 봅니다 — 여기서
+> DB 를 검사하면 DB 가 잠깐 흔들릴 때 멀쩡한 프로세스가 재시작됩니다. 트래픽을 보낼지
+> 판단하는 쪽이 `/ready` 입니다. 오케스트레이터의 liveness probe 에는 `/health`,
+> readiness probe 에는 `/ready` 를 연결하세요.
 
 > API 문서를 보려면 `DEBUG=true` 여야 하고, `DEBUG=true` 는 MySQL을 요구한다(2단계).
 > 이 둘이 한 스위치에 묶여 있다는 점이 첫 실행에서 가장 헷갈리는 부분이다.
@@ -122,6 +128,26 @@ uv run ruff check .
 uv run mypy . --cache-dir .mypy_tmp
 ```
 
+MySQL 방언에 의존하는 몇 건(Raw SQL 집계, 마이그레이션 왕복)은 **MySQL 이 없으면 skip**
+된다 — 실패가 아니다. 그것까지 돌리려면 전용 컨테이너를 띄운다.
+
+```bash
+docker compose -f compose.test.yaml up -d     # MySQL 8.4, 호스트 포트 3308
+uv run python -m pytest -m mysql
+docker compose -f compose.test.yaml down -v   # 정리
+```
+
+> 포트가 3306 이 아니라 **3308** 인 것은 의도적이다. 로컬에 이미 떠 있는 MySQL 을 건드리지
+> 않기 위해서다. 데이터 디렉터리는 tmpfs 라 컨테이너를 내리면 아무것도 남지 않는다.
+>
+> 접속이 "Access denied" 로만 실패한다면 그 포트를 다른 프로세스가 선점했는지부터 본다
+> (Windows: `Get-NetTCPConnection -LocalPort 3308`). IDE 의 포트 포워딩이 조용히 다른
+> MySQL 로 연결을 돌려보내는 일이 실제로 있었다.
+>
+> WSL2 에서 Docker 를 쓴다면, 유휴 상태가 이어지면 WSL VM 이 내려가면서 컨테이너도 함께
+> 멈춘다(`docker ps -a` 에 `Exited (0)`). 이때 테스트는 **실패가 아니라 skip** 으로 넘어가므로
+> 결과 줄의 `skipped` 개수를 보지 않으면 눈치채기 어렵다. `up -d` 로 다시 올리면 된다.
+
 > `pytest` 가 아니라 **`python -m pytest`** 를 쓴다. 콘솔 스크립트(`uv run pytest`)가
 > 다른 인터프리터를 집어 import 가 어긋난 전례가 있어 이쪽을 표준으로 삼는다.
 > CI(`.github/workflows/ci.yml`)도 같은 형태로 돌린다.
@@ -138,9 +164,13 @@ uv run mypy . --cache-dir .mypy_tmp
 
 ```python
 # main.py
-from app.features import auth, blog, home, reply, sns, user, orders   # ← import 추가
-app.include_router(orders.router, prefix="/api")                      # ← 취합 한 줄 추가
+from app.features import auth, blog, catalog, home, reply, reports, sns, user, orders  # ← 추가
+app.include_router(orders.router, prefix="/api")                                       # ← 추가
 ```
+
+> 무엇을 만들지 감이 안 잡히면 **`app/features/catalog/` 를 그대로 베끼세요.** 한 기능이
+> 가져야 할 파일이 전부 들어 있는 최소 완결 예제입니다(ORM). 집계·리포트처럼 SQL 을 직접
+> 써야 하면 `app/features/reports/` 쪽이 짝이 되는 예제입니다(Raw SQL).
 
 모델 등록은 `app/core/db/models_registry.py` 가 `app/features/<name>/models/models.py` 를
 디렉터리 스캔으로 자동 판별하므로 따로 손댈 곳이 없다(기능 `__init__.py` 에서 models import).
@@ -161,16 +191,19 @@ app.include_router(orders.router, prefix="/api")                      # ← 취�
 
 ## 검증 상태
 
-**최종 확인: 2026-08-12** (FastAPI 0.141.x, Python 3.14). 아래는 실제로 실행하거나
+**최종 확인: 2026-08-13** (FastAPI 0.141.x, Python 3.14). 아래는 실제로 실행하거나
 설정값을 읽어 대조한 결과다.
 
 | 항목 | 방법 | 결과 |
 |---|---|---|
 | `DEBUG=false` 기동 → `/health` | 요청 | **200** `{"status":"healthy","version":"0.1.0"}` — 위 응답 예시와 일치 |
 | `DEBUG=false` → `/docs` · `/openapi.json` | 요청 | **404** 둘 다 |
+| `DEBUG=false` + MySQL 없음 → `/ready` | 요청 | **503** (writer DB 확인 실패) |
 | 기본값(`DEBUG=true`) + MySQL 없음 → startup 실패 | 기동 | 확인 |
 | 표의 기본값 전부 | `config.py` 필드 기본값 직접 읽기 | 일치 (`DEBUG`·`ADMIN`·MySQL 4종·`DB_ROUTER_ENABLED`·토큰 키 2종) |
-| pytest / ruff / mypy | 실행 | 186 passed · 청정 · 146 files Success |
+| pytest / ruff / mypy | 실행 | **373 passed** · 청정 · 187 files Success |
+| MySQL 8.4 통합 경로 | `compose.test.yaml` 로 컨테이너 기동 후 `-m mysql` 실행 | 6건 통과 (Raw SQL 집계·경계값·정밀도·injection 방어, 마이그레이션 head→base→head 왕복) |
 
-MySQL `docker run` 이후 경로는 이 환경에 Docker 가 없어 **실행 확인하지 못했다.** 설정
-기본값과 대조해 작성했으므로, 다를 경우 이 문서를 고쳐 주기 바란다.
+2단계의 `docker run` 명령(단일 MySQL, 포트 3306)은 이 환경에서 **실행 확인하지 않았다** —
+통합 테스트용 `compose.test.yaml`(포트 3308) 경로만 검증했다. 설정 기본값과 대조해 작성했으므로,
+다를 경우 이 문서를 고쳐 주기 바란다.
