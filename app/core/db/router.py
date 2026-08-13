@@ -19,12 +19,12 @@ Django 의 ``DATABASE_ROUTERS`` 와 같은 역할을 SQLAlchemy 에서 수행한
 
 사용 예시:
     # 1) 투명 라우팅 — 기존 코드를 그대로 두면 알아서 갈린다
-    async def handler(session: AsyncSession = Depends(get_session)):
+    async def handler(db_session: AsyncSession = Depends(get_routed_db_session)):
         await session.execute(select(Post))     # → reader
         session.add(Post(...))                  # → writer (이후 세션은 writer 고정)
 
     # 2) 명시적 읽기 전용 — 쓰기를 시도하면 ReadOnlyRoutingError
-    async def handler(session: AsyncSession = Depends(get_read_session)):
+    async def handler(db_session: AsyncSession = Depends(get_read_only_db_session)):
         await session.execute(select(Post))     # → reader
 
     # 3) 이스케이프 해치 — 복제 지연을 허용할 수 없는 읽기
@@ -143,7 +143,7 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
                 if info.get(_READ_ONLY):
                     raise ReadOnlyRoutingError(
                         "읽기 전용 세션에서 쓰기를 시도했습니다. "
-                        "쓰기에는 get_session()/get_write_session() 을 사용하세요."
+                        "쓰기에는 get_routed_db_session()/get_writer_db_session() 을 사용하세요."
                     )
                 # 이후 SELECT 가 복제 지연에 걸리지 않도록 이 세션을 writer 에 고정한다.
                 if router.sticky_after_write:

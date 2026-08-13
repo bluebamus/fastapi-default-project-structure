@@ -2,7 +2,7 @@
 SNS Service
 
 피드 게시물 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
-트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_session)이 책임진다.
+트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_db_session)이 책임진다.
 """
 
 from collections.abc import Sequence
@@ -19,9 +19,9 @@ from app.features.sns.schemas.sns_schema import SnsPostCreate, SnsPostUpdate
 class SnsService(BaseService):
     """피드 게시물 비즈니스 로직 (세션 기반)."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session)
-        self.repository = SnsPostRepository(session)
+    def __init__(self, db_session: AsyncSession) -> None:
+        super().__init__(db_session)
+        self.repository = SnsPostRepository(db_session)
 
     async def create_post(self, data: SnsPostCreate) -> SnsPost:
         """피드 게시물을 생성한다(커밋은 호출자가 수행)."""

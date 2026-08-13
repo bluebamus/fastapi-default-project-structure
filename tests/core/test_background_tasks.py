@@ -52,3 +52,78 @@ async def test_completed_tasks_are_not_retained() -> None:
     await runner.drain(timeout=1.0)
 
     assert runner.active == 0, "완료된 태스크는 추적 집합에서 제거되어야 함(누수 방지)"
+
+
+# =============================================================================
+# AR-009 — drain timeout 후 남은 태스크 처리
+#
+# timeout 이 지났다고 태스크를 그대로 두면, 곧이어 실행되는 DB engine dispose
+# 이후에도 태스크가 살아 돌아 이미 닫힌 pool 을 만진다. 취소만 하고 반환해도
+# 안 된다 — 취소는 다음 await 지점에서 CancelledError 를 넣을 뿐이라, await 해서
+# finally/rollback/close 가 실제로 실행될 기회를 줘야 한다.
+# =============================================================================
+async def test_drain_cancels_pending_tasks_after_timeout() -> None:
+    """timeout 후 미완료 태스크는 취소되고 추적 집합이 비어야 한다."""
+    runner = BackgroundTaskRunner(max_concurrent=5)
+    started = asyncio.Event()
+
+    async def never_ends() -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    assert runner.spawn(never_ends()) is True
+    await started.wait()
+
+    await runner.drain(timeout=0.05)
+
+    assert runner.active == 0, "drain 후에도 태스크가 추적 집합에 남아 있다 (AR-009 위반)"
+    assert runner.cancelled == 1
+
+
+async def test_cancelled_task_gets_a_chance_to_clean_up() -> None:
+    """취소한 태스크를 await 해야 finally 의 rollback/close 가 실행된다."""
+    runner = BackgroundTaskRunner(max_concurrent=5)
+    started = asyncio.Event()
+    cleaned: list[str] = []
+
+    async def with_cleanup() -> None:
+        started.set()
+        try:
+            await asyncio.sleep(3600)
+        finally:
+            # 실제 코드에서는 session.rollback()/close() 자리다.
+            cleaned.append("cleanup")
+
+    assert runner.spawn(with_cleanup()) is True
+    await started.wait()
+
+    await runner.drain(timeout=0.05)
+
+    assert cleaned == ["cleanup"], "취소한 태스크를 await 하지 않아 정리가 실행되지 않았다"
+
+
+async def test_drain_reports_failed_task_without_raising() -> None:
+    """태스크가 예외로 끝나도 drain 이 종료 절차를 깨뜨리지 않는다."""
+    runner = BackgroundTaskRunner(max_concurrent=5)
+
+    async def boom() -> None:
+        raise RuntimeError("백그라운드 실패(의도적)")
+
+    assert runner.spawn(boom()) is True
+    await runner.drain(timeout=1.0)
+
+    assert runner.active == 0
+
+
+async def test_drain_is_safe_when_called_twice() -> None:
+    """재진입(lifespan 재시작)에서 두 번 호출해도 안전하다."""
+    runner = BackgroundTaskRunner(max_concurrent=5)
+
+    async def quick() -> None:
+        return None
+
+    assert runner.spawn(quick()) is True
+    await runner.drain(timeout=1.0)
+    await runner.drain(timeout=1.0)
+
+    assert runner.active == 0

@@ -60,20 +60,20 @@ class BaseRepository(CRUDBase[ModelType]):
         class UserRepository(BaseRepository[User]):
             model = User
 
-        repo = UserRepository(session)
+        repo = UserRepository(db_session)
         user = await repo.get_by_id("123")  # 타입: User | None
     """
 
     model: type[ModelType]
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, db_session: AsyncSession) -> None:
         """
         BaseRepository 초기화
 
         Args:
             session: 비동기 데이터베이스 세션 (AsyncSession)
         """
-        super().__init__(session)
+        super().__init__(db_session)
 
     # ========================================================================
     # LOADING STRATEGY HELPERS (내부 헬퍼 메서드)
@@ -230,11 +230,11 @@ class BaseRepository(CRUDBase[ModelType]):
                     data["id"] = str(uuid4())
                 instances.append(self.model(**data))
 
-            self.session.add_all(instances)
-            await self.session.flush()
+            self.db_session.add_all(instances)
+            await self.db_session.flush()
 
             for instance in instances:
-                await self.session.refresh(instance)
+                await self.db_session.refresh(instance)
 
             return instances
         except IntegrityError as e:
@@ -307,7 +307,7 @@ class BaseRepository(CRUDBase[ModelType]):
             user = await repo.get_one(email="john@example.com")
         """
         stmt = select(self.model).filter_by(**filters)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_many(
@@ -331,7 +331,7 @@ class BaseRepository(CRUDBase[ModelType]):
             active_users = await repo.get_many(is_active=True, limit=50)
         """
         stmt = select(self.model).filter_by(**filters).offset(skip).limit(limit)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().all()
 
     async def get_all(
@@ -353,7 +353,7 @@ class BaseRepository(CRUDBase[ModelType]):
             users = await repo.get_all(skip=0, limit=100)
         """
         stmt = select(self.model).offset(skip).limit(limit)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().all()
 
     async def count(self, **filters: Any) -> int:
@@ -373,7 +373,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(func.count()).select_from(self.model)
         if filters:
             stmt = stmt.filter_by(**filters)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one()
 
     async def exists(self, id: str) -> bool:
@@ -391,7 +391,7 @@ class BaseRepository(CRUDBase[ModelType]):
                 print("User exists")
         """
         stmt = select(func.count()).select_from(self.model).where(self.model.id == id)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one() > 0
 
     async def exists_by(self, **filters: Any) -> bool:
@@ -409,7 +409,7 @@ class BaseRepository(CRUDBase[ModelType]):
                 print("Email already exists")
         """
         stmt = select(func.count()).select_from(self.model).filter_by(**filters)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one() > 0
 
     # ========================================================================
@@ -446,7 +446,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).where(self.model.id == id)
         stmt = self._apply_eager_loading(stmt, relations, strategy)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_one_with(
@@ -475,7 +475,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).filter_by(**filters)
         stmt = self._apply_eager_loading(stmt, relations, strategy)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_many_with(
@@ -509,7 +509,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).filter_by(**filters).offset(skip).limit(limit)
         stmt = self._apply_eager_loading(stmt, relations, strategy)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().unique().all()
 
     async def get_all_with(
@@ -541,7 +541,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).offset(skip).limit(limit)
         stmt = self._apply_eager_loading(stmt, relations, strategy)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().unique().all()
 
     async def get_by_ids_with(
@@ -573,7 +573,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).where(self.model.id.in_(ids))
         stmt = self._apply_eager_loading(stmt, relations, strategy)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().unique().all()
 
     # ========================================================================
@@ -611,7 +611,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).filter_by(**filters).offset(skip).limit(limit)
         stmt = self._apply_column_loading(stmt, only_columns=columns)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().all()
 
     async def get_by_id_partial(
@@ -638,7 +638,7 @@ class BaseRepository(CRUDBase[ModelType]):
         stmt = select(self.model).where(self.model.id == id)
         stmt = self._apply_column_loading(stmt, only_columns=columns)
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalar_one_or_none()
 
     # ========================================================================
@@ -675,7 +675,7 @@ class BaseRepository(CRUDBase[ModelType]):
             stmt = select(self.model).filter_by(**filters).offset(offset).limit(batch_size)
             stmt = self._apply_eager_loading(stmt, relations)
 
-            result = await self.session.execute(stmt)
+            result = await self.db_session.execute(stmt)
             batch = result.scalars().unique().all()
 
             if not batch:
@@ -731,7 +731,7 @@ class BaseRepository(CRUDBase[ModelType]):
             for relation in relations:
                 stmt = stmt.options(contains_eager(getattr(self.model, relation)))
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return result.scalars().unique().all()
 
     # ========================================================================
@@ -768,7 +768,7 @@ class BaseRepository(CRUDBase[ModelType]):
             .group_by(self.model.id)
         )
 
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         return [(row[0], row[1]) for row in result.all()]
 
     # ========================================================================
@@ -795,8 +795,8 @@ class BaseRepository(CRUDBase[ModelType]):
         """
         try:
             stmt = update(self.model).where(self.model.id == id).values(**data)
-            result = cast("CursorResult[Any]", await self.session.execute(stmt))
-            await self.session.flush()
+            result = cast("CursorResult[Any]", await self.db_session.execute(stmt))
+            await self.db_session.flush()
 
             if result.rowcount == 0:
                 return None
@@ -837,8 +837,8 @@ class BaseRepository(CRUDBase[ModelType]):
             )
         """
         stmt = update(self.model).where(self.model.id.in_(ids)).values(**data)
-        result = cast("CursorResult[Any]", await self.session.execute(stmt))
-        await self.session.flush()
+        result = cast("CursorResult[Any]", await self.db_session.execute(stmt))
+        await self.db_session.flush()
         return result.rowcount
 
     async def update_by(
@@ -863,8 +863,8 @@ class BaseRepository(CRUDBase[ModelType]):
             )
         """
         stmt = update(self.model).filter_by(**filters).values(**data)
-        result = cast("CursorResult[Any]", await self.session.execute(stmt))
-        await self.session.flush()
+        result = cast("CursorResult[Any]", await self.db_session.execute(stmt))
+        await self.db_session.flush()
         return result.rowcount
 
     # ========================================================================
@@ -890,8 +890,8 @@ class BaseRepository(CRUDBase[ModelType]):
         """
         try:
             stmt = delete(self.model).where(self.model.id == id)
-            result = cast("CursorResult[Any]", await self.session.execute(stmt))
-            await self.session.flush()
+            result = cast("CursorResult[Any]", await self.db_session.execute(stmt))
+            await self.db_session.flush()
             return result.rowcount > 0
         except IntegrityError as e:
             logger.error(f"[DELETE] 무결성 제약 조건 위반 (참조 중인 데이터): {e}")
@@ -920,8 +920,8 @@ class BaseRepository(CRUDBase[ModelType]):
             count = await repo.bulk_delete(["id1", "id2", "id3"])
         """
         stmt = delete(self.model).where(self.model.id.in_(ids))
-        result = cast("CursorResult[Any]", await self.session.execute(stmt))
-        await self.session.flush()
+        result = cast("CursorResult[Any]", await self.db_session.execute(stmt))
+        await self.db_session.flush()
         return result.rowcount
 
     async def delete_by(self, **filters: Any) -> int:
@@ -938,8 +938,8 @@ class BaseRepository(CRUDBase[ModelType]):
             count = await repo.delete_by(is_expired=True)
         """
         stmt = delete(self.model).filter_by(**filters)
-        result = cast("CursorResult[Any]", await self.session.execute(stmt))
-        await self.session.flush()
+        result = cast("CursorResult[Any]", await self.db_session.execute(stmt))
+        await self.db_session.flush()
         return result.rowcount
 
     # ========================================================================

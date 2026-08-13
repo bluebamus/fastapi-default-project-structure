@@ -6,7 +6,7 @@
 
 지키려는 규칙:
     1. 조회 라우트는 쓰기용 서비스 의존성을 쓰지 않는다      (P4-1)
-    2. 조회 라우트는 쓰기 세션(`get_session`)을 쓰지 않는다   (P4-3)
+    2. 조회 라우트는 쓰기 세션(`get_writer_db_session`)을 쓰지 않는다   (P4-3)
     3. 쓰기 라우트는 쓰기용 서비스 의존성을 쓴다             (P4-1 역방향)
     4. 쓰기 라우트는 핸들러 본문에서 커밋한다                (P1-3)
 
@@ -23,7 +23,7 @@ import inspect
 
 from fastapi.routing import APIRoute
 
-from app.core.db.session import get_read_session, get_session
+from app.core.db.session import get_read_only_db_session, get_writer_db_session
 from app.features.auth.dependencies.auth_dependencies import get_auth_service
 from app.features.blog.dependencies.blog_dependencies import get_blog_service
 from app.features.reply.dependencies.reply_dependencies import get_reply_service
@@ -31,7 +31,7 @@ from app.features.sns.dependencies.sns_dependencies import get_sns_service
 from app.features.user.dependencies.user_dependencies import get_user_service
 from main import app
 
-# 쓰기 세션(get_session)으로 서비스를 구성하는 의존성 전부.
+# 쓰기 세션(get_writer_db_session)으로 서비스를 구성하는 의존성 전부.
 _WRITE_DEPENDENCIES = {
     get_auth_service,
     get_blog_service,
@@ -95,7 +95,7 @@ def _api_routes() -> list[APIRoute]:
     있는 대상은 애초에 "세션을 잡는 라우트"이므로, 그것으로 식별하면 버전과 무관해진다.
     세션을 안 쓰는 /health 같은 라우트는 자동으로 빠진다.
     """
-    session_deps = {get_session, get_read_session}
+    session_deps = {get_writer_db_session, get_read_only_db_session}
     return [r for r in _iter_api_routes(app.routes) if _dependency_calls(r) & session_deps]
 
 
@@ -134,12 +134,13 @@ def test_read_routes_do_not_use_writer_session():
     offenders = [
         _name(route)
         for route in _read_routes()
-        if get_session in _dependency_calls(route) and _name(route) not in _WRITER_SESSION_BY_DESIGN
+        if get_writer_db_session in _dependency_calls(route)
+        and _name(route) not in _WRITER_SESSION_BY_DESIGN
     ]
 
     assert not offenders, (
-        f"조회 라우트가 쓰기 세션(get_session)을 사용함: {sorted(offenders)}. "
-        "get_read_session 으로 바꾸거나, 복제 지연을 허용할 수 없는 조회라면 "
+        f"조회 라우트가 쓰기 세션(get_writer_db_session)을 사용함: {sorted(offenders)}. "
+        "get_read_only_db_session 으로 바꾸거나, 복제 지연을 허용할 수 없는 조회라면 "
         "_WRITER_SESSION_BY_DESIGN 에 이유와 함께 추가할 것."
     )
 

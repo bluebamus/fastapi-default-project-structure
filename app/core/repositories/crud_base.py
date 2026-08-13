@@ -29,7 +29,7 @@ class CRUDBase(Generic[ModelType]):
 
     Attributes:
         model: SQLAlchemy 모델 클래스 (하위 클래스에서 정의)
-        session: 비동기 데이터베이스 세션
+        db_session: 비동기 데이터베이스 세션
 
     Type Parameters:
         ModelType: Base를 상속한 SQLAlchemy 모델 타입
@@ -37,14 +37,19 @@ class CRUDBase(Generic[ModelType]):
 
     model: type[ModelType]
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, db_session: AsyncSession) -> None:
         """
         CRUDBase 초기화
 
         Args:
-            session: 비동기 데이터베이스 세션 (AsyncSession)
+            db_session: 비동기 데이터베이스 세션 (AsyncSession)
         """
-        self.session = session
+        self.db_session = db_session
+
+    @property
+    def session(self) -> AsyncSession:
+        """Deprecated — ``db_session`` 을 쓸 것 (TX-005 전환 기간용 별칭)."""
+        return self.db_session
 
     async def _get(self, id: str | UUID) -> ModelType | None:
         """
@@ -56,7 +61,7 @@ class CRUDBase(Generic[ModelType]):
         Returns:
             모델 인스턴스 또는 None
         """
-        return await self.session.get(self.model, str(id))
+        return await self.db_session.get(self.model, str(id))
 
     async def _add(self, entity: ModelType) -> ModelType:
         """
@@ -68,9 +73,9 @@ class CRUDBase(Generic[ModelType]):
         Returns:
             추가된 모델 인스턴스
         """
-        self.session.add(entity)
-        await self.session.flush()
-        await self.session.refresh(entity)
+        self.db_session.add(entity)
+        await self.db_session.flush()
+        await self.db_session.refresh(entity)
         return entity
 
     async def _update(self, entity: ModelType) -> ModelType:
@@ -92,5 +97,5 @@ class CRUDBase(Generic[ModelType]):
         Args:
             entity: 삭제할 모델 인스턴스
         """
-        await self.session.delete(entity)
-        await self.session.flush()
+        await self.db_session.delete(entity)
+        await self.db_session.flush()

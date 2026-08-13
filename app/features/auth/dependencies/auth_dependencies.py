@@ -5,7 +5,7 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.session import get_read_session, get_session
+from app.core.db.session import get_read_only_db_session, get_writer_db_session
 from app.features.auth.exceptions import InvalidTokenException
 from app.features.auth.services.auth_service import AuthService
 from app.features.user.models.models import User
@@ -16,7 +16,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 async def get_auth_service(
-    session: AsyncSession = Depends(get_session),
+    db_session: AsyncSession = Depends(get_writer_db_session),
 ) -> AuthService:
     """AuthService 를 구성해 제공한다(쓰기용 — 커밋은 핸들러가 한다).
 
@@ -24,12 +24,12 @@ async def get_auth_service(
     종료 코드가 **응답 전송 후에** 실행되도록 바뀌어 커밋 실패가 201 로 둔갑했다.
     커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다(P1-3).
     """
-    return AuthService(session)
+    return AuthService(db_session)
 
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_read_session),
+    db_session: AsyncSession = Depends(get_read_only_db_session),
 ) -> User:
     """Bearer access token 을 검증해 현재 사용자를 반환한다(실패 시 401).
 
@@ -47,7 +47,7 @@ async def get_current_user(
     쓰기 세션에서 수정하려 들면 다른 세션의 인스턴스라 반영되지 않는다. 그런
     라우트를 만들 때는 쓰기 세션에서 다시 조회할 것.
     """
-    service = AuthService(session)
+    service = AuthService(db_session)
     try:
         payload = decode_token(token, token_type=ACCESS_TOKEN_TYPE)
     except jwt.InvalidTokenError as exc:

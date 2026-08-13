@@ -2,7 +2,7 @@
 Reply Service
 
 댓글 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
-트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_session)이 책임진다.
+트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_db_session)이 책임진다.
 """
 
 from collections.abc import Sequence
@@ -19,9 +19,9 @@ from app.features.reply.schemas.reply_schema import ReplyCreate, ReplyUpdate
 class ReplyService(BaseService):
     """댓글 비즈니스 로직 (세션 기반)."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session)
-        self.repository = ReplyRepository(session)
+    def __init__(self, db_session: AsyncSession) -> None:
+        super().__init__(db_session)
+        self.repository = ReplyRepository(db_session)
 
     async def create_reply(self, data: ReplyCreate) -> Reply:
         """댓글을 생성한다(커밋은 호출자가 수행)."""

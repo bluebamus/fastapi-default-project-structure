@@ -26,14 +26,14 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
 
     model = UserAccessLog
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, db_session: AsyncSession) -> None:
         """
         UserAccessLogRepository 초기화
 
         Args:
             session: 비동기 데이터베이스 세션
         """
-        super().__init__(session)
+        super().__init__(db_session)
 
     async def get_by_ip(
         self,
@@ -61,7 +61,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
             .offset(skip)
             .limit(limit)
         )
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         logs = result.scalars().all()
 
         logger.debug(f"[get_by_ip] 조회 완료: count={len(logs)}")
@@ -93,7 +93,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
             .offset(skip)
             .limit(limit)
         )
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         logs = result.scalars().all()
 
         logger.debug(f"[get_by_user_id] 조회 완료: count={len(logs)}")
@@ -132,7 +132,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
             .offset(skip)
             .limit(limit)
         )
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         logs = result.scalars().all()
 
         logger.debug(f"[get_by_date_range] 조회 완료: count={len(logs)}")
@@ -150,7 +150,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         stmt = select(self.model.device_type, func.count(self.model.id)).group_by(
             self.model.device_type
         )
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         counts = {row[0] or "unknown": row[1] for row in result.all()}
 
         logger.debug(f"[count_by_device_type] 집계 완료: {counts}")
@@ -166,7 +166,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         logger.debug("[count_by_os] 집계 시작")
 
         stmt = select(self.model.os_name, func.count(self.model.id)).group_by(self.model.os_name)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         counts = {row[0] or "unknown": row[1] for row in result.all()}
 
         logger.debug(f"[count_by_os] 집계 완료: {counts}")
@@ -184,7 +184,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         stmt = select(self.model.browser_name, func.count(self.model.id)).group_by(
             self.model.browser_name
         )
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         counts = {row[0] or "unknown": row[1] for row in result.all()}
 
         logger.debug(f"[count_by_browser] 집계 완료: {counts}")
@@ -203,7 +203,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         logger.debug(f"[get_recent_logs] 조회 시작: limit={limit}")
 
         stmt = select(self.model).order_by(self.model.created_at.desc()).limit(limit)
-        result = await self.session.execute(stmt)
+        result = await self.db_session.execute(stmt)
         logs = result.scalars().all()
 
         logger.debug(f"[get_recent_logs] 조회 완료: count={len(logs)}")

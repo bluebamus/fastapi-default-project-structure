@@ -1,7 +1,7 @@
 """SNS CRUD 엔드포인트 테스트.
 
 표준 include_router 배선 + view→dependency→service→repository→DB 전체 경로를
-in-memory sqlite(get_session 오버라이드)로 검증한다.
+in-memory sqlite(get_writer_db_session 오버라이드)로 검증한다.
 """
 
 import pytest_asyncio
@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_session, get_session
+from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
 from app.features.sns.models.models import SnsPost  # noqa: F401  (register table)
 from main import app
 
@@ -29,10 +29,10 @@ async def client():
         async with maker() as session:
             yield session
 
-    # 조회 엔드포인트는 get_read_session 을 쓴다 — 함께 오버라이드하지 않으면
+    # 조회 엔드포인트는 get_read_only_db_session 을 쓴다 — 함께 오버라이드하지 않으면
     # 읽기 경로가 실제 MySQL 로 새어나간다.
-    app.dependency_overrides[get_session] = _override_get_session
-    app.dependency_overrides[get_read_session] = _override_get_session
+    app.dependency_overrides[get_writer_db_session] = _override_get_session
+    app.dependency_overrides[get_read_only_db_session] = _override_get_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

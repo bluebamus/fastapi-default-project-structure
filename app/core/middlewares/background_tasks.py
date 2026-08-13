@@ -37,6 +37,7 @@ class BackgroundTaskRunner:
         self._max = max_concurrent
         self._tasks: set[asyncio.Task[Any]] = set()
         self.dropped = 0
+        self.cancelled = 0
 
     @property
     def active(self) -> int:
@@ -67,16 +68,37 @@ class BackgroundTaskRunner:
         return True
 
     async def drain(self, timeout: float = DRAIN_TIMEOUT_SECONDS) -> None:
-        """in-flight 태스크가 끝날 때까지(또는 timeout) 기다린다."""
+        """in-flight 태스크를 기다리고, timeout 후 남은 것은 취소·회수한다.
+
+        timeout 이 지났다고 태스크를 그대로 두면 곧이어 실행되는 DB engine
+        dispose 이후에도 태스크가 살아 돌아 이미 닫힌 pool 을 만진다(AR-009).
+        취소만 하고 반환해도 부족하다 — ``cancel()`` 은 다음 await 지점에
+        ``CancelledError`` 를 넣을 뿐이라, 취소한 태스크를 다시 await 해야
+        ``finally`` 의 session rollback/close 가 실제로 실행된다.
+        """
         if not self._tasks:
             return
         pending = set(self._tasks)
         logger.info("백그라운드 태스크 drain 시작 — %d건 대기", len(pending))
+
         done, still_pending = await asyncio.wait(pending, timeout=timeout)
-        if still_pending:
-            logger.warning("drain 타임아웃(%.1fs) — 미완료 %d건", timeout, len(still_pending))
-        else:
+        if not still_pending:
             logger.info("백그라운드 태스크 drain 완료 — %d건", len(done))
+            return
+
+        logger.warning(
+            "drain 타임아웃(%.1fs) — 미완료 %d건 취소",
+            timeout,
+            len(still_pending),
+        )
+        for task in still_pending:
+            task.cancel()
+        self.cancelled += len(still_pending)
+        # 취소 처리(그리고 태스크의 finally)가 끝날 때까지 회수한다.
+        # 여기서 예외를 다시 던지면 종료 절차가 통째로 멈춘다.
+        await asyncio.gather(*still_pending, return_exceptions=True)
+        # done_callback 이 아직 안 돌았을 수 있으므로 명시적으로 비운다.
+        self._tasks.difference_update(still_pending)
 
 
 # 미들웨어(spawn)와 lifespan(drain)이 공유하는 전역 싱글턴.
