@@ -26,6 +26,7 @@ from fastapi.routing import APIRoute
 from app.core.db.session import get_read_only_db_session, get_writer_db_session
 from app.features.auth.dependencies.auth_dependencies import get_auth_service
 from app.features.blog.dependencies.blog_dependencies import get_blog_service
+from app.features.catalog.dependencies.catalog_dependencies import get_catalog_service
 from app.features.reply.dependencies.reply_dependencies import get_reply_service
 from app.features.sns.dependencies.sns_dependencies import get_sns_service
 from app.features.user.dependencies.user_dependencies import get_user_service
@@ -35,6 +36,7 @@ from main import app
 _WRITE_DEPENDENCIES = {
     get_auth_service,
     get_blog_service,
+    get_catalog_service,
     get_reply_service,
     get_sns_service,
     get_user_service,

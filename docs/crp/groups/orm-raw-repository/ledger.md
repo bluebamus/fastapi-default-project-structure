@@ -22,6 +22,11 @@
 | F-009 | HIGH | 로깅 가용성 — 인프로세스 Alembic 실행이 애플리케이션 로깅을 죽이면 안 된다 | Fix | Fixed | `migrations/env.py` `fileConfig(..., disable_existing_loggers=False)` | `fileConfig` 기본값이 기존 로거를 **전부 비활성화**한다. 같은 프로세스에서 alembic 을 돌리면(기동 시 마이그레이션·테스트 하네스) 그 순간부터 앱 로그가 조용히 사라진다. 테스트에서 `test_migration_chain` 이후 Raw Repository 로그가 통째로 사라지는 것으로 발견 |
 | F-010 | LOW | 검수 게이트 정확도 — INV-5 판정이 오탐이면 안 된다 | Fix | Fixed | `scripts/review_gate.py` AST 기반 base 검사 | 게이트가 문자열 검색으로 INV-5 를 판정해, "BaseRepository 를 상속하지 않는다"라고 적은 **docstring 까지 위반으로 잡았다**. 실제 클래스 정의의 base 목록만 보도록 수정 |
 
+| F-011 | **HIGH** | RAW-REP-007 / TX-002 — read-only 세션에서 Raw DML 이 차단되고, 쓰기는 primary 로 간다 | Fix | Fixed | `router._text_is_write()` + `tests/core/test_router_raw_dml.py` | `_is_write()` 가 `isinstance(clause, UpdateBase)` 만 봐서 **`text("DELETE ...")` 를 읽기로 판정**했다. 결과: ①read-only 세션의 쓰기 차단이 뚫린다 ②복제 활성 시 **UPDATE 가 replica 로 나간다**(더 위험). 선두 키워드 판별 + `SELECT ... FOR UPDATE` 감지로 수정. CTE 로 감싼 DML 은 여전히 오판 — `ponytail:` 주석으로 한계 명시 |
+| F-012 | MED | 통합 환경 — 테스트가 의도한 DB 에 붙어야 한다 | Fix | Fixed | `compose.test.yaml` 포트 3307 → 3308 | Windows 의 `127.0.0.1:3307` 을 **IDE(VS Code)의 포트 포워딩이 선점**하고 있어, 접속이 조용히 다른 MySQL 로 가서 "Access denied" 로만 보였다. `Get-NetTCPConnection` 으로 점유 프로세스를 확인해 원인 특정. 충돌 없는 3308 로 이전하고 확인 방법을 주석에 남김 |
+| F-013 | MED | 통합 환경 — MySQL 8.4 접속 가능 | Fix | Fixed | `pyproject.toml` `cryptography>=43.0.0` | MySQL 8.4 기본 인증(`caching_sha2_password`)에는 PyMySQL/aiomysql 이 `cryptography` 를 필요로 한다. 없으면 접속 자체가 실패 |
+| F-014 | LOW | 통합 테스트 격리 — 스키마 초기화가 alembic 상태와 어긋나면 안 된다 | Fix | Fixed | `tests/integration/conftest.py` `drop_all_tables_sync()` + `mysql_empty_schema` | metadata 기준 초기화는 `alembic_version` 을 남겨, alembic 이 "base 상태"로 오인하고 이미 있는 테이블을 다시 만들다 1050 으로 깨졌다. 실제 존재하는 테이블 전부를 지우고, migration 테스트는 빈 스키마 fixture 를 쓰도록 분리 |
+
 ## 검수 라운드 기록
 
 | 라운드 | 시점 | 범위 | 게이트 결과 | 신규 finding |
@@ -30,6 +35,7 @@
 | R-2 | 2026-08-13 | Phase 2 (모델 Mixin) | 전건 통과 (253 tests) | 없음 — schema diff 0 을 스냅샷으로 증명 |
 | R-3 | 2026-08-13 | Phase 3 (ORM Repository) | 전건 통과 (274 tests) | F-004, F-005, F-006, F-007 |
 | R-4 | 2026-08-13 | Phase 4 (Raw Base) | 전건 통과 (308 tests) | F-008(CRIT), F-009, F-010 |
+| R-5 | 2026-08-13 | Phase 5 (시나리오 2종 + MySQL 8.4) | 전건 통과 (364 tests, MySQL 통합 6건 실제 실행) | F-011(HIGH), F-012, F-013, F-014 |
 
 <!--
 규칙:

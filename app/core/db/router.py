@@ -39,12 +39,14 @@ Note:
 from __future__ import annotations
 
 import itertools
+import re
 from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Engine, UpdateBase
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import TextClause
 
 # 세션 단위 라우팅 상태를 담는 ``Session.info`` 키.
 # (세션 객체에 직접 속성을 붙이지 않고 SQLAlchemy 가 제공하는 info 딕셔너리를 쓴다.)
@@ -115,9 +117,61 @@ def mark_read_only(session: Session | AsyncSession) -> None:
     _session_info(session)[_READ_ONLY] = True
 
 
+# ``text()`` 로 쓴 구문의 선두 키워드. Core 구문(UpdateBase)과 달리 타입으로는
+# 읽기/쓰기를 알 수 없어 SQL 첫 단어를 본다.
+_TEXT_WRITE_KEYWORDS = frozenset(
+    {
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "REPLACE",
+        "MERGE",
+        "UPSERT",
+        "CREATE",
+        "DROP",
+        "ALTER",
+        "TRUNCATE",
+        "RENAME",
+        "GRANT",
+        "REVOKE",
+        "CALL",
+        "SET",
+    }
+)
+
+# 선행 주석(-- ... / /* ... */)과 공백을 걷어내고 첫 단어를 뽑는다.
+_LEADING_NOISE = re.compile(r"^(?:\s+|--[^\n]*\n|/\*.*?\*/)+", re.DOTALL)
+_FIRST_WORD = re.compile(r"^([A-Za-z_]+)")
+
+
+def _text_is_write(clause: Any) -> bool:
+    """``text()`` 구문이 쓰기인지 선두 키워드로 판별한다.
+
+    ``TextClause`` 는 ``UpdateBase`` 가 아니라서 타입만 봐서는 Raw DML 을 읽기로
+    오인한다. 그러면 두 가지가 깨진다 — read-only 세션의 쓰기 차단이 뚫리고
+    (RAW-REP-007), 복제가 켜져 있으면 **UPDATE 가 replica 로 나간다**.
+
+    ponytail: 선두 키워드 판별. ``WITH ... INSERT`` 처럼 CTE 로 감싼 DML 은
+    읽기로 오판한다 — 그런 SQL 을 쓰게 되면 sqlparse 같은 파서로 올린다.
+    """
+    sql = _LEADING_NOISE.sub("", str(clause))
+    match = _FIRST_WORD.match(sql)
+    if match is None:
+        return False
+
+    keyword = match.group(1).upper()
+    if keyword in _TEXT_WRITE_KEYWORDS:
+        return True
+    # 잠금 읽기(SELECT ... FOR UPDATE)는 primary 로 가야 한다 — replica 에서 잠가도
+    # 의미가 없고, 잠근 행을 곧이어 쓰는 것이 보통이다.
+    return keyword == "SELECT" and "FOR UPDATE" in sql.upper()
+
+
 def _is_write(clause: Any, flushing: bool) -> bool:
-    """이 구문이 쓰기인지 판별한다 (ORM flush 또는 Core INSERT/UPDATE/DELETE)."""
-    return flushing or isinstance(clause, UpdateBase)
+    """이 구문이 쓰기인지 판별한다 (ORM flush / Core DML / Raw text DML)."""
+    if flushing or isinstance(clause, UpdateBase):
+        return True
+    return isinstance(clause, TextClause) and _text_is_write(clause)
 
 
 def make_routing_session_class(router: DatabaseRouter) -> type[Session]:

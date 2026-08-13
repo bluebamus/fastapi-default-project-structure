@@ -30,6 +30,10 @@ EXPECTED: dict[str, frozenset[str]] = {
     "/api/v1/auth/login": frozenset({"POST"}),
     "/api/v1/auth/refresh": frozenset({"POST"}),
     "/api/v1/auth/me": frozenset({"GET"}),
+    # 데이터 접근 방식 참조 예제 — catalog 는 ORM, reports 는 Raw SQL
+    "/api/v1/catalog/products": frozenset({"GET", "POST"}),
+    "/api/v1/catalog/products/{product_id}": frozenset({"GET", "PATCH", "DELETE"}),
+    "/api/v1/reports/sales/daily": frozenset({"GET"}),
 }
 
 

@@ -27,6 +27,10 @@ dependencies = [
     "pyjwt>=2.13.0",
     "python-multipart>=0.0.32",
     "bcrypt>=5.0.0",
+    # MySQL 8.4 의 기본 인증 플러그인은 caching_sha2_password 다. PyMySQL/aiomysql 은
+    # 이 방식의 키 교환에 cryptography 를 쓰며, 없으면 접속 자체가
+    # "'cryptography' package is required" 로 실패한다.
+    "cryptography>=43.0.0",
 ]
 
 [dependency-groups]
@@ -89,6 +93,11 @@ markers = [
     "slow: 느린 테스트 (실행 제외 가능)",
     "integration: 통합 테스트",
     "unit: 단위 테스트",
+    # compose.test.yaml 의 MySQL 8.4 가 떠 있어야 하는 테스트.
+    # 미가용이면 자동 skip 한다(tests/integration/conftest.py).
+    #   docker compose -f compose.test.yaml up -d
+    #   pytest -m mysql
+    "mysql: MySQL 8.4 통합 테스트 (compose.test.yaml 필요)",
 ]
 
 # 환경 변수 설정
