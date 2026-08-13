@@ -6,11 +6,10 @@
 from typing import Any
 
 import jwt
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exception import ErrorResponse
-from app.core.rate_limit import limiter
 from app.features.auth.dependencies.auth_dependencies import (
     get_auth_service,
     get_current_user,
@@ -25,7 +24,6 @@ from app.features.auth.schemas.auth_schema import (
 from app.features.auth.services.auth_service import AuthService
 from app.features.user.models.models import User
 from app.utils.authenticator.auth import REFRESH_TOKEN_TYPE, decode_token
-from config import middleware_settings
 
 router = APIRouter()
 
@@ -46,9 +44,7 @@ _CONFLICT: dict[int | str, dict[str, Any]] = {
     operation_id="authRegister",
     responses=_CONFLICT,
 )
-@limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)
 async def register(
-    request: Request,
     payload: RegisterRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
@@ -65,9 +61,7 @@ async def register(
     operation_id="authLogin",
     responses=_UNAUTH,
 )
-@limiter.limit(middleware_settings.RATE_LIMIT_DEFAULT)
 async def login(
-    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     service: AuthService = Depends(get_auth_service),
 ) -> TokenResponse:

@@ -1,6 +1,6 @@
 # QUICKSTART — 처음 보는 사용자를 위한 최소 실행 경로
 
-이 저장소는 MySQL·Redis·Celery·SQLAdmin·JWT·rate limit·DB read/write 라우팅을 모두
+이 저장소는 MySQL·Redis·Celery·SQLAdmin·JWT·DB read/write 라우팅을 모두
 포함한다. 전부 이해하고 시작할 필요는 없다. 이 문서는 **가장 먼저 무엇만 알면 되는지**만
 다룬다. 전체 구조는 [ARCHITECTURE.md](./ARCHITECTURE.md), 전체 설정은 [../README.md](../README.md).
 
@@ -80,7 +80,6 @@ uv run uvicorn main:app --reload --port 8000
 | `DEBUG` | `true` | **가장 중요.** true=테이블 자동 생성 + `/docs` 켜짐(MySQL 필요) / false=둘 다 꺼짐(인프라 불필요) |
 | `ADMIN` | `true` | `/admin` 관리 화면이 **기본으로 켜진다**. ⚠️ **인증이 없다** — 아래 주의 참고 |
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | `localhost` / `root` / `""` / `fastapi_db` | 위 docker 명령과 맞춰져 있다 |
-| `RATE_LIMIT_ENABLED` | `true` | 켜져 있다. 끄면 rate limit 데코레이터가 무동작 |
 | `DB_ROUTER_ENABLED` | `false` | 기본은 단일 엔진. read/write 분리는 선택 기능 |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | 로컬은 그대로 둬도 되지만 **배포 전 반드시 교체** |
 
@@ -110,7 +109,6 @@ cp .env.example .env
 | DB read/write 라우팅 | replica MySQL | 꺼짐 | 읽기 부하 분리가 필요할 때 |
 | Alembic 마이그레이션 | MySQL | — | 운영 배포 시 (`DEBUG=false` 면 테이블 자동 생성이 꺼진다) |
 | SQLAdmin 관리자 화면 | (앱 내장) | **켜짐** | `/admin` 으로 바로 접근. 인증 없음(위 주의) |
-| rate limit | (앱 내장) | **켜짐** (`100/minute`) | 회원가입·로그인에만 적용. 다른 라우트로 넓힐 때 |
 
 ---
 
@@ -171,7 +169,7 @@ app.include_router(orders.router, prefix="/api")                      # ← 취�
 | `DEBUG=false` 기동 → `/health` | 요청 | **200** `{"status":"healthy","version":"0.1.0"}` — 위 응답 예시와 일치 |
 | `DEBUG=false` → `/docs` · `/openapi.json` | 요청 | **404** 둘 다 |
 | 기본값(`DEBUG=true`) + MySQL 없음 → startup 실패 | 기동 | 확인 |
-| 표의 기본값 전부 | `config.py` 필드 기본값 직접 읽기 | 일치 (`DEBUG`·`ADMIN`·MySQL 4종·`RATE_LIMIT_ENABLED`·`DB_ROUTER_ENABLED`·토큰 키 2종) |
+| 표의 기본값 전부 | `config.py` 필드 기본값 직접 읽기 | 일치 (`DEBUG`·`ADMIN`·MySQL 4종·`DB_ROUTER_ENABLED`·토큰 키 2종) |
 | pytest / ruff / mypy | 실행 | 186 passed · 청정 · 146 files Success |
 
 MySQL `docker run` 이후 경로는 이 환경에 Docker 가 없어 **실행 확인하지 못했다.** 설정
