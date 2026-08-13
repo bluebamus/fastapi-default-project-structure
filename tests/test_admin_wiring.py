@@ -29,7 +29,15 @@ from sqladmin import Admin
 from app.core.db.models_registry import iter_model_modules
 from app.core.db.session import engine as _ENGINE
 
-EXPECTED_MANAGED_MODELS = {"Post", "Reply", "SnsPost", "User", "UserAccessLog"}
+EXPECTED_MANAGED_MODELS = {
+    "Post",
+    "Product",
+    "Reply",
+    "SalesOrder",
+    "SnsPost",
+    "User",
+    "UserAccessLog",
+}
 
 # main.py 가 있는 저장소 루트 (tests/ 의 부모).
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent

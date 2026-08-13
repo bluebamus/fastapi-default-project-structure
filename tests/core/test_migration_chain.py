@@ -25,6 +25,9 @@ _EXPECTED_TABLES = {
     "blog_posts",
     "replies",
     "sns_posts",
+    # 데이터 접근 방식 참조 예제 (Phase 5)
+    "catalog_products",
+    "sales_orders",
 }
 
 

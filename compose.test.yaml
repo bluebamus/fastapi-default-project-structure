@@ -1,0 +1,51 @@
+# 테스트 전용 MySQL — 로컬과 CI 가 **같은 파일**을 쓴다 (RAW-REP-006).
+#
+# 포트를 3308 로 둔 이유: 개발 머신의 3306 에는 보통 다른 MySQL 이 이미 떠 있다.
+# 공유 인스턴스에 테스트 스키마를 만들면 남의 데이터와 섞이고, 테스트가 DROP 하면
+# 사고가 된다. 전용 컨테이너를 별도 포트로 띄워 완전히 격리한다.
+#
+# 3307 이 아니라 3308 인 것도 실측 때문이다 — 3307 은 IDE(VS Code)의 포트 포워딩이
+# 선점하는 경우가 있어, 접속이 조용히 **다른 MySQL** 로 가서 "Access denied" 로만
+# 보인다. 포트를 바꾸기 전에 `Get-NetTCPConnection -LocalPort <포트> -State Listen`
+# (Windows) 또는 `ss -ltn`(Linux)으로 점유 여부를 확인할 것.
+#
+# 데이터 디렉터리는 tmpfs 다 — 테스트 DB 는 매번 새로 만들어야 하고, 디스크에
+# 남길 이유가 없다. 재시작하면 깨끗한 상태로 돌아온다.
+#
+#   docker compose -f compose.test.yaml up -d      # 기동 (healthy 까지 대기)
+#   pytest -m mysql                                # 통합 테스트만
+#   docker compose -f compose.test.yaml down -v    # 정리
+#
+# WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
+# WSL2 의 localhost forwarding 으로 127.0.0.1:3307 이 그대로 연결된다.
+
+services:
+  mysql-test:
+    image: mysql:8.4
+    container_name: fastapi-structure-mysql-test
+    command:
+      # 이 저장소의 운영 설정과 맞춘다(이모지 등 4바이트 UTF-8).
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 테스트는 내구성보다 속도가 중요하다. 데이터는 어차피 tmpfs 다.
+      - --innodb-flush-log-at-trx-commit=2
+      - --innodb-flush-method=nosync
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: fastapi_test
+      MYSQL_USER: fastapi_test
+      MYSQL_PASSWORD: fastapi_test_password
+      TZ: Asia/Seoul
+    ports:
+      # 호스트 3308 -> 컨테이너 3306. 개발 머신의 기존 MySQL 과 겹치지 않는다.
+      - "3308:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      # mysqladmin ping 은 서버가 **연결을 받을 준비**가 됐을 때만 성공한다.
+      # 컨테이너 시작 != 접속 가능이라, 이 게이트 없이 붙으면 첫 테스트가 깨진다.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-ptest_root_password"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 30s

@@ -60,17 +60,23 @@ from sqladmin import Admin, ModelView
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.features.blog.admin import admin_views as blog_admin_views
+from app.features.catalog.admin import admin_views as catalog_admin_views
 from app.features.home.admin import admin_views as home_admin_views
 from app.features.reply.admin import admin_views as reply_admin_views
+from app.features.reports.admin import admin_views as reports_admin_views
 from app.features.sns.admin import admin_views as sns_admin_views
 from app.features.user.admin import admin_views as user_admin_views
 from config import app_settings
 
 # 등록 대상 뷰 목록 (SSOT). auth 는 자체 모델이 없어 관리 화면도 없다.
+# 순서는 기능명 사전순 — 사이드바 메뉴 순서가 곧 이 순서이고,
+# tests/test_admin_wiring.py 가 기능 디렉터리에서 만든 목록과 순서까지 대조한다.
 ADMIN_VIEWS: list[type[ModelView]] = [
     *blog_admin_views,
+    *catalog_admin_views,
     *home_admin_views,
     *reply_admin_views,
+    *reports_admin_views,
     *sns_admin_views,
     *user_admin_views,
 ]

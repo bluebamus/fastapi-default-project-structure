@@ -20,7 +20,7 @@ from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
-from app.features import auth, blog, home, reply, sns, user
+from app.features import auth, blog, catalog, home, reply, reports, sns, user
 from app.utils.logs import get_logger
 from config import app_settings
 
@@ -286,6 +286,9 @@ app.include_router(reply.router, prefix="/api")
 app.include_router(sns.router, prefix="/api")
 app.include_router(user.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
+# 데이터 접근 방식 참조 예제 — catalog 는 ORM, reports 는 Raw SQL.
+app.include_router(catalog.router, prefix="/api")
+app.include_router(reports.router, prefix="/api")
 logger.info("라우터 include 완료")
 
 # 헬스체크 + Scalar 문서
