@@ -10,17 +10,34 @@
 """
 
 from app.utils.logs.config import LOG_FORMAT
-from app.utils.logs.filters import ContextFilter
+from app.utils.logs.filters import ContextFilter, StaticAppFilter
 from app.utils.logs.formatters import TzFormatter
 from app.utils.logs.mixin import LoggerMixin
-from app.utils.logs.setup import configure_logging, get_logger, setup_uvicorn_logging
+from app.utils.logs.queue_handler import BoundedQueueHandler
+from app.utils.logs.setup import (
+    configure_logging,
+    get_logger,
+    get_queue_handler,
+    restart_log_listener,
+    setup_uvicorn_logging,
+    start_log_listener,
+    stop_log_listener,
+    stop_log_listener_async,
+)
 
 __all__ = [
     "LOG_FORMAT",
+    "BoundedQueueHandler",
     "ContextFilter",
-    "TzFormatter",
     "LoggerMixin",
+    "StaticAppFilter",
+    "TzFormatter",
     "configure_logging",
     "get_logger",
+    "get_queue_handler",
+    "restart_log_listener",
     "setup_uvicorn_logging",
+    "start_log_listener",
+    "stop_log_listener",
+    "stop_log_listener_async",
 ]

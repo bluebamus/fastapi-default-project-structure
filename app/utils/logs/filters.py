@@ -75,3 +75,20 @@ class ContextFilter(logging.Filter):
         if not getattr(record, "classname", None):
             record.classname = _class_from_stack()
         return True
+
+
+class StaticAppFilter(logging.Filter):
+    """appname 을 고정값으로 미리 찍는다 — 서드파티 로거용.
+
+    uvicorn 처럼 소스가 site-packages 에 있는 로거는 경로 판별이 ``ext`` 로 떨어져
+    "어느 앱의 로그인지"를 잃는다. 해당 로거에 이 필터를 붙이면 ``ContextFilter``
+    가 이미 채워진 값을 존중하므로(``if not getattr(...)``) 라벨이 유지된다.
+    """
+
+    def __init__(self, appname: str) -> None:
+        super().__init__()
+        self.appname = appname
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.appname = self.appname
+        return True
