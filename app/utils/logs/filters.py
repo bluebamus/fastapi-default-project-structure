@@ -77,6 +77,49 @@ class ContextFilter(logging.Filter):
         return True
 
 
+# SQL 본문과 바인딩 파라미터를 저레벨 로그로 내보내는 로거들.
+# 이름 그대로가 아니라 **접두사**로 본다 — sqlalchemy.engine.Engine 처럼
+# 하위 로거가 실제 발행자인 경우가 많다.
+SQL_NOISE_LOGGER_PREFIXES = (
+    "sqlalchemy.engine",
+    "sqlalchemy.pool",
+    "aiosqlite",
+    "aiomysql",
+    "asyncmy",
+    "pymysql",
+)
+
+# 이 레벨 미만은 버린다. 연결 실패 같은 경고·오류는 통과시켜야 장애를 볼 수 있다.
+_SQL_NOISE_MIN_LEVEL = logging.WARNING
+
+
+class SqlNoiseFilter(logging.Filter):
+    """SQL 본문·파라미터가 로그로 새는 것을 막는다 (NFR-001).
+
+    이 프로젝트의 기본값은 ``DEBUG=true`` 이고 그러면 유효 로그 레벨이 DEBUG 다.
+    그 상태에서 SQLAlchemy 와 드라이버는 실행한 SQL 과 **바인딩된 값**을 그대로
+    찍는다. 값에는 비밀번호 해시·토큰·검색어가 들어 있고 로그는 보통 외부
+    collector 로 흘러간다.
+
+    ``loggers`` 키를 추가해 레벨을 조정하는 대신 필터를 쓰는 이유는 ADR-019
+    (앱별 로거를 등록하지 않고 경로로 appname 을 판별한다)를 깨지 않기 위해서다.
+    핸들러는 여전히 root 에만 붙는다.
+
+    SQL 을 봐야 하는 개발자는 ``LOG_SQL_ECHO_ENABLED=true`` 로 명시적으로 연다.
+    """
+
+    def __init__(self, allow_sql_echo: bool = False) -> None:
+        super().__init__()
+        self.allow_sql_echo = allow_sql_echo
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self.allow_sql_echo:
+            return True
+        if record.levelno >= _SQL_NOISE_MIN_LEVEL:
+            return True
+        return not record.name.startswith(SQL_NOISE_LOGGER_PREFIXES)
+
+
 class StaticAppFilter(logging.Filter):
     """appname 을 고정값으로 미리 찍는다 — 서드파티 로거용.
 

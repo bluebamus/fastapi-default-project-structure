@@ -8,9 +8,13 @@ from sqlalchemy import engine_from_config, pool
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
+#
+# disable_existing_loggers=False 가 핵심이다. fileConfig 의 기본값(True)은 이미
+# 만들어진 로거를 **전부 비활성화**한다. alembic 을 애플리케이션과 같은 프로세스에서
+# 돌리면(기동 시 마이그레이션, 테스트 하네스 등) 그 순간 앱 로깅이 조용히 죽는다.
+# 증상은 "어느 순간부터 로그가 안 나온다"로 나타나 원인을 찾기 어렵다.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # ---------------------------------------------------------------------------
 # Import Base and every domain app's models so that autogenerate discovers

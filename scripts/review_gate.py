@@ -128,13 +128,35 @@ def check_layering() -> None:
     )
 
     # INV-5: Raw Base 가 ORM Base 를 상속하지 않는다.
-    raw_base = REPO_ROOT / "app/core/repositories/raw_repository_base.py"
-    if raw_base.exists():
-        text = raw_base.read_text(encoding="utf-8")
-        ok = "BaseRepository" not in text
-        report("INV-5 Raw Base 가 ORM Base 를 상속하지 않음", ok, "BaseRepository 참조 발견")
+    #
+    # 문자열 검색으로 보면 "BaseRepository 를 상속하지 않는다"라고 적은 docstring
+    # 까지 위반으로 잡힌다. 실제 클래스 정의의 base 목록만 본다.
+    raw_bases = {
+        "app/core/repositories/raw_repository_base.py": "RawRepositoryBase",
+        "app/core/repositories/raw_crud_base.py": "RawCRUDBase",
+    }
+    orm_base_names = {"BaseRepository", "CRUDBase"}
+    offenders: list[str] = []
+    checked = 0
+
+    for rel, class_name in raw_bases.items():
+        path = REPO_ROOT / rel
+        if not path.exists():
+            continue
+        checked += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.ClassDef) and node.name == class_name):
+                continue
+            for base in node.bases:
+                name = base.id if isinstance(base, ast.Name) else getattr(base, "attr", "")
+                if name in orm_base_names:
+                    offenders.append(f"{rel}: {class_name} -> {name}")
+
+    if checked:
+        report("INV-5 Raw Base 가 ORM Base 를 상속하지 않음", not offenders, "; ".join(offenders))
     else:
-        print("[SKIP] INV-5 — raw_repository_base.py 아직 없음 (Phase 4)")
+        print("[SKIP] INV-5 — Raw Base 파일 아직 없음 (Phase 4)")
 
 
 # =============================================================================

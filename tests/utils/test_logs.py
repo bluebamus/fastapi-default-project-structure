@@ -142,7 +142,8 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
         queue_handler = cfg["handlers"]["queue"]
         assert queue_handler["()"] == "app.utils.logs.queue_handler.build_queue_handler"
         # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
-        assert queue_handler["filters"] == ["context"]
+        # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001).
+        assert queue_handler["filters"] == ["sql_noise", "context"]
 
 
 def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):

@@ -90,7 +90,8 @@ def build_dictconfig() -> dict:
         QUEUE_HANDLER: {
             "()": "app.utils.logs.queue_handler.build_queue_handler",
             # 적재 전에 요청 스레드에서 컨텍스트를 채운다(listener 스레드에서는 늦다).
-            "filters": ["context"],
+            # sql_noise 는 SQL 본문·바인딩 파라미터가 로그로 새는 것을 막는다.
+            "filters": ["sql_noise", "context"],
             "level": level,
         },
     }
@@ -109,6 +110,10 @@ def build_dictconfig() -> dict:
         "disable_existing_loggers": False,
         "filters": {
             "context": {"()": "app.utils.logs.filters.ContextFilter"},
+            "sql_noise": {
+                "()": "app.utils.logs.filters.SqlNoiseFilter",
+                "allow_sql_echo": log_settings.LOG_SQL_ECHO_ENABLED,
+            },
         },
         "formatters": {
             "app": {
