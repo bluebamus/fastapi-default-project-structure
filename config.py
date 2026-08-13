@@ -566,6 +566,17 @@ class LogSettings(BaseSettings):
         description="콘솔 로그 활성화",
     )
 
+    # SQL 본문·바인딩 파라미터를 로그로 내보낼지 여부.
+    #
+    # 기본값이 False 인 것은 보안 요구다(NFR-001). DEBUG=true 면 유효 로그 레벨이
+    # DEBUG 가 되고, 그 상태에서 SQLAlchemy 와 드라이버는 실행한 SQL 과 **바인딩된
+    # 값**을 그대로 찍는다. 값에는 비밀번호 해시·토큰·검색어가 들어 있고 로그는
+    # 보통 외부 collector 로 흘러간다. 쿼리를 눈으로 봐야 할 때만 명시적으로 켠다.
+    LOG_SQL_ECHO_ENABLED: bool = Field(
+        default=False,
+        description="SQL 본문·파라미터 로그 출력 (기본 false — 민감정보 유출 방지)",
+    )
+
     # === 로그 레벨 설정 ===
     # None이면 DEBUG 설정에 따라 자동 결정
     LOG_LEVEL: str | None = Field(

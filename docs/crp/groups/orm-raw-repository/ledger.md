@@ -18,6 +18,10 @@
 | F-006 | MED | NFR-001 — 사용자 오류 응답에 SQL 파라미터를 싣지 않는다 | Fix | Fixed | `_translated_errors()` detail 에서 원문 제거 + `test_error_detail_does_not_leak_sql_parameters` | 예외 변환이 `detail={"error": str(e.orig)}` 로 드라이버 원문을 응답에 실었다. 무결성 위반 메시지에는 위반한 **값 자체**(중복된 이메일 등)가 들어 있어 그대로 유출됐다. 원문은 서버 로그로만 |
 | F-007 | MED | 테스트 격리 — 테스트 모델이 공유 `Base.metadata` 를 오염시키면 안 된다 | Fix | Fixed | `tests/core/test_repository_base.py` 의 `_TestBase` | 새 Repository 테스트가 공유 Base 에 `repo_base_widgets` 를 등록해 스키마 스냅샷·마이그레이션 정합성 테스트가 유령 테이블을 봤다. 격리된 DeclarativeBase 로 분리(Mixin 은 그대로 재사용) |
 
+| F-008 | **CRIT** | NFR-001 — 로그에 전체 SQL 파라미터를 기록하지 않는다 | Fix | Fixed | `SqlNoiseFilter` + `LOG_SQL_ECHO_ENABLED` + `tests/core/test_sql_logging_leak.py` | 프로젝트 기본값 `DEBUG=true` → 유효 로그 레벨 DEBUG → **SQLAlchemy·드라이버가 실행 SQL 과 바인딩된 값을 그대로 로그로 내보냈다**(실측 확인). 값에는 비밀번호 해시·토큰·검색어가 들어 있고 로그는 외부 collector 로 흘러간다. ADR-019(앱별 로거 미등록)를 지키기 위해 `loggers` 키 대신 queue 핸들러 **필터**로 차단. WARNING 이상은 통과시켜 장애는 계속 보인다 |
+| F-009 | HIGH | 로깅 가용성 — 인프로세스 Alembic 실행이 애플리케이션 로깅을 죽이면 안 된다 | Fix | Fixed | `migrations/env.py` `fileConfig(..., disable_existing_loggers=False)` | `fileConfig` 기본값이 기존 로거를 **전부 비활성화**한다. 같은 프로세스에서 alembic 을 돌리면(기동 시 마이그레이션·테스트 하네스) 그 순간부터 앱 로그가 조용히 사라진다. 테스트에서 `test_migration_chain` 이후 Raw Repository 로그가 통째로 사라지는 것으로 발견 |
+| F-010 | LOW | 검수 게이트 정확도 — INV-5 판정이 오탐이면 안 된다 | Fix | Fixed | `scripts/review_gate.py` AST 기반 base 검사 | 게이트가 문자열 검색으로 INV-5 를 판정해, "BaseRepository 를 상속하지 않는다"라고 적은 **docstring 까지 위반으로 잡았다**. 실제 클래스 정의의 base 목록만 보도록 수정 |
+
 ## 검수 라운드 기록
 
 | 라운드 | 시점 | 범위 | 게이트 결과 | 신규 finding |
@@ -25,6 +29,7 @@
 | R-1 | 2026-08-13 | Phase 0~1 소급 | 전건 통과 (240 tests) | F-001, F-002, F-003 |
 | R-2 | 2026-08-13 | Phase 2 (모델 Mixin) | 전건 통과 (253 tests) | 없음 — schema diff 0 을 스냅샷으로 증명 |
 | R-3 | 2026-08-13 | Phase 3 (ORM Repository) | 전건 통과 (274 tests) | F-004, F-005, F-006, F-007 |
+| R-4 | 2026-08-13 | Phase 4 (Raw Base) | 전건 통과 (308 tests) | F-008(CRIT), F-009, F-010 |
 
 <!--
 규칙:
