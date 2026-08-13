@@ -13,11 +13,18 @@
 | F-002 | LOW | 기존 계약 — 환경변수는 `config.py` 만 직접 읽는다 | Fix | Fixed | `scripts/review_gate.py` (DEBUG setdefault 제거) | 검수 스크립트가 subprocess 스니펫에서 `os.environ` 을 직접 만져 `test_only_config_reads_environment_directly` 를 깼다. DEBUG 는 `app.openapi()` 결과에 영향이 없어 제거로 해결 |
 | F-003 | CRIT | 작업 절차 — 일괄 치환이 대상 외 파일을 훼손하지 않을 것 | Fix | Fixed | `git checkout` 복구 (커밋 전 발견) | PowerShell 루프에서 `Get-Content -Raw` 가 빈 파일에 `$null` 을 돌려주자 `$t.Replace()` 가 **비종료 오류**를 냈고, `$n` 이 이전 반복 값을 유지해 빈 파일 6개(`*/tests/test_db.py` 5개 + `home/tests/test_endpoint.py`)에 다른 파일 내용이 기록됐다. 전량 복구 후 **일괄 치환은 Python 스크립트로만** 수행하도록 절차 변경 |
 
+| F-004 | HIGH | ORM-REP-003 — Repository 는 호출자가 전달한 dict 를 변경해서는 안 된다 | Fix | Fixed | `repository_base.create` + `test_create_does_not_mutate_caller_dict` | `create()`/`bulk_create()` 가 `data["id"] = str(uuid4())` 로 **호출자의 dict 를 직접 변조**했다. Service 가 같은 dict 를 재사용하면 조용히 오염된다. id 기본값은 모델 Mixin 의 `default` 가 만들도록 이관 |
+| F-005 | HIGH | ORM-REP-006 — 모든 create/update/delete/bulk 경로가 동일한 예외 변환 정책을 쓴다 | Fix | Fixed | `_translated_errors()` + 파라미터화 회귀 6건 | `bulk_update`·`update_by`·`bulk_delete`·`delete_by`·`get_all`·`count`·`exists` 에는 예외 변환이 **전혀 없어** 드라이버 예외가 그대로 호출자에게 도달했다. 호출자가 계층마다 다른 예외를 처리해야 했음 |
+| F-006 | MED | NFR-001 — 사용자 오류 응답에 SQL 파라미터를 싣지 않는다 | Fix | Fixed | `_translated_errors()` detail 에서 원문 제거 + `test_error_detail_does_not_leak_sql_parameters` | 예외 변환이 `detail={"error": str(e.orig)}` 로 드라이버 원문을 응답에 실었다. 무결성 위반 메시지에는 위반한 **값 자체**(중복된 이메일 등)가 들어 있어 그대로 유출됐다. 원문은 서버 로그로만 |
+| F-007 | MED | 테스트 격리 — 테스트 모델이 공유 `Base.metadata` 를 오염시키면 안 된다 | Fix | Fixed | `tests/core/test_repository_base.py` 의 `_TestBase` | 새 Repository 테스트가 공유 Base 에 `repo_base_widgets` 를 등록해 스키마 스냅샷·마이그레이션 정합성 테스트가 유령 테이블을 봤다. 격리된 DeclarativeBase 로 분리(Mixin 은 그대로 재사용) |
+
 ## 검수 라운드 기록
 
 | 라운드 | 시점 | 범위 | 게이트 결과 | 신규 finding |
 |---|---|---|---|---|
 | R-1 | 2026-08-13 | Phase 0~1 소급 | 전건 통과 (240 tests) | F-001, F-002, F-003 |
+| R-2 | 2026-08-13 | Phase 2 (모델 Mixin) | 전건 통과 (253 tests) | 없음 — schema diff 0 을 스냅샷으로 증명 |
+| R-3 | 2026-08-13 | Phase 3 (ORM Repository) | 전건 통과 (274 tests) | F-004, F-005, F-006, F-007 |
 
 <!--
 규칙:

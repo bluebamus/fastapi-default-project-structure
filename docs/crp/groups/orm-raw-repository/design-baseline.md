@@ -47,6 +47,7 @@
 | ADR-003 | 2026-08-13 | Raw 원본 테이블명은 **`sales_orders`** 로 확정. | requirements SCN-RAW-001 및 plan Phase 5 가 `sales_orders` 로 명시. workflow-guide §4.3 의 `orders` 는 예시 오기로 판단하며 요구 명세가 우선한다. | Accepted | — |
 | ADR-004 | 2026-08-13 | Phase 1 의 로깅 계약 파괴(production/staging 파일 핸들러 제거, Queue 전환)를 승인 범위에 포함한다. 단 **독립 커밋**으로 분리하고 `tests/utils/test_logs.py` 를 재작성한다. | NFR-009 가 명시적으로 요구. 되돌리기 쉽도록 커밋을 분리한다. | Accepted | — |
 | ADR-005 | 2026-08-13 | 기준선 테스트 수는 **201개**로 확정. | 인코딩 결함 수정 후 실측: 201 collected / 201 passed. 문서의 "201개" 와 일치. | Accepted | — |
+| ADR-007 | 2026-08-13 | `BaseRepository` 의 **사용처 0건인 고급 메서드 20종**(eager loading·partial column·batch·join·bulk·upsert)을 Phase 3 에서 제거한다. 실제 호출처가 있는 `get_all`·`get_one`·`update`·`delete` 만 deprecated 별칭으로 남긴다. | ORM-REP-002 가 최소 공개 API 8개를 정식 계약으로 확정했고, ORM-REP-005 는 공통성이 확인된 경우만 Base 에 두라고 요구한다. MIG-002 의 단계적 제거는 **호출처가 있는** 이름을 위한 절차이며, Phase 0 조사에서 사용처 0건이 확인된 코드에는 유예의 목적이 없다. 필요해지면 git 이력에서 복구하거나 기능 Repository 가 명시적 메서드로 소유한다. | Accepted | — |
 | ADR-006 | 2026-08-13 | Phase 종료마다 **검수 게이트**를 통과해야 다음 Phase 로 넘어간다. 게이트 = ①pytest 전건 통과 ②ruff check ③ruff format --check ④mypy ⑤해당 Phase 의 불변식 점검 ⑥`baseline/openapi.json` 대비 기존 30개 operation 불변 ⑦ledger Open Fix 0. | 단계마다 검수하지 않으면 결함이 다음 단계 코드에 섞여 원인 격리가 불가능해진다. 발견 문제는 즉시 ledger 에 기록해 "나중에" 로 흘리지 않는다. | Accepted | — |
 
 ## 4. 불가침 제약 (INVARIANT REQUIREMENTS — 추가 작업이 위반 금지)
