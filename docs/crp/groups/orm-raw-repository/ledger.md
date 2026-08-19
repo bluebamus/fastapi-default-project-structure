@@ -33,8 +33,8 @@
 
 | F-018 | MED | 문서 정합성 — 문서대로 따라 하면 동작해야 한다 | Fix | Fixed | README·ARCHITECTURE·QUICKSTART 갱신 (커밋 `74a3860`) | 문서가 코드보다 오래되어 **따라 하면 깨지는** 것들이 있었다: ①제거된 `get_all_with()` 를 N+1 해법으로 안내 ②`BaseRepository` 공개 메서드 목록이 옛것(get_or_create·bulk_create 등 없는 메서드) ③세션 헬퍼 이름 23곳이 deprecated alias ④**존재하지 않는 환경변수 8개**(`LOG_FILE_ENABLED`·`LOG_DIR`·`LOG_MAX_SIZE_MB` …)를 로깅 설정표에 문서화 — Phase 1 에서 파일 핸들러를 없앴는데 표만 남아, 설정한 사람은 파일 로그가 생길 거라 믿었을 것이다. 문서가 참조하는 파일 경로를 전수 검사해 실재 확인 |
 
-| F-019 | MED | 문서 정합성 — charter 의 계약이 실제 구성과 일치해야 한다 | Fix | Fixed | `charter.md` 3308 정정 + ADR-008 + 게이트 검사 7 | F-012 가 통합 테스트 포트를 3307→3308 로 옮겼는데 **charter(계약서)와 ADR-002(기준 결정)는 3307 로 남았다**. 사용자용 문서와 코드는 3308 로 정확했으므로 실행은 되지만, 계약서를 근거로 판단하면 틀린 포트를 믿게 된다. `compose.test.yaml` 은 같은 파일 안에서 자기모순이었다(주석 line 7 은 3308 인 이유를 설명하고 line 20 은 3307 로 연결된다고 안내). ADR 은 확정 후 불변이므로 덮어쓰지 않고 ADR-008 로 supersede |
-| F-020 | LOW | 근거 추적성 — ledger 가 인용한 커밋을 따라갈 수 있어야 한다 | Fix | Fixed | 해시 12건 재매핑 + 게이트 검사 8 | author rewrite 로 main 의 커밋 해시가 전부 바뀌었는데 그룹 문서의 근거란은 옛 해시를 가리켰다. **인용 해시 12건이 전부 HEAD 에서 도달 불가**였고 (`backup/pre-author-rewrite-main` 에만 존재), 게이트는 그동안 초록이었다. 따라갈 수 없는 해시는 근거가 아니다. subject 로 매핑해 현재 해시로 정정. Alembic revision id(`b2f1a9c0d3e4`)는 커밋이 아니므로 대상에서 제외된다 |
+| F-019 | MED | 문서 정합성 — charter 의 계약이 실제 구성과 일치해야 한다 | Fix | Fixed | `charter.md` 3308 정정 + ADR-008 + 게이트 검사 7 (`2baf777`) | F-012 가 통합 테스트 포트를 3307→3308 로 옮겼는데 **charter(계약서)와 ADR-002(기준 결정)는 3307 로 남았다**. 사용자용 문서와 코드는 3308 로 정확했으므로 실행은 되지만, 계약서를 근거로 판단하면 틀린 포트를 믿게 된다. `compose.test.yaml` 은 같은 파일 안에서 자기모순이었다(주석 line 7 은 3308 인 이유를 설명하고 line 20 은 3307 로 연결된다고 안내). ADR 은 확정 후 불변이므로 덮어쓰지 않고 ADR-008 로 supersede |
+| F-020 | LOW | 근거 추적성 — ledger 가 인용한 커밋을 따라갈 수 있어야 한다 | Fix | Fixed | 해시 12건 재매핑 + 게이트 검사 8 (`2baf777`) | author rewrite 로 main 의 커밋 해시가 전부 바뀌었는데 그룹 문서의 근거란은 옛 해시를 가리켰다. **인용 해시 12건이 전부 HEAD 에서 도달 불가**였고 (`backup/pre-author-rewrite-main` 에만 존재), 게이트는 그동안 초록이었다. 따라갈 수 없는 해시는 근거가 아니다. subject 로 매핑해 현재 해시로 정정. Alembic revision id(`b2f1a9c0d3e4`)는 커밋이 아니므로 대상에서 제외된다 |
 
 ## 검수 라운드 기록
 
