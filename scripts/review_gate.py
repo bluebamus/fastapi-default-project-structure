@@ -13,6 +13,8 @@
     4. mypy
     5. 계층 불변식 (INV-1/2/5) 정적 점검
     6. 기존 공개 API 불변 (baseline/openapi.json 대비, INV-11)
+    7. MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
+    8. 문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import subprocess  # noqa: S404 - 품질 도구를 순차 실행하는 검수 하네스
 import sys
 from pathlib import Path
@@ -232,6 +235,74 @@ def check_public_api_unchanged() -> None:
         print(f"       (신규 operation {len(added)}건: {added})")
 
 
+def _mysql_test_port(source: Path, pattern: str) -> tuple[str, str | None]:
+    """`source` 에서 `pattern` 으로 포트 하나를 뽑는다. 없으면 (경로, None)."""
+    match = re.search(pattern, source.read_text(encoding="utf-8"), re.MULTILINE)
+    return (source.name, match.group(1) if match else None)
+
+
+def check_test_port_single_source() -> None:
+    """MySQL 통합 테스트 포트가 compose·테스트·계약서에서 같은 값인지 (ADR-008/009).
+
+    F-012 가 3307 을 3308 로 옮겼는데 charter 와 ADR 은 3307 로 남았다. 어긋난 계약서는
+    "이 포트로 뜬다"고 믿게 만들고, 실제로는 **다른 MySQL 에 붙어도** 조용하다. 사람이
+    눈으로 맞추는 절차는 이미 한 번 실패했으므로 여기서 기계로 잡는다.
+    """
+    sources = [
+        _mysql_test_port(REPO_ROOT / "compose.test.yaml", r'"(\d+):3306"'),
+        _mysql_test_port(REPO_ROOT / "tests/integration/conftest.py", r"^MYSQL_PORT = (\d+)"),
+        _mysql_test_port(
+            REPO_ROOT / "docs/crp/groups/orm-raw-repository/charter.md",
+            r"호스트 포트 \*\*(\d+)\*\*",
+        ),
+    ]
+    missing = [name for name, port in sources if port is None]
+    ports = {port for _, port in sources if port is not None}
+    report(
+        "MySQL 테스트 포트 단일 출처 (ADR-008)",
+        not missing and len(ports) == 1,
+        f"추출실패={missing} 값={sorted(ports)}" if (missing or len(ports) != 1) else "",
+    )
+
+
+def check_cited_commits_reachable() -> None:
+    """CRP 문서가 근거로 인용한 커밋 해시가 HEAD 에서 도달 가능한지 (ADR-009).
+
+    author rewrite 는 인용 해시 12건을 한꺼번에 무효화했고, 그래도 게이트는 초록이었다.
+    근거로 못 따라가는 해시는 근거가 아니다. 얕은 클론에서는 판정할 수 없으므로 skip 한다
+    — 여기서 억지로 실패시키면 CI 가 오탐으로 빨개지고, 그러면 아무도 안 본다.
+    """
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(  # noqa: S603
+            ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8"
+        )
+
+    if git("rev-parse", "--git-dir").returncode != 0:
+        report("문서 인용 커밋 도달성 (ADR-009)", True, "git 저장소 아님 — skip")
+        return
+    if git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        report("문서 인용 커밋 도달성 (ADR-009)", True, "얕은 클론 — skip")
+        return
+
+    cited: set[str] = set()
+    for doc in sorted((REPO_ROOT / "docs/crp/groups").rglob("*.md")):
+        cited.update(re.findall(r"`([0-9a-f]{7,40})`", doc.read_text(encoding="utf-8")))
+
+    stale = [
+        h
+        for h in sorted(cited)
+        # 커밋이 아닌 토큰(Alembic revision id 등)은 대상이 아니다.
+        if git("cat-file", "-e", f"{h}^{{commit}}").returncode == 0
+        and git("merge-base", "--is-ancestor", h, "HEAD").returncode != 0
+    ]
+    report(
+        "문서 인용 커밋 도달성 (ADR-009)",
+        not stale,
+        f"HEAD 에서 도달 불가 {len(stale)}건: {stale}" if stale else f"검사 {len(cited)}건",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="테스트를 건너뛴다")
@@ -248,6 +319,8 @@ def main() -> int:
     run_tool("mypy", ["-m", "mypy", ".", "--cache-dir", ".mypy_tmp"])
     check_layering()
     check_public_api_unchanged()
+    check_test_port_single_source()
+    check_cited_commits_reachable()
 
     print("=" * 70)
     if failures:

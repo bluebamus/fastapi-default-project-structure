@@ -31,7 +31,10 @@
 | F-016 | MED | 테스트 결정성 — 검증 결과가 주변 환경에 좌우되면 안 된다 | Fix | Fixed | `tests/core/test_db_router_env.py` `PYTHONIOENCODING=utf-8` | 자식 프로세스의 stderr 를 utf-8 로 디코딩하는데 자식은 Windows 콘솔 코드페이지(cp949)로 썼다. 한글이 U+FFFD 로 바뀌어 "오류 메시지에 이 단어가 있는가" 검증이 조용히 실패했다. ASCII 를 보는 형제 케이스는 통과해서 더 늦게 드러났다. 자식의 stdio 인코딩을 명시해 환경 의존을 제거 |
 | F-017 | **HIGH** | ADR-006 — 게이트는 결함을 **보고**해야 한다 | Fix | Fixed | `scripts/review_gate.py` stdout UTF-8 재설정 | 게이트가 실패 상세를 출력하는 순간 cp949 로 em dash 를 못 써 `UnicodeEncodeError` 로 **죽었다**. 전건 통과일 때만 정상 종료하는 게이트여서, 실패를 "게이트가 깨졌다"로 오인할 수 있었다. 검수 장치가 초록일 때만 동작하면 검수가 아니다. 실제로 이번에 mypy 3건이 이 크래시에 가려져 있었다 |
 
-| F-018 | MED | 문서 정합성 — 문서대로 따라 하면 동작해야 한다 | Fix | Fixed | README·ARCHITECTURE·QUICKSTART 갱신 (커밋 `bbce6a3`) | 문서가 코드보다 오래되어 **따라 하면 깨지는** 것들이 있었다: ①제거된 `get_all_with()` 를 N+1 해법으로 안내 ②`BaseRepository` 공개 메서드 목록이 옛것(get_or_create·bulk_create 등 없는 메서드) ③세션 헬퍼 이름 23곳이 deprecated alias ④**존재하지 않는 환경변수 8개**(`LOG_FILE_ENABLED`·`LOG_DIR`·`LOG_MAX_SIZE_MB` …)를 로깅 설정표에 문서화 — Phase 1 에서 파일 핸들러를 없앴는데 표만 남아, 설정한 사람은 파일 로그가 생길 거라 믿었을 것이다. 문서가 참조하는 파일 경로를 전수 검사해 실재 확인 |
+| F-018 | MED | 문서 정합성 — 문서대로 따라 하면 동작해야 한다 | Fix | Fixed | README·ARCHITECTURE·QUICKSTART 갱신 (커밋 `74a3860`) | 문서가 코드보다 오래되어 **따라 하면 깨지는** 것들이 있었다: ①제거된 `get_all_with()` 를 N+1 해법으로 안내 ②`BaseRepository` 공개 메서드 목록이 옛것(get_or_create·bulk_create 등 없는 메서드) ③세션 헬퍼 이름 23곳이 deprecated alias ④**존재하지 않는 환경변수 8개**(`LOG_FILE_ENABLED`·`LOG_DIR`·`LOG_MAX_SIZE_MB` …)를 로깅 설정표에 문서화 — Phase 1 에서 파일 핸들러를 없앴는데 표만 남아, 설정한 사람은 파일 로그가 생길 거라 믿었을 것이다. 문서가 참조하는 파일 경로를 전수 검사해 실재 확인 |
+
+| F-019 | MED | 문서 정합성 — charter 의 계약이 실제 구성과 일치해야 한다 | Fix | Fixed | `charter.md` 3308 정정 + ADR-008 + 게이트 검사 7 | F-012 가 통합 테스트 포트를 3307→3308 로 옮겼는데 **charter(계약서)와 ADR-002(기준 결정)는 3307 로 남았다**. 사용자용 문서와 코드는 3308 로 정확했으므로 실행은 되지만, 계약서를 근거로 판단하면 틀린 포트를 믿게 된다. `compose.test.yaml` 은 같은 파일 안에서 자기모순이었다(주석 line 7 은 3308 인 이유를 설명하고 line 20 은 3307 로 연결된다고 안내). ADR 은 확정 후 불변이므로 덮어쓰지 않고 ADR-008 로 supersede |
+| F-020 | LOW | 근거 추적성 — ledger 가 인용한 커밋을 따라갈 수 있어야 한다 | Fix | Fixed | 해시 12건 재매핑 + 게이트 검사 8 | author rewrite 로 main 의 커밋 해시가 전부 바뀌었는데 그룹 문서의 근거란은 옛 해시를 가리켰다. **인용 해시 12건이 전부 HEAD 에서 도달 불가**였고 (`backup/pre-author-rewrite-main` 에만 존재), 게이트는 그동안 초록이었다. 따라갈 수 없는 해시는 근거가 아니다. subject 로 매핑해 현재 해시로 정정. Alembic revision id(`b2f1a9c0d3e4`)는 커밋이 아니므로 대상에서 제외된다 |
 
 ## 검수 라운드 기록
 
@@ -44,8 +47,11 @@
 | R-5 | 2026-08-13 | Phase 5 (시나리오 2종 + MySQL 8.4) | 전건 통과 (364 tests, MySQL 통합 6건 실제 실행) | F-011(HIGH), F-012, F-013, F-014 |
 | R-6 | 2026-08-13 | Phase 6 (Scalar/OpenAPI) | 전건 통과 (373 tests) | F-015, F-016, F-017(HIGH) |
 | R-7 | 2026-08-13 | Phase 7 (문서 + 호환 이름 제거) | 전건 통과 (373 tests) | F-018 |
+| R-8 | 2026-08-19 | 완료 여부 재확인(독립 검증) — 그룹 문서 ↔ 실제 코드 대조 | 전건 통과 (373 tests, MySQL 통합 6건 실제 실행) | F-019, F-020 |
 
-**Open 인 Fix: 0건.** 잔여 위험 6건과 미검사 항목은 `residual-risk.md` 에 있다.
+**Open 인 Fix: 0건.** (F-001 ~ F-020) 잔여 위험 6건과 미검사 항목은 `residual-risk.md` 에 있다.
+
+> 커밋 해시는 2026-08-19 author rewrite **이후** 값이다. 그 이전 해시는 `backup/pre-author-rewrite-main` 브랜치에서만 유효하다. 게이트 검사 8 이 이 표의 해시가 HEAD 에서 도달 가능한지 매번 확인한다.
 
 <!--
 규칙:

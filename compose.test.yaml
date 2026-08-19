@@ -17,7 +17,7 @@
 #   docker compose -f compose.test.yaml down -v    # 정리
 #
 # WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
-# WSL2 의 localhost forwarding 으로 127.0.0.1:3307 이 그대로 연결된다.
+# WSL2 의 localhost forwarding 으로 127.0.0.1:3308 이 그대로 연결된다.
 
 services:
   mysql-test:
