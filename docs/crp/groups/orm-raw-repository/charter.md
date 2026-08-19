@@ -21,10 +21,10 @@
 | Celery | `app/celery/` | 소스 | Phase 1 worker 종료 대상 |
 | 마이그레이션 | `migrations/` | 소스 | Phase 5 revision 2개 추가 |
 | 공통 테스트 | `tests/` | 테스트 | |
-| MySQL 통합 환경 | `compose.test.yaml` | 설정 | **Phase 5 신규**, mysql:8.4 / 3307 |
+| MySQL 통합 환경 | `compose.test.yaml` | 설정 | **Phase 5 신규**, mysql:8.4 / 3308 |
 | 문서 | `README.md`, `docs/ARCHITECTURE.md`, `docs/QUICKSTART.md` | 문서 | Phase 7 갱신 |
 
-기준선 실측 (2026-08-13, 커밋 `a980b71` + 인코딩 수정):
+기준선 실측 (2026-08-13, 커밋 `59b3736` + 인코딩 수정):
 
 - 소스 `.py` 146개 · 테스트 파일 52개 · 테스트 201개 (201 collected / 201 passed)
 - OpenAPI: paths 18 · operations 30 · operationId 누락 0 · 중복 0
@@ -38,7 +38,7 @@
 
 - Python 3.14 · FastAPI · SQLAlchemy 2.x async · aiomysql(운영) / aiosqlite(단위 테스트)
 - 환경: `ENV=development|test|staging|production`, `DEBUG`, `ADMIN`, `DB_ROUTER_ENABLED`, `DB_REPLICATION_ENABLED`
-- MySQL 통합 테스트: `compose.test.yaml` 의 mysql:8.4, 호스트 포트 **3307** (WSL Docker)
+- MySQL 통합 테스트: `compose.test.yaml` 의 mysql:8.4, 호스트 포트 **3308** (WSL Docker, ADR-008)
 
 ### 2-2. 위협 모델
 
