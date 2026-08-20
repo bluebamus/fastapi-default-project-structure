@@ -3,6 +3,8 @@
 이 저장소는 MySQL·Redis·Celery·SQLAdmin·JWT·DB read/write 라우팅을 모두
 포함한다. 전부 이해하고 시작할 필요는 없다. 이 문서는 **가장 먼저 무엇만 알면 되는지**만
 다룬다. 전체 구조는 [ARCHITECTURE.md](./ARCHITECTURE.md), 전체 설정은 [../README.md](../README.md).
+ORM 과 Raw SQL 을 각각 어떤 순서로 만드는지는
+[ORM/Raw 워크플로우 개발 지침서](./orm-raw-repository/2026-08-13/workflow-guide.md).
 
 ---
 
