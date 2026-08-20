@@ -72,22 +72,32 @@
 
 ## 3. 인수 기준 (Acceptance Criteria) — GATE 3
 
-- [ ] 전 테스트 실제 실행·통과 (기준선 201개 이상, 조용한 SKIP 아님 — MySQL 마커 skip 은 사유 기록)
-- [ ] `ruff check .` / `ruff format --check .` / `mypy .` 클린
-- [ ] INV-1 → 계층 위반 정적 검사 테스트 / INV-2·3 → commit 횟수·세션 종류 테스트
-- [ ] INV-4 → injection 입력 테스트 + 식별자 allowlist 테스트
-- [ ] INV-5 → 상속 관계 부재 단정 테스트
-- [ ] INV-6 → 응답 schema 계약 테스트 + OpenAPI 노출 검사
-- [ ] INV-7·8·9 → lifespan 테스트(모델 0/1+, startup 실패 cleanup, 종료 순서, 재진입 누수)
-- [ ] INV-10 → 전 path operation async 검사 + 금지 동기 I/O 정적 검사
-- [ ] INV-11 → `baseline/openapi.json` 대비 기존 30개 operation 의 경로·상태 코드 불변 확인
-- [ ] INV-12 → 라우터 등록 누락 탐지 테스트가 신규 기능 2종을 포함
-- [ ] Alembic: 신규 revision **3개**(Phase 5 의 2개 + REQ-005 의 `e5f7a9b1c4d5`)의 upgrade → downgrade → 재-upgrade 가 MySQL 8.4 에서 통과
-- [ ] 질의 수준(design-baseline §0 = 보통)이 P/D 질문 깊이에 반영됨
+> 각 칸은 **무엇을 보고 닫았는지**를 함께 적는다. 표시만 바꾸는 것은 닫는 것이 아니다
+> (F-021 이 그 실패였다 — "지웠다" 는 기록만 있고 실제로는 남아 있었다).
+
+- [x] 전 테스트 실제 실행·통과 — **391 tests** (단위 383 + MySQL 8.4 통합 8), failed 0 · skipped 0.
+      MySQL 마커는 컨테이너 기동 후 **실제 실행**했다 (Round 10 게이트 실행 결과)
+- [x] `ruff check .` / `ruff format --check .` / `mypy .` 클린 — 게이트 검사 2·3·4
+- [x] INV-1 → 게이트 검사 5(AST 계층 위반 검사) / INV-2·3 → 게이트 검사 5 + `tests/test_read_path_no_commit.py`
+- [x] INV-4 → `tests/core/test_raw_repository_base.py`(injection 입력 + 식별자 allowlist, 18건) +
+      `tests/core/test_router_raw_dml.py`(read-only 세션 Raw DML 차단)
+- [x] INV-5 → 게이트 검사 5 (AST 로 실제 base 목록만 본다 — 문자열 검색은 F-010 에서 오탐을 냈다)
+- [x] INV-6 → `tests/test_openapi_contract.py`(9건) + `tests/test_response_serialization.py`
+- [x] INV-7·8·9 → `tests/core/test_resources.py`(13건, 모델 0/1+ · startup 실패 cleanup · 종료 순서) +
+      `tests/core/test_background_tasks.py`(7건, drain 취소 회수)
+- [x] INV-10 → **게이트 검사 10** (`check_async_path_operations`, 36건). 이 칸은 Round 10 이전까지
+      **근거가 존재한 적이 없었다** — F-025 로 기록했고, 검사를 만들어 닫는다
+- [x] INV-11 → 게이트 검사 6 (`baseline/openapi.json` 대비 기존 30개 operation 불변)
+- [x] INV-12 → `tests/test_router_registration.py` + `tests/test_route_inventory.py`(골든 스냅샷)
+- [x] Alembic: 신규 revision **3개**(Phase 5 의 2개 + REQ-005 의 `e5f7a9b1c4d5`)의 upgrade → downgrade →
+      재-upgrade — `tests/core/test_migration_chain.py`, MySQL 8.4 에서 실제 실행
+- [x] 질의 수준(design-baseline §0 = 보통)이 P/D 질문 깊이에 반영됨 — 핵심 갈림길만 질문했고
+      자명한 것은 기본값 + 한 줄 고지로 진행했다
 
 ## 4. 변경 이력
 
 - v0.1 (2026-08-13): 최초 작성. 기준선 실측 반영, INV-1~12 확정.
 - v0.2 (2026-08-19): F-019 정정 — MySQL 통합 포트 3308 (ADR-008).
+- v0.4 (2026-08-20): §3 인수기준 12칸을 근거와 함께 닫는다 (F-024). INV-10 칸은 검사 신설 후 닫았다 (F-025).
 - v0.3 (2026-08-20): REQ-005 반영 — 인벤토리에 Raw 쓰기 경로·신규 revision, 인수기준의 revision 수 정정.
   **§1 의 기준선 실측(2026-08-13)은 착수 시점의 역사적 값이므로 갱신하지 않는다** — 현재 실측은 run-log·checklist 가 갖는다.
