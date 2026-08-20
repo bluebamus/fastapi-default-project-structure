@@ -38,11 +38,6 @@ class BaseService(LoggerMixin):
     def __init__(self, db_session: AsyncSession) -> None:
         self.db_session = db_session
 
-    @property
-    def session(self) -> AsyncSession:
-        """Deprecated — ``db_session`` 을 쓸 것 (TX-005 전환 기간용 별칭)."""
-        return self.db_session
-
     async def commit(self) -> None:
         """현재 트랜잭션을 커밋한다(쓰기 핸들러가 응답 반환 직전에 호출)."""
         await self.db_session.commit()

@@ -7,6 +7,10 @@ SQLAlchemy 세션을 제공하는 이름에 ``db_session`` 을 넣는 이유는 
 정식 이름이 존재할 것, 그리고 옛 이름이 되살아나지 않을 것. 옛 이름이 다시 생기면
 "어느 쪽을 써야 하나"가 다시 열리고, 래퍼로 되살릴 경우 FastAPI 의존성 캐시 키
 (callable 자체)가 갈라져 한 요청에서 세션이 둘로 열린다.
+
+모듈 레벨 이름만 보면 놓치는 것이 있다 — Base 클래스의 ``session`` **속성 별칭**이
+그랬다(F-021). 사용처 0건인 채로 두 클래스에 남아 "어느 쪽이 정식인가"를 계속
+열어두고 있었다. 그래서 이 파일은 클래스 속성까지 함께 본다.
 """
 
 from __future__ import annotations
@@ -16,6 +20,8 @@ import pathlib
 import re
 
 from app.core.db import session as db_session_module
+from app.core.repositories.crud_base import CRUDBase
+from app.core.services.services_base import BaseService
 
 CANONICAL_DEPENDENCIES = (
     "get_read_only_db_session",
@@ -91,3 +97,30 @@ def test_application_code_uses_canonical_names_only():
     assert not offenders, "애플리케이션 코드에 제거된 세션 이름이 남아 있습니다:\n  " + "\n  ".join(
         sorted(offenders)
     )
+
+
+# 세션을 들고 있는 Base 클래스. 여기에 옛 이름이 다시 생기면 안 된다.
+SESSION_HOLDING_BASES = (CRUDBase, BaseService)
+
+
+def test_session_holding_bases_expose_only_db_session():
+    """Base 클래스가 ``db_session`` 만 공개하고 옛 ``session`` 별칭은 없어야 한다 (F-021).
+
+    별칭이 있으면 두 이름이 같은 객체를 가리켜도 읽는 사람은 "무엇이 정식인가"를
+    매번 다시 판단해야 한다. 참조 예제로 읽히는 파일일수록 비용이 크다.
+    """
+    survivors = [base.__name__ for base in SESSION_HOLDING_BASES if hasattr(base, "session")]
+
+    assert not survivors, (
+        f"제거했어야 할 옛 세션 속성이 남아 있습니다: {survivors}. "
+        "세션 속성의 정식 이름은 db_session 하나입니다."
+    )
+
+
+def test_session_holding_bases_keep_canonical_attribute():
+    """정식 이름 ``db_session`` 은 생성자가 실제로 채워야 한다."""
+    for base in SESSION_HOLDING_BASES:
+        annotations = getattr(base.__init__, "__annotations__", {})
+        assert (
+            "db_session" in annotations
+        ), f"{base.__name__}.__init__ 이 db_session 을 받지 않습니다"
