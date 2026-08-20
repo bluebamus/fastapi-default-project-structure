@@ -37,11 +37,6 @@ class CRUDBase(Generic[ModelType]):
         """
         self.db_session = db_session
 
-    @property
-    def session(self) -> AsyncSession:
-        """Deprecated — ``db_session`` 을 쓸 것 (TX-005 전환 기간용 별칭)."""
-        return self.db_session
-
     async def _get(self, pk: str | UUID) -> ModelType | None:
         """PK 로 엔티티를 조회한다(식별자 맵 우선)."""
         return await self.db_session.get(self.model, str(pk))
