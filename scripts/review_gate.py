@@ -16,6 +16,8 @@
     7. MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
     8. 문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
     9. 코드·문서가 인용한 요구 ID 가 실제로 선언돼 있음 (ADR-014)
+   10. 모든 path operation 이 async 이고 요청 경로에 동기 I/O 가 없음 (INV-10/NFR-009)
+   11. charter 인수기준이 열린 채로 수렴을 선언하지 않음 (ADR-015)
 """
 
 from __future__ import annotations
@@ -360,6 +362,103 @@ def check_cited_requirement_ids_exist() -> None:
     )
 
 
+HTTP_METHOD_DECORATORS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
+# 요청 event loop 를 붙잡는 호출. 짧아 보여도 동시성 전체가 그 시간만큼 멈춘다.
+BLOCKING_CALLS = frozenset({"open", "input"})
+BLOCKING_ATTR_CALLS = frozenset(
+    {("time", "sleep"), ("shutil", "copy"), ("shutil", "copyfile"), ("subprocess", "run")}
+)
+
+
+def _is_path_operation(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Attribute) and target.attr in HTTP_METHOD_DECORATORS:
+            return True
+    return False
+
+
+def check_async_path_operations() -> None:
+    """모든 공개 path operation 이 async 이고 요청 경로에서 동기 I/O 를 하지 않는지 (INV-10/NFR-009).
+
+    charter 는 GATE 3 에서 이 검사를 요구했는데 **실제로는 존재한 적이 없었다**(F-025).
+    아홉 라운드가 GATE 3 통과를 선언하는 동안 이 칸만 근거 없이 초록이었다.
+
+    동기 ``def`` path operation 은 FastAPI 가 threadpool 로 넘겨 주므로 **틀리게 동작하지
+    않는다** — 그래서 테스트로도 리뷰로도 안 잡힌다. 드러나는 것은 부하가 걸린 뒤
+    threadpool 이 마르는 순간이고, 그때는 원인이 이 파일에 있다고 생각하지 않게 된다.
+    """
+    sync_operations: list[str] = []
+    blocking: list[str] = []
+    total = 0
+
+    for path in iter_source_files("app"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if not _is_path_operation(node):
+                continue
+            total += 1
+            where = f"{path.relative_to(REPO_ROOT).as_posix()}:{node.lineno}:{node.name}"
+            if isinstance(node, ast.FunctionDef):
+                sync_operations.append(where)
+            for sub in ast.walk(node):
+                if not isinstance(sub, ast.Call):
+                    continue
+                func = sub.func
+                if isinstance(func, ast.Name) and func.id in BLOCKING_CALLS:
+                    blocking.append(f"{where} -> {func.id}()")
+                elif (
+                    isinstance(func, ast.Attribute)
+                    and isinstance(func.value, ast.Name)
+                    and (func.value.id, func.attr) in BLOCKING_ATTR_CALLS
+                ):
+                    blocking.append(f"{where} -> {func.value.id}.{func.attr}()")
+
+    problems = sync_operations + blocking
+    report(
+        "INV-10 path operation async + 동기 I/O 부재",
+        not problems and total > 0,
+        f"동기 def={sync_operations} 블로킹호출={blocking}" if problems else f"검사 {total}건",
+    )
+
+
+def check_charter_criteria_closed() -> None:
+    """charter 의 인수기준이 열려 있는데 수렴을 선언하지 않았는지 (F-024).
+
+    charter §3 은 "여기 적힌 것이 합격 기준의 전부" 라고 스스로 선언한 칸이다. 그 칸이
+    열린 채로 checklist 가 "미닫힘 항목 0개" 라고 적으면 두 문서가 서로를 반박한다.
+    어느 쪽을 믿을지는 읽는 사람이 정하게 되고, 대개 편한 쪽을 믿는다.
+
+    F-019(포트)·F-020(해시)·F-022(요구 ID)에 이은 **네 번째** 문서 정합 결함이고,
+    자매 저장소에서도 같은 것이 났다. 사람이 눈으로 맞추는 절차는 이미 네 번 실패했다.
+    """
+    charter = REPO_ROOT / "docs/crp/groups/orm-raw-repository/charter.md"
+    checklist = REPO_ROOT / "docs/crp/groups/orm-raw-repository/checklist.md"
+    if not charter.exists() or not checklist.exists():
+        report("charter 인수기준 ↔ 수렴 선언 정합", True, "그룹 문서 없음 — skip")
+        return
+
+    inside = False
+    open_boxes: list[str] = []
+    for line in charter.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            inside = line.startswith("## 3.")
+            continue
+        if inside and line.strip().startswith("- [ ]"):
+            open_boxes.append(line.strip()[:40])
+
+    converged = "미닫힘 항목 0개" in checklist.read_text(encoding="utf-8")
+    report(
+        "charter 인수기준 ↔ 수렴 선언 정합",
+        not (converged and open_boxes),
+        f"수렴 선언 상태인데 charter §3 에 열린 칸 {len(open_boxes)}개: {open_boxes}"
+        if (converged and open_boxes)
+        else f"열린 칸 {len(open_boxes)}개 · 수렴선언={converged}",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="테스트를 건너뛴다")
@@ -379,6 +478,8 @@ def main() -> int:
     check_test_port_single_source()
     check_cited_commits_reachable()
     check_cited_requirement_ids_exist()
+    check_async_path_operations()
+    check_charter_criteria_closed()
 
     print("=" * 70)
     if failures:
