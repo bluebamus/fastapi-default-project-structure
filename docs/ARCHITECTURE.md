@@ -252,6 +252,10 @@ async def create_<name>(
 Dependency 조립·Service 유스케이스·트랜잭션 경계·Pydantic 응답 검증·OpenAPI 메타데이터는
 그대로입니다. 실물 비교는 `app/features/catalog/`(ORM) 와 `app/features/reports/`(Raw) 입니다.
 
+> **단계별 실습**: 이 절이 규칙이라면, 두 방식을 같은 시나리오로 끝까지 만들어 보는 문서는
+> [ORM/Raw 워크플로우 개발 지침서](./orm-raw-repository/2026-08-13/workflow-guide.md) 입니다
+> (§3 ORM 시나리오 · §4 Raw 시나리오 · §6 Raw SQL 보안 규칙 · §10 코드 리뷰 체크리스트).
+
 | | `BaseRepository` (ORM) | `RawRepositoryBase` (Raw SQL) |
 |---|---|---|
 | 언제 | 엔티티 생명주기를 다룰 때 (CRUD, 관계 적재) | 집계·리포트·방언 특화 구문 |

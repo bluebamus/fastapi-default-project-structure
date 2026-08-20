@@ -21,6 +21,20 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 
 ---
 
+## 함께 보는 문서
+
+| 문서 | 언제 읽나 |
+|---|---|
+| [QUICKSTART](./docs/QUICKSTART.md) | 인프라 없이 30초 안에 앱을 띄워보고 싶을 때 |
+| [ARCHITECTURE](./docs/ARCHITECTURE.md) | 폴더 분류·라우터 배선·트랜잭션 경계의 근거를 볼 때 |
+| **[ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)** | **ORM 과 Raw SQL 중 무엇을 언제 쓰고, 각각 어떤 순서로 만드는지 배울 때** |
+
+지침서는 두 방식을 **같은 시나리오로 끝까지** 따라갑니다 — §3 ORM(상품 CRUD),
+§4 Raw(일별 매출 리포트), §6 Raw SQL 보안 규칙, §7 트랜잭션 지침, §10 코드 리뷰
+체크리스트. 아래 [핵심 패턴](#핵심-패턴)이 요약이라면 지침서는 실습 순서입니다.
+
+---
+
 ## 개요
 
 이 프로젝트는 FastAPI 기반의 확장 가능한 백엔드 애플리케이션 템플릿입니다.
@@ -416,6 +430,10 @@ _DAILY_SALES_SQL = text("""
 
 > 실물 비교: `app/features/catalog/`(ORM) 와 `app/features/reports/`(Raw). 두 기능은
 > Repository 구현만 다르고 Dependency·Service·트랜잭션 경계·응답 검증이 동일합니다.
+>
+> 두 방식을 **처음부터 끝까지 만들어 보려면**
+> [ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)
+> 를 따라가세요. 위 코드가 어떤 순서로 나왔는지가 그 문서에 있습니다.
 
 ### 2. 트랜잭션 경계 — 쓰기 핸들러 (UnitOfWork 대체)
 
