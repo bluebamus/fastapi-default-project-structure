@@ -34,6 +34,8 @@ EXPECTED: dict[str, frozenset[str]] = {
     "/api/v1/catalog/products": frozenset({"GET", "POST"}),
     "/api/v1/catalog/products/{product_id}": frozenset({"GET", "PATCH", "DELETE"}),
     "/api/v1/reports/sales/daily": frozenset({"GET"}),
+    # Raw 쓰기 예제 — 집계 결과를 스냅샷 테이블에 재적재(멱등)
+    "/api/v1/reports/sales/daily/snapshots": frozenset({"POST"}),
 }
 
 

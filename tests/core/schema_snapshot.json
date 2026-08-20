@@ -247,6 +247,70 @@
       "id"
     ]
   },
+  "sales_daily_snapshots": {
+    "columns": [
+      {
+        "name": "sales_date",
+        "type": "DATE",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": true,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "매출 일자 (자연 기본키)"
+      },
+      {
+        "name": "order_count",
+        "type": "INTEGER",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "그날의 주문 수"
+      },
+      {
+        "name": "gross_amount",
+        "type": "NUMERIC(14, 2)",
+        "timezone": null,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "그날의 총 매출"
+      },
+      {
+        "name": "generated_at",
+        "type": "DATETIME",
+        "timezone": true,
+        "nullable": false,
+        "primary_key": false,
+        "unique": false,
+        "index": false,
+        "has_default": false,
+        "has_onupdate": false,
+        "comment": "적재 시각 — Raw DML 이 바인드 파라미터로 채운다"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ix_sales_daily_snapshots_generated_at",
+        "unique": false,
+        "columns": [
+          "generated_at"
+        ]
+      }
+    ],
+    "primary_key": [
+      "sales_date"
+    ]
+  },
   "sales_orders": {
     "columns": [
       {
