@@ -2,6 +2,7 @@
 
 SQLite 통과만으로 MySQL SQL 을 승인하지 않는다는 것이 이 파일의 존재 이유다.
 DATE()·SUM()·NUMERIC 반올림·타임존 처리처럼 방언마다 다른 지점이 여기서 드러난다.
+읽기(집계)뿐 아니라 쓰기(``INSERT ... SELECT`` 스냅샷 적재)도 여기서 확인한다.
 
 migration 은 현재 head 까지 올린 뒤 **downgrade → 재-upgrade** 까지 돌려
 되돌릴 수 있는 revision 인지 확인한다.
@@ -120,6 +121,69 @@ async def test_bind_parameters_are_not_interpolated_on_mysql(mysql_session_maker
 # =============================================================================
 # migration 체인 (SCN-ORM-001 / SCN-RAW-001)
 # =============================================================================
+async def test_snapshot_load_runs_on_mysql(mysql_session_maker):
+    """``INSERT ... SELECT`` 적재가 MySQL 에서 그대로 동작한다.
+
+    SQLite 에서 통과했다는 사실은 방언 검증이 아니다 — ``DATE()`` 로 만든 값을
+    ``DATE`` 컬럼에 넣는 것, ``COALESCE(SUM(...), 0)`` 의 결과 타입이
+    ``NUMERIC(14,2)`` 로 들어가는 것 모두 여기서만 확인된다.
+    """
+    await _seed(mysql_session_maker)
+
+    async with mysql_session_maker() as db_session:
+        result = await ReportService(db_session).refresh_daily_snapshots(
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 7),
+        )
+        await db_session.commit()
+
+    assert (result.deleted, result.inserted) == (0, 2)
+
+    async with mysql_session_maker() as db_session:
+        rows = (
+            await db_session.execute(
+                sa.text(
+                    "SELECT sales_date, order_count, gross_amount "
+                    "FROM sales_daily_snapshots ORDER BY sales_date"
+                )
+            )
+        ).all()
+
+    # 소수 자릿수가 살아 있어야 한다 — float 로 새면 150.5 나 150.49999 가 된다.
+    assert [(r[0], r[1], r[2]) for r in rows] == [
+        (date(2026, 8, 1), 2, Decimal("150.50")),
+        (date(2026, 8, 3), 1, Decimal("200.25")),
+    ]
+
+
+async def test_snapshot_load_is_idempotent_on_mysql(mysql_session_maker):
+    """재적재가 MySQL 에서도 멱등이다 — 표준 DELETE+INSERT 만 썼기 때문이다.
+
+    ``ON DUPLICATE KEY UPDATE`` 를 썼다면 이 테스트는 통과해도 SQLite 단위 테스트가
+    깨졌을 것이다. 두 방언에서 **같은 문장**이 도는지가 이 검사의 핵심이다.
+    """
+    await _seed(mysql_session_maker)
+
+    async with mysql_session_maker() as db_session:
+        service = ReportService(db_session)
+        first = await service.refresh_daily_snapshots(
+            start_date=date(2026, 8, 1), end_date=date(2026, 8, 7)
+        )
+        await db_session.commit()
+
+        second = await service.refresh_daily_snapshots(
+            start_date=date(2026, 8, 1), end_date=date(2026, 8, 7)
+        )
+        await db_session.commit()
+
+    assert second.deleted == first.inserted
+    assert second.inserted == first.inserted
+
+    async with mysql_session_maker() as db_session:
+        total = await db_session.execute(sa.text("SELECT COUNT(*) FROM sales_daily_snapshots"))
+        assert total.scalar() == first.inserted, "재적재가 행을 두 배로 만들었다"
+
+
 def _alembic_config(monkeypatch) -> Config:
     from config import db_settings
 
