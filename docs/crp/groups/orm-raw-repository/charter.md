@@ -17,9 +17,9 @@
 | 미들웨어·로깅 | `app/core/middlewares/`, `app/utils/logs/` | 소스 | Phase 1 Queue 전환 대상 |
 | 태그 메타데이터 | `app/core/tags_metadata.py` | 소스 | Phase 6 대상 |
 | 기존 기능 6종 | `app/features/{auth,blog,home,reply,sns,user}/` | 소스+테스트 | 회귀 보호 대상 |
-| 신규 기능 2종 | `app/features/{catalog,reports}/` | 소스+테스트 | **Phase 5 신규** |
+| 신규 기능 2종 | `app/features/{catalog,reports}/` | 소스+테스트 | **Phase 5 신규**. reports 는 **REQ-005 로 Raw 쓰기 경로 추가**(스냅샷 재적재) |
 | Celery | `app/celery/` | 소스 | Phase 1 worker 종료 대상 |
-| 마이그레이션 | `migrations/` | 소스 | Phase 5 revision 2개 추가 |
+| 마이그레이션 | `migrations/` | 소스 | Phase 5 revision 2개 + **REQ-005 revision 1개**(`e5f7a9b1c4d5` sales_daily_snapshots) |
 | 공통 테스트 | `tests/` | 테스트 | |
 | MySQL 통합 환경 | `compose.test.yaml` | 설정 | **Phase 5 신규**, mysql:8.4 / 3308 |
 | 문서 | `README.md`, `docs/ARCHITECTURE.md`, `docs/QUICKSTART.md` | 문서 | Phase 7 갱신 |
@@ -82,9 +82,12 @@
 - [ ] INV-10 → 전 path operation async 검사 + 금지 동기 I/O 정적 검사
 - [ ] INV-11 → `baseline/openapi.json` 대비 기존 30개 operation 의 경로·상태 코드 불변 확인
 - [ ] INV-12 → 라우터 등록 누락 탐지 테스트가 신규 기능 2종을 포함
-- [ ] Alembic: 신규 revision 2개의 upgrade → downgrade → 재-upgrade 가 MySQL 8.4 에서 통과
+- [ ] Alembic: 신규 revision **3개**(Phase 5 의 2개 + REQ-005 의 `e5f7a9b1c4d5`)의 upgrade → downgrade → 재-upgrade 가 MySQL 8.4 에서 통과
 - [ ] 질의 수준(design-baseline §0 = 보통)이 P/D 질문 깊이에 반영됨
 
 ## 4. 변경 이력
 
 - v0.1 (2026-08-13): 최초 작성. 기준선 실측 반영, INV-1~12 확정.
+- v0.2 (2026-08-19): F-019 정정 — MySQL 통합 포트 3308 (ADR-008).
+- v0.3 (2026-08-20): REQ-005 반영 — 인벤토리에 Raw 쓰기 경로·신규 revision, 인수기준의 revision 수 정정.
+  **§1 의 기준선 실측(2026-08-13)은 착수 시점의 역사적 값이므로 갱신하지 않는다** — 현재 실측은 run-log·checklist 가 갖는다.
