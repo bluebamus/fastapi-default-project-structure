@@ -15,6 +15,7 @@
     6. 기존 공개 API 불변 (baseline/openapi.json 대비, INV-11)
     7. MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
     8. 문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
+    9. 코드·문서가 인용한 요구 ID 가 실제로 선언돼 있음 (ADR-014)
 """
 
 from __future__ import annotations
@@ -303,6 +304,62 @@ def check_cited_commits_reachable() -> None:
     )
 
 
+# 요구 ID 를 선언하는 문서. 여기 나타나면 "실재하는 근거" 로 본다.
+REQUIREMENT_SOURCES = (
+    "docs/orm-raw-repository/2026-08-13/requirements.md",
+    "docs/crp/groups/orm-raw-repository/design-baseline.md",
+    "docs/crp/groups/orm-raw-repository/charter.md",
+)
+REQUIREMENT_ID = re.compile(
+    r"\b(?:SCN-(?:ORM|RAW)|ORM-REP|RAW-REP|TX|VIEW|AR|NFR|MIG|DOC|REQ|ADR)-\d{3}\b"
+)
+# 이 그룹이 생기기 **전** 검수 라운드의 ID 다. 근거 문서가 이 저장소에 없어서 따라갈 수
+# 없지만, 고치는 것은 REQ-005 범위 밖이라 수용했다(residual-risk R-007). 새 코드가 이
+# 목록에 기대면 안 되므로 늘리지 않는다.
+LEGACY_UNDECLARED_IDS = frozenset({"ADR-019", "REQ-008", "REQ-009"})
+
+
+def check_cited_requirement_ids_exist() -> None:
+    """코드·문서가 인용한 요구 ID 가 실제로 선언돼 있는지 (ADR-014).
+
+    F-022 로 드러난 세 번째 dangling reference 다 — 포트(F-019)·해시(F-020)에 이어 이번엔
+    존재하지 않는 ``SCN-RAW-003`` 을 코드 주석 3곳이 근거로 인용했다. 인용은 읽는 사람이
+    **따라갈 수 있을 때만** 근거이고, 따라가 보면 없는 조항은 있는 것보다 나쁘다 —
+    근거가 있다고 믿게 만들기 때문이다.
+
+    ponytail: 선언 판정은 "출처 문서에 그 ID 가 나타나는가" 다. 출처 문서 자신의 오타는
+    스스로를 선언한 것으로 통과한다. 인용처(코드)의 dangling 을 잡는 것이 목적이므로
+    여기까지가 상한이고, 필요해지면 정의 위치(표 행·제목)만 파싱하도록 좁힌다.
+    """
+    declared: set[str] = set()
+    for rel in REQUIREMENT_SOURCES:
+        source = REPO_ROOT / rel
+        if source.exists():
+            declared.update(REQUIREMENT_ID.findall(source.read_text(encoding="utf-8")))
+    declared |= LEGACY_UNDECLARED_IDS
+
+    sites = list(iter_source_files("app", "tests", "migrations", "scripts"))
+    sites += [REPO_ROOT / "README.md"]
+    sites += sorted((REPO_ROOT / "docs").rglob("*.md"))
+
+    source_names = {Path(rel).name for rel in REQUIREMENT_SOURCES}
+    dangling: dict[str, str] = {}
+    for path in sites:
+        if path.name in source_names or not path.exists():
+            continue
+        for found in REQUIREMENT_ID.findall(path.read_text(encoding="utf-8")):
+            if found not in declared:
+                dangling.setdefault(found, str(path.relative_to(REPO_ROOT)).replace("\\", "/"))
+
+    report(
+        "인용 요구 ID 실재 (ADR-014)",
+        not dangling,
+        f"선언되지 않은 ID {len(dangling)}건: {dangling}"
+        if dangling
+        else f"검사 {len(declared) - len(LEGACY_UNDECLARED_IDS)}건 선언",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="테스트를 건너뛴다")
@@ -321,6 +378,7 @@ def main() -> int:
     check_public_api_unchanged()
     check_test_port_single_source()
     check_cited_commits_reachable()
+    check_cited_requirement_ids_exist()
 
     print("=" * 70)
     if failures:
