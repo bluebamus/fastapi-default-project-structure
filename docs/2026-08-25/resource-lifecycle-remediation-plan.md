@@ -1161,20 +1161,44 @@ MySQL 통합 테스트는 `compose.test.yaml`의 전용 포트(**3308**)와 heal
 
 ## 11. Definition of Done
 
-- [ ] lifespan manager가 drain 또는 dispose 중 취소돼도 필수 후속 cleanup을 전부 시도한다.
-- [ ] cleanup 후 원래 `CancelledError`가 호출자에게 재전파된다.
-- [ ] 정상·startup 실패·timeout·취소 **전부**에서 `app.state.resources is None`이다.
-- [ ] logging listener가 lifespan보다 오래 살아 **Uvicorn 최종 로그와 startup 실패
+> 각 칸에 **무엇을 보고 닫았는지**를 함께 적는다. 표시만 바꾸는 것은 닫는 것이 아니다.
+
+- [x] lifespan manager가 drain 또는 dispose 중 취소돼도 필수 후속 cleanup을 전부 시도한다.
+      → `test_manager_cancellation_still_runs_remaining_cleanup` 이 `["drain","dispose","flush"]` 를 단언.
+- [x] cleanup 후 원래 `CancelledError`가 호출자에게 재전파된다.
+      → 같은 테스트의 `with pytest.raises(asyncio.CancelledError)`.
+- [x] 정상·startup 실패·timeout·취소 **전부**에서 `app.state.resources is None`이다.
+      → 네 시나리오 각각에 단언이 있다. **timeout 칸은 이 Wave 에서 채웠다** —
+      동작은 맞았지만 단언이 없었다(`test_slow_cleanup_is_bounded_by_timeout`).
+- [x] logging listener가 lifespan보다 오래 살아 **Uvicorn 최종 로그와 startup 실패
       traceback을 소비한다** — 실제 서버 subprocess 로그로 증명.
-- [ ] bounded queue 포화 stop 실패가 listener handle 또는 스레드 누수로 이어지지 않는다.
-- [ ] 모든 DB engine이 개별 실패와 무관하게 dispose 시도된다.
-- [ ] background task 예외가 회수·기록되고 event loop 미회수 경고가 없다.
-- [ ] `uvicorn main:app`과 `python main.py` **양쪽**에서 uvicorn 로그가 앱과 같은 경로로 나간다.
-- [ ] 구현이 표준 라이브러리 관용 사용으로 이루어졌다 — 중첩 `async with` · `gather` ·
+      → `tests/integration/test_uvicorn_lifecycle.py` 3건. 변이 검증으로 실효성 확인.
+- [x] bounded queue 포화 stop 실패가 listener handle 또는 스레드 누수로 이어지지 않는다.
+      → `test_stop_keeps_the_handle_when_stopping_fails` · `test_stop_is_bounded_when_the_sentinel_never_arrives`.
+- [x] 모든 DB engine이 개별 실패와 무관하게 dispose 시도된다.
+      → `tests/core/test_db_engine_disposal.py` 6건 (`gather(return_exceptions=True)`).
+- [x] background task 예외가 회수·기록되고 event loop 미회수 경고가 없다.
+      → `add_done_callback` 회수 + `tests/core/test_background_tasks.py`.
+- [x] `uvicorn main:app`과 `python main.py` **양쪽**에서 **오류·traceback이 유실 없이 출력되고**
+      앱 로그가 프로젝트 포맷으로 나간다.
+      > **정정 (2026-08-27).** 원안은 *"양쪽에서 uvicorn 로그가 앱과 같은 경로로 나간다"* 였다.
+      > 이 문장은 **대안 A(앱 `dictConfig` 에 uvicorn 로거 포함) 채택을 전제로** 쓰였는데,
+      > ADR-020 이 그 대안을 **기각**했다. 확정된 계약은 위와 같다 — uvicorn **자신의** 로그
+      > 포맷 통일은 `python main.py` 경로에 한정한다. 실측으로 두 경로의 오류 출력이
+      > 동등함을 확인했고(197 vs 196줄, 양쪽 traceback 2건), 앱 종료 로그의 꼬리도
+      > ADR-023 으로 양쪽 모두 온전하다. **결정이 바뀌었으면 DoD 도 바꾼다 — 기각한 대안을
+      > 전제로 한 칸에 체크하지 않는다.**
+- [x] 구현이 표준 라이브러리 관용 사용으로 이루어졌다 — 중첩 `async with` · `gather` ·
       `enqueue_sentinel` 오버라이드 · `dictConfig` 네이티브. **stdlib 재구현이 없다.**
-- [ ] 단위·정적·전체·MySQL·process lifecycle 검증 결과가 **명령과 함께** 기록된다.
-- [ ] 문서와 CRP ledger가 구현 및 실제 검증 결과와 일치한다.
-- [ ] 공개 API와 DB 스키마 diff가 0이다.
+      → 추가로 큐 flush 도 `Queue.join()` 과 **같은 조건**(`unfinished_tasks == 0`)을 쓰되
+      예산만 얹었다(ADR-023).
+- [x] 단위·정적·전체·MySQL·process lifecycle 검증 결과가 **명령과 함께** 기록된다.
+      → `docs/2026-08-25/verification-report.md` §6-1.
+- [x] 문서와 CRP ledger가 구현 및 실제 검증 결과와 일치한다.
+      → F-034 정정 3종(실측 대조표 첨부) · ledger F-028~F-039 종결 · ARCHITECTURE §4.2 ·
+      workflow-guide §11 · README · `docs/LOGGING-AND-SHUTDOWN.md`.
+- [x] 공개 API와 DB 스키마 diff가 0이다.
+      → 게이트 INV-11: 제거 0 · 상태코드 변경 0. 이 라운드는 모델·migration 을 건드리지 않았다.
 
 ---
 

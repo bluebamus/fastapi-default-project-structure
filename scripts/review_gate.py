@@ -459,6 +459,44 @@ def check_charter_criteria_closed() -> None:
     )
 
 
+# 이 계열 결함(F-028·F-029·F-038·F-039)은 **단위 테스트로는 보이지 않는다.** 문제가
+# lifespan 바깥(프로세스 종료·신호 처리·uvicorn 내부)에 살기 때문이다. 실제로 이 테스트들이
+# 생기기 전 391 passed 는 결함 12건을 하나도 잡지 못했다.
+# 그래서 "있는지" 를 기계가 본다 — 느리다는 이유로 조용히 지워지면 그 순간 눈이 없어진다.
+PROCESS_LEVEL_TESTS = (
+    "tests/core/test_resources.py::test_manager_cancellation_still_runs_remaining_cleanup",
+    "tests/integration/test_uvicorn_lifecycle.py::test_normal_shutdown_flushes_every_stage_in_order",
+    "tests/integration/test_uvicorn_lifecycle.py::test_startup_failure_still_reports_the_cause",
+    "tests/integration/test_uvicorn_lifecycle.py::test_uvicorn_cli_also_flushes_the_shutdown_tail",
+    "tests/utils/test_logs.py::test_signal_shutdown_still_drains_the_log_listener",
+)
+
+
+def check_process_level_tests_collected() -> None:
+    """취소·프로세스 종료 테스트가 실재하고 **수집되는지** (F-028·F-029·F-038·F-039).
+
+    파일 존재만 보면 함수가 지워지거나 이름이 바뀐 것을 놓친다. ``--collect-only`` 로
+    node id 단위 수집을 확인하면 삭제·개명·import 실패가 전부 여기서 걸린다.
+    """
+    completed = subprocess.run(  # noqa: S603
+        [str(PYTHON), "-m", "pytest", "--collect-only", "-q", *PROCESS_LEVEL_TESTS],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output = completed.stdout + completed.stderr
+    missing = [node for node in PROCESS_LEVEL_TESTS if node.split("::")[-1] not in output]
+    report(
+        "취소·프로세스 종료 테스트 실재 (ADR-017/018/022/023)",
+        completed.returncode == 0 and not missing,
+        f"수집 실패 — 사라졌거나 이름이 바뀌었다: {missing or output.strip()[-300:]}"
+        if (completed.returncode != 0 or missing)
+        else f"검사 {len(PROCESS_LEVEL_TESTS)}건 전부 수집됨",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fast", action="store_true", help="테스트를 건너뛴다")
@@ -479,6 +517,7 @@ def main() -> int:
     check_cited_commits_reachable()
     check_cited_requirement_ids_exist()
     check_async_path_operations()
+    check_process_level_tests_collected()
     check_charter_criteria_closed()
 
     print("=" * 70)
