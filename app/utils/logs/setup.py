@@ -14,6 +14,9 @@ worker·Alembic·테스트처럼 FastAPI lifespan 이 돌지 않는 프로세스
 사라진다 — DB 가 꺼진 채 ``python main.py`` 를 실행하면 오류 원인이 한 글자도 나오지
 않았다(F-029). listener 는 자신을 쓰는 모든 것보다 오래 살아야 한다.
 
+listener 인스턴스는 ``dictConfig`` 가 queue 핸들러와 **함께** 만들어
+``handler.listener`` 에 붙여 준다(ADR-021). 여기서는 시작·정지만 관리한다.
+
 핸들러 참조를 ``logging.getHandlerByName()`` 으로 나중에 다시 찾지 않고 여기 모듈
 상태에 붙잡아 둔다. ``dictConfig`` 는 호출될 때마다 기존 핸들러 이름 레지스트리를
 비우므로(uvicorn 이 자기 dictConfig 를 적용한다), 나중에 조회하면 None 이 된다.
@@ -33,7 +36,6 @@ from app.utils.logs.config import (
     _env,
     _level,
     build_dictconfig,
-    listener_handler_names,
 )
 from app.utils.logs.queue_handler import BoundedQueueHandler
 
@@ -83,7 +85,14 @@ def configure_logging(force: bool = False) -> None:
     if _configured and not force:
         return
 
-    stop_log_listener()
+    try:
+        stop_log_listener()
+    except Exception as exc:
+        # 기존 listener 를 정상적으로 멈추지 못했으면 **재구성하지 않는다.** 그대로
+        # 진행하면 root 핸들러는 새 queue 를, 살아 있는 옛 listener 는 옛 queue 를
+        # 보게 되어 로그가 조용히 사라진다.
+        _write_listener_lifecycle_status(f"stop 실패({exc!r}) — 로깅 재구성을 중단한다")
+        return
 
     dictConfig(build_dictconfig())
 
@@ -92,11 +101,6 @@ def configure_logging(force: bool = False) -> None:
         (h for h in logging.getLogger().handlers if isinstance(h, BoundedQueueHandler)),
         None,
     )
-    _listener_targets = [
-        handler
-        for name in listener_handler_names()
-        if (handler := logging.getHandlerByName(name)) is not None
-    ]
     _configured = True
 
     _register_process_exit_hook()
@@ -110,18 +114,17 @@ def get_queue_handler() -> BoundedQueueHandler | None:
 
 
 def start_log_listener() -> QueueListener | None:
-    """queue listener 를 시작한다(이미 살아 있으면 그대로 둔다)."""
+    """queue listener 를 시작한다(이미 살아 있으면 그대로 둔다).
+
+    listener 를 여기서 만들지 않는다 — ``dictConfig`` 가 queue 핸들러와 함께 만들어
+    ``handler.listener`` 에 붙여 준다(ADR-021).
+    """
     global _listener
     if _listener is not None:
         return _listener
-    if _queue_handler is None or not _listener_targets:
+    listener: QueueListener | None = getattr(_queue_handler, "listener", None)
+    if listener is None:
         return None
-
-    listener = QueueListener(
-        _queue_handler.queue,
-        *_listener_targets,
-        respect_handler_level=True,
-    )
     listener.start()
     _listener = listener
     return listener
@@ -136,6 +139,11 @@ def restart_log_listener() -> QueueListener | None:
     """
     global _listener
     _listener = None
+    listener: QueueListener | None = getattr(_queue_handler, "listener", None)
+    if listener is not None:
+        # 스레드는 fork 를 넘어오지 못했지만 객체에는 **죽은 스레드 참조**가 남아 있다.
+        # 그대로 start() 하면 stdlib 이 "Listener already started" 로 거절한다.
+        listener._thread = None
     return start_log_listener()
 
 
@@ -146,11 +154,18 @@ def stop_log_listener() -> None:
     이 함수가 멈추는 대상이 바로 그 queue 의 소비자이기 때문이다.
     """
     global _listener
-    listener, _listener = _listener, None
+    listener = _listener
     if listener is None:
         return
     _write_listener_lifecycle_status("stop 시작")
-    listener.stop()
+    try:
+        listener.stop()
+    except Exception as exc:
+        # 참조를 **버리지 않는다.** 버리면 스레드는 살아 있는데 회수할 손잡이가 없다
+        # (F-030). 여기서 유지해야 호출자가 재시도할 수 있다.
+        _write_listener_lifecycle_status(f"stop 실패({exc!r}) — 참조 유지, 재시도 가능")
+        raise
+    _listener = None
     _write_listener_lifecycle_status("stop 완료")
 
 
