@@ -12,6 +12,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - [데이터 흐름](#데이터-흐름)
 - [핵심 패턴](#핵심-패턴)
 - [시작하기](#시작하기)
+- [테스트와 검수](#테스트와-검수)
 - [환경 설정](#환경-설정)
 - [로깅 시스템](#로깅-시스템)
 - [기동과 종료](#기동과-종료)
@@ -157,6 +158,7 @@ fastapi-default-project-structure/
 │   │       ├── exceptions.py    # 기능 예외 (선택)
 │   │       └── tests/           # 이 기능의 테스트
 │   ├── core/                    # 프레임워크 인프라 (features 가 의존)
+│   │   ├── resources.py         # 프로세스 수명 자원의 생성·해제 단일 지점 (lifespan)
 │   │   ├── exception.py         # 공통 예외 계층
 │   │   ├── tags_metadata.py     # OpenAPI 태그 설명
 │   │   ├── db/                  # 세션·라우팅·모델 등록
@@ -172,19 +174,24 @@ fastapi-default-project-structure/
 │   └── utils/                   # logs(구조화 로깅) · authenticator(JWT·bcrypt) ·
 │                                #   pagination · validators
 │
+├── conftest.py                  # pytest 전역 옵션 (--mysql-required) — 루트여야 인식된다
 ├── tests/                       # 횡단 테스트 — core 계약·배선·교차 기능
-│   ├── core/                    # 설정 계약, admin 뷰 정책, 마이그레이션 체인 등
+│   ├── core/                    # 설정 계약, 자원 lifespan, admin 뷰 정책, 마이그레이션 등
 │   ├── utils/                   # 로깅·인증·페이지네이션 유틸
-│   ├── integration/             # 실제 MySQL 8.4 대상 (없으면 skip)
+│   ├── integration/             # 실제 프로세스·DB 대상
+│   │                            #   test_uvicorn_lifecycle.py  실제 서버 기동·종료 검증
+│   │                            #   test_mysql_raw_sql.py      MySQL 8.4 (없으면 skip)
 │   └── test_*.py                # 라우터/admin 배선, 응답 직렬화, OpenAPI 계약 등
 │
 ├── migrations/                  # Alembic (env.py 가 import_all_models() SSOT 로 메타데이터 수집)
 ├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
-├── scripts/review_gate.py       # 검수 게이트 (정적분석 + 계층 불변식 + 공개 API 불변)
+├── scripts/review_gate.py       # 검수 게이트 12종 — 아래 [테스트와 검수] 참고
 ├── compose.test.yaml            # 통합 테스트용 MySQL 8.4 (호스트 포트 3308)
 ├── docs/
 │   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
 │   ├── QUICKSTART.md            # 최소 실행 경로
+│   ├── LOGGING-AND-SHUTDOWN.md  # 로그가 왜 큐를 거치는지 · 종료 순서를 왜 건드리면 안 되는지
+│   ├── orm-raw-repository/      # ORM/Raw 워크플로우 개발 지침서
 │   └── crp/groups/              # 작업 그룹별 설계 기준선·결함 원장
 └── media/ static/ poc/ logs/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
                                  #   logs/ 는 파일 로깅 제거 후 남은 예약 자리다
@@ -202,6 +209,9 @@ fastapi-default-project-structure/
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
 | `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합(`ADMIN_VIEWS`). `main.py` 는 `register_admin(app, engine)` 하나만 호출하고, 내부에서 `create_admin_interface()`(생성·마운트) → `register_admin_views()`(등록) 순으로 위임 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_db_session` |
+| `app/core/resources.py` | 프로세스 수명 자원의 생성·해제 **단일 지점**. 자원마다 async context manager 를 두고 획득 순서대로 중첩해 정리 순서를 코드로 보이게 합니다 → [로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md) |
+| `app/utils/logs/` | 큐 기반 비차단 로깅 + listener 수명 관리(`atexit`·신호 핸들러). **여기 손대기 전에 위 문서를 읽으세요** |
+| `conftest.py` (루트) | pytest 전역 옵션. `--mysql-required` 가 통합 테스트의 skip 을 실패로 바꿉니다 |
 | `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_writer_db_session` / 조회용 `get_read_only_db_session`). 커밋은 핸들러가 수행 |
 | `app/core/exception.py` | 커스텀 예외 계층 (4xx, 5xx, 비즈니스 예외) |
 | `migrations/env.py` | `import_all_models()`(SSOT) 로 전 기능 모델을 자동 수집 → Alembic autogenerate |
@@ -597,6 +607,68 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000  # uvicorn 표준 CL
 - API 문서: http://localhost:8000/docs
 - 관리자 페이지: http://localhost:8000/admin
 - 헬스체크: http://localhost:8000/health
+
+---
+
+## 테스트와 검수
+
+### 실행
+
+```bash
+# 단위 테스트 — 외부 인프라 없이 실행됩니다 (MySQL 테스트는 skip)
+uv run pytest -q
+
+# 전량 — MySQL 8.4 컨테이너를 먼저 띄웁니다 (호스트 포트 3308)
+docker compose -f compose.test.yaml up -d --wait
+uv run pytest -q
+docker compose -f compose.test.yaml down -v
+```
+
+| 구분 | 개수 | 비고 |
+|---|---:|---|
+| 단위·계약·통합(프로세스) | 409 | 외부 인프라 불필요 |
+| MySQL 8.4 대상 (`-m mysql`) | 8 | 컨테이너 필요 |
+| **합계** | **417** | failed 0 · skipped 0 |
+
+### `--mysql-required` — skip 을 실패로 바꿉니다
+
+MySQL 이 없으면 통합 테스트는 skip 됩니다. 문제는 **skip 이 결과만 보면 초록으로
+읽힌다**는 것입니다. CI 에서 컨테이너가 안 떴는데 "통과" 로 보이면 *"돌았는데 통과"* 와
+*"안 돌았다"* 가 구분되지 않습니다.
+
+```bash
+uv run pytest -q -m mysql --mysql-required   # DB 에 닿지 못하면 skip 이 아니라 실패
+```
+
+통합 검증을 근거로 쓰는 자리(릴리스 판정·수렴 판정)에서는 항상 이 옵션을 붙이세요.
+
+### 검수 게이트
+
+```bash
+uv run python scripts/review_gate.py          # 전체
+uv run python scripts/review_gate.py --fast   # 테스트 제외
+```
+
+검사 **12종** — 도구 4종(pytest · ruff check · ruff format · mypy)과 프로젝트 규칙 8종입니다.
+
+| 검사 | 무엇을 보나 |
+|---|---|
+| 계층 불변식 (INV-1·2·5) | View 가 SQL/세션을 직접 다루는지, Repository/Dependency 가 커밋하는지, Raw Base 가 ORM Base 를 상속하는지 — **AST 로** 확인 |
+| 공개 API 불변 (INV-11) | `baseline/openapi.json` 대비 경로·상태 코드가 사라지거나 바뀌었는지 |
+| path operation (INV-10) | 전 엔드포인트가 `async def` 이고 요청 루프에서 동기 I/O 를 하지 않는지 |
+| MySQL 포트 단일 출처 | 포트 값이 여러 곳에 흩어졌는지 |
+| 문서 인용 커밋 도달성 | 문서가 인용한 커밋 해시가 실재하는지 |
+| 인용 요구 ID 실재 | 코드·문서가 인용한 REQ/ADR ID 가 선언돼 있는지 |
+| 취소·프로세스 종료 테스트 실재 | 종료 계약을 지키는 테스트 5건이 **삭제·개명되지 않았는지** |
+| charter ↔ 수렴 선언 정합 | 인수 기준이 열린 채 "수렴" 을 선언하지 않았는지 |
+
+마지막 두 검사는 *"테스트나 기준이 조용히 사라지는 것"* 을 막습니다. 이 프로젝트에서
+실제로 일어났던 일이라 기계가 봅니다.
+
+### CI
+
+`.github/workflows/ci.yml` 이 같은 검사를 돌립니다 — ruff(lint·format) · mypy(콜드 캐시) ·
+bandit(MEDIUM 이상) · pytest · **SKIP·xfail 0건 확인** · alembic 단일 head.
 
 ---
 
