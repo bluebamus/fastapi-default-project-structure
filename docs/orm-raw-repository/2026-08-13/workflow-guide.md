@@ -692,41 +692,64 @@ async def lifespan(app: FastAPI):
 
 `app/core/resources.py`에서 순서를 명시적으로 관리한다.
 
+**자원마다 작은 async context manager 를 두고 획득 순서대로 중첩한다.** 정리는 파이썬이
+역순으로 실행하므로 순서를 강제할 장치가 따로 필요 없다 (ADR-017).
+
 ```python
-@dataclass(slots=True)
-class ApplicationResources:
-    log_listener: QueueListener | None = None
+@asynccontextmanager
+async def _background_tasks():
+    """가장 안쪽 — DB 를 쓰는 주체이므로 가장 먼저 멈춘다."""
+    try:
+        yield
+    finally:
+        await _drain_background_tasks()
+
+
+@asynccontextmanager
+async def _database(app: FastAPI):
+    """커넥션 풀을 닫는다 — background task 가 멈춘 **뒤**에."""
+    try:
+        yield
+    finally:
+        await _dispose_db_engines()
+        app.state.resources = None
+        logger.info("[shutdown] 애플리케이션 요청 처리 자원 해제 완료")
+
+
+@asynccontextmanager
+async def _log_queue():
+    """가장 바깥 — 앞 단계가 남긴 로그까지 전부 나가고 나서 끝난다 (ADR-023)."""
+    try:
+        yield
+    finally:
+        await flush_log_queue()      # 멈추는 게 아니라 **기다린다**
 
 
 @asynccontextmanager
 async def manage_application_resources(app: FastAPI):
     resources = ApplicationResources()
     app.state.resources = resources
-    try:
-        async with AsyncExitStack() as cleanup:
-            resources.log_listener = build_queue_listener()
-            resources.log_listener.start()
-            cleanup.push_async_callback(
-                stop_log_listener_async,
-                resources.log_listener,
-            )
 
-            cleanup.push_async_callback(dispose_engine)
-
-            import_all_models()
-            if app_settings.DEBUG and Base.metadata.tables:
-                await create_db_tables(import_models=False)
-
-            cleanup.push_async_callback(access_log_tasks.drain)
-            yield resources
-    finally:
-        app.state.resources = None
+    # 획득 순서대로 중첩 → 정리는 자동으로 역순
+    async with _log_queue(), _database(app), _background_tasks():
+        await _prepare_database(resources)
+        yield resources
 ```
 
-`AsyncExitStack`은 callback을 등록 역순으로 실행한다. listener stop, DB dispose,
-background drain 순서로 등록하면 실제 종료는 background drain, DB dispose, listener
-flush/stop 순서가 된다. listener의 동기 flush/join은 `asyncio.to_thread()`로 실행한다.
-cleanup별 로깅과 timeout은 작은 wrapper 함수로 추가한다.
+종료 순서는 **중첩 순서의 역순**이다: background drain → DB dispose → 로그 큐 flush.
+cleanup별 로깅과 timeout은 `_run_cleanup()` wrapper가 담당한다.
+
+> ⚠️ **`_run_cleanup()` 이 "앞 단계가 실패해도 뒤 단계가 실행된다" 를 보장하지는 않는다.**
+> 이 지침서의 이전 판에 그렇게 적혀 있었는데 **틀렸다**(F-034). wrapper 는
+> `except Exception` 인데 `asyncio.CancelledError` 는 `Exception` 이 아니라
+> `BaseException` 이라 그물을 통과한다. 취소에서 뒤 단계를 지키는 것은 wrapper 가 아니라
+> **중첩 컨텍스트 구조 자체**다 — 바깥 `__aexit__` 는 반드시 실행되기 때문이다.
+
+> **이력.** 초판(2026-08-13)은 `AsyncExitStack` 등록 역순이었다. ADR-016(2026-08-25)이 평문
+> `try/finally` 로 대체했으나, 그 형태는 **취소 경로에서 뒤 단계를 건너뛴다**는 것이
+> 확인돼(F-028) ADR-017(2026-08-27)이 중첩 `async with` 로 다시 바꿨다. 실측 대조는
+> `docs/2026-08-25/shutdown-sequence-analysis.md` 의 정정 블록에 있다.
+> 로그 리스너 수명(ADR-018·022·023)의 배경은 `docs/LOGGING-AND-SHUTDOWN.md` 를 보라.
 
 ### 모델과 테이블 생성
 

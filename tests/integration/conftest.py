@@ -61,9 +61,18 @@ def mysql_available() -> bool:
 
 @pytest.fixture(autouse=True)
 def _require_mysql(request):
-    """``@pytest.mark.mysql`` 이 붙은 테스트는 MySQL 이 없으면 skip 한다."""
-    if request.node.get_closest_marker("mysql") and not _mysql_is_reachable():
-        pytest.skip(_SKIP_REASON)
+    """``@pytest.mark.mysql`` 이 붙은 테스트는 MySQL 이 없으면 skip 한다.
+
+    단 ``--mysql-required`` 를 주면 **실패**시킨다. skip 은 결과만 보면 초록으로
+    읽혀서, CI 에서 컨테이너가 안 떴을 때 "돌았는데 통과" 와 "안 돌았다" 가
+    구분되지 않는다(residual-risk **R-003**). 통합 검증을 근거로 쓰는 자리에서는
+    그 구분이 결과 자체여야 한다.
+    """
+    if not request.node.get_closest_marker("mysql") or _mysql_is_reachable():
+        return
+    if request.config.getoption("--mysql-required"):
+        pytest.fail(f"--mysql-required 인데 {_SKIP_REASON}", pytrace=False)
+    pytest.skip(_SKIP_REASON)
 
 
 def drop_all_tables_sync() -> None:

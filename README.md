@@ -14,6 +14,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 - [시작하기](#시작하기)
 - [환경 설정](#환경-설정)
 - [로깅 시스템](#로깅-시스템)
+- [기동과 종료](#기동과-종료)
 - [접속 로그 미들웨어](#접속-로그-미들웨어)
 - [인증 (JWT)](#인증-jwt)
 - [신규 기능 개발 가이드](#신규-기능-개발-가이드)
@@ -28,6 +29,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 | [QUICKSTART](./docs/QUICKSTART.md) | 인프라 없이 30초 안에 앱을 띄워보고 싶을 때 |
 | [ARCHITECTURE](./docs/ARCHITECTURE.md) | 폴더 분류·라우터 배선·트랜잭션 경계의 근거를 볼 때 |
 | **[ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)** | **ORM 과 Raw SQL 중 무엇을 언제 쓰고, 각각 어떤 순서로 만드는지 배울 때** |
+| [로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md) | 로그가 왜 큐를 거치는지, 종료 순서를 왜 건드리면 안 되는지 알아야 할 때 |
 
 지침서는 두 방식을 **같은 시나리오로 끝까지** 따라갑니다 — §3 ORM(상품 CRUD),
 §4 Raw(일별 매출 리포트), §6 Raw SQL 보안 규칙, §7 트랜잭션 지침, §10 코드 리뷰
@@ -49,6 +51,10 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
   참조 예제가 나란히 있습니다 — `app/features/catalog/`(ORM), `app/features/reports/`(Raw)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
 - **구조화된 로깅**: 큐 기반 비차단 핸들러 → stdout/stderr (파일 로그 없음)
+- **검증된 종료 절차**: background task → DB 커넥션 → 로그 순서로 정리하며, 정상 종료·
+  startup 실패·취소·`docker stop`(SIGTERM) **모두**에서 끝까지 실행됩니다.
+  실제 서버 프로세스를 띄우는 통합 테스트가 이 순서를 고정합니다
+  ([상세](./docs/LOGGING-AND-SHUTDOWN.md))
 - **API 문서**: Scalar UI 기반 인터랙티브 문서 + OpenAPI 정합성 규칙 테스트
 - **관리자 페이지**: SQLAdmin 통합
 
@@ -58,7 +64,9 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 
 | 구분 | 기술 |
 |------|------|
+| Language | Python 3.12+ |
 | Framework | FastAPI 0.141+ |
+| ASGI Server | Uvicorn |
 | ORM | SQLAlchemy 2.0 (async) |
 | Database | MySQL (aiomysql) |
 | Validation | Pydantic v2 |
@@ -571,9 +579,17 @@ CREATE DATABASE fastapi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ### 5. 서버 실행
 
 ```bash
-# 개발 서버
-uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# 둘 중 아무거나 쓰면 됩니다.
+uv run python main.py                                        # .env 의 HOST/PORT/DEBUG 를 그대로 사용
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000  # uvicorn 표준 CLI
 ```
+
+> 두 명령 모두 정상 동작합니다. 오류와 traceback 도 **똑같이** 출력됩니다 — 로깅
+> listener 를 lifespan 이 아니라 프로세스가 소유하기 때문입니다(ADR-018).
+> 차이는 **uvicorn 자신의 로그 포맷 하나뿐**입니다: `python main.py` 는 프로젝트 포맷
+> (`[app=uvicorn]` 라벨)으로, `uvicorn main:app` 은 uvicorn 기본 포맷으로 나갑니다.
+> 앞의 명령이 `run_server()` 를 거치며 `uvicorn.run(log_config=...)` 을 넘기기 때문입니다
+> (ADR-020).
 
 ### 6. 접속
 
@@ -652,6 +668,26 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 **큐가 가득 차면** ERROR·CRITICAL 은 stderr 로 직접 흘리고(로깅 API 를 다시 타지 않습니다 —
 재진입하면 같은 큐에서 다시 막힙니다), 그 아래 레벨은 버리고 누락 사실만 주기적으로 알립니다.
 로깅이 요청 처리를 막지 않는 것이 우선입니다.
+
+### listener 의 수명 — 손대기 전에 읽으세요
+
+큐 구조에는 반드시 알아야 할 성질이 하나 있습니다.
+
+> **`logger.info()` 가 성공했다고 그 줄이 출력된 것은 아닙니다.** 큐에 들어가 있을 뿐이고,
+> listener 가 꺼내 쓰기 전에 프로세스가 죽으면 그 줄은 영원히 사라집니다.
+
+그래서 listener 의 수명은 **FastAPI lifespan 이 아니라 프로세스**가 소유합니다.
+lifespan 에서 listener 를 멈추면, 그 **뒤에** uvicorn 이 남기는 최종 로그와 startup 실패
+traceback 이 소비자 없는 큐에 갇혀 사라집니다. 실제 증상은 *"DB 가 꺼진 채 서버를 띄우면
+오류 원인이 한 글자도 안 나온다"* 였습니다.
+
+- lifespan 은 listener 를 **멈추지 않습니다.** 대신 종료 맨 끝에서 **쌓인 로그가 다 나갈
+  때까지 기다립니다**(멈추기가 아니라 기다리기입니다).
+- 실제 정지는 `atexit` 훅과 `SIGTERM`/`SIGBREAK` 핸들러가 합니다. `docker stop` 은
+  `atexit` 이 실행되지 않는 경로라 신호 핸들러가 따로 필요합니다.
+
+⚠️ **`app/core/resources.py` 에 listener 정지 코드를 넣지 마세요.** 왜 그런지와 각 장치가
+무엇을 막는지는 **[로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md)** 에 전부 적어 뒀습니다.
 
 ### 환경 변수 설정
 
@@ -759,6 +795,74 @@ from app.utils.logs import get_logger
 
 logger = get_logger("home")  # 이름은 로그에서 출처를 구분하는 문자열
 ```
+
+---
+
+## 기동과 종료
+
+### 실행 명령 두 가지
+
+```bash
+uv run python main.py                                        # run_server() 경유
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000  # uvicorn 표준 CLI
+```
+
+둘 다 정상 동작하며 **오류와 traceback도 동일하게 출력**됩니다. 차이는 uvicorn 자신의
+로그 포맷 하나뿐입니다.
+
+| | `python main.py` | `uvicorn main:app` |
+|---|---|---|
+| uvicorn 로그 | 프로젝트 포맷 + `[app=uvicorn]` | uvicorn 기본 (`INFO:     …`) |
+| 앱 로그 | 프로젝트 포맷 | 프로젝트 포맷 |
+| 오류·traceback | 전부 출력 | 전부 출력 |
+
+앞의 명령이 `run_server()` 를 거치며 `uvicorn.run(log_config=...)` 으로 프로젝트 설정을
+넘기기 때문입니다. 앱 `dictConfig` 에 uvicorn 로거를 심는 방법도 있지만, 그건 uvicorn 내부
+실행 순서에 기대는 것이라 코드만 봐서는 검증할 수 없어 채택하지 않았습니다.
+
+### 종료 순서
+
+자원은 **획득의 역순**으로 정리됩니다. 순서를 강제하는 코드는 없습니다 —
+중첩 컨텍스트가 곧 순서입니다.
+
+```python
+# app/core/resources.py
+async with _log_queue(), _database(app), _background_tasks():
+    ...
+# 정리: background drain → DB dispose → 로그 큐 flush
+```
+
+```
+[shutdown] 애플리케이션 요청 처리 자원 해제 시작
+[shutdown] background task 정리 완료
+[dispose_engine] Disposing 2 database engine(s)...
+[shutdown] DB engine 정리 완료
+[shutdown] 애플리케이션 요청 처리 자원 해제 완료     ← 정리가 끝까지 갔다는 확인선
+Application shutdown complete                        (uvicorn)
+Finished server process                              (uvicorn)
+[log-lifecycle] stop 완료                            ← listener 정지
+```
+
+DB 를 쓰는 주체(background task)를 먼저 멈춘 뒤에 커넥션 풀을 닫고, 로그 정리는 언제나
+**가장 마지막**입니다.
+
+| 자원 | 예산 |
+|---|---|
+| background task drain | 5초 |
+| DB engine dispose | 10초 |
+| 로그 큐 flush | 2초 |
+| **전체 상한** | **20초** |
+
+### 이 순서는 실제 프로세스로 검증됩니다
+
+`tests/integration/test_uvicorn_lifecycle.py` 가 실제 서버를 띄우고 운영과 같은 종료
+신호(Windows `CTRL_BREAK`, POSIX `SIGTERM`)를 보낸 뒤, 병합된 단일 출력에서 위 순서를
+확인합니다. startup 실패 시 traceback 이 실제로 출력되는지도 함께 봅니다.
+
+lifespan 을 직접 호출하는 단위 테스트로는 이 계열 결함이 **보이지 않습니다** — 문제가 사는
+곳이 lifespan 바깥(프로세스 종료·신호 처리·uvicorn 내부)이기 때문입니다.
+
+> 각 장치가 무엇을 막는지는 **[로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md)** 를 보세요.
 
 ---
 
@@ -1120,7 +1224,7 @@ app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 
 ### 현재 구현된 API
 
-> 아래는 `app.openapi()` 로 실측한 전량입니다 — **18 경로 / 30 오퍼레이션**.
+> 아래는 `app.openapi()` 로 실측한 전량입니다 — **23 경로 / 38 오퍼레이션**.
 > 새 라우트를 추가하면 이 표도 갱신하세요(`tests/test_route_inventory.py` 가 경로 목록을 고정합니다).
 
 #### 콘텐츠 기능 — blog · reply · sns
@@ -1167,11 +1271,28 @@ app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 | GET | `/api/v1/home/access-logs/by-user/{user_id}` | 사용자별 접속 로그 |
 | GET | `/api/v1/home/access-logs/stats` | 접속 통계 |
 
+#### 데이터 접근 참조 예제 — catalog(ORM) · reports(Raw SQL)
+
+같은 앱 안에서 두 방식을 나란히 보여주는 예제입니다. 자세한 사용 기준은
+[ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)에
+있습니다.
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET · POST | `/api/v1/catalog/products` | 상품 목록 · 생성 — **ORM Repository** |
+| GET · PATCH · DELETE | `/api/v1/catalog/products/{product_id}` | 상품 단건 · 수정 · 삭제 |
+| GET | `/api/v1/reports/sales/daily` | 일별 매출 집계 — **Raw SQL Repository** |
+| POST | `/api/v1/reports/sales/daily/snapshots` | 일별 매출 스냅샷 재적재 (Raw 쓰기 경로) |
+
 #### 그 외
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| GET | `/health` | 헬스체크 — DB 를 건드리지 않아 항상 응답 |
+| GET | `/health` | **liveness** — 프로세스 생존만 확인. 외부 연결을 검사하지 않는다 |
+| GET | `/ready` | **readiness** — writer DB 에 `SELECT 1`. 실패·지연 시 503 |
+
+> `/health` 와 `/ready` 를 구분하는 이유: `/health` 가 DB 를 검사하면 DB 가 잠깐 흔들릴 때
+> 멀쩡히 살아 있는 프로세스가 재시작됩니다. 의존 자원 준비 여부는 `/ready` 로 봅니다.
 
 ---
 

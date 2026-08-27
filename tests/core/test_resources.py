@@ -53,6 +53,10 @@ def wiring(monkeypatch):
     async def fake_dispose() -> None:
         calls.append("dispose")
 
+    async def fake_flush(*args, **kwargs) -> bool:
+        calls.append("flush")
+        return True
+
     async def fake_create(**kwargs) -> None:
         calls.append("create_tables")
         state["create_kwargs"] = kwargs
@@ -61,20 +65,13 @@ def wiring(monkeypatch):
         state["imported"] += 1
         return ["app.features.demo.models.models"]
 
-    async def fake_stop_listener() -> None:
-        calls.append("listener_stop")
-
-    def fake_start_listener() -> str:
-        calls.append("listener_start")
-        return "listener"
-
     monkeypatch.setattr(resources, "dispose_engine", fake_dispose)
     monkeypatch.setattr(resources, "create_db_tables", fake_create)
     monkeypatch.setattr(resources, "import_all_models", fake_import)
     monkeypatch.setattr(resources, "access_log_tasks", _FakeRunner(calls))
-    # 실제 listener 를 멈추면 이후 테스트의 로그 소비자가 사라진다.
-    monkeypatch.setattr(resources, "stop_log_listener_async", fake_stop_listener)
-    monkeypatch.setattr(resources, "start_log_listener", fake_start_listener)
+    # listener 를 **멈추는** 것은 여전히 lifespan 소유가 아니다 (ADR-018).
+    # 다만 쌓인 로그가 다 나가기를 **기다리는** 것은 lifespan 의 마지막 일이다 (ADR-023).
+    monkeypatch.setattr(resources, "flush_log_queue", fake_flush)
     return calls, state
 
 
@@ -149,10 +146,11 @@ async def test_model_discovery_runs_once_per_startup(monkeypatch, wiring):
 # =============================================================================
 # AR-008 — 종료 순서와 실패 안전 cleanup
 # =============================================================================
-async def test_shutdown_order_is_drain_dispose_then_listener(monkeypatch, wiring):
-    """종료 순서는 background drain → DB dispose → logging listener stop 이다.
+async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
+    """lifespan 종료 순서는 background drain → DB dispose 다.
 
-    listener 를 마지막에 멈춰야 앞 두 단계가 남기는 종료 로그가 출력된다.
+    DB 를 쓰는 주체를 먼저 멈춰야 커넥션 풀을 닫는 것이 안전하다. logging listener
+    stop 은 이 순서에 **없다** — 소유자가 프로세스로 옮겨갔다(ADR-018).
     """
     calls, _ = wiring
     _use_tables(monkeypatch, 1)
@@ -162,12 +160,33 @@ async def test_shutdown_order_is_drain_dispose_then_listener(monkeypatch, wiring
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls == [
-        "listener_start",
-        "drain",
-        "dispose",
-        "listener_stop",
-    ], f"종료 순서가 어긋났다: {calls}"
+    assert calls == ["drain", "dispose", "flush"], f"종료 순서가 어긋났다: {calls}"
+
+
+async def test_process_log_listener_survives_lifespan_shutdown(monkeypatch, wiring):
+    """lifespan 이 끝나도 프로세스 listener 는 살아 있다 (ADR-018 / F-029).
+
+    listener 를 lifespan 이 멈추면, 그 **뒤에** uvicorn 이 남기는 최종 로그와
+    startup 실패 traceback 이 큐에 갇혀 사라진다. 실측 증상은 "DB 가 꺼진 채
+    ``python main.py`` 를 실행하면 오류 원인이 한 글자도 출력되지 않는다" 였다.
+
+    전역 handle 이 그대로인지를 본다 — 누군가 lifespan 에 listener 정리를 다시
+    넣으면 이 값이 ``None`` 이 되어 여기서 잡힌다.
+    """
+    from app.utils.logs import setup as logs_setup
+
+    sentinel = object()
+    monkeypatch.setattr(logs_setup, "_listener", sentinel)
+    _use_tables(monkeypatch, 1)
+    _set_debug(monkeypatch, False)
+
+    app = FastAPI()
+    async with resources.manage_application_resources(app):
+        pass
+
+    assert (
+        logs_setup._listener is sentinel
+    ), "lifespan 종료 뒤 프로세스 listener 가 사라졌다 — 이후 로그가 유실된다 (F-029)"
 
 
 async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
@@ -184,7 +203,7 @@ async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
     assert calls[-3:] == [
         "drain",
         "dispose",
-        "listener_stop",
+        "flush",
     ], "drain 실패 후 뒤따르는 cleanup 이 생략됐다 (AR-008 위반)"
 
 
@@ -233,7 +252,7 @@ async def test_lifespan_reentry_leaves_no_leak(monkeypatch, wiring):
             pass
         assert app.state.resources is None
 
-    assert calls == ["listener_start", "drain", "dispose", "listener_stop"] * 2
+    assert calls == ["drain", "dispose", "flush"] * 2
 
 
 async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
@@ -257,8 +276,12 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
     assert calls[-3:] == [
         "drain",
         "dispose",
-        "listener_stop",
+        "flush",
     ], "timeout 후 다음 cleanup 이 실행되지 않았다"
+    # Definition of Done 은 "정상·startup 실패·timeout·취소 **전부**" 에서 참조가
+    # 비워지기를 요구한다. 나머지 셋에는 단언이 있었는데 timeout 만 없었다 — 동작은
+    # 맞았지만 근거가 없었다(F-025 계열: "근거가 존재한 적 없는 칸").
+    assert app.state.resources is None, "timeout 경로에서 닫힌 자원 참조가 남았다 (AR-005 위반)"
 
 
 async def test_drain_gets_headroom_to_finish_cancellation(monkeypatch, wiring):
@@ -325,15 +348,80 @@ async def test_cancelled_task_cleanup_survives_the_outer_timeout(monkeypatch, wi
     assert runner.active == 0
 
 
+async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wiring):
+    """관리자 **자신**이 취소돼도 남은 cleanup 을 전부 시도한다 (F-028 / REQ-010).
+
+    바로 위 ``test_cancelled_task_cleanup_survives_the_outer_timeout`` 과 헷갈리면
+    안 된다. 그것은 **자식 background 태스크**가 취소되는 경우이고, 이것은 lifespan
+    관리자를 들고 있는 **태스크 자체**가 밖에서 취소되는 경우다. 전자는 이미 통과하고
+    있었고 후자는 아무도 보지 않았다 — Round 11 이 13/13 그린으로 수렴을 선언한 채
+    F-028 을 놓친 이유가 이 빈칸이다.
+
+    ``CancelledError`` 는 ``Exception`` 이 아니라 ``BaseException`` 이라
+    ``_run_cleanup()`` 의 ``except Exception`` 그물을 그대로 통과한다. 따라서 첫 cleanup
+    에서 취소를 맞으면 뒤따르는 dispose·listener stop 이 통째로 건너뛰어지고,
+    ``app.state.resources`` 는 닫힌 자원을 계속 가리킨다.
+
+    계약은 두 가지다 — **정리를 끝까지 시도할 것**, 그리고 그 뒤에 **취소를 삼키지 말고
+    호출자에게 다시 전파할 것**. 취소를 억제하면 종료 절차가 조용히 멈춘다.
+    """
+    calls, _ = wiring
+    entered = asyncio.Event()
+
+    class _BlockingRunner:
+        """drain 에서 멈춰 서서, 그 지점에 바깥 취소가 도달하게 만든다."""
+
+        async def drain(self, timeout: float | None = None) -> None:
+            calls.append("drain")
+            entered.set()
+            await asyncio.Event().wait()  # 여기서 취소를 맞는다
+
+    monkeypatch.setattr(resources, "access_log_tasks", _BlockingRunner())
+    _use_tables(monkeypatch, 1)
+    _set_debug(monkeypatch, False)
+
+    app = FastAPI()
+
+    async def run_lifespan() -> None:
+        # 본문은 즉시 끝낸다 — 목적은 종료 절차(finally)에 진입시키는 것이다.
+        # 본문에서 대기하면 shutdown 에 도달하지 못해 취소 지점이 drain 이 아니게 된다.
+        async with resources.manage_application_resources(app):
+            pass
+
+    task = asyncio.create_task(run_lifespan())
+    await asyncio.wait_for(entered.wait(), timeout=5)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # listener stop 은 이 순서에 없다 — 소유자가 프로세스다(ADR-018). 생존 여부는
+    # test_process_log_listener_survives_lifespan_shutdown 이 본다.
+    assert calls == [
+        "drain",
+        "dispose",
+        "flush",
+    ], f"관리자가 취소되자 남은 cleanup 이 건너뛰어졌다 (AR-008/F-028 위반): {calls}"
+    assert (
+        app.state.resources is None
+    ), "취소 경로에서 app.state.resources 가 닫힌 자원을 계속 가리킨다 (AR-005 위반)"
+
+
 def test_shutdown_timeout_budget_fits_total():
     """자원별 timeout 합이 전체 shutdown 예산을 넘지 않는다 (확정 정책 6)."""
+    # listener 를 **멈추는** 시간은 lifespan 예산에 없다 — 프로세스 종료 훅의 몫이다
+    # (ADR-018). 대신 쌓인 로그가 다 나가기를 **기다리는** 시간은 lifespan 의 마지막
+    # 단계이므로 합계에 든다 (ADR-023).
     per_resource = (
         resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS
         + resources.DB_DISPOSE_TIMEOUT_SECONDS
-        + resources.LOGGING_DRAIN_TIMEOUT_SECONDS
+        + resources.LOG_FLUSH_TIMEOUT_SECONDS
     )
     assert resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS == 5.0
     assert resources.DB_DISPOSE_TIMEOUT_SECONDS == 10.0
-    assert resources.LOGGING_DRAIN_TIMEOUT_SECONDS == 5.0
+    assert resources.LOG_FLUSH_TIMEOUT_SECONDS == 2.0
     assert resources.SHUTDOWN_TOTAL_TIMEOUT_SECONDS == 20.0
+    assert not hasattr(
+        resources, "LOGGING_DRAIN_TIMEOUT_SECONDS"
+    ), "lifespan 예산에 logging listener **정지**가 다시 들어왔다 (ADR-018 위반)"
     assert per_resource <= resources.SHUTDOWN_TOTAL_TIMEOUT_SECONDS

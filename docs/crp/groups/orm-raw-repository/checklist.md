@@ -139,18 +139,271 @@
 - [x] 게이트 전건 통과 — 검사 **11종**, **391 tests**, MySQL 통합 8건 실제 실행
 - [x] 요구사항 회귀 0 — C-1~C-9 위반 없음. **C-7 확인**: 3306 공유 인스턴스 무접촉
 
+## Round 11 — 2026-08-25 · REQ-007 (lifespan 종료 조립 리팩터)
+- [x] 이번 요청을 design-baseline §2 에 기록 (REQ-007) + ADR-016 확정
+- [x] 상위 명세 대조 — **AR-008 수용 기준이 `try/finally` 를 첫 번째 허용 형태로 명시**하므로
+      요구 위반이 아님을 확인. 이탈은 development-plan §9.5 · workflow-guide §11 의 *구현 예시* 뿐
+- [x] `manage_application_resources()` 를 평문 `try/finally` 로 전환 — 종료 순서가 코드 순서와
+      일치하게 되어 `# 3번째로 실행` 주석 3줄이 사라짐
+- [x] 잃는 보장이 없음을 확인 — 실패 격리는 ExitStack 이 아니라 `_run_cleanup()` 이 제공하고,
+      콜백 3개가 획득 **이전에** 등록돼 있어 부분 정리는 애초에 작동한 적이 없다
+- [x] (F-026 LOW) `"[shutdown] ... 해제 완료"` 로그가 **한 번도 출력된 적 없음** — listener 를
+      멈춘 뒤에 찍고 있었다. 마지막 로그를 listener stop **앞**으로 이동
+- [x] 문서 드리프트 정리 — `AsyncExitStack` import 제거, 모듈 독스트링·`ARCHITECTURE.md` §4.2 ·
+      `workflow-guide.md` §11 을 실제 구조로 정정 (F-018 재발 방지)
+- [x] `tests/core/test_resources.py` **13건 전건 통과** — 종료 순서·startup 실패 cleanup·
+      재진입 누수·timeout 예산 전부 그린 (테스트는 **수정하지 않았다** — 계약이 안 바뀌었다는 증거)
+- [x] 실제 `main.app` 기동→종료 **실측** — 리팩터 전후로 drain → dispose(`ALL DONE`) → listener stop
+      순서 동일, `app.state.resources = None`. F-026 은 이 대조로 부재→출현을 눈으로 확인
+- [x] 게이트 전건 통과 — 검사 **11종**, **391 tests**, MySQL 통합 8건 실제 실행
+      (첫 실행은 `383 passed, 8 skipped` 였다 — 컨테이너를 올리고 재실행해 skipped 0 확인)
+- [x] (F-027 LOW) 이번 라운드의 **문서 편집 자체가 불완전**했다 — ①스크립트 앵커가 여러 줄 bullet 의
+      첫 줄만 잡아 절차 관찰 문장이 두 동강 남 ②실측 전 하한값이 ledger·checklist 에 잔류해 문서 간 모순.
+      커밋 전 전수 점검으로 발견·복구. 게이트는 이 둘 중 어느 것도 잡지 않는다
+- [x] 편집 파일 10종 **전수 무결성 점검** — UTF-8 디코딩·U+FFFD 0건·끝줄 개행·`git diff` 삽입 지점 육안 확인
+- [x] 요구사항 회귀 0 — C-1~C-9 위반 없음. **C-6 확인**: shutdown 에서 table drop 없음.
+      공개 API 경로·응답 스키마 불변(INV-11 그린)
+
+---
+
+## Round 12 — 2026-08-27 · REQ-010 (자원 수명주기 신뢰성) — **진행 중**
+
+트리거: 전 라운드 산출물에 대한 외부 검토 계획서(v1)를 받고 그 타당성 검수를 요청받았다.
+검수 기준은 **코드의 가용성** — "일반적으로 사용하는 방법" 으로 설계·구현할 것, 난해한
+방식은 채택하지 말 것, 작업량은 제약이 아닐 것.
+
+- [x] v1 계획서 결함 진단 7건 **전부 실물 재현** — 코드 읽기가 아니라 실행으로 확인
+- [x] v1 처방 중 **3건이 표준 라이브러리 재구현**임을 확인 — 중첩 `async with` /
+      `asyncio.gather` / `enqueue_sentinel` 오버라이드로 대체 가능
+- [x] v1 이 확인하지 않은 심각도 근거 실측 — uvicorn 0.34.3 은 lifespan task 를 취소하지
+      않는다(F-028 등급 조정), `Config.__init__` 이 앱 import 보다 먼저 로깅을 구성한다
+      (Wave 6 대안 도출)
+- [x] `dictConfig` 네이티브 queue/listener 전환 **실현 가능성 10개 항목 실측** — 추정으로
+      계획에 넣지 않기 위해
+- [x] v1 에 없던 결함 2건 발견 — F-035(독스트링 자기모순) · F-036(가드 테스트가 없는
+      charter 조항을 가리킴)
+- [x] v2 계획서 작성 — 9 Wave / 10 Task, 각 Task 에 **「깨지는 기존 테스트」** 명시
+- [x] **Wave 0** — REQ-010 선언, ADR-017·ADR-018·ADR-021 확정, ADR-020 미결 등록,
+      ADR-019 건너뜀 사유 기록, F-028 ~ F-036 을 ledger 에 Open 으로 등록
+- [x] Wave 0 정합성 — ledger Open Fix 수치와 이 체크판의 수렴 선언을 **함께** 갱신
+      (게이트 검사 11 은 `수렴선언 AND 열린칸` 일 때만 실패하므로 이 모순을 잡지 못한다)
+- [x] **Wave 1** — `test_manager_cancellation_still_runs_remaining_cleanup` 추가,
+      **red 확인**: `calls == ['listener_start', 'drain']` — `dispose`·`listener_stop` 이
+      실행되지 않고 `first extra item: 'dispose'` 로 누락이 드러난다. production 코드
+      무변경. 나머지 13건은 그대로 통과(13 passed / 1 failed).
+      부수 확인: `pytest.raises(asyncio.CancelledError)` 는 **통과** — 취소 재전파는 이미
+      지켜지고 있고, 깨진 것은 "정리를 끝까지 시도한다" 쪽이다.
+
+> **Wave 1~7 동안 게이트 검사 1(pytest)은 의도적으로 빨갛다.** 실패 테스트를 먼저 쓰는
+> 것이 Wave 1 의 인수 조건이기 때문이다. Wave 2 에서 green 으로 바뀐다. 이 기간의 빨간
+> 게이트를 고장으로 읽지 말 것.
+
+- [x] **Wave 2** — 종료 조립을 중첩 `async with` 로 전환 (ADR-017 / F-028 · F-035).
+      **기존 13건을 한 줄도 고치지 않고 통과** — 계약 보존의 증거다. 새 회귀 테스트가
+      red→green (14 passed).
+      실물 재현으로 대조: 버그를 드러냈던 그 스크립트가
+      `['listener_start','prepare','drain']` → `[..., 'dispose', 'stop_listener']`,
+      `state_is_none` False → **True**, 취소는 그대로 재전파.
+      전체 **392 passed · skipped 0**(MySQL 8.4 기동 후 실측) · 게이트 **11종 전건 통과**.
+      F-035: 모듈 독스트링 7행의 `역순 등록으로 강제한다` 를 제거하고 중첩 구조 설명으로
+      교체 — 13행과의 자기모순 해소.
+- [x] **Wave 3** — logging listener 소유권을 프로세스로 (ADR-018 / F-029 · F-031).
+      red 3건 먼저 확인 후 구현. **실물 대조가 핵심 증거**: DB 가 꺼진 상태에서
+      `python main.py` 출력이 **14줄·오류 0건 → 198줄**로 바뀌고
+      `Application startup failed` · SQLAlchemy traceback 45줄이 `[app=uvicorn]` 라벨로
+      나온다. 순서도 맞다 — uvicorn 최종 로그 **뒤에** `[log-lifecycle] stop` 이 온다.
+      전체 **395 passed · skipped 0** · 게이트 **11종 전건 통과**.
+- [x] Wave 3 부산물 — **F-037 신규 발견**: `atexit` + `QueueListener.stop()` 의 무한 join.
+      계획서 §4.4 가 "daemon 이라 종료를 막지 않는다" 를 근거로 범위 밖에 뒀는데, 그 근거가
+      **틀렸다**(atexit 은 daemon 정리보다 먼저 돈다). 작업 중 실제로 2분 멈춤을 관측했고
+      계획서 §4.4 를 정정했다. Wave 5 에서 닫는다.
+- [x] Wave 3 사전 예측 실패 1건 — "깨지는 기존 테스트" 4건을 적었으나 실제로는 **5건**이었다
+      (`test_slow_cleanup_is_bounded_by_timeout` 누락). 사전 목록은 grep 이 아니라 추정으로
+      만들었기 때문이다. 다음 Wave 부터는 기대값 문자열을 실제로 검색해 목록을 만든다.
+- [x] **Wave 4** — engine `gather` · background task 예외 회수 (F-032 · F-033).
+      red 5건 먼저 확인. 실패 내용이 결함을 그대로 드러냈다 — `dispose_engine()` 에서
+      `RuntimeError: writer dispose 실패` 가 **밖으로 전파**됐고, 실패 태스크 기록은
+      `[]` 인데 asyncio 가 `future: <Task finished ... exception=RuntimeError(...)>` 를
+      직접 찍고 있었다.
+      신규 `tests/core/test_db_engine_disposal.py` 6건 + background 3건 = **404 passed**,
+      게이트 **11종 전건 통과**.
+      계약 보존: `dispose_engine()` 시그니처를 바꾸지 않았고(Celery 호출부 무변경),
+      그것을 지키는 가드 테스트를 함께 넣었다.
+      Wave 3 교훈 적용: 깨질 기존 테스트 목록을 **grep 으로** 확인했고 실제로 0건이었다
+      (기존 테스트는 전부 `dispose_engine` 을 monkeypatch 하고 있었다).
+- [x] **Wave 5** — `dictConfig` 네이티브 전환 + `TimeoutSentinelListener` (F-030 · **F-037**).
+      red 5건 먼저 확인. 세 가지를 함께 처리했다 — ①`enqueue_sentinel()` 오버라이드
+      (표준 라이브러리가 독스트링에서 지정한 확장 지점) ②`stop()` 의 join 에 예산
+      (F-037, Wave 3 에서 실측한 무한 대기를 닫는다) ③queue/listener 구성을
+      `class`/`queue`/`listener`/`handlers` 선언으로 이관(ADR-021).
+      `setup.py` 에서 손수 하던 `_listener_targets` 조회와 listener 생성이 사라졌고,
+      죽은 팩토리 `build_queue_handler()` 도 제거했다.
+      실물 확인: `handler.listener` 가 `TimeoutSentinelListener` 이고 handler 와 queue 를
+      공유하며 `atexit` 경로가 정상 종료(exit 0)한다.
+      **409 passed · skipped 0** · 게이트 **11종 전건 통과**.
+- [x] Wave 5 — Wave 3 교훈 적용 결과: 깨질 기존 테스트를 grep 으로 미리 확정했고
+      (`test_root_uses_queue_handler_only` 의 `queue_handler["()"]` 단 1건),
+      **예측이 정확히 맞았다.** 추정으로 만들었던 Wave 3 때와 대조된다.
+- [x] Wave 5 — `restart_log_listener()`(Celery prefork 경로)에 테스트가 **하나도 없었다.**
+      dictConfig 가 만든 listener 를 재사용하게 되면서 fork 후 죽은 스레드 참조를 지워야
+      하는데, 검증 없이는 조용히 깨질 자리였다. 회귀 테스트를 함께 추가했다.
+- [x] **Wave 6** — uvicorn 로거 연결 대안 확정 후 구현 (**ADR-020** · F-036).
+      **원안(대안 A 1순위)을 뒤집어 대안 B를 채택했다.** 뒤집은 것은 실측이다 —
+      Wave 3(ADR-018) 이후 두 실행 경로를 같은 startup 실패로 기동해 대조하니
+      `python main.py` 197줄 / `uvicorn main:app` 196줄, **양쪽 다 traceback 2건 ·
+      `Application startup failed` 1건**으로 정확성이 같았다. A를 살리던 근거
+      *"CLI 경로에서 오류가 안 보인다"* 가 Wave 3 으로 이미 사라졌고, 남은 차이는
+      로그 **포맷** 하나뿐이었다.
+      기준은 *"중급 개발자가 리뷰하고 이어서 작업할 수 있는가"* 다. 대안 A 는 우리
+      `configure_logging()` 이 uvicorn 것보다 **나중에 적용된다**는 uvicorn 내부 import
+      순서에 기대므로 우리 저장소 안에서 검증할 수 없다. 정확성 이득 0에 그 결합을
+      새로 들일 이유가 없다고 판단했다.
+      채택한 B는 uvicorn 이 **문서화한 `log_config` 파라미터**이고 이미 `main.py` 가
+      쓰던 방식이라, 실제 작업은 `__main__` 블록에 갇혀 있던 코드를 `run_server()` 로
+      꺼내는 것이었다(Wave 7 이 정상 앱과 실패 앱을 같은 경로로 띄우기 위한 전제조건).
+- [x] Wave 6 — 부수 효과: 대안 A 를 기각하면서 **ADR 카브아웃도 가드 테스트 변경도
+      필요 없어졌다.** 원안은 `test_dictconfig_has_no_per_app_loggers` 의 허용 목록을
+      뚫을 예정이었으나, 앱 `dictConfig` 에 `loggers` 키를 만들지 않으므로 **무변경으로
+      통과**한다.
+- [x] Wave 6 — F-036 정정: 가드 테스트가 *"charter §2-4 를 개정하라"* 고 지시하는데 §2-4 에
+      그 비목표가 **없었고**, 메시지는 근거 문서가 없는 유령 `ADR-019` 를 인용했다.
+      지시를 따르려는 사람이 두 번 막히는 자리다. charter §2-4 에 조항을 명문화하고
+      메시지가 그 조항을 가리키게 했다.
+- [x] Wave 6 — 깨질 기존 테스트 **0건 예측 → 0건 적중.** grep 으로 `uvicorn.run`·
+      `run_server` 참조 테스트가 없음을 먼저 확인했다(Wave 3 교훈 적용 3회차).
+- [x] Wave 6 — 실물 확인에서 **F-038 을 새로 발견**했다. 두 실행 경로를 실제로 띄워
+      CTRL_BREAK_EVENT 로 종료하니 **양쪽 다** `[log-lifecycle] stop 완료` 가 나오지 않고
+      꼬리 로그가 잘렸다(exit=3). 추측하지 않고 uvicorn 소스를 확인한 결과
+      `capture_signals()` 가 정상 종료 후 원래 핸들러(`SIG_DFL`)를 복구하고 신호를 **다시
+      올려** 프로세스가 그 자리에서 죽는다 — `atexit` 훅이 돌지 않는다. 최소 재현
+      스크립트로 `ATEXIT_RAN` 미출력·exit=3 을 직접 확인했다.
+      **ADR-018 이 신호 종료 경로를 덮지 못한다는 뜻이고, Wave 7 의 인수 조건 하나를
+      현재 설계로는 충족할 수 없다.** Wave 7 착수 전에 처리한다.
+- [x] **F-038 선행 처리** — 신호 종료 경로에서 listener 정지 (**ADR-022**).
+      red 먼저 확인했고, 실패 출력이 **완전히 비어 있었다**(`assert '…stop 완료' in ''`) —
+      꼬리 로그만이 아니라 자식 프로세스 출력 전체가 사라지는 수준이었다.
+      설계 전에 **신호별로 실측**해 대상을 좁혔다: `SIGINT` 은 기본 핸들러가
+      `KeyboardInterrupt` 를 올려 이미 atexit 이 돌고(exit 0), `SIGTERM`·`SIGBREAK` 만
+      `SIG_DFL` 이라 건너뛴다(exit 3). `SIGINT` 을 가로챘다면 pytest·REPL·디버거의
+      `KeyboardInterrupt` 기대가 조용히 달라졌을 것이다 — **측정하지 않았으면 셋 다
+      잡았을 자리다.**
+      핸들러는 정리 후 `SIG_DFL` 로 되돌리고 같은 신호를 다시 올린다(삼키지 않는다 —
+      삼키면 `docker stop` 이 SIGKILL 까지 기다린다).
+      실물 대조(`python main.py`): **20줄 → 31줄**, `자원 해제 완료`·`stop 완료` 각 1건.
+- [x] F-038 — 곁다리로 죽은 전역 `_listener_targets` 를 지웠다(ADR-021 이관 후 남은 잔여).
+- [x] **F-039 처리 — 사용자 결정으로 대안 A(수정) 채택** (**ADR-023**).
+      lifespan 종료 **가장 마지막**에 큐를 flush 한다. **멈추기가 아니라 기다리기**라
+      ADR-018("lifespan 은 listener 를 멈추지 않는다")과 충돌하지 않는다 — 그 문장은
+      그대로 살아 있고 "다 나갈 때까지 기다리기" 가 추가됐을 뿐이다.
+      구현은 stdlib 계약을 그대로 쓴다: `QueueListener._monitor` 가 record 마다
+      `task_done()` 을 부르므로 `unfinished_tasks == 0` 이 곧 "전부 썼다" 다.
+      `Queue.join()` 과 같은 조건을 기다리되 **예산을 준다** — `join()` 에는 timeout 이
+      없어 그대로 썼다면 F-037 과 똑같은 무한 대기를 다시 만들었을 것이다.
+      red 먼저 확인(CLI 경로에서 `자원 해제 완료` 없음) → 구현 → 변이(flush 무력화)로
+      실효성 확인.
+- [x] **깨질 테스트 예측이 또 틀렸다 (4건 예측 → 6건 실제).** `calls == [` 형태만 grep 해서
+      `calls[-2:] == [` 형태 2건을 놓쳤다. Wave 3~6 은 3회 연속 적중했는데, **grep 패턴이
+      단언의 한 형태만 덮는다는 점**을 확인하지 않은 것이 원인이다.
+      다음부터는 대상 심볼(`calls`)로 grep 한 뒤 형태별로 세어 본다.
+- [x] **작업 중 실수 — `git checkout -- <file>` 로 미커밋 작업을 날렸다.** 변이 검증 후
+      원상복구하려고 썼는데, `git checkout` 은 **HEAD 기준**이라 그 파일의 미커밋 변경까지
+      전부 되돌린다. `app/core/resources.py` 의 ADR-023 구현이 통째로 사라져 재작성했다.
+      다른 파일은 무사했다(그 파일만 지정했으므로). **변이 검증은 임시 사본이나
+      `git stash` 로 하거나, 최소한 변이 전에 커밋해 둔다.**
+- [x] **Wave 7** — 실제 uvicorn subprocess 통합 테스트 2건
+      (`tests/integration/test_uvicorn_lifecycle.py`, `uvicorn_startup_failure_app.py`).
+      정상 종료는 **순서**를 본다 — `자원 해제 완료` → `Application shutdown complete`
+      → `[log-lifecycle] stop 완료`. 이 순서를 추측으로 쓰지 않고 실물 출력을 먼저 떠서
+      확정했다. Windows `CREATE_NEW_PROCESS_GROUP` + `CTRL_BREAK_EVENT` / POSIX `SIGTERM`
+      분기는 `ServerProcess` 안에 가뒀고, `stderr=STDOUT` 단일 pipe 로 순서를 보존한다.
+      강제 종료는 fallback 전용이며 `forced` 플래그로 **정상 종료와 구분**한다.
+      MySQL 불필요 — `DEBUG=false` 면 테이블 자동 생성을 건너뛰어 접속 없이 도달한다.
+- [x] **Wave 7 — 변이 검증(mutation testing)으로 테스트의 실효성을 확인했다.**
+      red 없이 통과한 신규 테스트는 아직 아무것도 증명하지 않는다. 결함을 하나씩 되살려
+      실제로 빨개지는지 봤다.
+      ①`_install_signal_drain()` 제거(F-038 재현) → 정상 종료 테스트 red.
+      ②자원 정리 끝에 `stop_log_listener()` 주입(**F-029 재현**) → **두 테스트 모두 red**,
+        출력이 옛 증상 그대로.
+      ③`log_config=` 제거(ADR-020 배선 제거) → 두 테스트 모두 red.
+- [x] **Wave 7 — 변이 검증이 실제로 결함을 잡아냈다.** 실패 앱의 첫 판(계획서 문안대로
+      lifespan 진입 즉시 `raise`)은 우리 `manage_application_resources()` 를 **아예 타지
+      않아**, F-029 를 되살려도 통과했다. F-029 는 *정리 과정이 listener 를 멈춘 탓에 그
+      뒤 traceback 이 사라지는* 결함인데, 정리 과정을 안 거치니 재현될 수가 없었다.
+      실패 지점을 자원 관리자 **안쪽**으로 옮겨 고쳤다. 변이 검증을 건너뛰었다면
+      "초록인데 아무것도 못 잡는" 테스트를 그대로 커밋했을 것이다.
+- [ ] Wave 8 — 문서·원장 수렴 + `--mysql-required` (F-034)
+
 ---
 
 ## 종결 상태
 
-- **미닫힘 항목 0개** — 모든 라운드가 GATE 5 Done.
-- **ledger Open Fix 0건** (F-001 ~ F-025 — F-023 만 Accept-out-of-scope, 나머지 전부 Fixed).
-- 마지막 게이트 실행: 전건 통과(**검사 11종**) · **391 tests** · MySQL 통합 **8건** 실제 실행 — Round 10 (2026-08-20).
-- **charter §3 인수기준 12칸 전부 닫힘** — 칸마다 근거를 명시했고, 게이트 검사 11 이 매번 확인한다.
+> **2026-08-27 — 이 그룹은 다시 열렸다.** Round 11 의 수렴 선언은 F-028(취소 시 정리 중단)과
+> F-034(검증 문서가 검사하지 않은 것을 보장한 것처럼 기술)로 **반증됐다.** 아래 "종결" 서술은
+> Round 11 시점의 기록이며, 현재 상태가 아니다.
+
+- **Round 12 진행 중** — Wave 0 완료(문서 등록만), Wave 1~8 미착수.
+- **ledger Open Fix 9건** (F-028 ~ F-036). F-001 ~ F-027 은 종결(F-023 만 Accept-out-of-scope).
+- 마지막 게이트 전건 통과: **검사 11종** · **391 tests** · MySQL 통합 **8건** 실제 실행 —
+  Round 11 (2026-08-25). **이 초록은 F-028 ~ F-036 을 하나도 잡지 못했다** — 결함이
+  기존 테스트가 보지 않는 축(취소 · 프로세스 종료 · 실제 서버 기동)에 있었기 때문이다.
+- **charter §3 인수기준 12칸은 그대로 닫힘.** Round 12 의 인수 기준은 그 12칸이 아니라
+  v2 계획서 §11 Definition of Done 이며, 그것을 다 채운 뒤에만 수렴을 다시 선언한다.
 
 **"완료"의 범위는 여기까지다.** 이 체크판이 닫혔다는 것은 *계약으로 정한 검사들이 전부
 그린*이라는 뜻이지, 결함이 없다는 뜻이 아니다. 검사하지 않은 범위(부하·성능, 복제 실환경,
 Celery 워커 실행, Scalar UI 실렌더링)는 `residual-risk.md` 하단에 적혀 있다.
 
-향후 이 그룹에 새 요청이 오면 Round 11 을 이 아래에 추가한다. `residual-risk.md` 의
+향후 이 그룹에 새 요청이 오면 Round 13 을 이 아래에 추가한다. `residual-risk.md` 의
 R-001~R-006 을 새 finding 으로 올리지 않는다 — 그것은 결함이 아니라 **계약 변경 제안**이다.
+
+### Wave 8 — 문서·게이트 수렴 (2026-08-27)
+
+- [x] **F-028~F-039 12건을 근거와 함께 종결.** 각 결함이 어떤 코드·테스트로 닫혔는지는
+      `verification-report.md` §6-2 표에 1:1 로 적었다. 근거 없는 close 는 하지 않았다
+      (F-021 이 그 실패였다 — "지웠다" 는 기록만 있고 실제로는 남아 있었다).
+- [x] **`refactoring-report.md` 의 "잃음 — 없음" 정정.** ADR-016 은 실제로 **취소 안전성을
+      잃었다.** 실측으로 대조했다 — 정리 1단계에서 `CancelledError` 가 나면
+      `AsyncExitStack`(a)와 중첩 `async with`(c)는 2단계에 도달하지만 평문 `try/finally`
+      연속 `await`(b)는 **도달하지 못한다.**
+      그리고 **"없음" 이라고 쓸 수 있었던 이유가 더 중요하다** — 취소를 시험하는 테스트가
+      없었다. 없는 것을 근거로 "잃은 것 없음" 이라고 적었다.
+- [x] **`shutdown-sequence-analysis.md` 의 "의미가 동일" 정정.** 일반 예외에서만 참이었다.
+      `_run_cleanup()` 은 `except Exception` 인데 `CancelledError` 는 `BaseException` 이라
+      그물을 통과한다 — 취소에서는 아무것도 보장하지 못했다.
+- [x] **`workflow-guide.md` §11 정정.** 예시를 중첩 `async with` 로 교체하고,
+      *"wrapper 가 예외를 삼키므로 앞 단계가 실패해도 뒤 단계가 건너뛰어지지 않는다"* 는
+      **틀린 보장 문구**를 제거했다. 취소에서 뒤 단계를 지키는 것은 wrapper 가 아니라
+      중첩 컨텍스트 구조 자체다.
+- [x] **`verification-report.md`** — Round 11 의 `CONVERGED` 를 명시적으로 철회하고
+      §1~§5 는 **그대로 보존**했다(무엇을 놓쳤는지가 그 자체로 근거다).
+      §5 에 **취소 시나리오가 목록에 적히지도 않았다**는 사실을 추가했다 —
+      검사하지 않은 것을 목록에서 빠뜨리면 그 목록 자체가 안전하다는 착각을 만든다.
+      §6 에 Round 12 결과를 **수치마다 그 값을 낸 명령과 함께** 실었다.
+- [x] **`ARCHITECTURE.md` §4.2 갱신** — ADR-017 중첩 구조, 평평한 `finally` 로 되돌리지
+      말라는 경고, 리스너 수명(ADR-018·022·023), 변경 이력.
+- [x] **루트 `conftest.py` 에 `--mysql-required` 추가.** `pytest_addoption` 은 루트
+      conftest 에서만 인식된다(초기 인자 파싱 단계에 로드되기 때문). 실측 확인: MySQL 을
+      내린 상태에서 `pytest -m mysql --mysql-required` 가 **8 errors** 로 끝난다.
+- [x] **게이트에 검사 신설** — `check_process_level_tests_collected`. 취소·프로세스 종료
+      테스트 5건의 node id 를 `--collect-only` 로 수집해 **삭제·개명·import 실패**를 잡는다.
+      실효성 확인: 없는 이름을 넣으면 즉시 FAIL 한다. 검사 **11종 → 12종**.
+- [x] **금칙어 검사는 추가하지 않았다** (계획서 §4.7). 대신 검증 문서의 수치 주장마다
+      명령을 붙이는 것을 인수 조건으로 삼았다.
+- [x] **DoD 대조에서 2건이 걸렸고 둘 다 정정했다.**
+      ①`app.state.resources is None` 단언이 정상·startup 실패·취소에는 있는데 **timeout 에만
+      없었다** — 동작은 맞았지만 근거가 없어 단언을 채웠다(F-025 계열).
+      ②DoD 8번 *"양쪽에서 uvicorn 로그가 앱과 같은 경로로 나간다"* 는 **ADR-020 이 기각한
+      대안 A 를 전제로** 쓰인 문장이었다. 확정된 계약으로 문장을 고쳤다 —
+      **결정이 바뀌었으면 DoD 도 바꾼다. 기각한 대안을 전제로 한 칸에 체크하지 않는다.**
+- [x] 게이트 전건 통과 — 검사 **12종**, **417 tests · skipped 0**,
+      MySQL 통합 8건 `--mysql-required` 로 실제 실행.
+
+### Round 12 종결 판정
+
+- [x] **미닫힘 항목 0개** — charter §3 인수기준 전 칸이 근거와 함께 닫혔고,
+      ledger 의 Open Fix 가 0건이다. 계획서 §11 Definition of Done 12칸도 전부 닫혔다.
+- [x] **CONVERGED (2026-08-27).** 단, 이 선언의 뜻은 *"더 이상 결함이 없다"* 가 아니라
+      **"이번에 연 축들에서 나온 12건을 닫았고, 다시 닫히지 않도록 기계 검사를 걸었다"** 다.
+      검사하지 않은 범위는 `verification-report.md` §6-4 와 `residual-risk.md` 에 있다.
+      Round 11 도 391 passed 로 초록이었지만 이 12건을 하나도 잡지 못했다는 사실이
+      이 단서의 근거다.

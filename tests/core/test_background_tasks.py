@@ -7,6 +7,7 @@
 
 import asyncio
 
+from app.core.middlewares import background_tasks as bg
 from app.core.middlewares.background_tasks import BackgroundTaskRunner
 
 
@@ -127,3 +128,74 @@ async def test_drain_is_safe_when_called_twice() -> None:
     await runner.drain(timeout=1.0)
 
     assert runner.active == 0
+
+
+# =============================================================================
+# F-033 — 완료된 태스크의 예외 회수
+#
+# done callback 이 추적 집합에서 빼기만 하고 아무도 task.exception() 을 꺼내지 않으면,
+# 실패한 태스크가 GC 될 때 asyncio 가 "Task exception was never retrieved" 를 찍는다.
+# 조용한 실패는 아니지만, 우리 로그 포맷 밖에서 나오는 소음이라 원인을 따라가기 어렵다.
+# =============================================================================
+async def test_failed_task_exception_is_recovered_and_logged_once(monkeypatch) -> None:
+    """실패한 태스크의 예외를 회수해 **정확히 한 번** 기록한다."""
+    recorded: list[str] = []
+    monkeypatch.setattr(
+        bg.logger,
+        "error",
+        lambda msg, *args, **kwargs: recorded.append(msg % args if args else msg),
+    )
+
+    runner = BackgroundTaskRunner(max_concurrent=5)
+
+    async def boom() -> None:
+        raise RuntimeError("백그라운드 실패(의도적)")
+
+    assert runner.spawn(boom()) is True
+    await runner.drain(timeout=1.0)
+    await asyncio.sleep(0)  # done callback 이 돌 기회를 준다
+
+    assert len(recorded) == 1, f"실패 태스크 기록이 정확히 1건이 아니다: {recorded}"
+    assert (
+        "백그라운드 실패(의도적)" in recorded[0]
+    ), f"기록에 원래 예외가 담기지 않았다: {recorded[0]!r}"
+
+
+async def test_successful_task_is_not_logged_as_error(monkeypatch) -> None:
+    """정상 완료를 오류로 기록하지 않는다 — 그러면 로그가 거짓말을 한다."""
+    recorded: list[str] = []
+    monkeypatch.setattr(bg.logger, "error", lambda msg, *args, **kwargs: recorded.append(msg))
+
+    runner = BackgroundTaskRunner(max_concurrent=5)
+
+    async def quick() -> None:
+        return None
+
+    assert runner.spawn(quick()) is True
+    await runner.drain(timeout=1.0)
+    await asyncio.sleep(0)
+
+    assert recorded == [], f"정상 완료가 오류로 기록됐다: {recorded}"
+
+
+async def test_cancelled_task_is_not_logged_as_error(monkeypatch) -> None:
+    """종료 drain 이 스스로 취소한 태스크를 오류로 기록하지 않는다.
+
+    취소는 우리가 시킨 것이다. 이것을 error 로 남기면 정상 종료마다 오류가 쌓인다.
+    """
+    recorded: list[str] = []
+    monkeypatch.setattr(bg.logger, "error", lambda msg, *args, **kwargs: recorded.append(msg))
+
+    runner = BackgroundTaskRunner(max_concurrent=5)
+    started = asyncio.Event()
+
+    async def forever() -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    assert runner.spawn(forever()) is True
+    await started.wait()
+    await runner.drain(timeout=0.05)
+    await asyncio.sleep(0)
+
+    assert recorded == [], f"취소된 태스크가 오류로 기록됐다: {recorded}"

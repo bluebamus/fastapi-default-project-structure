@@ -304,15 +304,34 @@ else:
     logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")
 
 
-if __name__ == "__main__":
+def run_server(target: str = "main:app") -> None:
+    """개발용 서버 진입점 (ADR-020).
+
+    ``log_config`` 은 uvicorn 이 문서화한 공식 파라미터다. 이걸로 넘겨야 uvicorn 3종
+    로거가 앱과 **같은 queue·포맷**을 쓴다. 앱 쪽 ``build_dictconfig()`` 에 uvicorn
+    로거를 심어 두는 방법도 동작하지만, 그건 *우리 설정이 uvicorn 것보다 나중에
+    적용된다* 는 uvicorn 내부 순서에 기대는 것이라 이 파일만 봐서는 검증할 수 없다.
+
+    ``uvicorn main:app`` CLI 로 띄우면 uvicorn 로그는 uvicorn 기본 포맷으로 나온다.
+    오류·traceback 은 그대로 다 보인다(로그 유실은 listener 를 프로세스가 소유하게 한
+    ADR-018 에서 이미 해결했다) — 달라지는 건 포맷뿐이다.
+
+    Args:
+        target: 기동할 ASGI 앱의 import 문자열. Wave 7 의 subprocess 테스트가 정상
+            앱과 startup 실패 앱을 **같은 경로로** 띄우기 위해 갈아끼운다.
+    """
     import uvicorn
 
     from app.utils.logs import setup_uvicorn_logging
 
     uvicorn.run(
-        "main:app",
+        target,
         host=app_settings.SERVER_HOST,
         port=app_settings.SERVER_PORT,
         reload=app_settings.DEBUG,
         log_config=setup_uvicorn_logging(),
     )
+
+
+if __name__ == "__main__":
+    run_server()
