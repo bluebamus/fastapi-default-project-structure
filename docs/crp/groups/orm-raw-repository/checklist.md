@@ -291,10 +291,25 @@
       삼키면 `docker stop` 이 SIGKILL 까지 기다린다).
       실물 대조(`python main.py`): **20줄 → 31줄**, `자원 해제 완료`·`stop 완료` 각 1건.
 - [x] F-038 — 곁다리로 죽은 전역 `_listener_targets` 를 지웠다(ADR-021 이관 후 남은 잔여).
-- [ ] **F-039 결정 필요** — `uvicorn main:app` CLI 경로 잔여(앱 종료 로그 마지막 3줄).
-      uvicorn 이 `capture_signals()` **안에서** 앱을 import 하므로 우리 핸들러가
-      스냅샷보다 늦게 걸려 덮인다. 해법 후보는 lifespan 끝의 queue flush(`queue.join()`)이며
-      ADR-018 계약과 shutdown 예산에 닿는다.
+- [x] **F-039 처리 — 사용자 결정으로 대안 A(수정) 채택** (**ADR-023**).
+      lifespan 종료 **가장 마지막**에 큐를 flush 한다. **멈추기가 아니라 기다리기**라
+      ADR-018("lifespan 은 listener 를 멈추지 않는다")과 충돌하지 않는다 — 그 문장은
+      그대로 살아 있고 "다 나갈 때까지 기다리기" 가 추가됐을 뿐이다.
+      구현은 stdlib 계약을 그대로 쓴다: `QueueListener._monitor` 가 record 마다
+      `task_done()` 을 부르므로 `unfinished_tasks == 0` 이 곧 "전부 썼다" 다.
+      `Queue.join()` 과 같은 조건을 기다리되 **예산을 준다** — `join()` 에는 timeout 이
+      없어 그대로 썼다면 F-037 과 똑같은 무한 대기를 다시 만들었을 것이다.
+      red 먼저 확인(CLI 경로에서 `자원 해제 완료` 없음) → 구현 → 변이(flush 무력화)로
+      실효성 확인.
+- [ ] **깨질 테스트 예측이 또 틀렸다 (4건 예측 → 6건 실제).** `calls == [` 형태만 grep 해서
+      `calls[-2:] == [` 형태 2건을 놓쳤다. Wave 3~6 은 3회 연속 적중했는데, **grep 패턴이
+      단언의 한 형태만 덮는다는 점**을 확인하지 않은 것이 원인이다.
+      다음부터는 대상 심볼(`calls`)로 grep 한 뒤 형태별로 세어 본다.
+- [ ] **작업 중 실수 — `git checkout -- <file>` 로 미커밋 작업을 날렸다.** 변이 검증 후
+      원상복구하려고 썼는데, `git checkout` 은 **HEAD 기준**이라 그 파일의 미커밋 변경까지
+      전부 되돌린다. `app/core/resources.py` 의 ADR-023 구현이 통째로 사라져 재작성했다.
+      다른 파일은 무사했다(그 파일만 지정했으므로). **변이 검증은 임시 사본이나
+      `git stash` 로 하거나, 최소한 변이 전에 커밋해 둔다.**
 - [x] **Wave 7** — 실제 uvicorn subprocess 통합 테스트 2건
       (`tests/integration/test_uvicorn_lifecycle.py`, `uvicorn_startup_failure_app.py`).
       정상 종료는 **순서**를 본다 — `자원 해제 완료` → `Application shutdown complete`

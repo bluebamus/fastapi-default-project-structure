@@ -528,3 +528,41 @@ def test_signal_shutdown_still_drains_the_log_listener():
         f"docker stop 이 SIGKILL 까지 기다리게 된다. 출력:\n{out}"
     )
     assert proc.returncode != 0, "신호 종료인데 정상 종료 코드가 나왔다"
+
+
+def test_wait_until_written_is_bounded_when_nothing_consumes():
+    """소비자가 없으면 예산만큼만 기다리고 False 를 돌려준다 (ADR-023).
+
+    ``Queue.join()`` 에는 timeout 이 없다. 그대로 썼다면 listener 가 죽어 있을 때
+    종료가 영원히 매달렸을 것이다 — F-037 과 정확히 같은 함정이다.
+    """
+    log_queue: queue.Queue = queue.Queue()
+    log_queue.put_nowait("소비되지 않을 record")
+
+    started = time.monotonic()
+    assert logs_queue.wait_until_written(log_queue, timeout=0.2) is False
+    assert time.monotonic() - started < 5.0, "예산을 넘겨 기다렸다"
+
+
+def test_wait_until_written_returns_true_once_the_consumer_finishes():
+    """소비가 끝나면 곧바로 True 를 돌려준다.
+
+    ``QueueListener._monitor`` 가 record 마다 ``task_done()`` 을 부르는 것을 그대로
+    흉내낸다 — "unfinished_tasks 가 0" 이 곧 "넣은 걸 전부 썼다" 다.
+    """
+    log_queue: queue.Queue = queue.Queue()
+    log_queue.put_nowait("record")
+
+    def consume() -> None:
+        log_queue.get_nowait()
+        log_queue.task_done()
+
+    threading.Timer(0.05, consume).start()
+
+    assert logs_queue.wait_until_written(log_queue, timeout=5.0) is True
+
+
+async def test_flush_is_a_no_op_when_no_listener_consumes(monkeypatch):
+    """listener 가 없으면 기다리지 않는다 — 기다려 봐야 비지 않는다."""
+    monkeypatch.setattr(logs_setup, "_listener", None)
+    assert await logs_setup.flush_log_queue() is True

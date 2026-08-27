@@ -7,17 +7,22 @@ startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생�
 자원마다 작은 async context manager 를 두고 **획득 순서대로 중첩**한다. 정리는 파이썬이
 그 **역순**으로 실행하므로, 순서를 따로 강제할 장치가 필요 없다 (ADR-017)::
 
-    async with _database(...), _background_tasks():
+    async with _log_queue(), _database(...), _background_tasks():
         ...
-    # 정리 순서: background drain → DB dispose
+    # 정리 순서: background drain → DB dispose → 로그 큐 flush
 
 이 순서인 이유는 의존 관계다. DB 를 쓰는 주체(background task)를 먼저 멈춰야 커넥션 풀을
 닫는 것이 안전하다.
 
 **logging listener 는 여기서 멈추지 않는다** (ADR-018). 소유자는 프로세스이고
-``app/utils/logs/setup.py`` 의 ``atexit`` 훅이 정리한다. lifespan 이 멈추면 그 뒤에
-uvicorn 이 남기는 최종 로그와 startup 실패 traceback 이 소비자 없는 큐에 갇혀 사라진다
-(F-029).
+``app/utils/logs/setup.py`` 의 ``atexit`` 훅과 신호 핸들러(ADR-022)가 정리한다.
+lifespan 이 멈추면 그 뒤에 uvicorn 이 남기는 최종 로그와 startup 실패 traceback 이
+소비자 없는 큐에 갇혀 사라진다 (F-029).
+
+**멈추지는 않지만 "다 나갈 때까지 기다리기" 는 한다** (ADR-023). 가장 바깥 컨텍스트인
+``_log_queue()`` 가 그 일을 한다. ``uvicorn main:app`` 으로 띄우면 종료 신호가 오는 순간
+프로세스가 그 자리에서 죽어(F-039) 큐에 남은 줄을 구할 방법이 없기 때문이다. 기다리기는
+멈추기가 아니므로 F-029 와 충돌하지 않는다 — listener 는 그대로 살아 있다.
 
 **이 중첩을 평평한 ``finally`` 안의 연속 ``await`` 로 되돌리지 말 것.**
 ``asyncio.CancelledError`` 는 ``Exception`` 이 아니라 ``BaseException`` 이라
@@ -53,6 +58,8 @@ from app.core.db.session import create_db_tables, dispose_engine
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.models.models_base import Base
 from app.utils.logs import get_logger
+from app.utils.logs.queue_handler import LOG_FLUSH_TIMEOUT_SECONDS
+from app.utils.logs.setup import flush_log_queue
 from config import app_settings
 
 logger = get_logger("resources")
@@ -167,6 +174,30 @@ async def _database(app: FastAPI) -> AsyncIterator[None]:
 
 
 @asynccontextmanager
+async def _log_queue() -> AsyncIterator[None]:
+    """**가장 바깥** 자원 — 다른 정리가 남긴 로그까지 전부 기록되고 나서 끝난다.
+
+    listener 를 멈추지 않는다. 멈추는 것은 여전히 프로세스의 몫이다(ADR-018) —
+    여기서 멈추면 그 뒤 uvicorn 이 남기는 최종 로그가 소비자 없는 큐에 갇힌다(F-029).
+    여기서는 **이미 쌓인 것이 다 나가기를 기다리기만** 한다 (ADR-023).
+
+    ``uvicorn main:app`` 경로가 이걸 필요로 한다. 그 경로에서는 종료 신호가 오는 순간
+    프로세스가 그 자리에서 죽어(F-039) 큐에 남은 줄을 구할 방법이 없다.
+    """
+    try:
+        yield
+    finally:
+        if not await flush_log_queue():
+            # 실패로 취급하지 않는다 — 로그를 조금 잃을 뿐이고, 종료를 막을 이유가 없다.
+            # 이 경고 자체도 같은 큐를 타므로 함께 잃을 수 있다. 그래도 남긴다:
+            # 나갔다면 원인을 알려주고, 못 나갔다면 원래 상황과 같을 뿐이다.
+            logger.warning(
+                "[shutdown] 로그 큐를 %.1f초 안에 비우지 못했다 — 마지막 줄 일부가 유실될 수 있다",
+                LOG_FLUSH_TIMEOUT_SECONDS,
+            )
+
+
+@asynccontextmanager
 async def _background_tasks() -> AsyncIterator[None]:
     """가장 안쪽 자원 — DB 를 쓰는 주체이므로 가장 먼저 멈춘다."""
     try:
@@ -188,7 +219,7 @@ async def manage_application_resources(
     logger.info("[startup] 애플리케이션 자원 초기화 시작 (DEBUG=%s)", app_settings.DEBUG)
 
     # 획득 순서대로 중첩하면 정리는 자동으로 역순이다 (모듈 독스트링 참조).
-    async with _database(app), _background_tasks():
+    async with _log_queue(), _database(app), _background_tasks():
         # startup 작업은 두 컨텍스트에 **모두 진입한 뒤** 실행한다. 여기서 실패하면
         # 두 finally 가 전부 돌아 이미 열려 있던 engine 이 정리된다 — engine 은 이
         # 컨텍스트가 만든 것이 아니라 import 시점에 이미 존재하므로 startup 성공

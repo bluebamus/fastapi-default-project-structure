@@ -53,6 +53,10 @@ def wiring(monkeypatch):
     async def fake_dispose() -> None:
         calls.append("dispose")
 
+    async def fake_flush(*args, **kwargs) -> bool:
+        calls.append("flush")
+        return True
+
     async def fake_create(**kwargs) -> None:
         calls.append("create_tables")
         state["create_kwargs"] = kwargs
@@ -65,7 +69,9 @@ def wiring(monkeypatch):
     monkeypatch.setattr(resources, "create_db_tables", fake_create)
     monkeypatch.setattr(resources, "import_all_models", fake_import)
     monkeypatch.setattr(resources, "access_log_tasks", _FakeRunner(calls))
-    # listener 는 더 이상 lifespan 소유가 아니라 갈아끼울 것이 없다 (ADR-018).
+    # listener 를 **멈추는** 것은 여전히 lifespan 소유가 아니다 (ADR-018).
+    # 다만 쌓인 로그가 다 나가기를 **기다리는** 것은 lifespan 의 마지막 일이다 (ADR-023).
+    monkeypatch.setattr(resources, "flush_log_queue", fake_flush)
     return calls, state
 
 
@@ -154,7 +160,7 @@ async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls == ["drain", "dispose"], f"종료 순서가 어긋났다: {calls}"
+    assert calls == ["drain", "dispose", "flush"], f"종료 순서가 어긋났다: {calls}"
 
 
 async def test_process_log_listener_survives_lifespan_shutdown(monkeypatch, wiring):
@@ -194,9 +200,10 @@ async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls[-2:] == [
+    assert calls[-3:] == [
         "drain",
         "dispose",
+        "flush",
     ], "drain 실패 후 뒤따르는 cleanup 이 생략됐다 (AR-008 위반)"
 
 
@@ -245,7 +252,7 @@ async def test_lifespan_reentry_leaves_no_leak(monkeypatch, wiring):
             pass
         assert app.state.resources is None
 
-    assert calls == ["drain", "dispose"] * 2
+    assert calls == ["drain", "dispose", "flush"] * 2
 
 
 async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
@@ -266,9 +273,10 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
     async with resources.manage_application_resources(app):
         pass
 
-    assert calls[-2:] == [
+    assert calls[-3:] == [
         "drain",
         "dispose",
+        "flush",
     ], "timeout 후 다음 cleanup 이 실행되지 않았다"
 
 
@@ -388,6 +396,7 @@ async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wi
     assert calls == [
         "drain",
         "dispose",
+        "flush",
     ], f"관리자가 취소되자 남은 cleanup 이 건너뛰어졌다 (AR-008/F-028 위반): {calls}"
     assert (
         app.state.resources is None
@@ -396,13 +405,19 @@ async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wi
 
 def test_shutdown_timeout_budget_fits_total():
     """자원별 timeout 합이 전체 shutdown 예산을 넘지 않는다 (확정 정책 6)."""
-    # logging listener 는 더 이상 lifespan 예산에 없다 — 프로세스 종료 훅의 몫이다
-    # (ADR-018). 그래서 합계에서 빠졌고 남은 예산에 여유가 생겼다.
-    per_resource = resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS + resources.DB_DISPOSE_TIMEOUT_SECONDS
+    # listener 를 **멈추는** 시간은 lifespan 예산에 없다 — 프로세스 종료 훅의 몫이다
+    # (ADR-018). 대신 쌓인 로그가 다 나가기를 **기다리는** 시간은 lifespan 의 마지막
+    # 단계이므로 합계에 든다 (ADR-023).
+    per_resource = (
+        resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS
+        + resources.DB_DISPOSE_TIMEOUT_SECONDS
+        + resources.LOG_FLUSH_TIMEOUT_SECONDS
+    )
     assert resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS == 5.0
     assert resources.DB_DISPOSE_TIMEOUT_SECONDS == 10.0
+    assert resources.LOG_FLUSH_TIMEOUT_SECONDS == 2.0
     assert resources.SHUTDOWN_TOTAL_TIMEOUT_SECONDS == 20.0
     assert not hasattr(
         resources, "LOGGING_DRAIN_TIMEOUT_SECONDS"
-    ), "lifespan 예산에 logging listener 가 다시 들어왔다 (ADR-018 위반)"
+    ), "lifespan 예산에 logging listener **정지**가 다시 들어왔다 (ADR-018 위반)"
     assert per_resource <= resources.SHUTDOWN_TOTAL_TIMEOUT_SECONDS

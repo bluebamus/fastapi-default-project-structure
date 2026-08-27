@@ -37,6 +37,9 @@ SENTINEL_ENQUEUE_TIMEOUT_SECONDS = 2.0
 # 않을 때 join 이 영원히 대기하고, atexit 훅에 물려 있으면 프로세스 종료가 막힌다.
 LISTENER_JOIN_TIMEOUT_SECONDS = 5.0
 
+# 쌓인 로그가 전부 기록되기를 기다리는 시간 (ADR-023). 종료 예산의 일부다.
+LOG_FLUSH_TIMEOUT_SECONDS = 2.0
+
 # 포화 알림을 남기는 최소 간격(초). 포화 상태에서는 알림 자체가 폭주한다.
 OVERFLOW_NOTICE_INTERVAL_SECONDS = 5.0
 
@@ -153,6 +156,37 @@ class TimeoutSentinelListener(QueueListener):
                 f"logging listener 가 {LISTENER_JOIN_TIMEOUT_SECONDS}초 안에 멈추지 않았다"
             )
         self._thread = None
+
+
+def wait_until_written(
+    log_queue: queue.Queue,
+    timeout: float = LOG_FLUSH_TIMEOUT_SECONDS,
+) -> bool:
+    """큐에 넣은 record 가 **전부 기록될 때까지** 기다린다 (ADR-023).
+
+    listener 를 멈추지 않는다 — 소비가 끝나기를 기다리기만 한다. 종료 직전에 이걸
+    한 번 해 두면, 그 뒤 프로세스가 갑자기 죽어도 잃을 것이 남지 않는다.
+
+    표준 ``QueueListener._monitor`` 는 record 를 하나 처리할 때마다 ``task_done()``
+    을 부른다. 그래서 "unfinished_tasks 가 0" 이 곧 "넣은 걸 전부 썼다" 는 뜻이다.
+    ``Queue.join()`` 이 기다리는 조건과 **같은 조건**을 기다리되, ``join()`` 에는
+    timeout 이 없어서 여기서 직접 조건을 본다 — listener 가 죽어 있으면 ``join()``
+    은 영원히 매달린다(F-037 이 그 함정이었다).
+
+    Args:
+        log_queue: 확인할 로그 큐.
+        timeout: 최대 대기 시간(초).
+
+    Returns:
+        시간 안에 전부 기록됐으면 True, 예산을 넘겼으면 False.
+    """
+    with log_queue.all_tasks_done:
+        return bool(
+            log_queue.all_tasks_done.wait_for(
+                lambda: log_queue.unfinished_tasks == 0,
+                timeout,
+            )
+        )
 
 
 def build_log_queue() -> queue.Queue:
