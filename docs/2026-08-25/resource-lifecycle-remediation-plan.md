@@ -966,9 +966,18 @@ process 시작
   - Windows/POSIX 분기가 fixture 내부로 격리된다.
 - **verification:**
   - `.\.venv\Scripts\python.exe -m pytest -q tests\integration\test_uvicorn_lifecycle.py`
-- **깨지는 기존 테스트:** 없음 (신규)
-- **선행 필수 — F-038:** 인수 조건의 *"process listener stop 완료가 단일 stream에서
-  관측된다"*는 **현재 설계로 충족할 수 없다.** uvicorn은 정상 종료를 마친 뒤
+- **깨지는 기존 테스트:** 없음 (신규). 실측 결과도 0건 — 413 passed.
+- **실효성 검증(변이):** 신규 테스트가 결함을 실제로 잡는지 세 가지 변이로 확인했다.
+  ①`_install_signal_drain()` 제거 → 정상 종료 테스트 red ②자원 정리 끝에
+  `stop_log_listener()` 주입(F-029 재현) → 두 테스트 모두 red ③`log_config=` 제거 →
+  두 테스트 모두 red. **②에서 실패 앱의 첫 판이 통과해 설계 결함을 발견했다** — 계획서
+  문안대로 lifespan 진입 즉시 `raise` 하면 자원 관리자를 타지 않아 F-029 가 재현되지
+  않는다. 실패 지점을 관리자 안쪽으로 옮겼다.
+- **선행 필수 — F-038: 해소됨(2026-08-27, ADR-022).** 아래 문제를 먼저 닫고 이 Task를
+  진행했다. 잔여 F-039(`uvicorn main:app` CLI 경로)는 이 Task의 실행 경로(`run_server()`)에
+  영향이 없어 열어 둔다.
+  원래 문제: 인수 조건의 *"process listener stop 완료가 단일 stream에서
+  관측된다"*는 **당시 설계로 충족할 수 없었다.** uvicorn은 정상 종료를 마친 뒤
   `capture_signals()`의 `finally`에서 원래 핸들러(`SIG_DFL`)를 복구하고 잡았던 신호를
   **다시 올려**(`uvicorn/server.py:329`) 프로세스를 그 자리에서 끝낸다. 그래서 ADR-018의
   `atexit` 훅이 **신호 종료 경로에서는 실행되지 않고**, queue에 남은 꼬리 로그가 유실된다.
