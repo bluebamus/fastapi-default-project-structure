@@ -5,8 +5,11 @@
 
 import io
 import logging
+import os
 import pathlib
 import queue
+import subprocess  # noqa: S404 - 테스트 하네스가 의도적으로 자식 프로세스를 띄운다
+import sys
 import threading
 import time
 import types
@@ -461,3 +464,67 @@ def test_restart_revives_the_listener_after_its_thread_is_gone(monkeypatch):
     logs_setup.restart_log_listener()
 
     assert stub.starts == 1, "fork 후 listener 를 다시 세우지 못했다"
+
+
+# ── 신호 종료 경로 (F-038) ──────────────────────────────────────────────────
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+# uvicorn 이 정상 종료를 마친 뒤 하는 일을 그대로 재현하는 관찰 스크립트.
+# `capture_signals()` 는 자기 핸들러를 걷어내고 **원래 핸들러를 복구한 뒤 잡았던 신호를
+# 다시 올린다**(uvicorn/server.py). 복구된 핸들러가 SIG_DFL 이면 프로세스는 그 자리에서
+# 끝나고 atexit 훅은 돌지 않는다.
+SIGNAL_EXIT_PROBE = """
+import signal, sys
+from app.utils.logs import get_logger
+
+get_logger("f038-probe").info("종료 직전 꼬리 로그")
+
+SIG = signal.SIGBREAK if sys.platform == "win32" else signal.SIGTERM
+original = signal.signal(SIG, lambda s, f: None)   # uvicorn 이 자기 핸들러를 설치
+signal.signal(SIG, original)                       # finally: 원래 핸들러 복구
+signal.raise_signal(SIG)                           # 잡았던 신호 재-raise
+print("SURVIVED_THE_SIGNAL", flush=True)
+"""
+
+
+def test_signal_shutdown_still_drains_the_log_listener():
+    """신호로 죽는 경로에서도 listener 가 flush 되고 멈춘다 (F-038 / ADR-022).
+
+    ``docker stop``·k8s 의 SIGTERM 과 Windows 의 CTRL_BREAK 는 기본 핸들러가
+    ``SIG_DFL`` 이라 **프로세스를 그 자리에서 끝낸다.** uvicorn 은 정상 종료를 마친 뒤
+    그 신호를 다시 올리므로, ADR-018 의 ``atexit`` 훅이 실행되지 않고 queue 에 남은
+    꼬리 로그가 통째로 사라졌다. listener 스레드는 daemon 이라 같이 죽는다.
+
+    SIGINT 은 이 문제가 없다 — 기본 핸들러가 ``KeyboardInterrupt`` 를 올려 정상 종료
+    경로를 타므로 atexit 이 실행된다. 그래서 SIGINT 은 **건드리지 않는다.**
+
+    신호를 삼키지 않는다는 것도 함께 본다. 삼키면 ``docker stop`` 이 종료되지 않는
+    컨테이너를 만나 결국 SIGKILL 로 끌려 죽는다.
+    """
+    child_env = os.environ.copy()
+    child_env["PYTHONPATH"] = str(PROJECT_ROOT)
+    # 자식 출력 인코딩을 UTF-8 로 못 박는다 — Windows 콘솔 코드페이지(cp949)로 쓰면
+    # 아래 UTF-8 디코딩에서 한글이 대체문자가 되어 검증이 조용히 실패한다.
+    child_env["PYTHONIOENCODING"] = "utf-8"
+
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", SIGNAL_EXIT_PROBE],
+        cwd=PROJECT_ROOT,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    out = proc.stdout + proc.stderr
+
+    assert "[log-lifecycle] stop 완료" in out, (
+        "신호로 종료되는 경로에서 listener 가 flush·정지되지 않았다 — 큐에 남은 "
+        f"종료 로그가 유실된다 (F-038). 출력:\n{out}"
+    )
+    assert "SURVIVED_THE_SIGNAL" not in out, (
+        "신호를 삼켰다. 정리 후에는 원래 종료 동작으로 돌아가야 한다 — 삼키면 "
+        f"docker stop 이 SIGKILL 까지 기다리게 된다. 출력:\n{out}"
+    )
+    assert proc.returncode != 0, "신호 종료인데 정상 종료 코드가 나왔다"

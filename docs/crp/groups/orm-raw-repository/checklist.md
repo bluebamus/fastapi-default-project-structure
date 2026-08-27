@@ -279,7 +279,22 @@
       스크립트로 `ATEXIT_RAN` 미출력·exit=3 을 직접 확인했다.
       **ADR-018 이 신호 종료 경로를 덮지 못한다는 뜻이고, Wave 7 의 인수 조건 하나를
       현재 설계로는 충족할 수 없다.** Wave 7 착수 전에 처리한다.
-- [ ] **F-038 선행 처리** — 신호 종료 경로에서 listener 정지 (Wave 7 전제조건)
+- [x] **F-038 선행 처리** — 신호 종료 경로에서 listener 정지 (**ADR-022**).
+      red 먼저 확인했고, 실패 출력이 **완전히 비어 있었다**(`assert '…stop 완료' in ''`) —
+      꼬리 로그만이 아니라 자식 프로세스 출력 전체가 사라지는 수준이었다.
+      설계 전에 **신호별로 실측**해 대상을 좁혔다: `SIGINT` 은 기본 핸들러가
+      `KeyboardInterrupt` 를 올려 이미 atexit 이 돌고(exit 0), `SIGTERM`·`SIGBREAK` 만
+      `SIG_DFL` 이라 건너뛴다(exit 3). `SIGINT` 을 가로챘다면 pytest·REPL·디버거의
+      `KeyboardInterrupt` 기대가 조용히 달라졌을 것이다 — **측정하지 않았으면 셋 다
+      잡았을 자리다.**
+      핸들러는 정리 후 `SIG_DFL` 로 되돌리고 같은 신호를 다시 올린다(삼키지 않는다 —
+      삼키면 `docker stop` 이 SIGKILL 까지 기다린다).
+      실물 대조(`python main.py`): **20줄 → 31줄**, `자원 해제 완료`·`stop 완료` 각 1건.
+- [x] F-038 — 곁다리로 죽은 전역 `_listener_targets` 를 지웠다(ADR-021 이관 후 남은 잔여).
+- [ ] **F-039 결정 필요** — `uvicorn main:app` CLI 경로 잔여(앱 종료 로그 마지막 3줄).
+      uvicorn 이 `capture_signals()` **안에서** 앱을 import 하므로 우리 핸들러가
+      스냅샷보다 늦게 걸려 덮인다. 해법 후보는 lifespan 끝의 queue flush(`queue.join()`)이며
+      ADR-018 계약과 shutdown 예산에 닿는다.
 - [ ] Wave 7 — 실제 uvicorn subprocess 통합 테스트 2건
 - [ ] Wave 8 — 문서·원장 수렴 + `--mysql-required` (F-034)
 
