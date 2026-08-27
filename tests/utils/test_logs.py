@@ -256,3 +256,67 @@ def test_configure_logging_applies_once(monkeypatch):
     # force=True 는 의도적 재적용이므로 통과해야 한다.
     logs_setup.configure_logging(force=True)
     assert len(calls) == 2
+
+
+# =============================================================================
+# 프로세스 수명 listener (ADR-018 / F-029)
+#
+# listener 의 소유자는 FastAPI lifespan 이 아니라 프로세스다. lifespan 이 멈추면
+# 그 뒤에 나오는 uvicorn 최종 로그와 startup 실패 traceback 이 큐에 갇혀 사라진다.
+# =============================================================================
+def test_process_exit_hook_is_registered_once(monkeypatch):
+    """로깅 구성 시 프로세스당 **한 번만** 종료 훅을 등록한다 (ADR-018).
+
+    여러 번 등록되면 종료 때 stop 이 여러 번 불리고, 등록이 아예 없으면 프로세스가
+    listener 를 남긴 채 죽는다. 실제 스레드를 만들지 않도록 dictConfig 와 listener
+    전역을 막아 두고 등록 횟수만 본다.
+    """
+    registered: list = []
+    monkeypatch.setattr(logs_setup.atexit, "register", lambda fn: registered.append(fn))
+    monkeypatch.setattr(logs_setup, "_exit_hook_registered", False, raising=False)
+    monkeypatch.setattr(logs_setup, "dictConfig", lambda cfg: None)
+    monkeypatch.setattr(logs_setup, "_configured", False)
+    # 실제 listener 를 멈추지 않도록 — configure_logging 은 재구성 전에 stop 을 부른다.
+    monkeypatch.setattr(logs_setup, "_listener", None)
+    # 그리고 **새 listener 도 만들지 않도록** 막는다. queue 는 프로세스가 공유하므로
+    # 여기서 두 번째 소비자가 생기면, 다음 stop 이 넣는 sentinel 을 원래 listener 가
+    # 먼저 가져가고 이쪽 join() 이 영원히 대기한다(실제로 이 테스트가 멈췄다 — F-037).
+    # `_queue_handler` 를 비우는 것으로는 막을 수 없다. configure_logging() 이 그 값을
+    # 내부에서 다시 계산하기 때문이다. 생성 지점 자체를 갈아끼운다.
+    monkeypatch.setattr(logs_setup, "start_log_listener", lambda: None)
+
+    logs_setup.configure_logging()
+    logs_setup.configure_logging(force=True)
+
+    assert registered == [
+        logs_setup.stop_log_listener
+    ], f"프로세스 종료 훅 등록이 1회가 아니다: {registered}"
+
+
+def test_stop_reports_lifecycle_outside_the_queue_and_is_idempotent(monkeypatch):
+    """listener 종료 상태는 queue 를 거치지 않는 최종 sink 로 나가고, stop 은 멱등이다.
+
+    종료 상태를 평소 logger 로 남기면 그 record 는 지금 멈추는 중인 listener 의
+    queue 로 들어간다 — 자기 죽음을 자기가 보고하려다 아무 데도 못 남기는 구조다.
+    F-026·F-029 가 같은 함정이었다.
+    """
+    buf = io.StringIO()
+    monkeypatch.setattr(logs_setup.sys, "__stderr__", buf)
+
+    class _FakeListener:
+        def __init__(self) -> None:
+            self.stopped = 0
+
+        def stop(self) -> None:
+            self.stopped += 1
+
+    fake = _FakeListener()
+    monkeypatch.setattr(logs_setup, "_listener", fake)
+
+    logs_setup.stop_log_listener()
+    logs_setup.stop_log_listener()  # 두 번째는 no-op 이어야 한다
+
+    assert fake.stopped == 1, "stop 을 두 번 불러 listener 를 두 번 멈췄다"
+    text = buf.getvalue()
+    assert "stop 시작" in text and "stop 완료" in text, f"종료 상태가 최종 sink 에 없다: {text!r}"
+    assert text.count("stop 완료") == 1, f"멱등이 아니다 — 완료가 여러 번 기록됐다: {text!r}"

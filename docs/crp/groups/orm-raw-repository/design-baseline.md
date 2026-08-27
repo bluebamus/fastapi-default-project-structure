@@ -40,6 +40,8 @@
 | REQ-004 | 2026-08-19 | 작업이 제대로 완료됐는지 재확인하고 준비 상태를 만들 것 | 독립 검증 패스(문서 주장 ↔ 실제 코드 대조) 수행 + MySQL 통합 환경 기동. 발견된 **거버넌스 문서 결함은 Round 8 로 처리**하고, 같은 결함이 재발하지 않도록 게이트에 기계 검사를 추가한다 | Active | ADR-008, ADR-009 |
 | REQ-005 | 2026-08-20 | Raw SQL **쓰기** 워크플로를 참조 예제로 추가 (**요청 원문 미기록** — 2026-08-20 세션이 기록 전에 중단됨. 아래 내용은 미커밋 코드·주석에서 역추론했다) | SCN-RAW-002(테스트 fixture 검증)를 넘어 **운영 공개 API 로 Raw DML 워크플로를 신설**한다 — 집계 스냅샷 재적재 엔드포인트 · Raw 정렬 식별자 allowlist · deprecated 세션 별칭 제거 | Active | ADR-010 ~ ADR-014 |
 | REQ-006 | 2026-08-20 | 남은 작업이 있는지 확인하고, 있으면 순서대로 정리해 진행할 것 (게이트 검사 추가 포함) | charter §3 인수기준 12칸을 **근거와 함께** 닫고, 근거가 없던 INV-10 검사를 신설한다. 같은 어긋남이 재발하지 않도록 게이트가 기계로 검사한다 | Active | ADR-015 |
+| REQ-007 | 2026-08-25 | lifespan 의 `AsyncExitStack` 사용을 평가해 달라 → 평가 결과를 받고 "평문 `try/finally` 로 적용해 달라" | `manage_application_resources()` 의 종료 조립을 `AsyncExitStack` 등록 역순에서 **`finally` 블록의 코드 순서**로 바꾼다. 종료 순서 계약(AR-008)·자원별 timeout·실패 격리는 불변 | Active | ADR-016 |
+| REQ-010 | 2026-08-27 | 전 라운드 산출물에 대한 외부 검토 계획서를 받고 "이 계획서의 타당성을 검수해 달라 — **코드의 가용성**이 가장 중요하고, **일반적으로 사용하는 방법**을 기준으로 설계·구현이 수립돼야 한다. 난해한 방식의 설계·코드는 구현되어서는 안 된다. 작업이 늘어나는 것은 상관없다" | **프로세스 종료 신뢰성**: 정상·startup 실패·취소 **모든** 종료에서 자원 정리를 끝까지 시도하고, 종료 과정의 로그가 유실되지 않는다. 구현은 **표준 라이브러리의 관용적 사용**으로 한정한다 — stdlib 가 제공하는 동작을 직접 구현하려면 ADR 로 근거를 남긴다 | Active | ADR-017 · ADR-018 · ADR-021 · ADR-020(미결) · F-028~F-036 |
 
 ## 3. 설계 결정 기록 (ADR — 확정 후 불변)
 
@@ -59,7 +61,15 @@
 | ADR-012 | 2026-08-20 | `sales_daily_snapshots` 의 기본키는 **자연키 `sales_date`**. UUID 대리키를 쓰지 않으므로 `UUIDCreatedModel` 이 아니라 `Base` 를 직접 상속한다. | 행 하나가 곧 하루라 하루가 유일 키다. 대리키를 얹으면 "같은 날짜 두 줄"이 스키마상 가능해지고, 리포트가 두 배로 보이는 사고를 스키마가 막지 못한다. `generated_at` 은 Mixin default 가 아니라 SQL 바인드 파라미터로 채운다 — Raw DML 은 ORM/Core 의 default 를 우회하므로 Mixin 을 쓰면 조용히 NULL 이 된다. | Accepted | — |
 | ADR-013 | 2026-08-20 | Raw 정렬의 **식별자 allowlist 는 Repository 가 소유**한다. View 의 쿼리 파라미터 enum 을 방어선으로 삼지 않는다. | 컬럼명·정렬 방향은 bind parameter 가 될 수 없어 문자열로 끼워 넣을 수밖에 없고, 끼워 넣는 값이 요청값이면 injection 이다(RAW-REP-004). alias 를 소유한 계층이 방어선이어야 Celery 태스크나 스크립트가 Repository 를 **직접** 호출할 때도 같은 제약이 걸린다. View 의 enum 은 UX 이지 방어가 아니다. | Accepted | — |
 | ADR-014 | 2026-08-20 | 코드·문서가 인용하는 **요구 ID 의 실재를 검수 게이트가 기계 검사**한다(검사 9). 인용처는 `requirements.md` 와 이 문서 §2·§3 의 합집합이다. | F-022 로 드러난 세 번째 dangling reference 다 — 포트(F-019)·해시(F-020)에 이어 이번엔 존재하지 않는 `SCN-RAW-003` 을 코드 주석 3곳이 근거로 인용했다. 따라갈 수 없는 인용은 근거가 아니다. 같은 실패가 세 번 났으면 사람의 주의력이 아니라 검사로 막는다 (ADR-009 와 같은 원리). | Accepted | — |
+| ADR-016 | 2026-08-25 | lifespan 종료 조립에서 **`AsyncExitStack` 을 제거하고 평문 `try/finally`** 를 쓴다. 종료 순서(drain → dispose → listener stop)·자원별 timeout·실패 격리 계약은 그대로다. development-plan §9.5 와 workflow-guide §11 의 "역순 등록" 구현 예시를 이 결정이 대체하며, **workflow-guide 는 코드에 맞춰 갱신**하고 원본 요구 명세(`requirements.md`)와 development-plan 은 고치지 않는다(ADR-010 과 같은 원리). | `AsyncExitStack` 의 값어치는 **획득과 해제를 짝지어** 부분 획득 실패 시 그만큼만 되돌리는 데 있다. 그런데 이 코드는 콜백 3개를 자원 획득 **이전에** 한꺼번에 등록해, 어디서 실패하든 항상 셋 다 실행됐다 — 즉 ExitStack 은 "순서 있는 콜백 리스트" 이상을 하지 않았고 평문 `try/finally` 와 의미가 동일했다. 그 대가로 등록 순서와 실행 순서가 반대가 되어 `# 3번째로 실행` 같은 주석 세 줄로 그 간극을 메우고 있었다. 실패 격리("하나가 실패해도 뒤 단계를 건너뛰지 않는다")는 ExitStack 이 아니라 `_run_cleanup()` 이 제공하므로 잃는 보장이 없다. AR-008 수용 기준이 `try/finally` 를 첫 번째 허용 형태로 명시하므로 요구 위반도 아니다. 향후 Redis 처럼 **조건부 생성** 자원이 들어오면 그때는 획득 직후 등록이 필요해지므로 ExitStack 재도입을 재평가한다. | Accepted | — |
 | ADR-015 | 2026-08-20 | charter §3 인수기준이 **열린 채로 수렴을 선언하지 않았는지** 게이트가 검사한다(검사 11). | F-024 로 드러난 **네 번째** 문서 정합 결함이다 — 포트(F-019)·해시(F-020)·요구 ID(F-022)에 이어 이번엔 charter §3 의 12칸이 전부 열린 채 checklist 는 "미닫힘 항목 0개", run-log 는 9개 라운드 내내 `GATE 3 ☑` 였다. 두 문서가 서로를 반박하면 읽는 사람은 편한 쪽을 믿는다. 실제로 그 사이에 **INV-10 은 검사가 존재한 적조차 없었다**(F-025) — 열린 상자가 우연히 정직했던 것이고, 닫힌 상자였다면 영영 못 봤다. 사람이 눈으로 맞추는 절차는 이 그룹에서만 네 번, 자매 저장소까지 다섯 번 실패했다. | Accepted | — |
+| ADR-017 | 2026-08-27 | lifespan 종료 조립을 **중첩 async context manager**(`async with _database(...), _background_tasks(...)`) 로 한다. 자원마다 작은 `@asynccontextmanager` 를 두고 **획득 순서대로** 진입시켜 정리가 자동으로 역순이 되게 한다. | ADR-016 이 도입한 평문 `finally` 는 첫 cleanup 에서 `CancelledError` 가 나면 **뒤 단계가 통째로 건너뛰어진다**(F-028). 같은 시나리오 실측: 중첩 `async with`·`AsyncExitStack` 은 3단계 전부 실행 + 상태 정리, 평문 `finally` 는 `['drain']` 하나뿐. `_run_cleanup()` 의 `except Exception` 은 `CancelledError`(BaseException)를 잡지 못하므로 "실패 격리를 `_run_cleanup` 이 전담한다" 는 ADR-016 의 전제가 **취소 축에서 성립하지 않았다**. `AsyncExitStack` 대신 중첩 `async with` 를 택한 이유는 ADR-016 이 지적한 **등록 역순** 가독성 문제를 구조적으로 없애면서 같은 unwind 보장을 파이썬 기본 구문으로 얻기 때문이다. 덤으로 callback 을 자원 획득 **전**에 등록해 부분 정리가 한 번도 작동하지 않던 문제도 사라진다 — 획득하지 못한 자원은 컨텍스트에 진입조차 하지 않는다. | Accepted | — (ADR-016 **보완**, 폐기 아님) |
+| ADR-018 | 2026-08-27 | logging queue listener 의 **소유권을 프로세스로** 옮긴다. FastAPI lifespan 은 listener 를 멈추지 않고, `atexit` 로 프로세스 종료 시 정리한다. | lifespan 이 listener 를 멈추면 그 **뒤에** uvicorn 이 남기는 최종 로그와 **startup 실패 traceback 이 통째로 유실된다**(F-029). 실측: DB 가 꺼진 상태에서 `python main.py` 는 **14줄만 출력하고 오류 원인을 한 글자도 남기지 않는다**(같은 실패를 `uvicorn main:app` 은 195줄로 출력한다 — 그 경로는 우리 queue 를 거치지 않기 때문). F-026 은 이 현상의 **증상**(로그 한 줄의 위치)만 옮겼고 원인은 그대로 남아 있었다. `atexit` 는 프로세스 종료 정리를 위해 존재하는 표준 훅이며 CLI·직접 실행·정상 종료를 함께 포괄한다. SIGKILL 과 uvicorn `force_exit`(Ctrl+C 2회 — uvicorn 이 `lifespan.shutdown()` 을 **호출조차 하지 않는다**)은 애플리케이션 코드로 고칠 수 없어 비범위다. | Accepted | — |
+| ADR-021 | 2026-08-27 | 로깅 queue/listener 구성을 **`dictConfig` 네이티브 선언**(`class`/`queue`/`listener`/`handlers` 키)으로 옮기고, bounded queue 포화 시의 종료는 **`QueueListener.enqueue_sentinel()` 오버라이드**로 해결한다. | Python 3.12+ 의 `dictConfig` 는 QueueHandler 와 QueueListener 를 직접 구성한다. 현재 설정은 `"()"` 팩토리를 써서 **그 경로를 우회**하고, `setup.py` 가 전역 3개(`_queue_handler`·`_listener_targets`·`_listener`)와 이름 조회로 stdlib 가 해주는 일을 손으로 한다. 또 stdlib 의 `enqueue_sentinel()` 독스트링이 *"timeout 을 쓰고 싶으면 이 메서드를 오버라이드하라"* 고 확장 지점을 **명시**하고 있다(F-030). 이 프로젝트의 실제 필터·포매터·bounded queue 조합으로 10개 항목(핸들러 타입·maxsize 10000·커스텀 listener 주입·queue 객체 공유·필터 순서·출력·포맷·스레드 종료)을 **실측해 성립을 확인**했다. | Accepted | — |
+
+> **ADR-020 — 미결(Wave 6 에서 확정).** uvicorn 3종 로거를 앱 `build_dictconfig()` 에 포함할지(`uvicorn main:app`·`fastapi dev`·`python main.py` 모든 경로 지원), 아니면 `run_server()` + `log_config` 로 갈지 결정한다. 어느 쪽이든 이 표에 정식 선언한 뒤 착수한다.
+>
+> **ADR-019 는 건너뛴다 — 재사용도 개정도 하지 않는다.** 코드·테스트 5곳이 이 번호를 "앱별 로거 미등록" 의 뜻으로 인용하지만 **근거 문서가 이 저장소에 없는 legacy ID** 다(F-023 / residual-risk R-007 / 게이트 `LEGACY_UNDECLARED_IDS`). 개정할 본문 자체가 없고, 같은 번호에 다른 결정을 담으면 그 5곳의 인용과 의미가 충돌한다. **이 문단에 번호가 적힌 탓에 게이트 검사 9 는 이제 ADR-019 를 "선언됨" 으로 본다 — 의도한 것이다.** 유령이라는 사실을 권위 있는 문서에 남기는 편이, 화이트리스트에만 숨겨 두는 것보다 낫다.
 
 ## 4. 불가침 제약 (INVARIANT REQUIREMENTS — 추가 작업이 위반 금지)
 
@@ -80,6 +90,12 @@
   ADR-009(문서-코드 정합 게이트) 추가. 근거: Round 8 의 F-019 · F-020.
 - v0.3 (2026-08-20): REQ-005 등록(요청 원문 유실 — 코드에서 역추론). ADR-010(SCN-RAW-003 신설·공개 API 확대), ADR-011(표준 SQL 재적재), ADR-012(자연키), ADR-013(allowlist 소유 계층), ADR-014(요구 ID 인용 검사) 추가. 근거: Round 9 의 F-021 · F-022.
 - v0.4 (2026-08-20): REQ-006 등록. ADR-015(charter 인수기준 ↔ 수렴 선언 정합 검사) 추가. 근거: Round 10 의 F-024 · F-025.
+- v0.5 (2026-08-25): REQ-007 등록. ADR-016(lifespan 종료 조립을 `AsyncExitStack` → 평문 `try/finally`) 추가. 근거: Round 11 의 F-026.
+- v0.6 (2026-08-27): REQ-010 등록. ADR-017(종료 조립 = 중첩 async context manager),
+  ADR-018(logging listener 소유권을 프로세스로 + `atexit`), ADR-021(`dictConfig` 네이티브
+  queue/listener + `enqueue_sentinel` 오버라이드) 추가. ADR-020 은 Wave 6 확정 예정으로
+  **미결 등록**, ADR-019 는 legacy 유령 ID 라 **건너뛴다**. 근거: Round 12 의 F-028 ~ F-036.
+  **ADR-016 은 폐기하지 않는다** — ADR-017 이 그것이 검증하지 않은 축(취소)을 보완한다.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

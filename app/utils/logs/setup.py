@@ -6,9 +6,13 @@
 root 에 붙는 유일한 핸들러는 ``BoundedQueueHandler`` 이며, 실제 stdout/stderr 쓰기는
 ``QueueListener`` 스레드가 맡는다(NFR-009). listener 는 여기서 시작한다 — Celery
 worker·Alembic·테스트처럼 FastAPI lifespan 이 돌지 않는 프로세스에서도 로그가
-나가야 하기 때문이다. **종료(flush/stop) 소유자는 자원 관리자 하나**이며
-(``app/core/resources.py``) background drain 과 DB dispose 가 끝난 뒤 마지막에
-호출한다.
+나가야 하기 때문이다.
+
+**종료(flush/stop) 소유자는 프로세스다** (ADR-018). 여기서 ``atexit`` 훅을 프로세스당
+한 번 등록하고, FastAPI lifespan 은 listener 를 멈추지 않는다. lifespan 이 멈추면 그
+**뒤에** uvicorn 이 남기는 최종 로그와 startup 실패 traceback 이 소비자 없는 큐에 갇혀
+사라진다 — DB 가 꺼진 채 ``python main.py`` 를 실행하면 오류 원인이 한 글자도 나오지
+않았다(F-029). listener 는 자신을 쓰는 모든 것보다 오래 살아야 한다.
 
 핸들러 참조를 ``logging.getHandlerByName()`` 으로 나중에 다시 찾지 않고 여기 모듈
 상태에 붙잡아 둔다. ``dictConfig`` 는 호출될 때마다 기존 핸들러 이름 레지스트리를
@@ -18,7 +22,9 @@ worker·Alembic·테스트처럼 FastAPI lifespan 이 돌지 않는 프로세스
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
+import sys
 from logging.config import dictConfig
 from logging.handlers import QueueListener
 
@@ -35,6 +41,40 @@ _configured = False
 _queue_handler: BoundedQueueHandler | None = None
 _listener_targets: list[logging.Handler] = []
 _listener: QueueListener | None = None
+_exit_hook_registered = False
+
+
+def _write_listener_lifecycle_status(message: str) -> None:
+    """listener 종료 상태를 **queue 를 거치지 않고** 최종 sink 에 적는다.
+
+    이 메시지는 listener 를 멈추는 과정에 대한 것이라, 평소 logger 로 남기면 지금
+    멈추는 중인 바로 그 listener 의 queue 로 들어간다 — 자기 죽음을 자기가 보고하려다
+    아무 데도 못 남기는 구조다(F-026·F-029 가 같은 함정이었다).
+
+    ``sys.stderr`` 가 아니라 ``sys.__stderr__`` 를 쓰는 이유는, 종료 시점에 누군가
+    ``sys.stderr`` 를 이미 갈아끼웠거나 닫았을 수 있기 때문이다.
+    """
+    stream = sys.__stderr__
+    if stream is None:  # pragma: no cover - pythonw 등 stderr 가 없는 환경
+        return
+    try:
+        print(f"[log-lifecycle] {message}", file=stream, flush=True)
+    except Exception:  # 종료 경로에서 보고 실패가 종료를 막아서는 안 된다.
+        pass
+
+
+def _register_process_exit_hook() -> None:
+    """프로세스 종료 시 listener 를 멈추도록 **한 번만** 등록한다 (ADR-018).
+
+    여러 번 등록되면 종료 때 stop 이 여러 번 불리고, 아예 없으면 프로세스가 listener
+    스레드를 남긴 채 죽는다. ``atexit`` 는 정상 종료(CLI·직접 실행·uvicorn)를 모두
+    포괄한다. SIGKILL 과 uvicorn 의 force_exit 은 이 훅이 돌지 않는 경로이며 비범위다.
+    """
+    global _exit_hook_registered
+    if _exit_hook_registered:
+        return
+    atexit.register(stop_log_listener)
+    _exit_hook_registered = True
 
 
 def configure_logging(force: bool = False) -> None:
@@ -59,6 +99,7 @@ def configure_logging(force: bool = False) -> None:
     ]
     _configured = True
 
+    _register_process_exit_hook()
     start_log_listener()
 
 
@@ -99,11 +140,18 @@ def restart_log_listener() -> QueueListener | None:
 
 
 def stop_log_listener() -> None:
-    """listener 를 flush 하고 멈춘다(동기). 없으면 no-op."""
+    """listener 를 flush 하고 멈춘다(동기·멱등). 없으면 no-op.
+
+    프로세스 종료 훅이 부르는 경로다. 상태는 queue 가 아니라 최종 sink 로 적는다 —
+    이 함수가 멈추는 대상이 바로 그 queue 의 소비자이기 때문이다.
+    """
     global _listener
     listener, _listener = _listener, None
-    if listener is not None:
-        listener.stop()
+    if listener is None:
+        return
+    _write_listener_lifecycle_status("stop 시작")
+    listener.stop()
+    _write_listener_lifecycle_status("stop 완료")
 
 
 async def stop_log_listener_async() -> None:
