@@ -231,7 +231,22 @@
       그것을 지키는 가드 테스트를 함께 넣었다.
       Wave 3 교훈 적용: 깨질 기존 테스트 목록을 **grep 으로** 확인했고 실제로 0건이었다
       (기존 테스트는 전부 `dispose_engine` 을 monkeypatch 하고 있었다).
-- [ ] Wave 5 — `dictConfig` 네이티브 전환 + `TimeoutSentinelListener` (F-030)
+- [x] **Wave 5** — `dictConfig` 네이티브 전환 + `TimeoutSentinelListener` (F-030 · **F-037**).
+      red 5건 먼저 확인. 세 가지를 함께 처리했다 — ①`enqueue_sentinel()` 오버라이드
+      (표준 라이브러리가 독스트링에서 지정한 확장 지점) ②`stop()` 의 join 에 예산
+      (F-037, Wave 3 에서 실측한 무한 대기를 닫는다) ③queue/listener 구성을
+      `class`/`queue`/`listener`/`handlers` 선언으로 이관(ADR-021).
+      `setup.py` 에서 손수 하던 `_listener_targets` 조회와 listener 생성이 사라졌고,
+      죽은 팩토리 `build_queue_handler()` 도 제거했다.
+      실물 확인: `handler.listener` 가 `TimeoutSentinelListener` 이고 handler 와 queue 를
+      공유하며 `atexit` 경로가 정상 종료(exit 0)한다.
+      **409 passed · skipped 0** · 게이트 **11종 전건 통과**.
+- [x] Wave 5 — Wave 3 교훈 적용 결과: 깨질 기존 테스트를 grep 으로 미리 확정했고
+      (`test_root_uses_queue_handler_only` 의 `queue_handler["()"]` 단 1건),
+      **예측이 정확히 맞았다.** 추정으로 만들었던 Wave 3 때와 대조된다.
+- [x] Wave 5 — `restart_log_listener()`(Celery prefork 경로)에 테스트가 **하나도 없었다.**
+      dictConfig 가 만든 listener 를 재사용하게 되면서 fork 후 죽은 스레드 참조를 지워야
+      하는데, 검증 없이는 조용히 깨질 자리였다. 회귀 테스트를 함께 추가했다.
 - [ ] Wave 6 — uvicorn 로거 연결 대안 확정 후 구현 (ADR-020 · F-036)
 - [ ] Wave 7 — 실제 uvicorn subprocess 통합 테스트 2건
 - [ ] Wave 8 — 문서·원장 수렴 + `--mysql-required` (F-034)

@@ -6,6 +6,12 @@
 import io
 import logging
 import pathlib
+import queue
+import threading
+import time
+import types
+
+import pytest
 
 from app.utils.logs import (
     LOG_FORMAT,
@@ -16,6 +22,7 @@ from app.utils.logs import (
     setup_uvicorn_logging,
 )
 from app.utils.logs import config as logs_config
+from app.utils.logs import queue_handler as logs_queue
 from app.utils.logs import setup as logs_setup
 from app.utils.logs.filters import _app_from_path
 
@@ -140,7 +147,9 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
             "queue"
         ], f"ENV={env} 의 root 에 queue 외 핸들러가 붙었다 — event loop 를 막는다"
         queue_handler = cfg["handlers"]["queue"]
-        assert queue_handler["()"] == "app.utils.logs.queue_handler.build_queue_handler"
+        # dictConfig 네이티브 경로를 타려면 ``class`` 여야 한다 (ADR-021).
+        # 선언 세부는 test_dictconfig_declares_the_queue_listener_natively 가 본다.
+        assert queue_handler["class"] == "app.utils.logs.queue_handler.BoundedQueueHandler"
         # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
         # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001).
         assert queue_handler["filters"] == ["sql_noise", "context"]
@@ -320,3 +329,130 @@ def test_stop_reports_lifecycle_outside_the_queue_and_is_idempotent(monkeypatch)
     text = buf.getvalue()
     assert "stop 시작" in text and "stop 완료" in text, f"종료 상태가 최종 sink 에 없다: {text!r}"
     assert text.count("stop 완료") == 1, f"멱등이 아니다 — 완료가 여러 번 기록됐다: {text!r}"
+
+
+# =============================================================================
+# ADR-021 / F-030 / F-037 — queue listener 를 표준 확장 지점으로 다룬다
+#
+# stdlib 의 QueueListener 는 두 곳이 무방비다.
+#   · enqueue_sentinel() 이 put_nowait 이라 bounded queue 가 포화면 종료가 실패한다.
+#   · stop() 의 thread.join() 에 timeout 이 없어, sentinel 이 소비되지 않으면 영원히
+#     기다린다. atexit 훅에 물려 있으면 그대로 프로세스 종료가 막힌다(F-037, 실측).
+# 둘 다 stdlib 이 지정한 확장 지점(enqueue_sentinel 오버라이드)으로 닫는다.
+# =============================================================================
+def _isolated_listener(maxsize: int = 0):
+    """프로세스 공용 queue 를 건드리지 않는 독립 listener.
+
+    공용 queue 에 두 번째 소비자를 만들면 sentinel 을 서로 가로채 join 이 멈춘다
+    (Wave 3 에서 실제로 테스트가 2분 멈췄다).
+    """
+    q: queue.Queue = queue.Queue(maxsize=maxsize)
+    return q, logs_queue.TimeoutSentinelListener(q, logging.NullHandler())
+
+
+def test_enqueue_sentinel_waits_for_a_slot_instead_of_failing_immediately(monkeypatch):
+    """queue 가 잠깐 가득 차 있어도 종료 sentinel 을 넣을 수 있어야 한다 (F-030).
+
+    기본 구현(``put_nowait``)이면 이 지점에서 ``queue.Full`` 로 죽고, 그 여파로
+    listener 손잡이를 잃는다.
+    """
+    monkeypatch.setattr(logs_queue, "SENTINEL_ENQUEUE_TIMEOUT_SECONDS", 2.0)
+    q, listener = _isolated_listener(maxsize=1)
+    q.put("occupied")
+
+    def free_slot() -> None:
+        time.sleep(0.1)
+        q.get()
+
+    threading.Thread(target=free_slot, daemon=True).start()
+
+    listener.enqueue_sentinel()
+
+    assert q.get() is listener._sentinel, "sentinel 이 queue 에 들어가지 않았다"
+
+
+def test_stop_is_bounded_when_the_sentinel_never_arrives(monkeypatch):
+    """소비 스레드가 sentinel 을 못 받아도 stop 은 예산 안에 반환한다 (F-037).
+
+    Wave 3 에서 실제로 관측한 상황이다 — 같은 queue 에 소비자가 둘이면 sentinel 을
+    다른 쪽이 가져가고 이쪽 join 이 영원히 대기한다. atexit 훅은 daemon 스레드 정리보다
+    **먼저** 돌기 때문에, 이 join 이 그대로 프로세스 종료를 막는다.
+    """
+    monkeypatch.setattr(logs_queue, "LISTENER_JOIN_TIMEOUT_SECONDS", 0.2)
+    q, listener = _isolated_listener()
+    listener.start()
+    # sentinel 이 영영 도착하지 않는 상황을 만든다.
+    monkeypatch.setattr(listener, "enqueue_sentinel", lambda: None)
+
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        listener.stop()
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 3.0, f"stop 이 예산 안에 반환하지 않았다 ({elapsed:.1f}s)"
+
+    # 뒷정리 — 진짜 sentinel 을 넣어 스레드를 끝낸다.
+    q.put(listener._sentinel)
+    listener._thread.join(timeout=3)
+
+
+def test_stop_keeps_the_handle_when_stopping_fails(monkeypatch):
+    """stop 이 실패하면 전역 참조를 **유지**한다 — 버리면 회수할 손잡이가 없다 (F-030)."""
+
+    class _FailingListener:
+        def stop(self) -> None:
+            raise TimeoutError("멈추지 않는다(의도적)")
+
+    failing = _FailingListener()
+    monkeypatch.setattr(logs_setup, "_listener", failing)
+
+    with pytest.raises(TimeoutError):
+        logs_setup.stop_log_listener()
+
+    assert (
+        logs_setup._listener is failing
+    ), "stop 실패인데 손잡이를 버렸다 — 스레드는 살아 있는데 재시도할 방법이 없다"
+
+
+def test_dictconfig_declares_the_queue_listener_natively(monkeypatch, tmp_path):
+    """queue/listener 구성을 손으로 하지 않고 dictConfig 에 맡긴다 (ADR-021).
+
+    ``()`` 커스텀 팩토리를 쓰면 stdlib 의 QueueHandler 특수 처리 경로를 통째로
+    우회하게 되고, 그 결과 listener 생성·대상 핸들러 연결을 전부 손으로 해야 한다.
+    """
+    cfg = _build_with(monkeypatch, tmp_path, env="development")
+    queue_cfg = cfg["handlers"]["queue"]
+
+    assert "()" not in queue_cfg, "커스텀 팩토리로 되돌아가면 네이티브 지원을 우회한다"
+    assert queue_cfg["class"] == "app.utils.logs.queue_handler.BoundedQueueHandler"
+    assert queue_cfg["listener"] == "app.utils.logs.queue_handler.TimeoutSentinelListener"
+    assert queue_cfg["handlers"] == ["console"], "listener 가 위임받을 출력 핸들러"
+    assert queue_cfg["respect_handler_level"] is True
+
+
+def test_restart_revives_the_listener_after_its_thread_is_gone(monkeypatch):
+    """fork 직후처럼 스레드가 사라진 프로세스에서 listener 를 다시 세운다.
+
+    Celery prefork 자식이 이 경로를 탄다. listener 객체에는 **죽은 스레드 참조**가
+    남아 있어, 그대로 ``start()`` 하면 stdlib 이 "Listener already started" 로 거절한다.
+    이 테스트가 없어서 지금까지 이 경로는 검증된 적이 없다.
+    """
+
+    class _StubListener:
+        def __init__(self) -> None:
+            self._thread = object()  # fork 를 넘어온 죽은 참조
+            self.starts = 0
+
+        def start(self) -> None:
+            if self._thread is not None:
+                raise RuntimeError("Listener already started")
+            self._thread = object()
+            self.starts += 1
+
+    stub = _StubListener()
+    monkeypatch.setattr(logs_setup, "_queue_handler", types.SimpleNamespace(listener=stub))
+    monkeypatch.setattr(logs_setup, "_listener", stub)
+
+    logs_setup.restart_log_listener()
+
+    assert stub.starts == 1, "fork 후 listener 를 다시 세우지 못했다"
