@@ -69,14 +69,26 @@
 - FastAPI lifespan 이 Celery worker 자원을 종료
 - shutdown 시 DB table drop
 - 짧은 CPU 연산의 무조건 `to_thread()` 전환
+- **앱 `dictConfig` 에 앱별 로거 등록** — 핸들러는 root 에만 붙이고 앱 판별은 소스 경로로
+  한다(Django 의 `settings.LOGGING["loggers"]` 식 등록을 쓰지 않는다). 가드 테스트
+  `test_dictconfig_has_no_per_app_loggers` 가 이 조항의 관문이다.
+  `setup_uvicorn_logging()` 이 선언하는 uvicorn 3종 로거는 **앱 설정이 아니라 uvicorn
+  자신에게 `log_config` 으로 넘기는 별도 설정**이므로 이 비목표에 해당하지 않는다(ADR-020).
 
 ## 3. 인수 기준 (Acceptance Criteria) — GATE 3
 
 > 각 칸은 **무엇을 보고 닫았는지**를 함께 적는다. 표시만 바꾸는 것은 닫는 것이 아니다
 > (F-021 이 그 실패였다 — "지웠다" 는 기록만 있고 실제로는 남아 있었다).
 
-- [x] 전 테스트 실제 실행·통과 — **391 tests** (단위 383 + MySQL 8.4 통합 8), failed 0 · skipped 0.
-      MySQL 마커는 컨테이너 기동 후 **실제 실행**했다 (Round 10 게이트 실행 결과)
+- [x] 전 테스트 실제 실행·통과 — **417 tests** (단위 409 + MySQL 8.4 통합 8), failed 0 · skipped 0.
+      MySQL 마커는 컨테이너 기동 후 **실제 실행**했다. Round 12 부터는 `--mysql-required` 로
+      **skip 이 곧 실패**가 되게 해 "안 돌았는데 초록" 을 구조적으로 막는다 (R-003)
+- [x] **취소·프로세스 종료 검증** — lifespan 취소에서 남은 정리가 실행되고
+      (`test_manager_cancellation_still_runs_remaining_cleanup`), 실제 uvicorn 프로세스를
+      운영과 같은 신호로 끄면 `자원 해제 완료` → `Application shutdown complete` →
+      listener 정지 순서가 관측된다 (`tests/integration/test_uvicorn_lifecycle.py` 3건).
+      이 축은 Round 11 까지 **검사된 적이 없었고**, 열자마자 결함 12건이 나왔다.
+      게이트 검사 12 가 이 테스트들의 실재를 기계로 확인한다
 - [x] `ruff check .` / `ruff format --check .` / `mypy .` 클린 — 게이트 검사 2·3·4
 - [x] INV-1 → 게이트 검사 5(AST 계층 위반 검사) / INV-2·3 → 게이트 검사 5 + `tests/test_read_path_no_commit.py`
 - [x] INV-4 → `tests/core/test_raw_repository_base.py`(injection 입력 + 식별자 allowlist, 18건) +

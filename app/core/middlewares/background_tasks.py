@@ -64,8 +64,25 @@ class BackgroundTaskRunner:
 
         task = asyncio.create_task(coro)
         self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(self._on_task_done)
         return True
+
+    def _on_task_done(self, task: asyncio.Task[Any]) -> None:
+        """추적에서 빼고 **예외를 회수**한다.
+
+        회수하지 않으면 태스크가 GC 될 때 asyncio 가 직접
+        ``Task exception was never retrieved`` 를 찍는다 — 우리 로그 포맷·필터 밖에서
+        나오므로 어느 요청에서 비롯됐는지 따라가기 어렵다 (F-033).
+
+        취소는 오류가 아니다. 종료 drain 이 timeout 후 스스로 취소한 것이므로, 이것을
+        error 로 남기면 정상 종료마다 오류가 쌓인다.
+        """
+        self._tasks.discard(task)
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if exception is not None:
+            logger.error("백그라운드 태스크 실패: %r", exception)
 
     async def drain(self, timeout: float = DRAIN_TIMEOUT_SECONDS) -> None:
         """in-flight 태스크를 기다리고, timeout 후 남은 것은 취소·회수한다.

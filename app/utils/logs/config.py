@@ -88,7 +88,15 @@ def build_dictconfig() -> dict:
             "level": log_settings.get_effective_console_level(app_settings.DEBUG),
         },
         QUEUE_HANDLER: {
-            "()": "app.utils.logs.queue_handler.build_queue_handler",
+            # ``class`` 로 선언해야 dictConfig 의 QueueHandler 특수 처리 경로를 탄다.
+            # ``()`` 팩토리를 쓰면 그 경로를 통째로 우회하게 되어 queue·listener·대상
+            # 핸들러 연결을 전부 손으로 해야 한다 (ADR-021).
+            "class": "app.utils.logs.queue_handler.BoundedQueueHandler",
+            "queue": {"()": "app.utils.logs.queue_handler.build_log_queue"},
+            "listener": "app.utils.logs.queue_handler.TimeoutSentinelListener",
+            # listener 가 위임받아 실제로 stdout/stderr 에 쓰는 핸들러들.
+            "handlers": listener_handler_names(env),
+            "respect_handler_level": True,
             # 적재 전에 요청 스레드에서 컨텍스트를 채운다(listener 스레드에서는 늦다).
             # sql_noise 는 SQL 본문·바인딩 파라미터가 로그로 새는 것을 막는다.
             "filters": ["sql_noise", "context"],

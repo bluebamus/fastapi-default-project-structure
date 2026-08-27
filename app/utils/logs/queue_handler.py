@@ -23,11 +23,22 @@ import queue
 import sys
 import time
 from logging import LogRecord
-from logging.handlers import QueueHandler
+from logging.handlers import QueueHandler, QueueListener
 from typing import IO
 
 # worker 프로세스별 queue 상한 (확정 정책 8).
 LOG_QUEUE_MAX_SIZE = 10_000
+
+# 종료 sentinel 을 넣을 때 기다리는 시간. queue 가 잠깐 가득 차 있어도 종료가
+# 실패하지 않게 하되, 영원히 매달리지도 않는다.
+SENTINEL_ENQUEUE_TIMEOUT_SECONDS = 2.0
+
+# listener 스레드가 멈추기를 기다리는 시간. 이 예산이 없으면 sentinel 이 소비되지
+# 않을 때 join 이 영원히 대기하고, atexit 훅에 물려 있으면 프로세스 종료가 막힌다.
+LISTENER_JOIN_TIMEOUT_SECONDS = 5.0
+
+# 쌓인 로그가 전부 기록되기를 기다리는 시간 (ADR-023). 종료 예산의 일부다.
+LOG_FLUSH_TIMEOUT_SECONDS = 2.0
 
 # 포화 알림을 남기는 최소 간격(초). 포화 상태에서는 알림 자체가 폭주한다.
 OVERFLOW_NOTICE_INTERVAL_SECONDS = 5.0
@@ -107,11 +118,77 @@ class BoundedQueueHandler(QueueHandler):
             pass
 
 
+class TimeoutSentinelListener(QueueListener):
+    """종료가 **정해진 시간 안에** 끝나는 QueueListener.
+
+    표준 구현은 두 곳이 무방비다.
+
+    1. ``enqueue_sentinel()`` 이 ``put_nowait`` 을 써서, bounded queue 가 포화면
+       ``queue.Full`` 로 종료 자체가 실패한다(F-030). 표준 라이브러리가 이 메서드의
+       독스트링에서 *"timeout 을 쓰고 싶으면 오버라이드하라"* 고 확장 지점을 지정하고
+       있으므로 그대로 따른다.
+    2. ``stop()`` 의 ``thread.join()`` 에 timeout 이 없다. sentinel 이 다른 소비자에게
+       가로채이면 영원히 기다린다 — 그리고 ``atexit`` 훅은 daemon 스레드 정리보다
+       **먼저** 실행되므로, 그 join 이 프로세스 종료를 그대로 막는다(F-037, 실측).
+
+    실패는 삼키지 않고 ``TimeoutError`` 로 알린다. 호출자가 참조를 유지한 채 재시도할
+    수 있어야 하기 때문이다 — 조용히 넘어가면 살아 있는 스레드를 잃는다.
+    """
+
+    def enqueue_sentinel(self) -> None:
+        """종료 sentinel 을 적재한다. 자리가 빌 때까지 제한된 시간만 기다린다.
+
+        typeshed 의 스텁은 ``QueueListener._sentinel`` 과 실제 queue 의 ``put`` 을
+        노출하지 않는다(스텁의 ``_QueueLike`` 는 ``get``/``put_nowait`` 만 가진다).
+        런타임 계약은 CPython 구현에 있으므로 이 두 줄만 타입 검사에서 제외한다.
+        """
+        sentinel = self._sentinel  # type: ignore[attr-defined]
+        self.queue.put(sentinel, timeout=SENTINEL_ENQUEUE_TIMEOUT_SECONDS)  # type: ignore[attr-defined]
+
+    def stop(self) -> None:
+        """listener 를 멈춘다. 예산을 넘기면 ``TimeoutError`` 를 올린다."""
+        if self._thread is None:  # 여러 번 불러도 안전하다.
+            return
+        self.enqueue_sentinel()
+        self._thread.join(LISTENER_JOIN_TIMEOUT_SECONDS)
+        if self._thread.is_alive():
+            raise TimeoutError(
+                f"logging listener 가 {LISTENER_JOIN_TIMEOUT_SECONDS}초 안에 멈추지 않았다"
+            )
+        self._thread = None
+
+
+def wait_until_written(
+    log_queue: queue.Queue,
+    timeout: float = LOG_FLUSH_TIMEOUT_SECONDS,
+) -> bool:
+    """큐에 넣은 record 가 **전부 기록될 때까지** 기다린다 (ADR-023).
+
+    listener 를 멈추지 않는다 — 소비가 끝나기를 기다리기만 한다. 종료 직전에 이걸
+    한 번 해 두면, 그 뒤 프로세스가 갑자기 죽어도 잃을 것이 남지 않는다.
+
+    표준 ``QueueListener._monitor`` 는 record 를 하나 처리할 때마다 ``task_done()``
+    을 부른다. 그래서 "unfinished_tasks 가 0" 이 곧 "넣은 걸 전부 썼다" 는 뜻이다.
+    ``Queue.join()`` 이 기다리는 조건과 **같은 조건**을 기다리되, ``join()`` 에는
+    timeout 이 없어서 여기서 직접 조건을 본다 — listener 가 죽어 있으면 ``join()``
+    은 영원히 매달린다(F-037 이 그 함정이었다).
+
+    Args:
+        log_queue: 확인할 로그 큐.
+        timeout: 최대 대기 시간(초).
+
+    Returns:
+        시간 안에 전부 기록됐으면 True, 예산을 넘겼으면 False.
+    """
+    with log_queue.all_tasks_done:
+        return bool(
+            log_queue.all_tasks_done.wait_for(
+                lambda: log_queue.unfinished_tasks == 0,
+                timeout,
+            )
+        )
+
+
 def build_log_queue() -> queue.Queue:
     """worker 프로세스별 bounded 로그 queue 를 만든다."""
     return queue.Queue(maxsize=LOG_QUEUE_MAX_SIZE)
-
-
-def build_queue_handler() -> BoundedQueueHandler:
-    """dictConfig 의 ``()`` 팩토리 — 새 bounded queue 를 가진 핸들러를 만든다."""
-    return BoundedQueueHandler(build_log_queue())
