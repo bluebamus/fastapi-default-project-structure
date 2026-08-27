@@ -41,7 +41,7 @@
 | REQ-005 | 2026-08-20 | Raw SQL **쓰기** 워크플로를 참조 예제로 추가 (**요청 원문 미기록** — 2026-08-20 세션이 기록 전에 중단됨. 아래 내용은 미커밋 코드·주석에서 역추론했다) | SCN-RAW-002(테스트 fixture 검증)를 넘어 **운영 공개 API 로 Raw DML 워크플로를 신설**한다 — 집계 스냅샷 재적재 엔드포인트 · Raw 정렬 식별자 allowlist · deprecated 세션 별칭 제거 | Active | ADR-010 ~ ADR-014 |
 | REQ-006 | 2026-08-20 | 남은 작업이 있는지 확인하고, 있으면 순서대로 정리해 진행할 것 (게이트 검사 추가 포함) | charter §3 인수기준 12칸을 **근거와 함께** 닫고, 근거가 없던 INV-10 검사를 신설한다. 같은 어긋남이 재발하지 않도록 게이트가 기계로 검사한다 | Active | ADR-015 |
 | REQ-007 | 2026-08-25 | lifespan 의 `AsyncExitStack` 사용을 평가해 달라 → 평가 결과를 받고 "평문 `try/finally` 로 적용해 달라" | `manage_application_resources()` 의 종료 조립을 `AsyncExitStack` 등록 역순에서 **`finally` 블록의 코드 순서**로 바꾼다. 종료 순서 계약(AR-008)·자원별 timeout·실패 격리는 불변 | Active | ADR-016 |
-| REQ-010 | 2026-08-27 | 전 라운드 산출물에 대한 외부 검토 계획서를 받고 "이 계획서의 타당성을 검수해 달라 — **코드의 가용성**이 가장 중요하고, **일반적으로 사용하는 방법**을 기준으로 설계·구현이 수립돼야 한다. 난해한 방식의 설계·코드는 구현되어서는 안 된다. 작업이 늘어나는 것은 상관없다" | **프로세스 종료 신뢰성**: 정상·startup 실패·취소 **모든** 종료에서 자원 정리를 끝까지 시도하고, 종료 과정의 로그가 유실되지 않는다. 구현은 **표준 라이브러리의 관용적 사용**으로 한정한다 — stdlib 가 제공하는 동작을 직접 구현하려면 ADR 로 근거를 남긴다 | Active | ADR-017 · ADR-018 · ADR-021 · ADR-020 · F-028~F-038 |
+| REQ-010 | 2026-08-27 | 전 라운드 산출물에 대한 외부 검토 계획서를 받고 "이 계획서의 타당성을 검수해 달라 — **코드의 가용성**이 가장 중요하고, **일반적으로 사용하는 방법**을 기준으로 설계·구현이 수립돼야 한다. 난해한 방식의 설계·코드는 구현되어서는 안 된다. 작업이 늘어나는 것은 상관없다" | **프로세스 종료 신뢰성**: 정상·startup 실패·취소 **모든** 종료에서 자원 정리를 끝까지 시도하고, 종료 과정의 로그가 유실되지 않는다. 구현은 **표준 라이브러리의 관용적 사용**으로 한정한다 — stdlib 가 제공하는 동작을 직접 구현하려면 ADR 로 근거를 남긴다 | Active | ADR-017 · ADR-018 · ADR-021 · ADR-020 · ADR-022 · F-028~F-039 |
 
 ## 3. 설계 결정 기록 (ADR — 확정 후 불변)
 
@@ -67,6 +67,7 @@
 | ADR-018 | 2026-08-27 | logging queue listener 의 **소유권을 프로세스로** 옮긴다. FastAPI lifespan 은 listener 를 멈추지 않고, `atexit` 로 프로세스 종료 시 정리한다. | lifespan 이 listener 를 멈추면 그 **뒤에** uvicorn 이 남기는 최종 로그와 **startup 실패 traceback 이 통째로 유실된다**(F-029). 실측: DB 가 꺼진 상태에서 `python main.py` 는 **14줄만 출력하고 오류 원인을 한 글자도 남기지 않는다**(같은 실패를 `uvicorn main:app` 은 195줄로 출력한다 — 그 경로는 우리 queue 를 거치지 않기 때문). F-026 은 이 현상의 **증상**(로그 한 줄의 위치)만 옮겼고 원인은 그대로 남아 있었다. `atexit` 는 프로세스 종료 정리를 위해 존재하는 표준 훅이며 CLI·직접 실행·정상 종료를 함께 포괄한다. SIGKILL 과 uvicorn `force_exit`(Ctrl+C 2회 — uvicorn 이 `lifespan.shutdown()` 을 **호출조차 하지 않는다**)은 애플리케이션 코드로 고칠 수 없어 비범위다. | Accepted | — |
 | ADR-020 | 2026-08-27 | uvicorn 3종 로거는 **`run_server()` 가 `uvicorn.run(log_config=...)` 으로** 연결한다. 앱 `build_dictconfig()` 에는 uvicorn 로거를 넣지 않는다 — **대안 A 기각**. | Wave 3(ADR-018) 이후 두 실행 경로를 같은 startup 실패로 실측하니 **정확성 차이가 없다**: `python main.py` 197줄 / `uvicorn main:app` 196줄, 양쪽 모두 traceback 2건 · `Application startup failed` 1건. 남은 차이는 로그 **포맷**뿐이다. 대안 A(앱 dictConfig 에 uvicorn 로거 포함)는 그 포맷을 얻는 대가로 *우리 `configure_logging()` 이 uvicorn 것보다 나중에 적용된다* 는 uvicorn 내부 import 순서(`Config.__init__:274` → `load():435`)에 기대는 암묵적 결합을 들인다 — 우리 저장소 안에서 검증할 수 없고, uvicorn 이 시점을 바꾸면 조용히 깨지며, 가드 테스트 `test_dictconfig_has_no_per_app_loggers` 에 구멍을 내야 한다. `log_config` 은 uvicorn 이 **문서화한 공식 파라미터**이고 이미 `main.py` 가 쓰던 방식이라, 파라미터 이름만 보고도 무슨 일이 일어나는지 읽힌다. `uvicorn main:app` CLI 경로는 uvicorn 기본 포맷으로 나가지만 오류·traceback 은 그대로 보인다(ADR-018). | Accepted | — |
 | ADR-021 | 2026-08-27 | 로깅 queue/listener 구성을 **`dictConfig` 네이티브 선언**(`class`/`queue`/`listener`/`handlers` 키)으로 옮기고, bounded queue 포화 시의 종료는 **`QueueListener.enqueue_sentinel()` 오버라이드**로 해결한다. | Python 3.12+ 의 `dictConfig` 는 QueueHandler 와 QueueListener 를 직접 구성한다. 현재 설정은 `"()"` 팩토리를 써서 **그 경로를 우회**하고, `setup.py` 가 전역 3개(`_queue_handler`·`_listener_targets`·`_listener`)와 이름 조회로 stdlib 가 해주는 일을 손으로 한다. 또 stdlib 의 `enqueue_sentinel()` 독스트링이 *"timeout 을 쓰고 싶으면 이 메서드를 오버라이드하라"* 고 확장 지점을 **명시**하고 있다(F-030). 이 프로젝트의 실제 필터·포매터·bounded queue 조합으로 10개 항목(핸들러 타입·maxsize 10000·커스텀 listener 주입·queue 객체 공유·필터 순서·출력·포맷·스레드 종료)을 **실측해 성립을 확인**했다. | Accepted | — |
+| ADR-022 | 2026-08-27 | 기본 동작이 **즉시 종료**인 신호(`SIGTERM`, Windows 의 `SIGBREAK`)에 *로그를 비운 뒤 원래 종료 동작으로 돌아가는* 핸들러를 `configure_logging()` 시점에 건다. **`SIGINT` 은 건드리지 않는다.** | ADR-018 의 `atexit` 훅이 신호 종료 경로에서 실행되지 않는다(F-038). uvicorn 은 정상 종료를 마친 뒤 원래 핸들러를 복구하고 **잡았던 신호를 다시 올리는데**(`capture_signals()`), 복구된 것이 `SIG_DFL` 이면 프로세스가 그 자리에서 끝나 `atexit` 이 돌지 않는다. 신호별 실측: `SIGINT` → 기본 핸들러가 `KeyboardInterrupt` 를 올려 **atexit 실행됨**(exit 0), `SIGTERM`·`SIGBREAK` → `SIG_DFL` 이라 **atexit 건너뜀**(exit 3). 그래서 대상을 뒤 두 개로 한정했다 — `SIGINT` 을 가로채면 `KeyboardInterrupt` 를 기대하는 pytest·REPL·디버거가 조용히 달라진다. 핸들러는 정리 후 `SIG_DFL` 로 되돌리고 같은 신호를 다시 올린다: **삼키지 않는다.** 삼키면 `docker stop` 이 종료되지 않는 컨테이너를 만나 SIGKILL 까지 기다린다. 이미 다른 핸들러가 걸려 있으면 뺏지 않고(gunicorn·Celery 가 자기 종료 절차를 가진다), main thread 가 아니면 건너뛴다(`signal.signal` 제약). | Accepted | — |
 
 > **ADR-020 은 위 표에 확정 등록됐다(대안 A 기각).** 판단을 뒤집은 것은 실측이다 — Wave 3 이 F-029 를 닫은 뒤에는 두 실행 경로의 **정확성이 같아져**, 대안 A 를 살리던 근거 *"CLI 경로에서 오류가 안 보인다"* 가 더 이상 성립하지 않는다. 남은 이득이 포맷 하나뿐인 상태에서 남의 라이브러리 내부 순서에 기대는 결합을 새로 들일 이유가 없다. 그 결과 `build_dictconfig()` 에 `loggers` 키를 넣지 않으므로 가드 테스트도 **그대로 살아 있다**.
 >
@@ -100,6 +101,10 @@
   `uvicorn.run(log_config=...)` 으로 연결하고 앱 `dictConfig` 에는 넣지 않는다(**대안 A 기각**).
   Wave 3 이후 두 실행 경로의 정확성이 같아졌다는 실측이 근거다. F-036(charter §2-4 와
   가드 테스트의 지시 불일치)을 함께 정정했다.
+- v0.8 (2026-08-27): ADR-022 추가 — 즉시 종료형 신호(`SIGTERM`/`SIGBREAK`)에 로그를 비우고
+  원래 동작으로 죽는 핸들러를 건다. **ADR-018 을 폐기하지 않는다** — `atexit` 는 정상 종료
+  경로를 그대로 맡고, ADR-022 가 그것이 닿지 않는 신호 경로를 덮는다. 근거: F-038.
+  잔여 F-039(`uvicorn main:app` CLI 경로)는 열려 있다.
   **ADR-016 은 폐기하지 않는다** — ADR-017 이 그것이 검증하지 않은 축(취소)을 보완한다.
 
 ---

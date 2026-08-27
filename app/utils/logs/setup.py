@@ -27,7 +27,9 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
+import signal
 import sys
+import threading
 from logging.config import dictConfig
 from logging.handlers import QueueListener
 
@@ -41,7 +43,6 @@ from app.utils.logs.queue_handler import BoundedQueueHandler
 
 _configured = False
 _queue_handler: BoundedQueueHandler | None = None
-_listener_targets: list[logging.Handler] = []
 _listener: QueueListener | None = None
 _exit_hook_registered = False
 
@@ -65,23 +66,80 @@ def _write_listener_lifecycle_status(message: str) -> None:
         pass
 
 
+# 기본 동작이 "그 자리에서 프로세스 종료" 인 신호들. 이 신호로 죽으면 ``atexit`` 훅이
+# 실행되지 않는다.
+#
+# ``SIGINT`` 은 **일부러 빼 두었다.** 파이썬의 기본 핸들러가 ``KeyboardInterrupt`` 를
+# 올리기 때문에 정상 종료 경로를 타고 ``atexit`` 이 이미 실행된다. 굳이 가로채면 코드
+# 전반에서 ``KeyboardInterrupt`` 를 기대하는 곳(pytest·REPL·디버거)이 조용히 달라진다.
+_DEADLY_DEFAULT_SIGNALS = ("SIGTERM", "SIGBREAK")
+
+
+def _drain_logs_then_default(signum: int, frame: object) -> None:
+    """로그를 마저 내보낸 뒤 **원래 종료 동작으로 돌아간다** (ADR-022 / F-038).
+
+    정리만 하고 신호를 삼키면 안 된다 — 삼키면 ``docker stop`` 이 종료되지 않는
+    컨테이너를 만나 결국 SIGKILL 로 끌려 죽는다. 기본 동작으로 되돌린 뒤 같은 신호를
+    다시 올려, 종료 코드와 종료 사유를 원래대로 유지한다.
+    """
+    try:
+        stop_log_listener()
+    except Exception:
+        # 실패 사유는 stop_log_listener 가 이미 최종 sink 에 적었다. 여기는 죽는 길이라
+        # 재시도할 호출자가 없으므로, 정리 실패가 종료 자체를 막게 두지 않는다.
+        pass
+    signal.signal(signum, signal.SIG_DFL)
+    signal.raise_signal(signum)
+
+
+def _install_signal_drain() -> None:
+    """즉시 종료형 신호에 "로그를 비우고 죽는" 핸들러를 건다 (ADR-022 / F-038).
+
+    uvicorn 은 정상 종료를 마친 뒤 원래 핸들러를 복구하고 **잡았던 신호를 다시 올린다**
+    (``capture_signals()``). 복구된 것이 ``SIG_DFL`` 이면 프로세스는 그 자리에서 끝나고
+    ``atexit`` 훅은 돌지 않는다 — queue 에 남은 종료 로그가 통째로 사라진다(daemon
+    스레드인 listener 도 함께 죽는다). 앱 import 시점에 미리 걸어 두면, uvicorn 이
+    "원래 핸들러" 로 복구하는 대상이 곧 이 핸들러가 된다.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        # ``signal.signal`` 은 main thread 에서만 호출할 수 있다. worker thread 안에서
+        # 로깅을 처음 구성하는 경우(스레드 풀·일부 테스트)는 조용히 건너뛴다.
+        return
+    for name in _DEADLY_DEFAULT_SIGNALS:
+        signum = getattr(signal, name, None)
+        if signum is None:  # 플랫폼에 없는 신호(SIGBREAK 은 Windows 전용)
+            continue
+        if signal.getsignal(signum) is not signal.SIG_DFL:
+            # 이미 누군가 다루고 있으면 뺏지 않는다 — gunicorn·Celery 처럼 자기 종료
+            # 절차를 가진 실행기가 있고, 그쪽 핸들러가 정상 종료하면 atexit 이 돈다.
+            continue
+        signal.signal(signum, _drain_logs_then_default)
+
+
 def _register_process_exit_hook() -> None:
-    """프로세스 종료 시 listener 를 멈추도록 **한 번만** 등록한다 (ADR-018).
+    """프로세스 종료 시 listener 를 멈추도록 **한 번만** 등록한다 (ADR-018 · ADR-022).
+
+    두 경로를 함께 덮는다.
+
+    1. ``atexit`` — 정상 종료(스크립트 종료·``sys.exit``·``KeyboardInterrupt``).
+    2. 신호 핸들러 — ``SIGTERM``/``SIGBREAK`` 처럼 기본 동작이 즉시 종료라 ``atexit``
+       이 실행되지 않는 경로(``docker stop``·k8s·Ctrl+Break).
 
     여러 번 등록되면 종료 때 stop 이 여러 번 불리고, 아예 없으면 프로세스가 listener
-    스레드를 남긴 채 죽는다. ``atexit`` 는 정상 종료(CLI·직접 실행·uvicorn)를 모두
-    포괄한다. SIGKILL 과 uvicorn 의 force_exit 은 이 훅이 돌지 않는 경로이며 비범위다.
+    스레드를 남긴 채 죽는다. SIGKILL 과 uvicorn 의 force_exit 은 어느 훅도 돌지 않는
+    경로이며 비범위다.
     """
     global _exit_hook_registered
     if _exit_hook_registered:
         return
     atexit.register(stop_log_listener)
+    _install_signal_drain()
     _exit_hook_registered = True
 
 
 def configure_logging(force: bool = False) -> None:
     """환경별 로깅 구성을 root 로거에 적용한다(idempotent)."""
-    global _configured, _queue_handler, _listener_targets
+    global _configured, _queue_handler
     if _configured and not force:
         return
 
