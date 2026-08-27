@@ -86,7 +86,8 @@ v1을 검수한 기준은 하나였다 — **"이것이 파이썬/FastAPI에서 
 - **SIGKILL** 및 uvicorn `force_exit`(Ctrl+C 2회) — 후자는 uvicorn이
   `lifespan.shutdown()`을 **호출조차 하지 않으므로** 애플리케이션 코드로 고칠 수 없다(§2.3)
 - logging 포맷·레벨 정책의 전면 개편
-- 앱별 로거 등록 일반화 — Wave 6은 **uvicorn 3종에 한정**한 예외다
+- 앱별 로거 등록 일반화 — **예외 없음.** Wave 6은 대안 A를 기각해 앱 `dictConfig`에
+  `loggers` 키를 만들지 않는다(ADR-020). uvicorn 3종은 `log_config`으로 분리된다
 
 ---
 
@@ -302,16 +303,33 @@ class Config:
 
 **우리 앱이 import될 때 실행되는 `configure_logging()`이 uvicorn보다 나중이다. 즉 우리가 이긴다.**
 
-| 대안 | 장점 | 단점 | 비고 |
+#### 판단을 바꾼 실측 (Wave 3 완료 후, 2026-08-27)
+
+이 절의 원안은 **A를 1순위 후보**로 뒀다. 근거는 "CLI 경로에서 오류가 안 보인다"였다.
+Wave 3(ADR-018 — listener 소유권을 프로세스로)이 끝난 뒤 두 경로를 **같은 startup
+실패(DB 다운)로 실제 기동**해 대조한 결과, 그 근거가 사라졌다.
+
+| | `python main.py` | `uvicorn main:app` |
+|---|---:|---:|
+| 총 출력 줄 수 | 197 | 196 |
+| `Application startup failed` | 1 | 1 |
+| Traceback | 2 | 2 |
+
+**정확성은 이미 동일하다. F-029는 Wave 3만으로 해결됐다.** 남은 차이는 로그 포맷
+하나뿐이다 — `[app=uvicorn]` 라벨과 타임스탬프 형식.
+
+| 대안 | 장점 | 단점 | 판정 |
 |---|---|---|---|
-| **A. `build_dictconfig()`에 uvicorn 3종 로거 포함** | `uvicorn main:app`·`fastapi dev`·`python main.py` **모든 경로**에서 동작. README 변경 불필요. 생태계 표준 명령 유지 | `loggers` 키가 생겨 가드 테스트 `test_dictconfig_has_no_per_app_loggers`가 **깨진다**. 새 ADR 필요 | **1순위 후보** |
-| B. `run_server()` 추출 + `uvicorn.run(log_config=...)` (v1안) | 실행 진입점이 하나로 모임 | `uvicorn main:app` CLI를 "비권장"으로 밀어내야 한다 — 이 저장소는 **표준 구조 템플릿**이고 생태계 표준 명령을 배제하는 것은 관용성에서 멀어진다 | 2순위 |
+| A. `build_dictconfig()`에 uvicorn 3종 로거 포함 | 모든 실행 경로에서 포맷이 통일된다 | 작동 원리가 *우리 `configure_logging()`이 uvicorn 것보다 나중에 적용된다*는 **uvicorn 내부 import 순서**다. 우리 저장소 안에서 검증할 수 없고, uvicorn이 시점을 바꾸면 조용히 깨진다. `loggers` 키가 생겨 가드 테스트에 구멍을 내야 하고 그걸 정당화할 ADR이 추가로 필요하다 | **기각** |
+| **B. `run_server()` 추출 + `uvicorn.run(log_config=...)`** | `log_config`은 uvicorn이 **문서화한 공식 파라미터**다. 파라미터 이름만 보고 동작을 읽을 수 있고, 순서 의존이 없다. **이미 `main.py`가 하던 방식**이라 새 메커니즘이 아니다. 가드 테스트·ADR 카브아웃이 필요 없다. `run_server()`가 생기면 Wave 7이 정상 앱과 실패 앱을 **같은 경로로** 띄울 수 있다 | `uvicorn main:app` CLI 경로의 uvicorn 로그는 기본 포맷으로 나간다 — 오류·traceback은 그대로 보이므로 **손실이 아니라 선택**이고, uvicorn CLI를 쓰는 모든 FastAPI 프로젝트의 기본 모습이다 | **채택 (ADR-020)** |
 | C. `uvicorn --log-config <file>` | uvicorn 공식 옵션 | `.json`/`.yaml`/`.ini`만 받는다. 이 프로젝트 설정은 ENV에 따라 **파이썬으로 생성**되므로 파일로 표현할 수 없다 | 기각 |
 
-**A와 B는 배타적이지 않다.** A를 채택해도 `run_server()` 추출은 독립적으로 유용하다
-(진입점 일원화). Wave 6에서 **A 단독 / A+B**를 결정한다.
+**결정 기준은 "중급 개발자가 리뷰하고 이어서 작업할 수 있는가"다.** 정확성 이득이 0인
+상태에서 남의 라이브러리 내부 순서에 기대는 결합을 새로 들이는 것은 그 기준에 반한다.
+`uvicorn main:app`은 **비권장으로 밀어내지 않는다** — README에 두 명령을 병기하고
+차이 한 줄을 적는다.
 
-**A를 채택할 경우 반드시 선행할 것:**
+**참고 — A를 채택했다면 선행이 필요했던 것 (지금은 해당 없음):**
 
 `ADR-019`("앱별 로거를 등록하지 않는다")는 **이 저장소에 근거 문서가 없는 유령 ID**다.
 이미 `F-023`(Accept-out-of-scope)와 residual-risk `R-007`로 수용됐고, 게이트
@@ -861,41 +879,45 @@ process 시작
   - `main.py`, `README.md`
   - `tests/utils/test_logs.py` (`test_dictconfig_has_no_per_app_loggers`, `test_uvicorn_shares_the_app_queue`)
   - `docs/crp/groups/orm-raw-repository/charter.md` §2-4
-- **files_modified:** (대안 A 기준)
-  - `docs/crp/groups/orm-raw-repository/design-baseline.md` (**ADR-020 선언**)
+- **files_modified:** (**대안 B 확정** — 2026-08-27 사용자 승인)
+  - `docs/crp/groups/orm-raw-repository/design-baseline.md` (**ADR-020 선언 — 대안 A 기각**)
   - `docs/crp/groups/orm-raw-repository/charter.md` (§2-4 정정 — F-036)
-  - `app/utils/logs/config.py`
-  - `tests/utils/test_logs.py`
-  - `main.py`, `README.md` (대안 B를 함께 채택할 경우)
+  - `main.py`, `README.md`
+  - `tests/test_main.py`, `tests/utils/test_logs.py` (F-036 문구)
+  - `app/utils/logs/config.py`는 **건드리지 않는다** — 대안 A를 기각했으므로 `loggers` 키가 생기지 않는다.
 - **작업:**
-  1. **STOP — 대안 A 단독 / A+B 를 사용자와 확정한다.** 이 결정 없이 코드를 고치지 않는다.
-  2. **ADR-020을 design-baseline에 선언**한다. 내용: uvicorn 3종 로거에 한해 `loggers`
-     키를 허용한다. **유령 `ADR-019`를 재사용하거나 개정하지 않는다**(§4.3).
+  1. **STOP — 대안을 사용자와 확정한다.** → **B 확정.** 근거는 §4.3의 실측: Wave 3 이후
+     두 실행 경로의 **정확성이 같아져** A를 살리던 근거가 사라졌고, 남은 이득이 포맷
+     하나뿐인 상태에서 uvicorn 내부 순서에 기대는 결합을 새로 들일 이유가 없다.
+  2. **ADR-020을 design-baseline에 선언**한다. 내용: uvicorn 로거는 `run_server()`의
+     `uvicorn.run(log_config=...)`으로 연결하고 앱 `build_dictconfig()`에는 넣지 않는다.
+     **유령 `ADR-019`를 재사용하거나 개정하지 않는다**(§4.3).
   3. **F-036 정정** — 가드 테스트가 "charter §2-4를 개정하라"고 지시하지만 §2-4에는
-     해당 비목표가 없다. charter §2-4에 "앱별 로거 등록 일반화"를 비목표로 **명시**하고,
-     ADR-020이 그 예외임을 함께 적는다.
-  4. `build_dictconfig()`에 uvicorn 3종 로거를 추가한다 — 핸들러는 queue 공유,
-     필터는 `StaticAppFilter(appname="uvicorn")`를 **로거에** 붙이고 `propagate=False`.
-     (필터를 공유 핸들러에 붙이면 앱 로그까지 uvicorn으로 라벨링된다.)
-  5. `test_dictconfig_has_no_per_app_loggers`를 **삭제하지 않고** 허용 목록을 정확히
-     `{"uvicorn", "uvicorn.error", "uvicorn.access"}`로 좁힌다. 그 외 로거가 생기면 계속 실패한다.
-  6. (A+B 선택 시) `main.py`의 `uvicorn.run()` 블록을 `run_server(app_import="main:app")`으로
-     추출한다. `tool.uv.package = false`는 **변경하지 않는다.**
-  7. (A+B 선택 시) README에 `uv run python main.py`를 추가하되, `uvicorn main:app`을
-     **비권장으로 표시하지 않는다** — 대안 A로 두 경로 모두 동작하기 때문이다.
+     해당 비목표가 없고, 메시지는 근거 문서가 없는 `ADR-019`를 인용한다. charter §2-4에
+     비목표를 **명시**하고 테스트 메시지가 그 조항을 가리키게 한다. 유령 ID 인용은 지운다.
+  4. `main.py`의 `uvicorn.run()` 블록을 `run_server(target="main:app")`으로 추출한다.
+     `log_config=setup_uvicorn_logging()` 배선은 **그대로 유지**한다.
+     `tool.uv.package = false`는 **변경하지 않는다.**
+  5. README에 `uv run python main.py`를 추가하되 `uvicorn main:app`을 **비권장으로
+     표시하지 않는다.** 두 명령 모두 오류·traceback을 동일하게 출력하며 차이는 포맷뿐임을
+     한 줄로 적는다.
+  6. 가드 테스트 `test_dictconfig_has_no_per_app_loggers`는 **좁히지도 뚫지도 않는다** —
+     앱 `dictConfig`에 `loggers` 키를 만들지 않으므로 그대로 통과한다.
 - **acceptance_criteria:**
-  - `uvicorn main:app`·`python main.py` **양쪽 모두**에서 uvicorn 로그가 project 포맷과
-    `[app=uvicorn]` 라벨로 나온다.
-  - uvicorn 3종 로거가 앱과 **같은 handler 인스턴스**를 쓰고 `propagate=False`다.
-  - 가드 테스트가 살아 있고, uvicorn 3종 **외의** 로거 추가는 여전히 실패시킨다.
+  - `run_server()`가 `uvicorn.run`에 `setup_uvicorn_logging()` 결과를 `log_config`으로
+    넘긴다(테스트로 고정). 대상 앱은 인자로 교체 가능하다(Wave 7 전제조건).
+  - `python main.py`에서 uvicorn 로그가 project 포맷과 `[app=uvicorn]` 라벨로 나온다.
+  - `uvicorn main:app`에서 uvicorn 기본 포맷으로 나가되 **오류·traceback은 동일하게** 나온다.
+  - 가드 테스트가 **무변경으로 통과**하고, 앱별 로거 추가는 여전히 실패시킨다.
   - design-baseline에 **ADR-020이 실재**하고, `LEGACY_UNDECLARED_IDS`는 변경되지 않았다.
   - charter §2-4와 가드 테스트의 지시가 서로 일치한다(F-036 종결).
 - **verification:**
-  - `.\.venv\Scripts\python.exe -m pytest -q tests\utils\test_logs.py`
+  - `.\.venv\Scripts\python.exe -m pytest -q tests\test_main.py tests\utils\test_logs.py`
   - `.\.venv\Scripts\python.exe scripts\review_gate.py`
 - **깨지는 기존 테스트 (예상):**
-  - `test_dictconfig_has_no_per_app_loggers` — **확실히 깨진다.** 위 5번으로 갱신한다.
-- **dependencies:** Task 3, Task 6 · **STOP: 대안 결정**
+  - **없음.** `main.py`의 `__main__` 블록은 어떤 테스트도 실행하지 않고, 앱 `dictConfig`는
+    바뀌지 않는다. (grep으로 확인: `uvicorn.run` 참조 테스트 0건)
+- **dependencies:** Task 3, Task 6 · **STOP: 대안 결정 → B 확정(2026-08-27)**
 
 ---
 
@@ -945,7 +967,14 @@ process 시작
 - **verification:**
   - `.\.venv\Scripts\python.exe -m pytest -q tests\integration\test_uvicorn_lifecycle.py`
 - **깨지는 기존 테스트:** 없음 (신규)
-- **dependencies:** Task 3, 4, 5, 6, 7
+- **선행 필수 — F-038:** 인수 조건의 *"process listener stop 완료가 단일 stream에서
+  관측된다"*는 **현재 설계로 충족할 수 없다.** uvicorn은 정상 종료를 마친 뒤
+  `capture_signals()`의 `finally`에서 원래 핸들러(`SIG_DFL`)를 복구하고 잡았던 신호를
+  **다시 올려**(`uvicorn/server.py:329`) 프로세스를 그 자리에서 끝낸다. 그래서 ADR-018의
+  `atexit` 훅이 **신호 종료 경로에서는 실행되지 않고**, queue에 남은 꼬리 로그가 유실된다.
+  Wave 6 실물 확인에서 관측했고 최소 재현 스크립트로 확정했다(Windows/CTRL_BREAK_EVENT:
+  `ATEXIT_RAN` 미출력·exit=3). **이 테스트를 쓰기 전에 F-038을 먼저 닫는다.**
+- **dependencies:** Task 3, 4, 5, 6, 7 · **F-038**
 
 ---
 

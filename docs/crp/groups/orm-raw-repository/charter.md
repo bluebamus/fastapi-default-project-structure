@@ -69,6 +69,11 @@
 - FastAPI lifespan 이 Celery worker 자원을 종료
 - shutdown 시 DB table drop
 - 짧은 CPU 연산의 무조건 `to_thread()` 전환
+- **앱 `dictConfig` 에 앱별 로거 등록** — 핸들러는 root 에만 붙이고 앱 판별은 소스 경로로
+  한다(Django 의 `settings.LOGGING["loggers"]` 식 등록을 쓰지 않는다). 가드 테스트
+  `test_dictconfig_has_no_per_app_loggers` 가 이 조항의 관문이다.
+  `setup_uvicorn_logging()` 이 선언하는 uvicorn 3종 로거는 **앱 설정이 아니라 uvicorn
+  자신에게 `log_config` 으로 넘기는 별도 설정**이므로 이 비목표에 해당하지 않는다(ADR-020).
 
 ## 3. 인수 기준 (Acceptance Criteria) — GATE 3
 
