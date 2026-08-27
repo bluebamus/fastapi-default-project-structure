@@ -220,7 +220,17 @@
 - [x] Wave 3 사전 예측 실패 1건 — "깨지는 기존 테스트" 4건을 적었으나 실제로는 **5건**이었다
       (`test_slow_cleanup_is_bounded_by_timeout` 누락). 사전 목록은 grep 이 아니라 추정으로
       만들었기 때문이다. 다음 Wave 부터는 기대값 문자열을 실제로 검색해 목록을 만든다.
-- [ ] Wave 4 — engine `gather` · background task 예외 회수 (F-032 · F-033)
+- [x] **Wave 4** — engine `gather` · background task 예외 회수 (F-032 · F-033).
+      red 5건 먼저 확인. 실패 내용이 결함을 그대로 드러냈다 — `dispose_engine()` 에서
+      `RuntimeError: writer dispose 실패` 가 **밖으로 전파**됐고, 실패 태스크 기록은
+      `[]` 인데 asyncio 가 `future: <Task finished ... exception=RuntimeError(...)>` 를
+      직접 찍고 있었다.
+      신규 `tests/core/test_db_engine_disposal.py` 6건 + background 3건 = **404 passed**,
+      게이트 **11종 전건 통과**.
+      계약 보존: `dispose_engine()` 시그니처를 바꾸지 않았고(Celery 호출부 무변경),
+      그것을 지키는 가드 테스트를 함께 넣었다.
+      Wave 3 교훈 적용: 깨질 기존 테스트 목록을 **grep 으로** 확인했고 실제로 0건이었다
+      (기존 테스트는 전부 `dispose_engine` 을 monkeypatch 하고 있었다).
 - [ ] Wave 5 — `dictConfig` 네이티브 전환 + `TimeoutSentinelListener` (F-030)
 - [ ] Wave 6 — uvicorn 로거 연결 대안 확정 후 구현 (ADR-020 · F-036)
 - [ ] Wave 7 — 실제 uvicorn subprocess 통합 테스트 2건

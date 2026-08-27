@@ -383,24 +383,40 @@ async def ping_writer_db(timeout: float = READINESS_TIMEOUT_SECONDS) -> None:
 
 
 async def dispose_engine() -> None:
-    """
-    앱 종료 시 엔진 리소스 정리
+    """앱 종료 시 writer·read replica·background 커넥션 풀을 **전부** 정리한다.
 
-    lifespan의 shutdown 단계에서 호출됩니다.
-    모든 커넥션 풀을 정리하고 데이터베이스 연결을 종료합니다.
+    lifespan 의 shutdown 단계와 Celery worker 종료 양쪽에서 호출된다.
+    **인자를 추가하지 않는다** — Celery 호출부가 인자 없이 부르므로 필수 인자가 생기면
+    worker 종료가 조용히 깨진다.
+
+    engine 하나의 dispose 실패가 나머지를 막으면 그 풀은 열린 채 프로세스가 죽고 DB 에
+    좀비 연결이 남는다. 그래서 전부 동시에 시도하고(``asyncio.gather`` 의
+    ``return_exceptions=True``) 실패는 **engine 이름과 함께** 기록만 한다. 여기서 예외를
+    올리면 원래의 종료 원인이 dispose 실패로 덮인다 (F-032).
 
     Note:
-        이 함수가 호출되지 않으면 커넥션이 정리되지 않아
-        데이터베이스에 좀비 연결이 남을 수 있습니다.
+        이 함수가 호출되지 않으면 커넥션이 정리되지 않아 DB 에 좀비 연결이 남는다.
     """
-    logger.info("[dispose_engine] Disposing database engines...")
-    await engine.dispose()
-    logger.info("[dispose_engine] Main engine disposed")
+    targets = [
+        ("writer", engine),
+        *((f"reader#{index}", replica) for index, replica in enumerate(read_engines)),
+        ("background", background_engine),
+    ]
+    logger.info("[dispose_engine] Disposing %d database engine(s)...", len(targets))
 
-    # replica 엔진도 함께 정리한다 (복제 비활성이면 빈 목록이라 no-op).
-    for index, read_engine in enumerate(read_engines):
-        await read_engine.dispose()
-        logger.info("[dispose_engine] Read replica engine #%d disposed", index)
+    results = await asyncio.gather(
+        *(target.dispose() for _, target in targets), return_exceptions=True
+    )
+    failed = [
+        (name, result)
+        for (name, _), result in zip(targets, results, strict=True)
+        if isinstance(result, BaseException)
+    ]
+    for name, result in failed:
+        logger.error("[dispose_engine] %s engine 정리 실패: %r", name, result)
 
-    await background_engine.dispose()
-    logger.info("[dispose_engine] Background engine disposed - ALL DONE")
+    logger.info(
+        "[dispose_engine] ALL DONE - 성공 %d · 실패 %d",
+        len(targets) - len(failed),
+        len(failed),
+    )
