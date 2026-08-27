@@ -247,7 +247,39 @@
 - [x] Wave 5 — `restart_log_listener()`(Celery prefork 경로)에 테스트가 **하나도 없었다.**
       dictConfig 가 만든 listener 를 재사용하게 되면서 fork 후 죽은 스레드 참조를 지워야
       하는데, 검증 없이는 조용히 깨질 자리였다. 회귀 테스트를 함께 추가했다.
-- [ ] Wave 6 — uvicorn 로거 연결 대안 확정 후 구현 (ADR-020 · F-036)
+- [x] **Wave 6** — uvicorn 로거 연결 대안 확정 후 구현 (**ADR-020** · F-036).
+      **원안(대안 A 1순위)을 뒤집어 대안 B를 채택했다.** 뒤집은 것은 실측이다 —
+      Wave 3(ADR-018) 이후 두 실행 경로를 같은 startup 실패로 기동해 대조하니
+      `python main.py` 197줄 / `uvicorn main:app` 196줄, **양쪽 다 traceback 2건 ·
+      `Application startup failed` 1건**으로 정확성이 같았다. A를 살리던 근거
+      *"CLI 경로에서 오류가 안 보인다"* 가 Wave 3 으로 이미 사라졌고, 남은 차이는
+      로그 **포맷** 하나뿐이었다.
+      기준은 *"중급 개발자가 리뷰하고 이어서 작업할 수 있는가"* 다. 대안 A 는 우리
+      `configure_logging()` 이 uvicorn 것보다 **나중에 적용된다**는 uvicorn 내부 import
+      순서에 기대므로 우리 저장소 안에서 검증할 수 없다. 정확성 이득 0에 그 결합을
+      새로 들일 이유가 없다고 판단했다.
+      채택한 B는 uvicorn 이 **문서화한 `log_config` 파라미터**이고 이미 `main.py` 가
+      쓰던 방식이라, 실제 작업은 `__main__` 블록에 갇혀 있던 코드를 `run_server()` 로
+      꺼내는 것이었다(Wave 7 이 정상 앱과 실패 앱을 같은 경로로 띄우기 위한 전제조건).
+- [x] Wave 6 — 부수 효과: 대안 A 를 기각하면서 **ADR 카브아웃도 가드 테스트 변경도
+      필요 없어졌다.** 원안은 `test_dictconfig_has_no_per_app_loggers` 의 허용 목록을
+      뚫을 예정이었으나, 앱 `dictConfig` 에 `loggers` 키를 만들지 않으므로 **무변경으로
+      통과**한다.
+- [x] Wave 6 — F-036 정정: 가드 테스트가 *"charter §2-4 를 개정하라"* 고 지시하는데 §2-4 에
+      그 비목표가 **없었고**, 메시지는 근거 문서가 없는 유령 `ADR-019` 를 인용했다.
+      지시를 따르려는 사람이 두 번 막히는 자리다. charter §2-4 에 조항을 명문화하고
+      메시지가 그 조항을 가리키게 했다.
+- [x] Wave 6 — 깨질 기존 테스트 **0건 예측 → 0건 적중.** grep 으로 `uvicorn.run`·
+      `run_server` 참조 테스트가 없음을 먼저 확인했다(Wave 3 교훈 적용 3회차).
+- [x] Wave 6 — 실물 확인에서 **F-038 을 새로 발견**했다. 두 실행 경로를 실제로 띄워
+      CTRL_BREAK_EVENT 로 종료하니 **양쪽 다** `[log-lifecycle] stop 완료` 가 나오지 않고
+      꼬리 로그가 잘렸다(exit=3). 추측하지 않고 uvicorn 소스를 확인한 결과
+      `capture_signals()` 가 정상 종료 후 원래 핸들러(`SIG_DFL`)를 복구하고 신호를 **다시
+      올려** 프로세스가 그 자리에서 죽는다 — `atexit` 훅이 돌지 않는다. 최소 재현
+      스크립트로 `ATEXIT_RAN` 미출력·exit=3 을 직접 확인했다.
+      **ADR-018 이 신호 종료 경로를 덮지 못한다는 뜻이고, Wave 7 의 인수 조건 하나를
+      현재 설계로는 충족할 수 없다.** Wave 7 착수 전에 처리한다.
+- [ ] **F-038 선행 처리** — 신호 종료 경로에서 listener 정지 (Wave 7 전제조건)
 - [ ] Wave 7 — 실제 uvicorn subprocess 통합 테스트 2건
 - [ ] Wave 8 — 문서·원장 수렴 + `--mysql-required` (F-034)
 

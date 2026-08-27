@@ -571,9 +571,17 @@ CREATE DATABASE fastapi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ### 5. 서버 실행
 
 ```bash
-# 개발 서버
-uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# 둘 중 아무거나 쓰면 됩니다.
+uv run python main.py                                        # .env 의 HOST/PORT/DEBUG 를 그대로 사용
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000  # uvicorn 표준 CLI
 ```
+
+> 두 명령 모두 정상 동작합니다. 오류와 traceback 도 **똑같이** 출력됩니다 — 로깅
+> listener 를 lifespan 이 아니라 프로세스가 소유하기 때문입니다(ADR-018).
+> 차이는 **uvicorn 자신의 로그 포맷 하나뿐**입니다: `python main.py` 는 프로젝트 포맷
+> (`[app=uvicorn]` 라벨)으로, `uvicorn main:app` 은 uvicorn 기본 포맷으로 나갑니다.
+> 앞의 명령이 `run_server()` 를 거치며 `uvicorn.run(log_config=...)` 을 넘기기 때문입니다
+> (ADR-020).
 
 ### 6. 접속
 

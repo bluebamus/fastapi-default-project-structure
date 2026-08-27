@@ -196,17 +196,22 @@ def test_development_is_stdout_only_and_local_time(monkeypatch, tmp_path):
 
 
 def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
-    """ADR-019 — 앱별 로거를 **등록하지 않는다**(핸들러는 root 에만).
+    """앱 dictConfig 에 앱별 로거를 **등록하지 않는다**(핸들러는 root 에만).
 
     이 프로젝트는 Django 의 ``settings.LOGGING["loggers"]`` 식 등록을 쓰지 않고
     소스 경로에서 앱을 판별한다. ``loggers`` 키가 생기면 그 설계가 바뀐 것이므로,
     코드보다 charter §2-4 비목표를 먼저 고쳐야 한다. 이 테스트가 그 관문이다.
+
+    uvicorn 3종 로거는 여기서 걸리지 않는다 — ``setup_uvicorn_logging()`` 이 만들어
+    ``uvicorn.run(log_config=...)`` 으로 **uvicorn 에게 넘기는 별도 설정**이고, 앱
+    ``build_dictconfig()`` 에는 들어가지 않는다 (ADR-020).
     """
     for env in ("development", "test", "staging", "production"):
         cfg = _build_with(monkeypatch, tmp_path, env=env)
         assert "loggers" not in cfg, (
             f"ENV={env} 의 dictConfig 에 loggers 키가 생겼습니다. "
-            "앱별 로거 등록은 ADR-019 의 비목표입니다 — charter §2-4 를 먼저 개정하세요."
+            "앱별 로거 등록은 charter §2-4 의 비목표입니다 — 코드보다 그 조항을 먼저 "
+            "개정하세요. uvicorn 로거가 필요하면 setup_uvicorn_logging() 쪽입니다(ADR-020)."
         )
         assert cfg["root"]["handlers"], "root 에 핸들러가 없으면 아무 로그도 나가지 않는다"
 
