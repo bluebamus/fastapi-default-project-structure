@@ -278,6 +278,10 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
         "dispose",
         "flush",
     ], "timeout 후 다음 cleanup 이 실행되지 않았다"
+    # Definition of Done 은 "정상·startup 실패·timeout·취소 **전부**" 에서 참조가
+    # 비워지기를 요구한다. 나머지 셋에는 단언이 있었는데 timeout 만 없었다 — 동작은
+    # 맞았지만 근거가 없었다(F-025 계열: "근거가 존재한 적 없는 칸").
+    assert app.state.resources is None, "timeout 경로에서 닫힌 자원 참조가 남았다 (AR-005 위반)"
 
 
 async def test_drain_gets_headroom_to_finish_cancellation(monkeypatch, wiring):

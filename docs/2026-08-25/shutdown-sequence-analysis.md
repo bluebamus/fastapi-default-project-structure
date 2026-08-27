@@ -118,11 +118,32 @@ async with AsyncExitStack() as cleanup:
 **이전에** 한꺼번에 등록했다. 결과:
 
 - 어디서 실패하든 **항상 3개 콜백이 전부 실행**된다 → 부분 정리가 작동한 적이 없다
-- 즉 ExitStack 은 "순서 있는 콜백 리스트" 이상을 하지 않았고, 평문 `try/finally` 와 **의미가 동일**했다
+- 즉 ExitStack 은 "순서 있는 콜백 리스트" 이상을 하지 않았다 — **단, 취소 경로까지 동일하지는 않았다(아래 정정)**
 - 대가로 등록 순서와 실행 순서가 반대가 되어, 주석 세 줄(`# 3번째로 실행`…)로 그 간극을 메우고 있었다
 
 "하나가 실패해도 뒤 단계를 건너뛰지 않는다"는 보장은 ExitStack 이 아니라
 `_run_cleanup()` 이 제공한다. 그래서 걷어내도 **잃는 보장이 없다.**
+
+> **정정 (2026-08-27, Round 12 / F-034).** 위 두 문장은 **일반 예외에서만 참이다.**
+>
+> `_run_cleanup()` 은 `except Exception` 으로 감싼다. 그런데 `asyncio.CancelledError` 는
+> `Exception` 이 아니라 **`BaseException`** 이라 그 그물을 그대로 통과한다. 그래서
+> 취소 경로에서는 `_run_cleanup()` 이 아무것도 보장하지 못하고, 평문 `finally` 안의
+> 연속 `await` 는 첫 단계에서 취소를 맞는 순간 **뒤 단계를 통째로 건너뛴다.**
+> `AsyncExitStack` 은 그 경우에도 나머지를 풀어냈다. 두 방식은 **취소에서 의미가
+> 달랐고**, ADR-016 은 그 차이를 잃었다(F-028).
+>
+> 실측(`asyncio` 3.14, 정리 1단계에서 `CancelledError` 발생):
+>
+| 조립 방식 | 정리 1단계에서 `CancelledError` 발생 시 | 2단계 도달 |
+|---|---|---|
+| (a) `AsyncExitStack` + `push_async_callback` | `['first', 'second']` | ✅ |
+| (b) 평문 `try/finally` 안의 연속 `await` | `['first']` | ❌ **건너뜀** |
+| (c) 중첩 `async with` (ADR-017, 현재) | `['first', 'second']` | ✅ |
+>
+> 당시 이 차이를 못 본 이유는 단순하다 — **취소를 시험한 테스트가 없었다.**
+> 현재 구조는 ADR-017 의 중첩 `async with` 이고, (a)의 보장과 (b)의 읽기 쉬움을 함께
+> 갖는다. 회귀 테스트: `test_manager_cancellation_still_runs_remaining_cleanup`.
 
 요구 명세와도 충돌하지 않는다 — **AR-008 수용 기준이 `try/finally` 를 첫 번째 허용
 형태로 명시**한다. 이탈한 것은 development-plan §9.5 · workflow-guide §11 의 *구현 예시* 뿐이고,

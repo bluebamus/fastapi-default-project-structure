@@ -292,11 +292,27 @@ async def lifespan(app: FastAPI):
         yield
 ```
 
-- 종료는 **획득의 역순**이며, `manage_application_resources()` 의 `finally` 블록에 그 순서가
-  코드 그대로 적혀 있습니다:
-  백그라운드 태스크 드레인 → DB 엔진 dispose → 로그 리스너 정지.
+- 종료는 **획득의 역순**입니다. 순서를 강제하는 코드는 없습니다 — **자원마다 작은 async
+  context manager 를 두고 획득 순서대로 중첩**하면 파이썬이 역순으로 풀어냅니다(ADR-017):
+
+  ```python
+  async with _log_queue(), _database(app), _background_tasks():
+      ...
+  # 정리: background drain → DB dispose → 로그 큐 flush
+  ```
+
   순서가 중요합니다 — 태스크가 아직 세션을 쥔 채 엔진을 닫으면 커넥션이 강제로 끊기고,
-  로그 리스너를 먼저 내리면 그 과정에서 나는 오류가 어디에도 남지 않습니다.
+  로그 정리를 먼저 하면 그 과정에서 나는 오류가 어디에도 남지 않습니다.
+- **이 중첩을 평평한 `finally` 안의 연속 `await` 로 되돌리지 마세요.**
+  `asyncio.CancelledError` 는 `Exception` 이 아니라 `BaseException` 이라 `except Exception`
+  그물을 통과합니다. 연속 `await` 였을 때는 첫 정리에서 취소를 맞으면 **뒤 단계가 통째로
+  건너뛰어졌습니다**(F-028 — 커넥션 풀이 닫히지 않았습니다). 중첩 컨텍스트는 바깥
+  `__aexit__` 가 반드시 실행되므로 그 경로 자체가 없습니다.
+- **로그 리스너는 여기서 멈추지 않습니다**(ADR-018). 멈추면 그 **뒤에** uvicorn 이 남기는
+  최종 로그와 startup 실패 traceback 이 소비자 없는 큐에 갇혀 사라집니다(F-029).
+  lifespan 은 *멈추지* 않고 **다 나갈 때까지 기다리기만** 합니다(ADR-023). 실제 정지는
+  프로세스 몫이며 `atexit` 훅과 `SIGTERM`/`SIGBREAK` 핸들러가 맡습니다(ADR-022) —
+  `docker stop` 은 `atexit` 이 실행되지 않는 경로라 신호 핸들러가 따로 필요합니다.
 - 각 단계에 **개별 타임아웃**이 있고 전체에도 상한이 있습니다. 하나가 늦어도 나머지 정리는
   진행됩니다.
 - 드레인은 자기 몫의 타임아웃보다 **짧게** 기다립니다(`DRAIN_WAIT_RATIO`). 남는 시간은 취소된
@@ -305,6 +321,16 @@ async def lifespan(app: FastAPI):
 - 로그는 큐 기반 핸들러를 씁니다. 이벤트 루프가 파일·소켓 I/O 로 막히지 않도록 핸들러는
   큐에 넣기만 하고 별도 스레드가 소비합니다. 큐가 가득 차면 ERROR 이상은 stderr 로 흘리고
   그 아래는 버립니다 — **로깅이 요청 처리를 막지 않는 것**이 우선입니다.
+- 이 절의 종료 계약은 실제 서버 프로세스를 띄우는 통합 테스트가 지킵니다
+  (`tests/integration/test_uvicorn_lifecycle.py`). lifespan 을 직접 호출하는 단위 테스트로는
+  이 계열 결함이 **보이지 않습니다** — 문제가 lifespan 바깥에 살기 때문입니다.
+
+> **변경 이력.** 초판은 `AsyncExitStack` 등록 역순이었고, ADR-016(2026-08-25)이 평문
+> `try/finally` 로 바꿨습니다. 그 변경이 취소 안전성을 잃은 것이 확인돼(F-028)
+> ADR-017(2026-08-27)이 **중첩 `async with`** 로 다시 바꿨습니다 — `AsyncExitStack` 의
+> 보장과 평문 `finally` 의 읽기 쉬움을 함께 갖습니다.
+> 로그 리스너 수명은 ADR-018·ADR-022·ADR-023 이 정합니다.
+> 배경 전체는 [로깅과 종료](./LOGGING-AND-SHUTDOWN.md) 에 있습니다.
 
 ---
 

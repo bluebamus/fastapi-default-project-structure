@@ -70,7 +70,31 @@ finally:
 | 얻음 | 종료 순서가 **코드 순서와 일치** — `# 3번째로 실행` 류 주석 3줄 제거 |
 | 얻음 | 한 파일 안에서 위→아래로 읽으면 종료 절차가 그대로 보인다 |
 | 얻음 | F-026 수정 — 출력된 적 없던 종료 완료 로그가 살아났다 |
-| 잃음 | **없음** — 부분 정리는 애초에 작동하지 않았고(§ 분석 문서 §4), 실패 격리는 `_run_cleanup()` 소관 |
+| 잃음 | **취소 안전성** — 아래 정정 참조 |
+
+> **정정 (2026-08-27, Round 12 / F-034).** 위 "잃음 — 없음" 은 **틀렸다.**
+>
+> `AsyncExitStack.__aexit__` 는 콜백 하나가 예외를 내도 나머지를 계속 풀어낸다. 반면
+> 평문 `finally` 안의 **연속 `await`** 는 첫 단계에서 `asyncio.CancelledError` 를 맞으면
+> 뒤 단계를 통째로 건너뛴다. `CancelledError` 는 `Exception` 이 아니라 `BaseException`
+> 이라 `_run_cleanup()` 의 `except Exception` 그물을 그대로 통과하기 때문이다.
+>
+> 즉 ADR-016 은 **취소 경로에서 실제로 보장을 잃었다.** 그 결과가 F-028 이다 —
+> 취소 시 DB 커넥션 풀이 닫히지 않고 `app.state.resources` 가 닫힌 객체를 계속 가리켰다.
+>
+> 실측(`asyncio` 3.14, 정리 1단계에서 `CancelledError` 발생):
+>
+| 조립 방식 | 정리 1단계에서 `CancelledError` 발생 시 | 2단계 도달 |
+|---|---|---|
+| (a) `AsyncExitStack` + `push_async_callback` | `['first', 'second']` | ✅ |
+| (b) 평문 `try/finally` 안의 연속 `await` | `['first']` | ❌ **건너뜀** |
+| (c) 중첩 `async with` (ADR-017, 현재) | `['first', 'second']` | ✅ |
+>
+> **더 중요한 것은 이 표에 "없음" 이라고 적을 수 있었던 이유다** — 취소를 시험하는
+> 테스트가 하나도 없었다. 없는 것을 근거로 "잃은 것이 없다" 고 적었다.
+> 지금은 `test_manager_cancellation_still_runs_remaining_cleanup` 이 이 축을 지킨다.
+>
+> ADR-017 의 중첩 `async with` 가 (a)의 보장을 되돌리면서 (b)의 읽기 쉬움도 유지한다.
 
 ---
 
