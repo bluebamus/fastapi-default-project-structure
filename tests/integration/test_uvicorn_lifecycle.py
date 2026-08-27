@@ -157,7 +157,10 @@ def server_process():
 
     def _start(argv: list[str]) -> ServerProcess:
         port = _free_port()
-        proc = ServerProcess([sys.executable, *argv], port)
+        # uvicorn CLI 는 포트를 환경변수가 아니라 인자로 받는다. argv 안의 "{port}" 를
+        # 할당된 포트로 채운다.
+        resolved = [arg.format(port=port) for arg in argv]
+        proc = ServerProcess([sys.executable, *resolved], port)
         started.append(proc)
         return proc
 
@@ -243,3 +246,37 @@ def test_startup_failure_still_reports_the_cause(server_process):
     assert (
         "[log-lifecycle] stop 완료" in out
     ), f"실패 경로에서 listener 가 정지되지 않았다 — 꼬리 로그가 유실된다.\n{out}"
+
+
+def test_uvicorn_cli_also_flushes_the_shutdown_tail(server_process):
+    """`uvicorn main:app` 로 띄워도 앱 종료 로그가 끝까지 나온다 (F-039 / ADR-023).
+
+    이 경로에서는 ADR-022 의 신호 핸들러가 **효력이 없다.** uvicorn 이 `serve()` 에서
+    원래 핸들러를 먼저 스냅샷한 뒤 그 안쪽에서 앱을 import 하므로, 우리 핸들러는
+    스냅샷보다 늦게 걸려 종료 시 복구되는 `SIG_DFL` 에 덮인다. 즉 프로세스가 그 자리에서
+    죽고 큐에 남은 줄이 사라진다.
+
+    그래서 **신호가 오기 전에** 비운다 — lifespan 종료 맨 끝에서 큐가 다 비워질 때까지
+    기다린다(멈추지 않는다). 이 경로에서 우리 큐에 들어가는 것은 앱 로그뿐이고 앱이
+    마지막으로 로그를 남기는 시점이 lifespan 종료 절차 안이므로, 여기서 비우면 잃을 것이
+    남지 않는다.
+
+    `자원 해제 완료` 는 *정리가 끝까지 갔다* 는 확인선이다. 이 줄이 없으면 장애 분석에서
+    "잘 끝났다" 와 "정리하다 멈췄다" 를 구분할 수 없다.
+    """
+    proc = server_process(["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "{port}"])
+    assert proc.wait_for_marker(
+        READY_MARKER, READY_TIMEOUT_SECONDS
+    ), f"서버가 {READY_TIMEOUT_SECONDS:.0f}초 안에 기동하지 않았다.\n{proc.output}"
+
+    returncode = proc.stop_gracefully()
+    out = proc.output
+
+    assert not proc.forced, (
+        "정상 종료 신호로 끝나지 않아 강제 종료했다. 강제 종료를 정상 종료의 근거로 "
+        f"쓸 수 없다 (exit={returncode}).\n{out}"
+    )
+    assert "[shutdown] 애플리케이션 요청 처리 자원 해제 완료" in out, (
+        "uvicorn CLI 로 띄우면 앱 종료 로그의 꼬리가 잘린다 — 정리가 끝까지 갔는지 "
+        f"로그로 확인할 수 없다 (F-039).\n{out}"
+    )

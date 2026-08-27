@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
+import queue as queue_module
 import signal
 import sys
 import threading
@@ -39,7 +40,11 @@ from app.utils.logs.config import (
     _level,
     build_dictconfig,
 )
-from app.utils.logs.queue_handler import BoundedQueueHandler
+from app.utils.logs.queue_handler import (
+    LOG_FLUSH_TIMEOUT_SECONDS,
+    BoundedQueueHandler,
+    wait_until_written,
+)
 
 _configured = False
 _queue_handler: BoundedQueueHandler | None = None
@@ -227,6 +232,32 @@ def stop_log_listener() -> None:
     _write_listener_lifecycle_status("stop 완료")
 
 
+async def flush_log_queue(timeout: float = LOG_FLUSH_TIMEOUT_SECONDS) -> bool:
+    """쌓인 로그가 전부 기록될 때까지 기다린다. listener 는 **멈추지 않는다** (ADR-023).
+
+    ``uvicorn main:app`` 경로에서는 ADR-022 의 신호 핸들러가 효력이 없다 — uvicorn 이
+    원래 핸들러를 스냅샷한 **뒤에** 앱을 import 하므로, 우리 핸들러는 늦게 걸려 종료 시
+    복구되는 ``SIG_DFL`` 에 덮인다(F-039). 신호가 온 뒤에는 손쓸 방법이 없으므로,
+    **오기 전에** 비워 둔다.
+
+    기다림 자체는 동기 작업이라 그대로 await 하면 종료 중 event loop 를 막는다.
+
+    Returns:
+        예산 안에 전부 기록됐으면 True. 시간 초과면 False (실패로 취급하지 않는다 —
+        로그를 조금 잃을 뿐, 종료를 막을 이유는 없다).
+    """
+    handler = _queue_handler
+    if handler is None or _listener is None:
+        return True  # 소비자가 없으면 기다려도 비지 않는다.
+    log_queue = handler.queue
+    if not isinstance(log_queue, queue_module.Queue):
+        # typeshed 는 ``QueueHandler.queue`` 를 ``get``/``put_nowait`` 만 있는 넓은
+        # 타입으로 본다. 실제로는 ``build_log_queue()`` 가 만든 ``queue.Queue`` 지만,
+        # 누가 갈아끼웠다면 기다릴 근거(``task_done`` 계약)가 없으므로 그냥 넘어간다.
+        return True
+    return await asyncio.to_thread(wait_until_written, log_queue, timeout)
+
+
 async def stop_log_listener_async() -> None:
     """listener 종료를 event loop 밖에서 수행한다.
 
@@ -292,6 +323,7 @@ __all__ = [
     "LOG_FORMAT",
     "_env",
     "configure_logging",
+    "flush_log_queue",
     "get_logger",
     "get_queue_handler",
     "get_shared_queue_handler",
