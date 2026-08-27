@@ -295,7 +295,27 @@
       uvicorn 이 `capture_signals()` **안에서** 앱을 import 하므로 우리 핸들러가
       스냅샷보다 늦게 걸려 덮인다. 해법 후보는 lifespan 끝의 queue flush(`queue.join()`)이며
       ADR-018 계약과 shutdown 예산에 닿는다.
-- [ ] Wave 7 — 실제 uvicorn subprocess 통합 테스트 2건
+- [x] **Wave 7** — 실제 uvicorn subprocess 통합 테스트 2건
+      (`tests/integration/test_uvicorn_lifecycle.py`, `uvicorn_startup_failure_app.py`).
+      정상 종료는 **순서**를 본다 — `자원 해제 완료` → `Application shutdown complete`
+      → `[log-lifecycle] stop 완료`. 이 순서를 추측으로 쓰지 않고 실물 출력을 먼저 떠서
+      확정했다. Windows `CREATE_NEW_PROCESS_GROUP` + `CTRL_BREAK_EVENT` / POSIX `SIGTERM`
+      분기는 `ServerProcess` 안에 가뒀고, `stderr=STDOUT` 단일 pipe 로 순서를 보존한다.
+      강제 종료는 fallback 전용이며 `forced` 플래그로 **정상 종료와 구분**한다.
+      MySQL 불필요 — `DEBUG=false` 면 테이블 자동 생성을 건너뛰어 접속 없이 도달한다.
+- [x] **Wave 7 — 변이 검증(mutation testing)으로 테스트의 실효성을 확인했다.**
+      red 없이 통과한 신규 테스트는 아직 아무것도 증명하지 않는다. 결함을 하나씩 되살려
+      실제로 빨개지는지 봤다.
+      ①`_install_signal_drain()` 제거(F-038 재현) → 정상 종료 테스트 red.
+      ②자원 정리 끝에 `stop_log_listener()` 주입(**F-029 재현**) → **두 테스트 모두 red**,
+        출력이 옛 증상 그대로.
+      ③`log_config=` 제거(ADR-020 배선 제거) → 두 테스트 모두 red.
+- [x] **Wave 7 — 변이 검증이 실제로 결함을 잡아냈다.** 실패 앱의 첫 판(계획서 문안대로
+      lifespan 진입 즉시 `raise`)은 우리 `manage_application_resources()` 를 **아예 타지
+      않아**, F-029 를 되살려도 통과했다. F-029 는 *정리 과정이 listener 를 멈춘 탓에 그
+      뒤 traceback 이 사라지는* 결함인데, 정리 과정을 안 거치니 재현될 수가 없었다.
+      실패 지점을 자원 관리자 **안쪽**으로 옮겨 고쳤다. 변이 검증을 건너뛰었다면
+      "초록인데 아무것도 못 잡는" 테스트를 그대로 커밋했을 것이다.
 - [ ] Wave 8 — 문서·원장 수렴 + `--mysql-required` (F-034)
 
 ---
