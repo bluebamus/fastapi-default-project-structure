@@ -292,7 +292,8 @@ async def lifespan(app: FastAPI):
         yield
 ```
 
-- 종료는 **획득의 역순**이며 `AsyncExitStack` 이 순서를 강제합니다:
+- 종료는 **획득의 역순**이며, `manage_application_resources()` 의 `finally` 블록에 그 순서가
+  코드 그대로 적혀 있습니다:
   백그라운드 태스크 드레인 → DB 엔진 dispose → 로그 리스너 정지.
   순서가 중요합니다 — 태스크가 아직 세션을 쥔 채 엔진을 닫으면 커넥션이 강제로 끊기고,
   로그 리스너를 먼저 내리면 그 과정에서 나는 오류가 어디에도 남지 않습니다.
@@ -381,4 +382,5 @@ uv run alembic upgrade head
 | 2026-08-11 | **문서 드리프트 정정**: §4 와 README 가 P1-3 이전의 "의존성이 `yield` 후 커밋" 을 계속 설명하고 있었다(코드는 이미 핸들러 커밋). §4 예시를 실제 코드(쓰기/조회 의존성 분리 + 핸들러 `await service.commit()`)로 교체하고, `BaseService` 독스트링도 같이 정정. 아울러 재구조화 잔재 정리 — `tests/features/` 잔류분을 `app/features/<name>/tests/` 로 통합, 이동 중 겹친 디렉터리 레벨과 빈 `tests/scripts/` 제거. |
 | 2026-08-11 | **Django 배선 제거 (구조는 vertical slice 유지)**: 옛 중앙 목록 순회 → 명시 `include_router`; 기능별 `admin.py` 관용 수집(`getattr(..., "admin_views", [])`) → 중앙 `app/features/admin.py`의 명시 import(`ADMIN_VIEWS`+`register_admin`); `scripts/new_app.py` 제거. 폴더는 실제 코드 기준 `app/features/` 를 유지한다. 모델 등록은 `models_registry` 디렉터리 스캔 유지. 공개 API 경로·응답 스키마·SQLAdmin 보안 정책 불변. |
 | 2026-08-11 | **문서 정합성 재정리**: 삭제된 심화·리팩터링 문서 참조, 존재하지 않는 과거 모듈·관리자 경로 참조, 제거된 중앙 목록 설명을 실제 코드 기준으로 정정. |
+| 2026-08-25 | **lifespan 종료 조립 단순화 (ADR-016)**: `manage_application_resources()` 에서 `AsyncExitStack` 을 제거하고 평문 `try/finally` 로 전환했다. 종료 순서·자원별 timeout·실패 격리 계약은 불변이며 `tests/core/test_resources.py` 13건을 **한 줄도 고치지 않고** 통과했다. ExitStack 은 콜백 3개를 자원 획득 이전에 한꺼번에 등록하고 있어 "부분 획득 실패 시 그만큼만 되돌린다"는 이점이 작동한 적이 없었고, 대가로 등록 순서와 실행 순서가 반대가 되어 주석으로 그 간극을 메우고 있었다. 실패 격리는 원래부터 `_run_cleanup()` 이 제공한다. 함께 F-026 수정 — `"[shutdown] ... 해제 완료"` 로그가 listener 정지 **뒤에** 찍혀 한 번도 출력된 적이 없었다. 향후 Redis 처럼 조건부 생성 자원이 들어오면 ExitStack 재도입을 재평가한다. |
 | 2026-08-13 | **ORM/Raw Repository 이원화 + 런타임·문서 정비**(§4.1·§4.2 신설). ① lifespan 자원 관리를 `app/core/resources.py` 로 모으고 역순 종료·개별 타임아웃을 강제, 로깅을 큐 기반 비차단 핸들러로 전환. ② 모델 공통 컬럼을 Mixin 으로 정리(스키마 diff 0 을 스냅샷으로 증명). ③ `BaseRepository` 공개 계약을 최소 CRUD 8개로 좁히고(823→185줄) 예외 변환을 전 경로에 통일. ④ `RawRepositoryBase` 신설 — ORM Base 와 상속 관계 없음(INV-5). ⑤ 참조 예제 2종(`catalog`=ORM, `reports`=Raw) + MySQL 8.4 통합 테스트 환경. ⑥ OpenAPI 문서 계약을 규칙 테스트로 고정. 공개 API 경로·응답 스키마는 신규 추가분 외 불변. 결함 17건(CRIT 2·HIGH 5)을 `docs/crp/groups/orm-raw-repository/ledger.md` 에 기록. |
