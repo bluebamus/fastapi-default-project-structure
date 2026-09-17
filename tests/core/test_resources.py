@@ -14,6 +14,7 @@ import asyncio
 
 import pytest
 from fastapi import FastAPI
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy import Column, Integer, MetaData, Table
 
 from app.core import resources
@@ -43,6 +44,20 @@ class _FakeRunner:
             raise RuntimeError("drain 실패(의도적)")
 
 
+class _FakeRedis:
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _FakeRedisFactory:
+    @staticmethod
+    def from_url(*args, **kwargs) -> _FakeRedis:
+        return _FakeRedis()
+
+
 @pytest.fixture
 def wiring(monkeypatch):
     """자원 관리자의 협력자를 전부 가짜로 갈아끼우고 호출 기록을 돌려준다."""
@@ -69,6 +84,7 @@ def wiring(monkeypatch):
     monkeypatch.setattr(resources, "create_db_tables", fake_create)
     monkeypatch.setattr(resources, "import_all_models", fake_import)
     monkeypatch.setattr(resources, "access_log_tasks", _FakeRunner(calls))
+    monkeypatch.setattr(resources, "Redis", _FakeRedisFactory)
     # listener 를 **멈추는** 것은 여전히 lifespan 소유가 아니다 (ADR-018).
     # 다만 쌓인 로그가 다 나가기를 **기다리는** 것은 lifespan 의 마지막 일이다 (ADR-023).
     monkeypatch.setattr(resources, "flush_log_queue", fake_flush)
@@ -225,6 +241,34 @@ async def test_startup_failure_still_runs_cleanup(monkeypatch, wiring):
             pytest.fail("startup 이 실패했는데 본문이 실행됐다")
 
     assert "drain" in calls and "dispose" in calls, "startup 실패 시 cleanup 이 실행되지 않았다"
+    assert app.state.resources is None
+
+
+async def test_redis_connection_failure_stops_startup_and_cleans_up(monkeypatch, wiring):
+    """필수 Redis의 PING 실패는 startup을 중단하고 이미 연 자원을 정리한다."""
+    calls, _ = wiring
+
+    class _UnavailableRedis(_FakeRedis):
+        async def ping(self) -> bool:
+            raise RedisConnectionError("Redis unavailable")
+
+        async def aclose(self) -> None:
+            calls.append("redis_close")
+
+    class _UnavailableRedisFactory:
+        @staticmethod
+        def from_url(*args, **kwargs) -> _UnavailableRedis:
+            return _UnavailableRedis()
+
+    monkeypatch.setattr(resources, "Redis", _UnavailableRedisFactory)
+    app = FastAPI()
+
+    with pytest.raises(RedisConnectionError):
+        async with resources.manage_application_resources(app):
+            pytest.fail("Redis 연결이 실패했는데 애플리케이션이 시작됐다")
+
+    assert calls == ["redis_close", "dispose", "flush"]
+    assert app.state.redis is None
     assert app.state.resources is None
 
 

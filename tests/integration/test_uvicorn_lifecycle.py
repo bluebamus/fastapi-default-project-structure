@@ -10,8 +10,8 @@ lifespan 을 직접 호출하는 테스트로는 이 계열 결함이 **보이�
     정상 종료:      … 자원 해제 완료 → Application shutdown complete → listener stop 완료
     startup 실패:   RuntimeError 와 traceback 이 프로젝트 포맷으로 실제 출력된다
 
-MySQL 은 필요 없다. ``DEBUG=false`` 면 startup 이 테이블 자동 생성을 건너뛰므로 DB 에
-접속하지 않고 readiness 지점까지 간다.
+MySQL 은 필요 없다. ``DEBUG=false`` 면 startup 이 테이블 자동 생성을 건너뛴다.
+필수 startup 자원인 Redis는 필요하며, 준비되지 않은 환경에서는 이 모듈을 건너뛴다.
 """
 
 from __future__ import annotations
@@ -38,6 +38,18 @@ READY_MARKER = "Uvicorn running on"
 # 테스트 결과에 그대로 드러난다(정상 종료 근거로 쓰지 않는다).
 READY_TIMEOUT_SECONDS = 60.0
 STOP_TIMEOUT_SECONDS = 30.0
+
+
+@pytest.fixture(scope="module", autouse=True)
+def require_redis() -> None:
+    """이 모듈의 본래 검증 대상인 Uvicorn lifecycle에 도달할 수 있어야 한다."""
+    host = os.getenv("REDIS_HOST", "localhost")
+    port = int(os.getenv("REDIS_PORT", "6379"))
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            pass
+    except OSError:
+        pytest.skip(f"Redis가 준비되지 않음: {host}:{port}")
 
 
 def _free_port() -> int:
