@@ -1,4 +1,6 @@
-"""현행 가이드(docs/guides)가 가리키는 파일이 실제로 존재하는지 본다.
+"""현행 가이드(docs/guides)와 README 가 가리키는 파일이 실제로 존재하는지 본다.
+
+README 는 설치·실행 절차(옛 QUICKSTART)를 담으므로 가이드와 같은 규칙으로 검사한다.
 
 가이드는 사람이 **따라 하는** 문서라 틀리면 가장 비싸다. 코드 테스트는 문서를
 import 하지 않으므로, 파일을 옮기거나 지워도 가이드만 조용히 썩는다 — 2026-09-17
@@ -20,6 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GUIDES = sorted((REPO_ROOT / "docs" / "guides").glob("*.md")) + sorted(
     (REPO_ROOT / "docs" / "guides").glob("*.html")
 )
+#: 경로 검사 대상 — 가이드 전부 + 루트 README.
+CHECKED_DOCS = [REPO_ROOT / "README.md", *GUIDES]
 
 _PATH = re.compile(
     r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\.(?:py|ya?ml|toml|json|ini|cfg|txt|md|html))`"
@@ -31,8 +35,8 @@ _IGNORED_DIRS = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache",
 
 #: 의도적으로 실재하지 않는 경로 — 이유를 함께 적는다.
 ALLOWED_MISSING = {
-    "app/apps.py",  # ARCHITECTURE: "중앙 app/apps.py 를 쓰지 않는다" 는 부정 서술
-    "inventory/__init__.py",  # 개발 안내서: 새 기능을 만드는 가상 예시
+    "app/apps.py",  # 제거된 중앙 등록 파일 — 과거 배선을 설명하는 부정 서술
+    "inventory/__init__.py",  # DEVELOPMENT: 새 기능을 만드는 가상 예시
 }
 
 
@@ -69,7 +73,7 @@ def test_guides_exist():
     assert GUIDES, "docs/guides 가 비어 있다 — 검사가 아무것도 보지 않는다"
 
 
-@pytest.mark.parametrize("guide", GUIDES, ids=lambda p: p.name)
+@pytest.mark.parametrize("guide", CHECKED_DOCS, ids=lambda p: p.name)
 def test_guide_paths_exist(guide: Path):
     known = _repo_files()
     text = guide.read_text(encoding="utf-8")

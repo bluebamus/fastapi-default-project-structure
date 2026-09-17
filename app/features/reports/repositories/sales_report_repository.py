@@ -11,7 +11,7 @@ Base(``RawRepositoryBase``)에는 도메인 SQL 을 두지 않는다. SQL 과 �
     "종료일 포함" 은 비즈니스 규칙이라 Service 가 해석하고, 여기에는 이미 계산된
     **반열린 구간** ``[start_at, end_at)`` 이 들어온다. ``DATE_ADD(:end, INTERVAL 1 DAY)``
     같은 방언 함수를 SQL 에 넣지 않은 이유이기도 하다 — 규칙이 SQL 에 숨으면
-    단위 테스트가 DB 방언에 묶인다(지침서 §4.4).
+    단위 테스트가 DB 방언에 묶인다(docs/guides/DEVELOPMENT.md §6.4).
 """
 
 from collections.abc import Mapping, Sequence
