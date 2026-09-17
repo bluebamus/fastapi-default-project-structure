@@ -22,7 +22,7 @@
 | 마이그레이션 | `migrations/` | 소스 | Phase 5 revision 2개 + **REQ-005 revision 1개**(`e5f7a9b1c4d5` sales_daily_snapshots) |
 | 공통 테스트 | `tests/` | 테스트 | |
 | MySQL 통합 환경 | `compose.test.yaml` | 설정 | **Phase 5 신규**, mysql:8.4 / 3308 |
-| 문서 | `README.md`, `docs/ARCHITECTURE.md`, `docs/QUICKSTART.md` | 문서 | Phase 7 갱신 |
+| 문서 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/QUICKSTART.md` | 문서 | Phase 7 갱신 |
 
 기준선 실측 (2026-08-13, 커밋 `59b3736` + 인코딩 수정):
 
