@@ -12,6 +12,7 @@ MySQL 이 없으면 **조용히 통과시키지 않고 skip 한다** — skip �
 
 from __future__ import annotations
 
+import os
 import socket
 
 import pytest
@@ -26,7 +27,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 # 가질 이유도 없다. MYSQL_USER 는 MYSQL_DATABASE 에 대한 전권을 받으므로
 # DDL(migration)도 문제없다.
 MYSQL_HOST = "127.0.0.1"
-MYSQL_PORT = 3308
+# 3308 을 다른 MySQL 이 점유한 머신에서는 MYSQL_TEST_PORT 로 옮긴다(compose 와 같은 변수).
+MYSQL_PORT = int(os.getenv("MYSQL_TEST_PORT", "3308"))
 MYSQL_USER = "fastapi_test"
 MYSQL_PASSWORD = "fastapi_test_password"
 MYSQL_DATABASE = "fastapi_test"

@@ -252,8 +252,12 @@ def check_test_port_single_source() -> None:
     눈으로 맞추는 절차는 이미 한 번 실패했으므로 여기서 기계로 잡는다.
     """
     sources = [
-        _mysql_test_port(REPO_ROOT / "compose.test.yaml", r'"(\d+):3306"'),
-        _mysql_test_port(REPO_ROOT / "tests/integration/conftest.py", r"^MYSQL_PORT = (\d+)"),
+        # 두 곳 모두 MYSQL_TEST_PORT 로 덮어쓸 수 있다 — 비교 대상은 **기본값**이다.
+        _mysql_test_port(REPO_ROOT / "compose.test.yaml", r"\$\{MYSQL_TEST_PORT:-(\d+)\}:3306"),
+        _mysql_test_port(
+            REPO_ROOT / "tests/integration/conftest.py",
+            r'^MYSQL_PORT = int\(os\.getenv\("MYSQL_TEST_PORT", "(\d+)"\)\)',
+        ),
         _mysql_test_port(
             REPO_ROOT / "docs/crp/groups/orm-raw-repository/charter.md",
             r"호스트 포트 \*\*(\d+)\*\*",
