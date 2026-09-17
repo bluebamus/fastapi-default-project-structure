@@ -2,7 +2,9 @@
 
 이 저장소가 **어떻게 조립되고, 어떻게 뜨고, 요청을 어떻게 처리하고, 어떻게 끝나는지**를 한곳에
 적습니다. 설치·실행은 [README](../../README.md), 코드를 쓰는 절차는 [DEVELOPMENT](./DEVELOPMENT.md)
-를 봅니다. 코드와 이 문서가 다르면 코드가 정답이며, 이 문서를 고칩니다.
+를 봅니다. 같은 흐름을 도식과 함께 따라가는 요약은
+[서버 수명주기 안내서](./server-lifecycle-guide.html)이고, 상세 표는 이 문서가 소유합니다. 코드와 이 문서가
+다르면 코드가 정답이며, 이 문서(와 요약하는 HTML)를 고칩니다.
 
 본문에 나오는 `ADR-0xx`·`REQ-0xx` 는 `docs/crp/groups/orm-raw-repository/design-baseline.md`,
 `AR-`·`TX-`·`NFR-` 등은 `docs/specs/orm-raw-repository/requirements.md` 의 ID 입니다.
@@ -814,6 +816,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 | 2026-08-27 | 종료 신뢰성(REQ-010): 중첩 `async with`(ADR-017), listener 프로세스 소유(ADR-018), `run_server(log_config=…)`(ADR-020), dictConfig 네이티브 큐(ADR-021), 신호 핸들러(ADR-022), lifespan 끝 flush(ADR-023), 실제 uvicorn 통합 테스트, `--mysql-required` |
 | 2026-09-17 | Redis startup 검증과 종료 순서 확장(`_redis`), 가이드를 `docs/guides/` 로 이동, 착수 명세를 `docs/specs/` 로 추적, CI 에 Redis·MySQL job(ADR-024) |
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
+| 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13` 정합 |
 
 ---
 

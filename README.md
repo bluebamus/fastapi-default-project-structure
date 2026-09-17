@@ -21,21 +21,27 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 
 이 표가 저장소 문서의 유일한 색인입니다. 코드와 문서가 다르면 코드가 정답이고, 문서를 고칩니다.
 
-| 문서 | 무엇을 다루나 | 언제 읽나 |
+| 문서 | 역할 | 언제 보나 |
 |---|---|---|
-| **README.md** (이 문서) | 설치·실행, 핵심 환경 변수, 테스트·CI, API 목록, 배포 점검 | 처음 받았을 때, 배포 전 |
-| [docs/guides/ARCHITECTURE.md](./docs/guides/ARCHITECTURE.md) | 폴더 구조와 배선, 요청·트랜잭션 흐름, DB 세션·라우팅, 설정 로딩, **기동·종료 순서**, **로깅**, 접속 로그, 인증, SQLAdmin, Celery, Alembic, 설계 결정, 전체 설정 부록 | 구조를 이해하거나 런타임(시작·종료·로그)을 건드리기 전 |
-| [docs/guides/DEVELOPMENT.md](./docs/guides/DEVELOPMENT.md) | 새 기능·테이블 추가 절차, 세션·DI 선택, 트랜잭션 규칙, ORM(`catalog`)·Raw SQL(`reports`) 실습, Raw SQL 보안, 마이그레이션, 비동기 원칙, 테스트·리뷰 체크리스트 | 코드를 작성할 때 |
-| [docs/specs/orm-raw-repository/requirements.md](./docs/specs/orm-raw-repository/requirements.md) | ORM/Raw 이원화 작업의 요구 명세 — 요구 ID(AR·TX·NFR 등)의 원본 | 코드·문서가 인용한 요구 ID 를 찾을 때 |
-| [docs/specs/orm-raw-repository/development-plan.md](./docs/specs/orm-raw-repository/development-plan.md) | 같은 작업의 착수 시점 설계·Phase 0~7 계획 | 요구 명세의 Phase 추적표를 따라갈 때 |
-| [docs/crp/groups/orm-raw-repository/](./docs/crp/groups/orm-raw-repository/) | 요구·설계 결정(REQ/ADR)·결함 원장·검수 기록 (append-only) | 결정의 근거와 이력을 볼 때 |
+| **README.md** (이 문서) | 개요 · 빠른 시작 · 문서 안내(유일한 색인). 핵심 환경 변수, 테스트·CI, API 목록, 배포 점검 | 처음 받았을 때, 배포 전 |
+| [docs/guides/ARCHITECTURE.md](./docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 — 배선, 요청·트랜잭션 흐름, DB 세션·라우팅, 설정, 기동·종료 순서와 예산, 로깅, 접속 로그, 인증, SQLAdmin, Celery, Alembic, 설계 결정, 전체 설정 부록 | 구조를 이해하거나 런타임(시작·종료·로그)을 건드리기 전 |
+| [docs/guides/DEVELOPMENT.md](./docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 — 새 기능·테이블 추가 절차, 세션·DI 선택, 트랜잭션 규칙, ORM(`catalog`)·Raw SQL(`reports`) 실습, 마이그레이션, 비동기 원칙, 테스트·리뷰 체크리스트 | 코드를 작성할 때 |
+| [docs/guides/server-lifecycle-guide.html](./docs/guides/server-lifecycle-guide.html) | 서버 수명주기 안내서 — 설정 → 기동 → 요청 → 종료를 도식과 함께 추적(상세 표는 ARCHITECTURE) | 서버가 뜨고 끝나는 흐름을 한 번에 따라가 볼 때 |
+| [docs/guides/feature-development-guide.html](./docs/guides/feature-development-guide.html) | 신규 뷰·테이블 개발 안내서 — 상품 생성 한 요청을 따라가며 계층·DI·트랜잭션을 설명(절차 원본은 DEVELOPMENT) | 새 기능을 처음 만들 때 |
+| [docs/specs/orm-raw-repository/requirements.md](./docs/specs/orm-raw-repository/requirements.md) | 고정 기준선(착수 명세) — 요구 ID(AR·TX·NFR 등)의 원본 | 코드·문서가 인용한 요구 ID 를 찾을 때 |
+| [docs/specs/orm-raw-repository/development-plan.md](./docs/specs/orm-raw-repository/development-plan.md) | 고정 기준선 — 착수 시점 설계·Phase 0~7 계획 | 요구 명세의 Phase 추적표를 따라갈 때 |
+| [docs/specs/orm-raw-repository/workflow-guide.md](./docs/specs/orm-raw-repository/workflow-guide.md) | 고정 기준선 — 착수 시점 구현 지침·예시 코드 | 착수 당시의 지침과 현재를 비교할 때 |
+| [docs/crp/groups/orm-raw-repository/](./docs/crp/groups/orm-raw-repository/) | 검수 이력(append-only) — 요구·설계 결정(REQ/ADR)·결함 원장·검수 기록 | 결정의 근거와 이력을 볼 때 |
 
-- `docs/specs/` 두 문서는 **착수 기준선**이라 내용을 고치지 않습니다. 이후의 확장·변경은 CRP 의
-  `design-baseline.md` 에 쌓입니다. `requirements.md` 는 검수 게이트(`scripts/review_gate.py`)가
-  요구 ID 선언 원본으로 읽으므로 옮기거나 이름을 바꾸면 게이트 경로도 함께 고칩니다.
+- `docs/specs/` 세 문서는 **고정 기준선**이라 내용을 고치지 않습니다(경로·이름 정정만). 현재 동작은
+  `docs/guides/` 가, 이후의 확장·변경은 CRP 의 `design-baseline.md` 가 담습니다. `requirements.md` 는
+  검수 게이트(`scripts/review_gate.py`)가 요구 ID 선언 원본으로 읽으므로 옮기거나 이름을 바꾸면 게이트
+  경로도 함께 고칩니다.
+- HTML 안내서 두 편은 흐름 요약이고, 같은 사실의 상세 표는 Markdown 가이드가 소유합니다. 한쪽을 고치면
+  다른 쪽도 함께 고칩니다.
 - 날짜 이름 폴더(`docs/YYYY-MM-DD/`)는 `.gitignore` 가 제외하는 로컬 작업 기록입니다.
-- `README.md` 와 `docs/guides/*.md` 가 백틱으로 적은 파일 경로는 `tests/test_docs_guides.py` 가
-  실재하는지 검사합니다.
+- `README.md` 와 `docs/guides/` 의 Markdown·HTML 이 백틱(HTML 은 `<code>`)으로 적은 파일 경로는
+  `tests/test_docs_guides.py` 가 실재하는지 검사합니다.
 
 ---
 

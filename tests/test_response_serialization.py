@@ -1,4 +1,4 @@
-"""응답 직렬화 계약 고정 (계획서 P6).
+"""응답 직렬화 계약 고정 (2026-08-10 외부 검수 후속 P6).
 
 `default_response_class=ORJSONResponse` 를 제거하고 FastAPI 기본 경로(Pydantic 이
 JSON 바이트를 직접 생성)로 전환했다. 전환 전후 응답 바이트가 같아야 하므로, 형식이
