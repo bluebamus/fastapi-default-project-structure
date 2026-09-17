@@ -8,7 +8,7 @@
 | 적용 프로젝트 | `fastapi-default-project-structure` |
 | 기준 구조 | 현재 `main.py` 명시 라우터 취합 및 Dependency → Service → Repository 흐름 |
 | 관련 계획서 | `docs/specs/orm-raw-repository/development-plan.md` |
-| 관련 지침서 | `docs/guides/DEVELOPMENT.md` (착수 당시의 `workflow-guide.md` 를 흡수한 현행 지침. 원문은 git 이력) |
+| 관련 지침서 | `docs/specs/orm-raw-repository/workflow-guide.md` (현행 개발 절차는 `docs/guides/DEVELOPMENT.md`) |
 | 상태 | 개발 착수 전 요구사항 기준선 |
 
 ## 2. 목표

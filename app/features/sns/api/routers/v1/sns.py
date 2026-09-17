@@ -2,7 +2,9 @@
 SNS v1 API 엔드포인트 — 피드 게시물 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
-비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
+트랜잭션 경계는 쓰기 핸들러 본문이 응답 전에 ``await service.commit()`` 으로 닫는다
+(UnitOfWork 없음, docs/guides/ARCHITECTURE.md §3.2).
 """
 
 from typing import Any

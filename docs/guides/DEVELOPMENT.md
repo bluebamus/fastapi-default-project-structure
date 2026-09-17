@@ -3,6 +3,8 @@
 새 엔드포인트·테이블을 만들 때 따라가는 문서입니다. 두 참조 예제를 기준으로 삼습니다 —
 `app/features/catalog/`(ORM, 상품 CRUD)와 `app/features/reports/`(Raw SQL, 일별 매출 집계·스냅샷 적재).
 구조와 런타임의 **왜**는 [ARCHITECTURE](./ARCHITECTURE.md), 설치·실행은 [README](../../README.md)에 있습니다.
+상품 생성 한 요청을 도식과 함께 따라가는 요약은 [신규 뷰·테이블 개발 안내서](./feature-development-guide.html)
+이고, 절차·체크리스트의 원본은 이 문서입니다. 한쪽을 고치면 다른 쪽도 함께 고칩니다.
 
 아래 코드 조각은 실제 파일을 줄인 것이거나(파일 경로를 적음) 설명용 가상 예시(`inventory`)입니다.
 공개 계약을 바꿀 때는 조각이 아니라 실제 파일과 테스트를 기준으로 합니다.

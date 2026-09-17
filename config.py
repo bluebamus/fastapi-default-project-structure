@@ -69,35 +69,40 @@ class TimezoneSettings(BaseSettings):
 API_DESCRIPTION = """
 ## FastAPI Default Project Structure
 
-Repository 패턴과 Unit of Work 패턴을 적용한 FastAPI 프로젝트 템플릿입니다.
+Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입니다.
+기능 패키지가 공개한 `router` 를 `main.py` 가 명시적 `include_router` 로 취합합니다.
 
 ### 주요 기능
 
-- **접속 로그 수집**: 모든 API 요청에 대한 접속 로그 자동 수집
-- **사용자 정보 파싱**: User-Agent 기반 OS, 브라우저, 장치 정보 분석
-- **통계 API**: 장치 유형, OS, 브라우저별 접속 통계
+- **게시글·댓글·SNS·사용자 CRUD**, **JWT 인증**(OAuth2 password flow)
+- **참조 예제**: `catalog`(ORM Repository), `reports`(Raw SQL Repository)
+- **접속 로그 수집**: 요청마다 User-Agent 를 파싱해 background 세션으로 저장, 조회·통계 API 제공
 
 ### 아키텍처
 
 ```
-Router → Service → Repository → Database
-           ↑
-      UnitOfWork (트랜잭션 관리)
+View(Router) → Dependency → Service → Repository → AsyncSession
 ```
+
+- 트랜잭션: 쓰기 핸들러 본문이 응답 전에 `await service.commit()` 을 한 번 호출합니다
+  (UnitOfWork 없음). 조회는 읽기 세션을 쓰고 커밋하지 않습니다.
+- 오류 응답: `{"error_code", "message", "detail"}`
 
 ### 기술 스택
 
-- **FastAPI**: 고성능 비동기 웹 프레임워크
+- **FastAPI**: 비동기 웹 프레임워크
 - **SQLAlchemy 2.0**: 비동기 ORM (aiomysql)
 - **Pydantic v2**: 데이터 검증 및 설정 관리
+- **Redis**: startup 연결 검증, Celery broker/backend
 - **Scalar**: API 문서 UI
 
 ### 환경 설정
 
 | 설정 | 설명 |
 |------|------|
-| `DEBUG=true` | 개발 모드 (DEBUG 로그, 테이블 자동 생성) |
-| `DEBUG=false` | 운영 모드 (INFO 로그, Alembic 마이그레이션 사용) |
+| `DEBUG=true` | 개발 모드 (DEBUG 로그, 없는 테이블 생성, `/docs` 공개) |
+| `DEBUG=false` | 운영 모드 (INFO 로그, 스키마는 Alembic, `/docs` 비공개) |
+| `ADMIN=true` | `/admin`(SQLAdmin) 마운트 — **인증 없음** |
 """
 
 
@@ -129,15 +134,16 @@ class AppSettings(BaseSettings):
         description="애플리케이션 버전",
     )
 
-    # API 문서 설명 (Scalar에 표시)
+    # API 문서 설명 (Scalar·/openapi.json 의 info.description). 미설정 시 API_DESCRIPTION
     DESCRIPTION: str = Field(
         default=API_DESCRIPTION,
         description="API 문서 설명",
     )
 
     # 디버그 모드
-    # True: DEBUG 로그, 테이블 자동 생성, uvicorn reload, /docs 활성화
-    # False: INFO 로그, Alembic 마이그레이션, /docs 비활성화
+    # True: DEBUG 로그 기본값, 없는 테이블 생성, /docs 활성화, `python main.py` 의 reload,
+    #       500 응답 detail 에 예외 문자열
+    # False: INFO 로그 기본값, 테이블 생성 안 함(Alembic), /docs 비활성화
     DEBUG: bool = Field(
         default=True,
         description="디버그 모드 활성화",
@@ -160,7 +166,8 @@ class AppSettings(BaseSettings):
         description="관리자 페이지 활성화 (인증 없음 — 운영에서는 false 권장)",
     )
 
-    # 실행 환경 (헬스체크 응답에 포함)
+    # 실행 환경 — 로그 출력 구성(시각 표기, staging/production 의 stderr 추가)에 쓴다.
+    # 헬스체크 응답에는 들어가지 않는다(/health 는 status·version 만 반환).
     ENV: Literal["development", "staging", "production", "test"] = Field(
         default="development",
         description="실행 환경",
@@ -560,10 +567,11 @@ class LogSettings(BaseSettings):
     )
 
     # === 출력 대상 설정 ===
-    # 콘솔(stdout) 로그 출력 활성화
+    # 코드가 읽지 않는 필드다 — false 로 줘도 콘솔 출력은 꺼지지 않는다.
+    # 출력 구성은 app/utils/logs/config.py 의 build_dictconfig() 가 ENV 로만 정한다.
     LOG_CONSOLE_ENABLED: bool = Field(
         default=True,
-        description="콘솔 로그 활성화",
+        description="콘솔 로그 활성화 (현재 코드가 읽지 않음 — false 여도 콘솔 출력은 유지)",
     )
 
     # SQL 본문·바인딩 파라미터를 로그로 내보낼지 여부.
@@ -591,16 +599,16 @@ class LogSettings(BaseSettings):
     )
 
     # === 포맷 설정 ===
-    # 콘솔 로그 출력 형식
+    # 아래 두 필드도 코드가 읽지 않는다. 실제 포맷은 app/utils/logs/config.py 의
+    # 고정 상수 LOG_FORMAT 이고, 시각 표기는 ENV 가 정한다.
     LOG_CONSOLE_FORMAT: str = Field(
         default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="콘솔 로그 포맷",
+        description="콘솔 로그 포맷 (현재 코드가 읽지 않음 — 실제 포맷은 고정 LOG_FORMAT)",
     )
 
-    # 날짜 출력 형식
     LOG_DATE_FORMAT: str = Field(
         default="%Y-%m-%d %H:%M:%S",
-        description="날짜 포맷",
+        description="날짜 포맷 (현재 코드가 읽지 않음)",
     )
 
     def get_effective_log_level(self, debug: bool) -> str:
@@ -668,7 +676,8 @@ class RedisSettings(BaseSettings):
     """
     Redis 연결 설정
 
-    캐시, 세션, 메시지 큐 등에 사용됩니다.
+    startup 의 필수 연결 확인(app/core/resources.py 의 ping)과 Celery broker/backend 에
+    사용됩니다. 기능에 주입되는 공용 Redis 의존성(캐시·세션)은 아직 없습니다.
     """
 
     model_config = SettingsConfigDict(
@@ -764,7 +773,8 @@ class ApiSettings(BaseSettings):
         extra="ignore",
     )
 
-    # REST API 버전 (URL prefix 에 사용: /api/v1/...)
+    # REST API 버전. 현재 이 값을 읽는 코드는 없다 — URL 의 /v1 은 각 기능의
+    # api/routers/router.py 가 직접 선언하므로 이 값만 바꿔서는 경로가 바뀌지 않는다.
     API_VERSION: str = Field(
         default="v1",
         description="REST API 버전",
