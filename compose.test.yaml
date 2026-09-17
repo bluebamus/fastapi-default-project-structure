@@ -12,7 +12,7 @@
 # 데이터 디렉터리는 tmpfs 다 — 테스트 DB 는 매번 새로 만들어야 하고, 디스크에
 # 남길 이유가 없다. 재시작하면 깨끗한 상태로 돌아온다.
 #
-#   docker compose -f compose.test.yaml up -d      # 기동 (healthy 까지 대기)
+#   docker compose -f compose.test.yaml up -d --wait   # MySQL + Redis 기동 (healthy 까지 대기)
 #   pytest -m mysql                                # 통합 테스트만
 #   docker compose -f compose.test.yaml down -v    # 정리
 #
@@ -49,3 +49,23 @@ services:
       timeout: 5s
       retries: 20
       start_period: 30s
+
+  # startup 필수 자원인 Redis — 실제 uvicorn 수명 테스트
+  # (tests/integration/test_uvicorn_lifecycle.py)가 여기에 붙는다. Redis 가 없으면 그 모듈이
+  # skip 되고, CI 는 skip 을 실패로 본다. 포트는 앱 기본값(REDIS_HOST=localhost,
+  # REDIS_PORT=6379)과 같게 둬서 환경변수 없이 붙는다. 로컬 6379 가 이미 쓰이고 있으면
+  # `REDIS_TEST_PORT=6380 docker compose ... up` 후 테스트에 `REDIS_PORT=6380` 을 준다.
+  #
+  #   docker compose -f compose.test.yaml up -d --wait redis-test   # Redis 만
+  redis-test:
+    image: redis:7-alpine
+    container_name: fastapi-structure-redis-test
+    # 테스트용이라 영속화하지 않는다.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_TEST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

@@ -1,4 +1,4 @@
-# 품질 게이트 — docs/crp/groups/fastapi-standard-restructure/charter.md §3 (GATE 3) 자동화.
+# 품질 게이트 — `docs/crp/groups/orm-raw-repository/charter.md` §3 (GATE 3) 자동화.
 #
 # 여기 있는 검사는 전부 charter 의 인수 기준을 1:1로 옮긴 것이다. 새 검사를 넣기 전에
 # charter §3 을 먼저 고친다 — CI 가 계약보다 앞서 나가면 "왜 막혔는지" 근거가 사라진다.
@@ -65,16 +65,27 @@ jobs:
       # -rsxX: 건너뛴 테스트를 로그에 드러낸다.
       # charter §3 은 "조용한 SKIP·xfail 0" 을 인수 기준으로 둔다 — 통과 개수만 보고
       # 넘어가면 비활성화된 테스트가 초록불 뒤에 숨는다. 그래서 요약을 직접 판정한다.
-      - name: pytest
+      #
+      # Redis 는 startup 필수 자원이다. 실제 uvicorn 수명 테스트가 Redis 에 붙지 못하면
+      # 모듈 전체가 skip 되고 아래 "SKIP 0" 판정에 걸린다. services: 대신 로컬과 같은
+      # compose.test.yaml 로 띄운다 — 설정이 두 곳으로 갈리지 않게.
+      - name: Redis 기동 (compose.test.yaml)
+        run: docker compose -f compose.test.yaml up -d --wait redis-test
+
+      # 이 job 에는 MySQL 이 없다. mysql 마커를 함께 돌리면 전부 skip 되고 "SKIP 0"
+      # 판정에 걸린다. 그래서 여기서는 제외하고, 그 집합은 아래 mysql job 이
+      # **실제 MySQL 에 대고** 실행한다 — 두 job 이 정확히 상보 관계다.
+      - name: pytest (mysql 마커 제외)
         run: |
           set -o pipefail
-          uv run python -m pytest -q -rsxX | tee pytest.log
+          uv run python -m pytest -m "not mysql" -q -rsxX | tee pytest.log
 
+      # deselected 는 위 -m 필터가 만드는 정상 결과라 판정에서 뺀다.
       - name: SKIP·xfail 0건 확인 (charter §3)
         run: |
-          if grep -qE '[0-9]+ (skipped|xfailed|xpassed|deselected)' pytest.log; then
+          if grep -qE '[0-9]+ (skipped|xfailed|xpassed)' pytest.log; then
             echo "::error::charter §3 위반 — 조용한 SKIP/xfail 이 있습니다. 요약을 확인하세요."
-            grep -E '(skipped|xfailed|xpassed|deselected)' pytest.log || true
+            grep -E '(skipped|xfailed|xpassed)' pytest.log || true
             exit 1
           fi
           echo "SKIP·xfail 0건"
@@ -91,3 +102,51 @@ jobs:
             uv run alembic heads
             exit 1
           fi
+
+      - name: Redis 정리
+        if: always()
+        run: docker compose -f compose.test.yaml down -v
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # MySQL 8.4 통합 — gate job 이 제외한 mysql 마커 집합을 실제 MySQL 에 대고 실행한다.
+  # 로컬과 **같은** compose.test.yaml 을 쓴다(services: 를 쓰지 않는 이유는 위와 같다).
+  # --mysql-required 는 MySQL 에 닿지 못했을 때 skip 대신 실패하게 한다(conftest.py).
+  # ──────────────────────────────────────────────────────────────────────────
+  mysql:
+    name: MySQL 8.4 통합 (compose.test.yaml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 의존성 설치
+        run: uv sync --frozen
+
+      # --wait 는 healthcheck 가 healthy 가 될 때까지 막는다. 컨테이너 "시작" 과
+      # "접속 가능" 은 다르다 — 이 게이트 없이 붙으면 첫 테스트가 깨진다.
+      - name: MySQL 기동
+        run: docker compose -f compose.test.yaml up -d --wait mysql-test
+
+      - name: pytest -m mysql (skip 금지)
+        run: |
+          set -o pipefail
+          uv run python -m pytest -m mysql --mysql-required -q -rsxX | tee mysql.log
+          if grep -qE '[0-9]+ skipped' mysql.log; then
+            echo "::error::MySQL 통합 테스트가 skip 됐습니다. compose 기동을 확인하세요."
+            exit 1
+          fi
+          if grep -q 'no tests ran' mysql.log; then
+            echo "::error::mysql 마커가 붙은 테스트가 0건입니다."
+            exit 1
+          fi
+
+      - name: MySQL 정리
+        if: always()
+        run: docker compose -f compose.test.yaml down -v
