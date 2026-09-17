@@ -2,7 +2,8 @@
 
 앱별 worker/ 를 대체하는 단일 태스크 모듈. 도메인 백그라운드 작업을 여기 정의한다.
 celery_app.conf.include = ["app.celery.tasks"] 로 등록된다.
-요청 밖 세션은 background_db_session 컨텍스트로 관리한다(UnitOfWork 제거).
+요청 밖 세션은 background_db_session 컨텍스트로 열고, 쓰기라면 태스크가 직접 커밋한다
+(UnitOfWork 없음).
 """
 
 from typing import Any

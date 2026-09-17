@@ -435,8 +435,8 @@ def check_charter_criteria_closed() -> None:
     열린 채로 checklist 가 "미닫힘 항목 0개" 라고 적으면 두 문서가 서로를 반박한다.
     어느 쪽을 믿을지는 읽는 사람이 정하게 되고, 대개 편한 쪽을 믿는다.
 
-    F-019(포트)·F-020(해시)·F-022(요구 ID)에 이은 **네 번째** 문서 정합 결함이고,
-    자매 저장소에서도 같은 것이 났다. 사람이 눈으로 맞추는 절차는 이미 네 번 실패했다.
+    F-019(포트)·F-020(해시)·F-022(요구 ID)에 이은 **네 번째** 문서 정합 결함이다.
+    사람이 눈으로 맞추는 절차는 이미 네 번 실패했다.
     """
     charter = REPO_ROOT / "docs/crp/groups/orm-raw-repository/charter.md"
     checklist = REPO_ROOT / "docs/crp/groups/orm-raw-repository/checklist.md"

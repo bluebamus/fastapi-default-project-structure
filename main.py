@@ -28,7 +28,7 @@ logger = get_logger("main")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """애플리케이션 수명 주기 — 자원 관리자 호출만 담당한다 (AR-005).
 
     무엇을 어떤 순서로 만들고 해제하는지는 전부

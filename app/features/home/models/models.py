@@ -28,9 +28,9 @@ class UserAccessLog(UUIDCreatedModel):
         device_brand: 장치 브랜드 (Apple, Samsung 등)
         device_model: 장치 모델명
         is_bot: 봇/크롤러 여부
-        country: 접속 국가
-        country_code: 국가 코드
-        city: 접속 도시
+        country: 접속 국가 (현재 채우는 코드 없음 — GeoIP 연동 시 사용)
+        country_code: 국가 코드 (현재 채우는 코드 없음)
+        city: 접속 도시 (현재 채우는 코드 없음)
         referer: 유입 경로 (HTTP Referer)
         request_path: 요청 경로
         request_method: HTTP 메서드 (GET, POST 등)
@@ -38,7 +38,8 @@ class UserAccessLog(UUIDCreatedModel):
         response_status: 응답 상태 코드
         response_time_ms: 응답 시간 (밀리초)
         session_id: 세션 ID
-        user_id: 로그인한 사용자 ID
+        user_id: 로그인한 사용자 ID (미들웨어가 request.state.user_id 를 읽지만
+            현재 그 값을 설정하는 코드가 없어 항상 NULL)
         accept_language: Accept-Language 헤더
         created_at: 접속 시간
     """

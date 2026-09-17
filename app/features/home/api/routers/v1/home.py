@@ -2,7 +2,8 @@
 Home v1 API 엔드포인트 — 접속 로그 조회/통계.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
-비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
+이 파일의 엔드포인트는 전부 조회라 읽기 세션을 쓰고 커밋하지 않는다(UnitOfWork 없음).
 """
 
 from typing import Any
@@ -86,7 +87,10 @@ async def get_access_logs_by_ip(
     response_model=list[UserAccessLogResponse],
     responses=_ERR,
     summary="사용자별 접속 로그 조회",
-    description="특정 사용자의 접속 로그를 조회합니다.",
+    description=(
+        "특정 사용자의 접속 로그를 조회합니다. 현재 접속 로그의 user_id 를 채우는 코드가 "
+        "없어(request.state.user_id 미설정) 기본 구성에서는 빈 목록입니다."
+    ),
     operation_id="getAccessLogsByUser",
 )
 async def get_access_logs_by_user(

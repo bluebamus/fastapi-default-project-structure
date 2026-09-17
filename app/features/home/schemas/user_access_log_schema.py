@@ -38,9 +38,11 @@ class UserAccessLogCreate(UserAccessLogBase):
     is_bot: bool = Field(False, description="봇 여부")
 
     # 위치 정보
-    country: str | None = Field(None, description="국가")
-    country_code: str | None = Field(None, description="국가 코드")
-    city: str | None = Field(None, description="도시")
+    country: str | None = Field(None, description="국가 (현재 채우는 코드 없음 — 항상 null)")
+    country_code: str | None = Field(
+        None, description="국가 코드 (현재 채우는 코드 없음 — 항상 null)"
+    )
+    city: str | None = Field(None, description="도시 (현재 채우는 코드 없음 — 항상 null)")
 
     # 요청 정보
     referer: str | None = Field(None, description="Referer 헤더")
@@ -52,7 +54,9 @@ class UserAccessLogCreate(UserAccessLogBase):
 
     # 사용자 정보
     session_id: str | None = Field(None, description="세션 ID")
-    user_id: str | None = Field(None, description="사용자 ID")
+    user_id: str | None = Field(
+        None, description="사용자 ID (request.state.user_id — 현재 설정하는 코드 없음, 항상 null)"
+    )
 
     # 추가 헤더
     accept_language: str | None = Field(None, description="Accept-Language 헤더")
@@ -72,13 +76,15 @@ class UserAccessLogResponse(BaseModel):
     device_type: str | None = Field(None, description="장치 유형")
     device_brand: str | None = Field(None, description="장치 브랜드")
     is_bot: bool = Field(..., description="봇 여부")
-    country: str | None = Field(None, description="국가")
-    city: str | None = Field(None, description="도시")
+    country: str | None = Field(None, description="국가 (현재 채우는 코드 없음 — 항상 null)")
+    city: str | None = Field(None, description="도시 (현재 채우는 코드 없음 — 항상 null)")
     request_path: str = Field(..., description="요청 경로")
     request_method: str = Field(..., description="HTTP 메서드")
     response_status: int | None = Field(None, description="응답 상태 코드")
     response_time_ms: int | None = Field(None, description="응답 시간 (ms)")
-    user_id: str | None = Field(None, description="사용자 ID")
+    user_id: str | None = Field(
+        None, description="사용자 ID (request.state.user_id — 현재 설정하는 코드 없음, 항상 null)"
+    )
     created_at: datetime = Field(..., description="생성 시간")
 
 

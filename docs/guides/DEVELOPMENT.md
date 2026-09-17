@@ -3,6 +3,8 @@
 새 엔드포인트·테이블을 만들 때 따라가는 문서입니다. 두 참조 예제를 기준으로 삼습니다 —
 `app/features/catalog/`(ORM, 상품 CRUD)와 `app/features/reports/`(Raw SQL, 일별 매출 집계·스냅샷 적재).
 구조와 런타임의 **왜**는 [ARCHITECTURE](./ARCHITECTURE.md), 설치·실행은 [README](../../README.md)에 있습니다.
+상품 생성 한 요청을 도식과 함께 따라가는 요약은 [신규 뷰·테이블 개발 안내서](./feature-development-guide.html)
+이고, 절차·체크리스트의 원본은 이 문서입니다. 한쪽을 고치면 다른 쪽도 함께 고칩니다.
 
 아래 코드 조각은 실제 파일을 줄인 것이거나(파일 경로를 적음) 설명용 가상 예시(`inventory`)입니다.
 공개 계약을 바꿀 때는 조각이 아니라 실제 파일과 테스트를 기준으로 합니다.
@@ -147,15 +149,16 @@ async def get_catalog_service_readonly(
 ```text
 조회: GET View → get_<x>_service_readonly → get_read_only_db_session → Repository 조회 → 커밋 없음
 쓰기: POST/PATCH/DELETE View → get_<x>_service → get_writer_db_session
-      → Repository flush/execute → View 에서 await service.commit() → 응답
+      → Repository flush/execute → View 에서 응답 DTO 검증 → await service.commit() → 응답
 ```
 
 - 커밋은 **View 본문에서 응답 전 정확히 1회**. 예외 경로는 커밋 0회이고 세션 의존성이 롤백합니다.
 - `flush` 는 트랜잭션 안에서 SQL 을 보내 기본값·제약을 확인할 뿐 확정이 아닙니다. Repository·Service
   중간에서 커밋하면 뒤의 실패가 앞 변경을 되돌리지 못합니다.
-- **신규 코드는 DTO 검증을 커밋보다 먼저** 합니다. 현재 `catalog`·`blog` 등은 커밋 뒤에 검증하는데,
-  그러면 직렬화가 실패했을 때 저장은 됐는데 클라이언트는 500 을 받습니다. 응답에 필요한 필드(관계 포함)는
-  Repository 에서 미리 로드합니다.
+- **응답 DTO 검증 → 커밋 → 반환** 이 모든 쓰기 핸들러의 단일 규칙입니다. 커밋 뒤에 검증하면 직렬화가
+  실패했을 때 저장은 됐는데 클라이언트는 500 을 받습니다. `tests/test_write_dto_before_commit.py` 가 전
+  기능의 생성·수정 핸들러에서 "DTO 실패 → 500 · 커밋 0회 · DB 불변" 을 확인하므로 쓰기 핸들러를 추가하면
+  그 `CASES` 에 한 줄을 더합니다. 응답에 필요한 필드(관계 포함)는 Repository 에서 미리 로드합니다.
 
 ```python
 async def create_item(payload: ItemCreate, service: InventoryService = Depends(get_inventory_service)):
@@ -292,8 +295,9 @@ router = APIRouter()
              summary="상품 생성", description="…", operation_id="createProduct", responses={…})
 async def create_product(payload: ProductCreate, service: CatalogService = Depends(get_catalog_service)) -> ProductResponse:
     product = await service.create_product(payload)
+    response = ProductResponse.model_validate(product)   # 검증 → 커밋 → 반환
     await service.commit()
-    return ProductResponse.model_validate(product)
+    return response
 
 
 @router.get("/products", response_model=ProductListResponse, operation_id="listProducts", …)
@@ -611,7 +615,7 @@ except Exception:
 
 - [ ] View 에 SQL·세션 주입·복잡한 도메인 분기가 없다
 - [ ] Dependency 는 조립만 하고, Repository·Dependency 에 커밋이 없다
-- [ ] 쓰기 View 는 응답 전 커밋 1회, 조회 View 는 읽기 의존성·커밋 0회
+- [ ] 쓰기 View 는 응답 DTO 검증 → 커밋 1회 → 반환, 조회 View 는 읽기 의존성·커밋 0회
 - [ ] Service 는 HTTP 객체를 모르고, 여러 Service 가 참여하면 같은 writer 세션을 쓴다
 - [ ] ORM Repository 는 `BaseRepository`, Raw Repository 는 `RawRepositoryBase` 를 상속한다
 - [ ] Raw SQL 은 named bind + 식별자 allowlist + `query_name`

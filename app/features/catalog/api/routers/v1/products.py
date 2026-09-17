@@ -43,9 +43,10 @@ async def create_product(
     service: CatalogService = Depends(get_catalog_service),
 ) -> ProductResponse:
     product = await service.create_product(payload)
-    # 응답을 만들기 전에 정확히 한 번 커밋한다. 커밋이 실패하면 201 이 나가지 않는다.
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = ProductResponse.model_validate(product)
     await service.commit()
-    return ProductResponse.model_validate(product)
+    return response
 
 
 @router.get(
@@ -104,8 +105,10 @@ async def update_product(
     service: CatalogService = Depends(get_catalog_service),
 ) -> ProductResponse:
     product = await service.update_product(product_id, payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = ProductResponse.model_validate(product)
     await service.commit()
-    return ProductResponse.model_validate(product)
+    return response
 
 
 @router.delete(

@@ -57,7 +57,7 @@ jobs:
         run: uv run mypy .
 
       # 실질 이슈만 막는다. LOW 는 테스트의 assert·문자열 상수 오탐이 대부분이라 게이트에서 뺀다
-      # (AUDIT_REPORT.md §7: LOW 113건 전수 검토 결과 실질 이슈 0건).
+      # (과거 외부 감사에서 LOW 전수 검토 결과 실질 이슈 0건 — 보고서는 저장소에 없다).
       - name: bandit (MEDIUM 이상)
         run: uv run bandit -ll -q -r app main.py config.py
 
