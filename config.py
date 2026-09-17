@@ -84,7 +84,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 View(Router) → Dependency → Service → Repository → AsyncSession
 ```
 
-- 트랜잭션: 쓰기 핸들러 본문이 응답 전에 `await service.commit()` 을 한 번 호출합니다
+- 트랜잭션: 쓰기 핸들러 본문이 응답 DTO 를 검증한 뒤 `await service.commit()` 을 한 번 호출합니다
   (UnitOfWork 없음). 조회는 읽기 세션을 쓰고 커밋하지 않습니다.
 - 오류 응답: `{"error_code", "message", "detail"}`
 

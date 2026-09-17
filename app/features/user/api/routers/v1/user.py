@@ -3,7 +3,7 @@ User v1 API 엔드포인트 — 사용자 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
-트랜잭션 경계는 쓰기 핸들러 본문이 응답 전에 ``await service.commit()`` 으로 닫는다
+트랜잭션 경계는 쓰기 핸들러 본문이 닫는다 — 응답 DTO 검증 → ``await service.commit()`` → 반환
 (UnitOfWork 없음, docs/guides/ARCHITECTURE.md §3.2).
 """
 
@@ -48,8 +48,10 @@ async def create_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.create_user(payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = UserResponse.model_validate(user)
     await service.commit()
-    return UserResponse.model_validate(user)
+    return response
 
 
 @router.get(
@@ -103,8 +105,10 @@ async def update_user(
     service: UserService = Depends(get_user_service),
 ) -> UserResponse:
     user = await service.update_user(user_id, payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = UserResponse.model_validate(user)
     await service.commit()
-    return UserResponse.model_validate(user)
+    return response
 
 
 @router.delete(

@@ -162,7 +162,7 @@ exclude_lines = [
 # =============================================================================
 [tool.ruff]
 # 대상 Python 버전
-target-version = "py312"
+target-version = "py313"
 
 # 라인 최대 길이
 line-length = 100
@@ -208,7 +208,7 @@ known-first-party = ["app", "config"]
 # =============================================================================
 [tool.mypy]
 # Python 버전
-python_version = "3.12"
+python_version = "3.13"
 
 # 엄격 모드
 strict = false
