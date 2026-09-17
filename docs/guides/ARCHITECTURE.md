@@ -1,7 +1,10 @@
 # 아키텍처 문서
 
-이 문서는 프로젝트의 유일한 공식 아키텍처 소스입니다.
+이 문서는 현재 아키텍처의 요약·등록 규약을 설명합니다.
 코드와 문서 간 불일치가 있으면 코드가 정답이며, 이 문서를 업데이트하세요.
+
+검토 기준: **2026-09-17 현재 작업 트리**. 실행 단계는 [서버 시작·종료 HTML 안내서](./server-lifecycle-guide.html),
+MVC·주입·비동기 및 신규 기능 작성은 [개발 HTML 지침서](./feature-development-guide.html)에서 이어서 읽습니다.
 
 ---
 
@@ -10,8 +13,10 @@
 ```
 fastapi-default-project-structure/
 ├── main.py                          # 진입점: 각 앱 router 를 include_router 로 취합 + 앱 설정
-├── config.py                        # Pydantic Settings (app/db/cors/log/redis/middleware/timezone)
+├── config.py                        # Pydantic Settings 12종 (app·db·cors·log·redis·middleware·timezone·jwt·api·session·smtp·upload)
+├── conftest.py                      # pytest 전역 옵션 (--mysql-required)
 ├── pyproject.toml                   # 의존성 + [tool.uv] package = false
+├── alembic.ini / .env.example       # Alembic 설정 / 환경 변수 예시 (자동 fallback 아님)
 │
 ├── app/
 │   ├── features/                    # 기능 단위 앱
@@ -30,12 +35,13 @@ fastapi-default-project-structure/
 │   │   │   ├── admin.py             # SQLAdmin ModelView + admin_views (모델이 있으면 필수)
 │   │   │   ├── exceptions.py        # 기능 예외 (선택)
 │   │   │   └── tests/               # 기능 테스트
-│   │   └── <name>/                  # 추가 앱은 같은 구조를 따름
+│   │   ├── <name>/                  # 추가 앱은 같은 구조를 따름
+│   │   └── admin.py                 # 기능별 admin_views 명시 import 취합 (ADMIN_VIEWS, register_admin)
 │   │
 │   ├── core/                        # 프레임워크 인프라 (features 가 의존)
 │   │   ├── exception.py             # 공통 예외 계층 + ErrorResponse
 │   │   ├── tags_metadata.py         # OpenAPI 태그 메타데이터
-│   │   ├── resources.py             # lifespan 자원 관리 (기동 준비·역순 종료)
+│   │   ├── resources.py             # lifespan 자원 관리 (Redis ping·개발 DDL·역순 종료)
 │   │   ├── db/
 │   │   │   ├── session.py           # 엔진, 세션 팩토리, 커넥션 풀, background_db_session
 │   │   │   ├── router.py            # 읽기/쓰기 라우팅 (RoutingSession)
@@ -56,7 +62,8 @@ fastapi-default-project-structure/
 │   ├── celery/                      # 중앙 Celery (기능별 worker/ 미사용)
 │   │   ├── app.py                   # Celery 앱 (include=["app.celery.tasks"])
 │   │   ├── tasks.py                 # 중앙 태스크 모듈 (모든 기능 백그라운드 작업)
-│   │   └── task.py                  # run_async() 동기 브릿지
+│   │   ├── task.py                  # run_async() 동기 브릿지
+│   │   └── lifecycle.py             # worker init(listener 재기동)·shutdown(DB dispose 10초)
 │   │
 │   └── utils/                       # 순수 유틸 (외부·상위 계층 의존 없음)
 │       ├── logs/                    # 구조화 로깅 (get_logger, 큐 기반 비차단 핸들러)
@@ -66,7 +73,7 @@ fastapi-default-project-structure/
 │
 ├── tests/                           # 횡단 테스트 (core 계약·배선·교차 기능)
 │   ├── core/                        # 설정 계약, admin 뷰 정책, 마이그레이션 체인
-│   ├── integration/                 # 실제 MySQL 8.4 대상 (@pytest.mark.mysql, 미가용 시 skip)
+│   ├── integration/                 # 실제 MySQL 8.4(@pytest.mark.mysql) · 실제 uvicorn 수명(Redis 필요) — 미가용 시 skip
 │   └── utils/                       # 로깅·인증·페이지네이션
 │
 ├── scripts/review_gate.py           # 단계별 결정적 검수 게이트 (정적분석 + 불변식 + API 불변)
@@ -74,8 +81,13 @@ fastapi-default-project-structure/
 ├── migrations/env.py                # import_all_models()(SSOT) 로 전 기능 모델 자동 수집
 ├── .github/workflows/ci.yml         # CI 게이트 (ruff·format·mypy 콜드캐시·pytest·bandit·alembic)
 └── docs/
-    ├── ARCHITECTURE.md              # ← 이 문서 (아키텍처 SSOT)
-    ├── QUICKSTART.md                # 최소 실행 경로
+    ├── guides/
+    │   ├── ARCHITECTURE.md          # ← 이 문서 (아키텍처 SSOT)
+    │   ├── QUICKSTART.md            # 최소 실행 경로
+    │   ├── ORM-RAW-WORKFLOW.md      # ORM/Raw 개발 지침서
+    │   ├── LOGGING-AND-SHUTDOWN.md  # 로깅·종료 구조 설명
+    │   ├── server-lifecycle-guide.html # 설정·기동·요청·종료 상세 추적
+    │   └── feature-development-guide.html # MVC·DI·신규 API/테이블 개발
     └── crp/groups/                  # 작업 그룹별 설계 기준선·결함 원장
 ```
 
@@ -89,8 +101,9 @@ features → core → utils
 ```
 
 `core`는 `utils`만 알고, `features`는 `core`를 사용합니다.
-`core`는 절대로 `features`를 import하지 않습니다(기능 앱이 미들웨어 등에 붙어야 하면
-등록 훅으로 연결 — 예: `access_log_sink.register_sink()`).
+업무 처리를 담당하는 `core`가 특정 기능의 Service/Repository에 의존하지 않는 것이 원칙입니다.
+다만 `models_registry`는 등록을 위해 `importlib`로 기능 모델을 동적으로 import합니다.
+기능 앱이 미들웨어 등에 붙어야 하면 등록 훅으로 연결합니다(예: `access_log_sink.register_sink()`).
 
 ---
 
@@ -240,8 +253,10 @@ async def create_<name>(
 - 예외로 빠져나가면 `get_writer_db_session` teardown이 `rollback()` 합니다.
 - 조회 엔드포인트는 `_readonly` 의존성을 써서 `get_read_only_db_session` 을 받고 커밋하지
   않습니다. `DB_ROUTER_ENABLED` 가 켜지면 replica 로 라우팅되며, 읽기 경로에서 쓰기를
-  시도하면 `ReadOnlyRoutingError` 로 즉시 실패합니다 — ORM 구문이든 `text()` 로 쓴 Raw DML
-  이든 동일합니다.
+  시도하면 `RoutingSession`의 검사로 `ReadOnlyRoutingError`가 발생합니다. **기본값인
+  `DB_ROUTER_ENABLED=false`에서는 이 라우팅 검사가 적용되지 않습니다.** Raw SQL의
+  선두 키워드 검사도 모든 SQL을 판별하는 보안 장벽은 아닙니다. 쓰기는 처음부터 writer
+  dependency로 고정합니다([상세 한계](./feature-development-guide.html#di)).
 - `Service`는 `BaseService`를, Repository 는 데이터 접근 방식에 따라 `BaseRepository`(ORM)
   또는 `RawRepositoryBase`(Raw SQL)를 상속합니다. **둘은 서로 상속하지 않습니다** — §4.1.
 - 요청 밖(백그라운드/Celery) 세션은 `background_db_session()` 컨텍스트(별도 풀)를 씁니다.
@@ -253,7 +268,7 @@ Dependency 조립·Service 유스케이스·트랜잭션 경계·Pydantic 응답
 그대로입니다. 실물 비교는 `app/features/catalog/`(ORM) 와 `app/features/reports/`(Raw) 입니다.
 
 > **단계별 실습**: 이 절이 규칙이라면, 두 방식을 같은 시나리오로 끝까지 만들어 보는 문서는
-> [ORM/Raw 워크플로우 개발 지침서](./orm-raw-repository/2026-08-13/workflow-guide.md) 입니다
+> [ORM/Raw 워크플로우 개발 지침서](./ORM-RAW-WORKFLOW.md) 입니다
 > (§3 ORM 시나리오 · §4 Raw 시나리오 · §6 Raw SQL 보안 규칙 · §10 코드 리뷰 체크리스트).
 
 | | `BaseRepository` (ORM) | `RawRepositoryBase` (Raw SQL) |
@@ -273,15 +288,16 @@ Dependency 조립·Service 유스케이스·트랜잭션 경계·Pydantic 응답
   테이블" 로 판단합니다(`reports` 의 `SalesOrder`).
 
 > **왜 의존성이 아니라 핸들러인가.** 이전에는 의존성이 `yield` 이후 커밋했습니다. 그런데
-> FastAPI 상위 버전에서 yield dependency 의 종료 코드가 **응답 전송 후에** 실행되도록 바뀌면서,
-> 커밋이 실패해도 클라이언트는 이미 `201` 을 받은 상태가 됩니다. 커밋을 핸들러 본문으로 옮기면
+> 기본 request scope의 yield dependency 종료 코드는 **응답 전송 후에** 실행되므로,
+> 그곳의 커밋이 실패해도 클라이언트는 이미 `201`을 받을 수 있습니다. `scope="function"`은
+> 종료 시점이 다릅니다([FastAPI 공식 설명](https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/#early-exit-and-scope)). 커밋을 핸들러 본문으로 옮기면
 > 실패가 응답 코드에 정직하게 반영됩니다. 구조 증거: `tests/test_read_path_no_commit.py`.
 
 ---
 
 ## 4.2 Lifespan 자원 관리 — 기동 준비와 역순 종료
 
-프로세스 수명에 묶인 자원(로그 리스너·DB 엔진·백그라운드 태스크)은 `main.py` 가 아니라
+프로세스 수명에 묶인 자원(로그 리스너·DB 엔진·Redis·백그라운드 태스크)은 `main.py` 가 아니라
 `app/core/resources.py` 의 `manage_application_resources()` 하나가 관리합니다.
 
 ```python
@@ -296,25 +312,38 @@ async def lifespan(app: FastAPI):
   context manager 를 두고 획득 순서대로 중첩**하면 파이썬이 역순으로 풀어냅니다(ADR-017):
 
   ```python
-  async with _log_queue(), _database(app), _background_tasks():
+  async with _log_queue(), _database(app), _redis(app), _background_tasks():
       ...
-  # 정리: background drain → DB dispose → 로그 큐 flush
+  # 정리: background drain → Redis close → DB dispose → 로그 큐 flush
   ```
 
   순서가 중요합니다 — 태스크가 아직 세션을 쥔 채 엔진을 닫으면 커넥션이 강제로 끊기고,
   로그 정리를 먼저 하면 그 과정에서 나는 오류가 어디에도 남지 않습니다.
+- **Redis 는 필수 startup 조건입니다.** `_redis(app)` 가 `Redis.from_url(redis_settings.REDIS_URL)`
+  (connect/socket timeout 각 5초)로 client 를 만들고 `await client.ping()` 이 성공해야
+  `app.state.redis` 에 client 를 둡니다. 실패하면 오류 타입을 ERROR 로 남기고 재전파해 startup 이
+  중단되며, `DEBUG` 값과 무관하고 끄는 설정도 없습니다. 이때 background drain 은 아직 진입 전이라
+  실행되지 않고 Redis `aclose()` → DB dispose → 로그 flush 만 돕니다
+  (`tests/core/test_resources.py::test_redis_connection_failure_stops_startup_and_cleans_up`).
+  `/ready` 는 Redis 를 다시 검사하지 않습니다. Celery worker 의 broker/backend 연결은 이 client 와
+  별개이며 worker 가 소유합니다(AR-006).
+- startup 작업(`_prepare_database()`)은 네 컨텍스트에 모두 진입한 뒤 실행합니다. 모델을 import 해
+  `Base.metadata.tables` 수로 판정하며, 0개면 DB 접속을 생략하고 `DEBUG=false` 면 DDL 을 건너뛰며,
+  `DEBUG=true` 면 `create_db_tables(import_models=False)`(30초 guard)를 실행합니다.
 - **이 중첩을 평평한 `finally` 안의 연속 `await` 로 되돌리지 마세요.**
   `asyncio.CancelledError` 는 `Exception` 이 아니라 `BaseException` 이라 `except Exception`
   그물을 통과합니다. 연속 `await` 였을 때는 첫 정리에서 취소를 맞으면 **뒤 단계가 통째로
-  건너뛰어졌습니다**(F-028 — 커넥션 풀이 닫히지 않았습니다). 중첩 컨텍스트는 바깥
-  `__aexit__` 가 반드시 실행되므로 그 경로 자체가 없습니다.
+  건너뛰어졌습니다**(F-028 — 커넥션 풀이 닫히지 않았습니다). 중첩 컨텍스트는 취소가
+  전파돼도 바깥 `__aexit__`를 시도합니다. 이것은 각 cleanup의 성공까지 보장하지 않습니다.
+  반복 취소·강제 종료에서는 정리가 완료되지 않을 수 있습니다.
 - **로그 리스너는 여기서 멈추지 않습니다**(ADR-018). 멈추면 그 **뒤에** uvicorn 이 남기는
   최종 로그와 startup 실패 traceback 이 소비자 없는 큐에 갇혀 사라집니다(F-029).
   lifespan 은 *멈추지* 않고 **다 나갈 때까지 기다리기만** 합니다(ADR-023). 실제 정지는
   프로세스 몫이며 `atexit` 훅과 `SIGTERM`/`SIGBREAK` 핸들러가 맡습니다(ADR-022) —
   `docker stop` 은 `atexit` 이 실행되지 않는 경로라 신호 핸들러가 따로 필요합니다.
-- 각 단계에 **개별 타임아웃**이 있고 전체에도 상한이 있습니다. 하나가 늦어도 나머지 정리는
-  진행됩니다.
+- background 5초·Redis close 5초·DB dispose 10초의 **개별 타임아웃**이 있습니다.
+  `SHUTDOWN_TOTAL_TIMEOUT_SECONDS=20.0`은 현재 상수 선언일 뿐 전체를 감싸는 timeout으로
+  사용되지 않습니다. 로그 큐 flush도 별도 예산이므로 엄격한 전체 20초 상한은 없습니다.
 - 드레인은 자기 몫의 타임아웃보다 **짧게** 기다립니다(`DRAIN_WAIT_RATIO`). 남는 시간은 취소된
   태스크의 `finally`(세션 rollback·close)가 실제로 실행될 여유입니다 — 같은 값을 주면 취소
   직후 바깥 guard 가 끊어 정리가 실행되지 못합니다.
@@ -382,22 +411,27 @@ uv run alembic upgrade head
 | 명령 | 설명 |
 |------|------|
 | `uv sync` | 의존성 설치 (가상환경 자동 생성) |
-| `uv run uvicorn main:app --reload` | 개발 서버 실행 |
+| `uv run python main.py` | 개발 서버 실행 — `run_server()` 경유(`SERVER_HOST`/`SERVER_PORT`, `reload=DEBUG`, 프로젝트 로그 포맷) |
+| `uv run uvicorn main:app --reload` | 개발 서버 실행 — uvicorn 표준 CLI |
 | `uv run alembic upgrade head` | DB 마이그레이션 적용 |
-| `uv run pytest` | 테스트 실행 |
+| `uv run python -m pytest` | 테스트 실행 (CI 와 같은 형태) |
 | `uv run ruff check .` / `uv run mypy .` | 정적 분석 |
 | `docker compose -f compose.test.yaml up -d` | 통합 테스트용 MySQL 8.4 기동(포트 3308) |
 | `uv run python scripts/review_gate.py` | 검수 게이트 — 정적분석 + 계층 불변식 + 공개 API 불변 |
 
-> 통합 테스트는 MySQL 이 없으면 **skip** 됩니다(실패가 아닙니다). 스키마 검증만 필요하면
-> 컨테이너 없이 `uv run pytest` 로 충분하고, Raw SQL 의 실제 방언 동작까지 확인하려면
+> 통합 테스트는 MySQL 이 없으면 **skip** 됩니다(실패가 아닙니다). `test_uvicorn_lifecycle.py`
+> 는 Redis 가 없으면 skip 됩니다. 스키마 검증만 필요하면 컨테이너 없이
+> `uv run python -m pytest` 로 충분하고, Raw SQL 의 실제 방언 동작까지 확인하려면
 > 컨테이너를 띄웁니다. 포트 3308 은 다른 로컬 MySQL 과 겹치지 않도록 고른 값입니다.
+> 서버 자체는 Redis 없이 기동되지 않습니다(§4.2).
 
 `[tool.uv] package = false` — 루트 패키지 빌드 없이 의존성만 설치(flat layout).
 
 ---
 
 ## 8. 변경 이력
+
+아래는 과거 전환 기록이며 현재 동작 설명은 본문의 규약과 실제 코드를 따릅니다.
 
 | 날짜 | 변경 내용 |
 |------|----------|
@@ -410,3 +444,4 @@ uv run alembic upgrade head
 | 2026-08-11 | **문서 정합성 재정리**: 삭제된 심화·리팩터링 문서 참조, 존재하지 않는 과거 모듈·관리자 경로 참조, 제거된 중앙 목록 설명을 실제 코드 기준으로 정정. |
 | 2026-08-25 | **lifespan 종료 조립 단순화 (ADR-016)**: `manage_application_resources()` 에서 `AsyncExitStack` 을 제거하고 평문 `try/finally` 로 전환했다. 종료 순서·자원별 timeout·실패 격리 계약은 불변이며 `tests/core/test_resources.py` 13건을 **한 줄도 고치지 않고** 통과했다. ExitStack 은 콜백 3개를 자원 획득 이전에 한꺼번에 등록하고 있어 "부분 획득 실패 시 그만큼만 되돌린다"는 이점이 작동한 적이 없었고, 대가로 등록 순서와 실행 순서가 반대가 되어 주석으로 그 간극을 메우고 있었다. 실패 격리는 원래부터 `_run_cleanup()` 이 제공한다. 함께 F-026 수정 — `"[shutdown] ... 해제 완료"` 로그가 listener 정지 **뒤에** 찍혀 한 번도 출력된 적이 없었다. 향후 Redis 처럼 조건부 생성 자원이 들어오면 ExitStack 재도입을 재평가한다. |
 | 2026-08-13 | **ORM/Raw Repository 이원화 + 런타임·문서 정비**(§4.1·§4.2 신설). ① lifespan 자원 관리를 `app/core/resources.py` 로 모으고 역순 종료·개별 타임아웃을 강제, 로깅을 큐 기반 비차단 핸들러로 전환. ② 모델 공통 컬럼을 Mixin 으로 정리(스키마 diff 0 을 스냅샷으로 증명). ③ `BaseRepository` 공개 계약을 최소 CRUD 8개로 좁히고(823→185줄) 예외 변환을 전 경로에 통일. ④ `RawRepositoryBase` 신설 — ORM Base 와 상속 관계 없음(INV-5). ⑤ 참조 예제 2종(`catalog`=ORM, `reports`=Raw) + MySQL 8.4 통합 테스트 환경. ⑥ OpenAPI 문서 계약을 규칙 테스트로 고정. 공개 API 경로·응답 스키마는 신규 추가분 외 불변. 결함 17건(CRIT 2·HIGH 5)을 `docs/crp/groups/orm-raw-repository/ledger.md` 에 기록. |
+| 2026-09-17 | **Redis startup 검증 + 가이드 이동**: `resources.py` 에 `_redis(app)` 컨텍스트를 추가해 startup 에서 `ping()` 을 필수로 하고 종료 순서를 background → Redis → DB → 로그 flush 로 확장(§4.2). Redis 가 없으면 `test_uvicorn_lifecycle.py` 는 skip. `.env.example` 의 `CORS_ALLOW_CREDENTIALS` 를 `false` 로 정정(와일드카드 Origin 과의 조합은 validator 가 거부). 가이드 문서를 `docs/guides/` 로 모으고 HTML 안내서 2종(서버 수명·신규 기능 개발)을 함께 둔다. |
