@@ -182,16 +182,19 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 [ARCHITECTURE 부록](./docs/guides/ARCHITECTURE.md#부록-설정-필드-전체)에 있고,
 `config.py` 와 `.env.example` 은 `tests/core/test_settings_contract.py` 가 양방향으로 맞춰 둡니다.
 
+`ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나 access 와 refresh 가 같으면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027). 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
+키는 키마다 따로 만듭니다: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"`
+
 | 변수 | 기본값 | 의미 |
 |---|---|---|
 | `DEBUG` | `true` | true: DEBUG 로그 기본값·개발용 테이블 생성·`/docs`·`python main.py` reload. false: 모두 끔 |
 | `ADMIN` | `true` | `/admin` 마운트. **인증 없음**, `DEBUG` 와 독립 |
-| `ENV` | `development` | `development`/`test`/`staging`/`production` — 로그 출력 구성(시간대·stderr)에 사용 |
+| `ENV` | `development` | `development`/`test`/`staging`/`production` — 로그 출력 구성(시간대·stderr)에 사용. staging/production 은 비밀 키 검사(아래) |
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | `python main.py` 전용 바인딩 |
 | `MYSQL_HOST`·`MYSQL_PORT`·`MYSQL_USER`·`MYSQL_PASSWORD`·`MYSQL_DATABASE` | `localhost`·`3306`·`root`·`""`·`fastapi_db` | primary(writer) |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
 | `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping 대상 + Celery broker/backend |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` | JWT 서명 키 — **배포 전 반드시 교체** |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | 서명·세션 키 — staging/production 은 예시 값이거나 access==refresh 면 **기동 거부** |
 | `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | 없으면 `DEBUG` 에 따라 DEBUG/INFO |
 | `LOG_SQL_ECHO_ENABLED` | `false` | SQL 과 **바인딩 값** 로깅. 운영에서 켜지 않음 |
 | `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
@@ -285,13 +288,14 @@ DELETE 는 204(본문 없음)입니다. 오류 응답은 `{"error_code", "messag
 
 **앱은 아래 조합을 막지 않습니다(확정 정책, 2026-08-12).** `ENV=production` 과 `ADMIN=true` 를 함께
 줘도 기동은 성공합니다. 개발 기본값을 유지하는 대신 차단 책임을 배포 쪽에 둡니다.
+**예외는 비밀 키 하나뿐입니다(ADR-027, 2026-09-17)** — 4번은 staging/production 에서 앱이 직접 거부합니다.
 
 | # | 확인 | 빠뜨리면 |
 |---|---|---|
 | 1 | `ADMIN=false` 를 **명시**했는가 | 기본값 `true` 라 인증 없는 `/admin` 이 열린다 — 사용자·게시글·댓글·접속로그 조회·수정·삭제와 CSV 내보내기 가능(비밀번호 해시만 제외) |
 | 2 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` 인가 (`python main.py` 실행 시) | 기본값 `0.0.0.0` |
 | 3 | 리버스 프록시·방화벽이 `/admin` 을 막는가 | 1·2 가 뚫리면 마지막 방어선이 없다 |
-| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)를 교체했는가 | 기본값이면 누구나 토큰을 위조한다 |
+| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY` 를 교체했는가 | `ENV=staging`/`production` 이면 기동 거부(`RuntimeError`, 이름만 표시). 그 밖의 `ENV` 로 띄우면 검사가 없어 누구나 토큰을 위조한다 |
 | 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출, worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
 | 7 | `CORS_ALLOW_ORIGINS` 를 실제 출처로 좁혔는가 | 기본값 `["*"]` |

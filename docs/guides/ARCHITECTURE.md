@@ -372,6 +372,9 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 - 타입 오류·validator 위반은 `config` import 자체를 실패시켜 lifespan 전에 기동을 막습니다.
   validator: 복제 설정 모순·replica 주소 형식(`DatabaseSettings`), `CORS_ALLOW_ORIGINS=["*"]` +
   `CORS_ALLOW_CREDENTIALS=true`(`CORSSettings`), `SMTP_TLS` + `SMTP_SSL`(`SMTPSettings`).
+- 전역 객체를 만든 뒤 파일 끝에서 배포 안전 검사가 돕니다. `ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나 access 와 refresh 가 같으면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027). 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
+  예시 값 판정은 `is_placeholder_secret()` 하나가 맡습니다(`tests/core/test_deployment_safety.py`). 다른 운영 조합
+  (`ADMIN`·`SERVER_HOST`·`DEBUG` 등)은 여전히 막지 않습니다(C-8).
 - 환경 변수를 직접 읽는 곳은 `config.py` 뿐입니다(`tests/core/test_settings_contract.py`).
 
 ### 6.2 설정 클래스와 소비 지점
@@ -398,7 +401,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 `uv run python main.py` 는 `main` 을 import 해 조립한 뒤 `run_server()` 가 `uvicorn.run("main:app", …)` 을
 부르고, `uvicorn main:app` 은 uvicorn 이 `main` 을 import 합니다. 어느 쪽이든 순서는 같습니다.
 
-1. `config` — 설정 생성·검증
+1. `config` — 설정 생성·검증, 배포 안전 검사(`validate_deployment_safety()`, §6.1)
 2. `get_logger()` 첫 호출 → `configure_logging()` — dictConfig 적용, listener 시작, `atexit`·신호 훅 등록(§9.5)
 3. `app/core/db/session.py` — 엔진·세션 팩토리 생성, 라우팅 구성 로그
 4. `app.features` 각 패키지 — 라우터·모델 import, `home` 의 sink 등록
@@ -441,7 +444,7 @@ async with _log_queue(), _database(app), _redis(app), _background_tasks():
 
 | 실패 지점 | 결과 |
 |---|---|
-| 설정 타입·validator | `config` import 실패 — lifespan 전 |
+| 설정 타입·validator·배포 안전 검사(staging/production 비밀 키) | `config` import 실패 — lifespan 전 |
 | Redis ping (연결·인증·timeout) | `[startup] Redis 연결 실패: <오류 타입>` ERROR 후 재전파. background 컨텍스트에는 아직 들어가지 않았으므로 drain 없이 **Redis `aclose()` → DB dispose(“자원 해제 완료” 로그) → 로그 flush** 만 실행. `app.state.redis`·`app.state.resources` 는 `None` (`tests/core/test_resources.py::test_redis_connection_failure_stops_startup_and_cleans_up`) |
 | 개발용 DDL (MySQL 없음 등) | 네 컨텍스트가 모두 역순으로 정리된 뒤 예외 전파 |
 | 공통 | uvicorn 이 `Application startup failed. Exiting.` 과 traceback 을 남기고 종료. listener 가 프로세스 소유라 이 로그가 유실되지 않는다(§9.5) |
@@ -715,7 +718,7 @@ curl -X POST localhost:8000/api/v1/auth/refresh -H 'Content-Type: application/js
 |---|---|
 | `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | 30 / 7 |
 | `JWT_ALGORITHM` | `HS256` |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` — 교체 필수, 서로 다른 값 권장 |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` — 교체 필수, 서로 달라야 함(staging/production 은 어기면 기동 거부, §6.1) |
 
 - `refresh` 는 access·refresh 를 **둘 다** 새로 발급합니다(회전). 토큰에 종류가 들어 있어 access 를 refresh
   자리에 쓰면 거부됩니다. 비활성 사용자(`is_active=false`)는 로그인·재발급·`me` 에서 막힙니다.
@@ -800,6 +803,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
 | Redis 는 필수 startup 조건 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011) |
 | `/admin` 무인증 + `ADMIN=true` 기본값, 앱이 운영 조합을 막지 않음 | 개발 우선 템플릿. 차단 책임은 배포(C-8) |
+| 단, staging/production 의 예시 비밀 키·access==refresh 는 기동 거부 | 예시 키로 뜨면 누구나 토큰을 위조한다 — 배포 점검에만 맡기기엔 피해가 크다(ADR-027, C-8 축소) |
 | 응답 직렬화는 FastAPI 기본(Pydantic) | `ORJSONResponse` 는 이득이 없고 0.141 에서 deprecated. 제거 전후 응답 바이트 동일 확인 |
 | 템플릿 프로필 분리(minimal/api-db/production) 보류 | 세 벌을 유지하는 비용이 크다. "무겁다" 는 피드백이 반복되면 선택 기능을 걷어내는 스크립트 쪽으로 재검토 |
 | 라우트 검사는 `app.openapi()` 기준 | FastAPI 0.141 부터 `app.routes` 가 하위 라우터를 평탄화하지 않는다(`_IncludedRouter`) |
@@ -821,6 +825,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 | 2026-09-17 | Redis startup 검증과 종료 순서 확장(`_redis`), 가이드를 `docs/guides/` 로 이동, 착수 명세를 `docs/specs/` 로 추적, CI 에 Redis·MySQL job(ADR-024) |
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
+| 2026-09-17 | 배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 `config` import 실패. `.env.example` 비밀 키 예시를 서로 다른 `change-this-...` 로 |
 
 ---
 
@@ -878,7 +883,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 
 **ApiSettings** — `API_VERSION`=`v1` (소비 코드 없음)
 
-**SessionSettings** — `SESSION_COOKIE_NAME`=`session`, `SESSION_SECRET_KEY`=(placeholder), `SESSION_EXPIRE_SECONDS`=`86400` (소비 코드 없음)
+**SessionSettings** — `SESSION_COOKIE_NAME`=`session`, `SESSION_SECRET_KEY`=(placeholder — staging/production 기동 거부, §6.1), `SESSION_EXPIRE_SECONDS`=`86400` (소비 코드 없음)
 
 **SMTPSettings** — `SMTP_SERVER`=`localhost`, `SMTP_PORT`=`25`, `SMTP_USERNAME`=빈 값, `SMTP_PASSWORD`=빈 값,
 `SMTP_FROM_EMAIL`·`SMTP_FROM_NAME`=없음, `SMTP_TLS`·`SMTP_SSL`=`false`(동시 true 거부) (소비 코드 없음)
