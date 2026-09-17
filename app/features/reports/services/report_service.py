@@ -1,7 +1,7 @@
 """Report Service — 매출 리포트 유스케이스.
 
 기간 규칙(종료일 포함, 최대 조회 범위)은 비즈니스 규칙이므로 여기 있고,
-SQL 과 컬럼 alias 는 Repository 가 소유한다(지침서 §4.4).
+SQL 과 컬럼 alias 는 Repository 가 소유한다(docs/guides/DEVELOPMENT.md §6.5).
 Raw 결과는 **여기서** Pydantic DTO 로 검증해 밖으로 내보낸다(RAW-REP-005).
 
 읽기(``get_daily_sales``)와 쓰기(``refresh_daily_snapshots``)가 같은 규칙을 따른다 —
