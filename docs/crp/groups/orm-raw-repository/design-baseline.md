@@ -28,7 +28,7 @@
 
 - `docs/specs/orm-raw-repository/requirements.md` — 요구 명세 (최우선)
 - `docs/specs/orm-raw-repository/development-plan.md` — 설계·실행 순서
-- `docs/specs/orm-raw-repository/workflow-guide.md` — 구현 지침·예시 코드
+- `docs/guides/DEVELOPMENT.md` — 구현 지침·예시 코드 (착수 시점의 `workflow-guide.md` 를 ADR-025 로 흡수. 원문은 git 이력)
 
 ## 2. 요구사항 레지스터 (요청 히스토리 — append-only)
 
@@ -43,6 +43,7 @@
 | REQ-007 | 2026-08-25 | lifespan 의 `AsyncExitStack` 사용을 평가해 달라 → 평가 결과를 받고 "평문 `try/finally` 로 적용해 달라" | `manage_application_resources()` 의 종료 조립을 `AsyncExitStack` 등록 역순에서 **`finally` 블록의 코드 순서**로 바꾼다. 종료 순서 계약(AR-008)·자원별 timeout·실패 격리는 불변 | Active | ADR-016 |
 | REQ-010 | 2026-08-27 | 전 라운드 산출물에 대한 외부 검토 계획서를 받고 "이 계획서의 타당성을 검수해 달라 — **코드의 가용성**이 가장 중요하고, **일반적으로 사용하는 방법**을 기준으로 설계·구현이 수립돼야 한다. 난해한 방식의 설계·코드는 구현되어서는 안 된다. 작업이 늘어나는 것은 상관없다" | **프로세스 종료 신뢰성**: 정상·startup 실패·취소 **모든** 종료에서 자원 정리를 끝까지 시도하고, 종료 과정의 로그가 유실되지 않는다. 구현은 **표준 라이브러리의 관용적 사용**으로 한정한다 — stdlib 가 제공하는 동작을 직접 구현하려면 ADR 로 근거를 남긴다 | Active | ADR-017 · ADR-018 · ADR-021 · ADR-020 · ADR-022 · ADR-023 · F-028~F-039 |
 | REQ-011 | 2026-09-17 | "docs 의 가이드 문서를 코드 기준으로 모두 업데이트" → "requirements.md 를 날짜 폴더가 아닌 적합한 폴더에 두고 추적되게, 참조를 갱신, CI 보완" → "남은 작업 진행" | **문서·CI 정합**: `docs/guides/` 를 코드와 대조해 현행화하고 게이트가 그 경로를 검사한다. 착수 명세 3종은 날짜 없는 `docs/specs/orm-raw-repository/` 에서 추적한다. CI 는 startup 필수 자원(Redis)과 MySQL 을 `compose.test.yaml` 로 띄워 skip 0 을 유지한다 | Active | ADR-024 |
+| REQ-012 | 2026-09-17 | "삭제된 문서까지 포함해 문서를 재정리·최적화. 중복은 정확한 한 문서로 모으고, 꼭 필요한 문서만 두며, 이 저장소 관점으로만(다른 저장소와 무관하게)" | **문서 통합**: 주제마다 소유 문서를 하나로 한다 — README(진입·실행·테스트·API·배포 점검·유일한 문서 색인), `docs/guides/ARCHITECTURE.md`(구조·런타임), `docs/guides/DEVELOPMENT.md`(개발 절차). 같은 내용의 HTML·Markdown 이중 보관과 다른 저장소 비교 서술을 없앤다. 삭제된 문서에서는 현재 코드로 확인되는 사실만 회수하고 파일로 되살리지 않는다. 코드 동작·게이트·테스트 기준은 약화하지 않는다 | Active | ADR-025 |
 
 ## 3. 설계 결정 기록 (ADR — 확정 후 불변)
 
@@ -71,6 +72,7 @@
 | ADR-022 | 2026-08-27 | 기본 동작이 **즉시 종료**인 신호(`SIGTERM`, Windows 의 `SIGBREAK`)에 *로그를 비운 뒤 원래 종료 동작으로 돌아가는* 핸들러를 `configure_logging()` 시점에 건다. **`SIGINT` 은 건드리지 않는다.** | ADR-018 의 `atexit` 훅이 신호 종료 경로에서 실행되지 않는다(F-038). uvicorn 은 정상 종료를 마친 뒤 원래 핸들러를 복구하고 **잡았던 신호를 다시 올리는데**(`capture_signals()`), 복구된 것이 `SIG_DFL` 이면 프로세스가 그 자리에서 끝나 `atexit` 이 돌지 않는다. 신호별 실측: `SIGINT` → 기본 핸들러가 `KeyboardInterrupt` 를 올려 **atexit 실행됨**(exit 0), `SIGTERM`·`SIGBREAK` → `SIG_DFL` 이라 **atexit 건너뜀**(exit 3). 그래서 대상을 뒤 두 개로 한정했다 — `SIGINT` 을 가로채면 `KeyboardInterrupt` 를 기대하는 pytest·REPL·디버거가 조용히 달라진다. 핸들러는 정리 후 `SIG_DFL` 로 되돌리고 같은 신호를 다시 올린다: **삼키지 않는다.** 삼키면 `docker stop` 이 종료되지 않는 컨테이너를 만나 SIGKILL 까지 기다린다. 이미 다른 핸들러가 걸려 있으면 뺏지 않고(gunicorn·Celery 가 자기 종료 절차를 가진다), main thread 가 아니면 건너뛴다(`signal.signal` 제약). | Accepted | — |
 | ADR-023 | 2026-08-27 | lifespan 종료의 **가장 마지막 단계**로 로그 큐를 flush 한다(`_log_queue()` 컨텍스트, 예산 2초). listener 를 **멈추지는 않는다** — 멈추는 것은 여전히 프로세스의 몫이다(ADR-018 유지). | `uvicorn main:app` CLI 경로에서는 ADR-022 의 신호 핸들러가 효력이 없다(F-039). uvicorn 이 `serve()` 에서 원래 핸들러를 **먼저** 스냅샷한 뒤 그 안쪽 `_serve()` 에서 `config.load()` 로 앱을 import 하므로(`uvicorn/server.py:68-77`), 우리 `configure_logging()` 은 스냅샷보다 나중이라 종료 시 복구되는 `SIG_DFL` 에 덮인다. 신호가 온 뒤에는 손쓸 방법이 없으므로 **오기 전에** 비운다. 이 경로에서 우리 큐에 들어가는 것은 앱 로그뿐이고(uvicorn 로그는 자기 핸들러로 직행 — ADR-020) 앱이 마지막으로 로그를 남기는 시점이 lifespan 종료 절차 안이므로, 여기서 비우면 잃을 것이 남지 않는다. **flush 는 stop 이 아니므로 F-029 와 충돌하지 않는다** — listener 는 그대로 살아 있다. 구현은 stdlib 계약을 그대로 쓴다: `QueueListener._monitor` 가 record 마다 `task_done()` 을 부르므로 `unfinished_tasks == 0` 이 곧 *"넣은 걸 전부 썼다"* 다. `Queue.join()` 과 **같은 조건**을 기다리되 `join()` 에는 timeout 이 없어 직접 기다린다 — timeout 없이 썼다면 listener 가 죽어 있을 때 종료가 영원히 매달렸을 것이다(F-037 과 같은 함정). 실패해도 종료를 막지 않는다(로그를 조금 잃을 뿐이다). | Accepted | — |
 | ADR-024 | 2026-09-17 | ① 착수 명세 3종을 `docs/specs/orm-raw-repository/` 로 옮겨 추적한다. ② CI gate job 은 compose 의 `redis-test` 를 띄우고 `-m "not mysql"` 로 돌며, mysql 마커는 별도 `mysql` job 이 `--mysql-required` 로 실행한다. ③ `docs/guides/` 의 경로 참조는 `tests/test_docs_guides.py` 가 검사한다. | ① `.gitignore` 가 `YYYY-MM-DD/` 폴더를 로컬 작업 기록으로 제외하면서 게이트(ADR-014)가 읽는 `requirements.md` 가 저장소에서 빠졌다. ② startup 이 Redis 를 필수로 검증하게 된 뒤 gate job 에 Redis·MySQL 이 없어 skip 11건으로 charter §3 을 위반했다 (2026-08-27 부터 MySQL skip 8건으로 이미 실패 중). services: 대신 compose 를 쓰는 이유는 로컬과 같은 파일을 쓰기 위해서다. ③ 가이드는 게이트 밖이라 코드가 바뀌어도 초록불이었다. | Accepted | — |
+| ADR-025 | 2026-09-17 | ① 추적 문서를 5개로 줄인다: `README.md` · `docs/guides/ARCHITECTURE.md` · `docs/guides/DEVELOPMENT.md` · `docs/specs/orm-raw-repository/requirements.md` · `docs/specs/orm-raw-repository/development-plan.md`. ② `QUICKSTART.md` → README, `LOGGING-AND-SHUTDOWN.md`·`server-lifecycle-guide.html` → ARCHITECTURE, `ORM-RAW-WORKFLOW.md`·`feature-development-guide.html`·명세의 `workflow-guide.md` → DEVELOPMENT 로 흡수하고 원본을 삭제한다(`docs/specs/orm-raw-repository/README.md` 는 README 의 문서 색인으로). ③ `requirements.md`·`development-plan.md` 는 착수 기준선이라 내용을 고치지 않는다(`requirements.md` 의 관련 지침서 경로만 갱신). ④ `tests/test_docs_guides.py` 의 경로 검사 대상에 README 를 더한다. | ① 같은 주제가 README·가이드·HTML·명세 사본에 최대 4벌 있었고 이미 서로 어긋나 있었다(README 의 종료 "전체 상한 20초"·존재하지 않는 Repository 별칭·코드가 읽지 않는 로그 포맷 설정). 한 벌만 두어야 고칠 곳이 하나다. ② `workflow-guide.md` 는 ADR-016 이 "코드에 맞춰 갱신" 하기로 한 **살아 있는 지침**이었고 그 후속 사본(`ORM-RAW-WORKFLOW.md`)과 이중으로 남아 옛 경로·옛 종료 순서를 담고 있었다. `development-plan.md` 는 requirements §18 과 이 그룹 문서들이 Phase 를 인용하므로 기준선으로 둔다(ADR-010·ADR-016 원리). ③ HTML 안내서 두 벌은 Markdown 과 같은 내용에 다른 저장소 비교 서술이 섞여 있었다. ④ 실행 절차가 README 로 옮겨 왔으므로 같은 검사 아래 둔다 — 검사 범위를 넓힐 뿐 규칙은 그대로다. | Accepted | — |
 
 > **ADR-020 은 위 표에 확정 등록됐다(대안 A 기각).** 판단을 뒤집은 것은 실측이다 — Wave 3 이 F-029 를 닫은 뒤에는 두 실행 경로의 **정확성이 같아져**, 대안 A 를 살리던 근거 *"CLI 경로에서 오류가 안 보인다"* 가 더 이상 성립하지 않는다. 남은 이득이 포맷 하나뿐인 상태에서 남의 라이브러리 내부 순서에 기대는 결합을 새로 들일 이유가 없다. 그 결과 `build_dictconfig()` 에 `loggers` 키를 넣지 않으므로 가드 테스트도 **그대로 살아 있다**.
 >
@@ -115,6 +117,8 @@
 - v0.10 (2026-09-17): REQ-011 · ADR-024 등록 — 가이드 현행화(`docs/guides/`), 착수 명세 3종을
   `docs/specs/orm-raw-repository/` 로 이동, CI 에 Redis(gate)·MySQL(job) 추가, 가이드 경로 검사 테스트.
   §기준선 문서 목록의 경로를 새 위치로 바꿨다(내용은 불변).
+- v0.11 (2026-09-17): REQ-012 · ADR-025 등록 — 문서를 README·ARCHITECTURE·DEVELOPMENT + 착수 명세 2종으로
+  통합. §1 기준선 목록의 `workflow-guide.md` 경로를 흡수처(`docs/guides/DEVELOPMENT.md`)로 바꿨다.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

@@ -6,7 +6,7 @@
 그렇다면 왜 ``SalesOrder`` 는 있는가:
     이 테이블의 **생명주기를 이 프로젝트가 소유**하기 때문이다. migration 으로
     만들고 지우는 테이블이라면 metadata 에 있어야 Alembic 이 드리프트를 볼 수 있다
-    (지침서 §2 의 단서). 모델이 없으면 ``compare_metadata`` 가 이 테이블을
+    (docs/guides/DEVELOPMENT.md §6.1). 모델이 없으면 ``compare_metadata`` 가 이 테이블을
     "지워야 할 것"으로 판정한다.
 
     ``sales_orders`` 에 대한 쓰기는 이 예제 범위가 아니다 — 원장은 migration/fixture
