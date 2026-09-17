@@ -1047,3 +1047,54 @@ api_settings = get_api_settings()
 session_settings = get_session_settings()
 smtp_settings = get_smtp_settings()
 upload_settings = get_upload_settings()
+
+
+# =============================================================================
+# 배포 안전 검사 (ADR-027)
+# =============================================================================
+# 비밀 키 규칙만 검사한다. ADMIN·SERVER_HOST 등 다른 운영 조합은 여전히 막지 않는다(C-8).
+DEPLOYED_ENVS = frozenset({"staging", "production"})
+
+
+def is_placeholder_secret(value: str) -> bool:
+    """`.env.example` 류의 예시 값(교체하지 않은 비밀 키)인가."""
+    v = value.strip().lower()
+    return "change-this" in v or v.startswith("your-") or v == ""
+
+
+def validate_deployment_safety(
+    app: AppSettings | None = None,
+    jwt: JWTSettings | None = None,
+    session: SessionSettings | None = None,
+) -> None:
+    """staging/production 에서 예시 비밀 키·access==refresh 를 기동 시점에 거부한다.
+
+    위반을 모두 모아 RuntimeError 하나로 올린다. 메시지에는 설정 **이름**만 담는다(값 금지).
+    """
+    app = app or app_settings
+    jwt = jwt or jwt_settings
+    session = session or session_settings
+    if app.ENV not in DEPLOYED_ENVS:
+        return
+
+    secrets = {
+        "ACCESS_TOKEN_SECRET_KEY": jwt.ACCESS_TOKEN_SECRET_KEY,
+        "REFRESH_TOKEN_SECRET_KEY": jwt.REFRESH_TOKEN_SECRET_KEY,
+        "SESSION_SECRET_KEY": session.SESSION_SECRET_KEY,
+    }
+    violations = [
+        f"{name} 가 예시 값(placeholder)입니다"
+        for name, value in secrets.items()
+        if is_placeholder_secret(value)
+    ]
+    if jwt.ACCESS_TOKEN_SECRET_KEY == jwt.REFRESH_TOKEN_SECRET_KEY:
+        violations.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
+    if violations:
+        raise RuntimeError(
+            f"ENV={app.ENV} 배포 안전 검사 실패 — " + "; ".join(violations) + ". "
+            'uv run python -c "import secrets; print(secrets.token_urlsafe(48))" 로 '
+            "서로 다른 키를 만들어 넣으세요."
+        )
+
+
+validate_deployment_safety()
