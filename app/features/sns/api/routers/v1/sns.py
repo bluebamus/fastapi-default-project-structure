@@ -3,7 +3,7 @@ SNS v1 API 엔드포인트 — 피드 게시물 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
-트랜잭션 경계는 쓰기 핸들러 본문이 응답 전에 ``await service.commit()`` 으로 닫는다
+트랜잭션 경계는 쓰기 핸들러 본문이 닫는다 — 응답 DTO 검증 → ``await service.commit()`` → 반환
 (UnitOfWork 없음, docs/guides/ARCHITECTURE.md §3.2).
 """
 
@@ -44,8 +44,10 @@ async def create_post(
     service: SnsService = Depends(get_sns_service),
 ) -> SnsPostResponse:
     post = await service.create_post(payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = SnsPostResponse.model_validate(post)
     await service.commit()
-    return SnsPostResponse.model_validate(post)
+    return response
 
 
 @router.get(
@@ -99,8 +101,10 @@ async def update_post(
     service: SnsService = Depends(get_sns_service),
 ) -> SnsPostResponse:
     post = await service.update_post(post_id, payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = SnsPostResponse.model_validate(post)
     await service.commit()
-    return SnsPostResponse.model_validate(post)
+    return response
 
 
 @router.delete(

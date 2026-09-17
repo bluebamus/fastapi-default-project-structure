@@ -181,14 +181,18 @@ async def get_catalog_service(
 ) -> CatalogService:
     return CatalogService(db_session)
 
-# View — 커밋은 여기서, 응답 전에 한 번
+# View — 응답 DTO 검증 → 커밋(한 번) → 반환
 async def create_product(payload: ProductCreate, service: CatalogService = Depends(get_catalog_service)):
     product = await service.create_product(payload)
+    response = ProductResponse.model_validate(product)
     await service.commit()
-    return ProductResponse.model_validate(product)
+    return response
 ```
 
-- **성공**: View 본문이 응답을 만들기 전에 `await service.commit()` (TX-004).
+- **성공**: View 본문이 응답 DTO 를 검증한 **뒤** 응답을 반환하기 전에 `await service.commit()` (TX-004).
+  모든 쓰기 핸들러(catalog·blog·reply·sns·user·auth)가 이 순서이며, DTO 검증이 실패하면 커밋 0회로
+  500 이 됩니다(`tests/test_write_dto_before_commit.py`). reports 스냅샷 적재는 Service 가 커밋 전에
+  응답 DTO 를 만들어 돌려줍니다.
 - **예외**: 커밋이 실행되지 않고 세션 의존성의 `except` 가 `rollback()` 후 재전파합니다.
 - **조회**: `_readonly` 의존성 → `get_read_only_db_session`, 커밋 0회(TX-002).
 - **요청 밖**(background·Celery): `async with background_db_session() as db_session:` 에서 호출자가
@@ -816,7 +820,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 | 2026-08-27 | 종료 신뢰성(REQ-010): 중첩 `async with`(ADR-017), listener 프로세스 소유(ADR-018), `run_server(log_config=…)`(ADR-020), dictConfig 네이티브 큐(ADR-021), 신호 핸들러(ADR-022), lifespan 끝 flush(ADR-023), 실제 uvicorn 통합 테스트, `--mysql-required` |
 | 2026-09-17 | Redis startup 검증과 종료 순서 확장(`_redis`), 가이드를 `docs/guides/` 로 이동, 착수 명세를 `docs/specs/` 로 추적, CI 에 Redis·MySQL job(ADR-024) |
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
-| 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13` 정합 |
+| 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 
 ---
 
