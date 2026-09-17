@@ -27,10 +27,12 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 
 | 문서 | 언제 읽나 |
 |---|---|
-| [QUICKSTART](./docs/QUICKSTART.md) | 인프라 없이 30초 안에 앱을 띄워보고 싶을 때 |
-| [ARCHITECTURE](./docs/ARCHITECTURE.md) | 폴더 분류·라우터 배선·트랜잭션 경계의 근거를 볼 때 |
-| **[ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)** | **ORM 과 Raw SQL 중 무엇을 언제 쓰고, 각각 어떤 순서로 만드는지 배울 때** |
-| [로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md) | 로그가 왜 큐를 거치는지, 종료 순서를 왜 건드리면 안 되는지 알아야 할 때 |
+| [서버 수명주기 HTML 안내서](./docs/guides/server-lifecycle-guide.html) | `.env` 설정부터 등록·Redis·DB·요청·종료까지 실제 호출 순서를 추적할 때 |
+| [신규 뷰·테이블 HTML 개발 안내서](./docs/guides/feature-development-guide.html) | MVC 대응·DI·ORM/Raw·트랜잭션·비동기·migration·테스트를 따라 개발할 때 |
+| [QUICKSTART](./docs/guides/QUICKSTART.md) | Redis만 준비해 30초 안에 앱을 띄워보고 싶을 때 |
+| [ARCHITECTURE](./docs/guides/ARCHITECTURE.md) | 폴더 분류·라우터 배선·트랜잭션 경계의 근거를 볼 때 |
+| **[ORM/Raw 워크플로우 개발 지침서](./docs/guides/ORM-RAW-WORKFLOW.md)** | **ORM 과 Raw SQL 중 무엇을 언제 쓰고, 각각 어떤 순서로 만드는지 배울 때** |
+| [로깅과 종료](./docs/guides/LOGGING-AND-SHUTDOWN.md) | 로그가 왜 큐를 거치는지, 종료 순서를 왜 건드리면 안 되는지 알아야 할 때 |
 
 지침서는 두 방식을 **같은 시나리오로 끝까지** 따라갑니다 — §3 ORM(상품 CRUD),
 §4 Raw(일별 매출 리포트), §6 Raw SQL 보안 규칙, §7 트랜잭션 지침, §10 코드 리뷰
@@ -52,10 +54,10 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
   참조 예제가 나란히 있습니다 — `app/features/catalog/`(ORM), `app/features/reports/`(Raw)
 - **유연한 설정**: Pydantic Settings 기반 환경 변수 관리
 - **구조화된 로깅**: 큐 기반 비차단 핸들러 → stdout/stderr (파일 로그 없음)
-- **검증된 종료 절차**: background task → DB 커넥션 → 로그 순서로 정리하며, 정상 종료·
+- **검증된 종료 절차**: background task → Redis → DB 커넥션 → 로그 순서로 정리하며, 정상 종료·
   startup 실패·취소·`docker stop`(SIGTERM) **모두**에서 끝까지 실행됩니다.
   실제 서버 프로세스를 띄우는 통합 테스트가 이 순서를 고정합니다
-  ([상세](./docs/LOGGING-AND-SHUTDOWN.md))
+  ([상세](./docs/guides/LOGGING-AND-SHUTDOWN.md))
 - **API 문서**: Scalar UI 기반 인터랙티브 문서 + OpenAPI 정합성 규칙 테스트
 - **관리자 페이지**: SQLAdmin 통합
 
@@ -72,7 +74,7 @@ Repository 패턴과 계층 분리 아키텍처를 적용한 FastAPI 프로젝�
 | Database | MySQL (aiomysql) |
 | Validation | Pydantic v2 |
 | Migration | Alembic |
-| Message Broker | Redis (Celery 브로커·결과 백엔드 전용 — 앱 캐시로는 쓰지 않음) |
+| Redis | startup 연결 검증 + Celery 브로커·결과 백엔드 |
 | Admin | SQLAdmin |
 | API Docs | Scalar |
 | Task Queue | Celery + Redis |
@@ -132,7 +134,7 @@ Router(view) → Depends(get_<name>_service) → Service(session) → Repository
 
 ## 프로젝트 구조
 
-> 상세한 아키텍처 설명은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
+> 상세한 아키텍처 설명은 **[docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md)** 를 참고하세요.
 
 ```
 fastapi-default-project-structure/
@@ -188,10 +190,11 @@ fastapi-default-project-structure/
 ├── scripts/review_gate.py       # 검수 게이트 12종 — 아래 [테스트와 검수] 참고
 ├── compose.test.yaml            # 통합 테스트용 MySQL 8.4 (호스트 포트 3308)
 ├── docs/
-│   ├── ARCHITECTURE.md          # 아키텍처 공식 문서 (SSOT)
-│   ├── QUICKSTART.md            # 최소 실행 경로
-│   ├── LOGGING-AND-SHUTDOWN.md  # 로그가 왜 큐를 거치는지 · 종료 순서를 왜 건드리면 안 되는지
-│   ├── orm-raw-repository/      # ORM/Raw 워크플로우 개발 지침서
+│   ├── guides/                  # 현행 사용자·개발자 가이드
+│   │   ├── ARCHITECTURE.md      # 아키텍처 공식 문서 (SSOT)
+│   │   ├── QUICKSTART.md        # 최소 실행 경로
+│   │   ├── ORM-RAW-WORKFLOW.md  # ORM/Raw 워크플로우 개발 지침서
+│   │   └── LOGGING-AND-SHUTDOWN.md # 로깅·종료 구조 설명
 │   └── crp/groups/              # 작업 그룹별 설계 기준선·결함 원장
 └── media/ static/ poc/ logs/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
                                  #   logs/ 는 파일 로깅 제거 후 남은 예약 자리다
@@ -209,7 +212,7 @@ fastapi-default-project-structure/
 | `app/features/<name>/admin.py` | 기능이 소유한 SQLAdmin ModelView + `admin_views` |
 | `app/features/admin.py` | 기능별 `admin_views` 를 명시 import 로 취합(`ADMIN_VIEWS`). `main.py` 는 `register_admin(app, engine)` 하나만 호출하고, 내부에서 `create_admin_interface()`(생성·마운트) → `register_admin_views()`(등록) 순으로 위임 |
 | `app/core/db/session.py` | SQLAlchemy 엔진, 세션 팩토리, 커넥션 풀, `background_db_session` |
-| `app/core/resources.py` | 프로세스 수명 자원의 생성·해제 **단일 지점**. 자원마다 async context manager 를 두고 획득 순서대로 중첩해 정리 순서를 코드로 보이게 합니다 → [로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md) |
+| `app/core/resources.py` | 프로세스 수명 자원의 생성·해제 **단일 지점**. 자원마다 async context manager 를 두고 획득 순서대로 중첩해 정리 순서를 코드로 보이게 합니다 → [로깅과 종료](./docs/guides/LOGGING-AND-SHUTDOWN.md) |
 | `app/utils/logs/` | 큐 기반 비차단 로깅 + listener 수명 관리(`atexit`·신호 핸들러). **여기 손대기 전에 위 문서를 읽으세요** |
 | `conftest.py` (루트) | pytest 전역 옵션. `--mysql-required` 가 통합 테스트의 skip 을 실패로 바꿉니다 |
 | `app/features/<name>/dependencies/` | 기능 의존성 — Service 구성(쓰기용 `get_writer_db_session` / 조회용 `get_read_only_db_session`). 커밋은 핸들러가 수행 |
@@ -450,7 +453,7 @@ _DAILY_SALES_SQL = text("""
 > Repository 구현만 다르고 Dependency·Service·트랜잭션 경계·응답 검증이 동일합니다.
 >
 > 두 방식을 **처음부터 끝까지 만들어 보려면**
-> [ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)
+> [ORM/Raw 워크플로우 개발 지침서](./docs/guides/ORM-RAW-WORKFLOW.md)
 > 를 따라가세요. 위 코드가 어떤 순서로 나왔는지가 그 문서에 있습니다.
 
 ### 2. 트랜잭션 경계 — 쓰기 핸들러 (UnitOfWork 대체)
@@ -553,7 +556,7 @@ class UserRepository(BaseRepository[User]):
 
 ## 시작하기
 
-> **처음이라면 [docs/QUICKSTART.md](docs/QUICKSTART.md) 부터.** 인프라 없이 30초 만에
+> **처음이라면 [docs/guides/QUICKSTART.md](docs/guides/QUICKSTART.md) 부터.** Redis만 준비해 30초 만에
 > 기동을 확인하는 최소 경로와, 첫 실행에서 가장 자주 막히는 지점(`DEBUG=true` 기본값이
 > MySQL을 요구한다)을 다룬다. 아래는 전체 설치 절차다.
 
@@ -759,7 +762,7 @@ traceback 이 소비자 없는 큐에 갇혀 사라집니다. 실제 증상은 *
   `atexit` 이 실행되지 않는 경로라 신호 핸들러가 따로 필요합니다.
 
 ⚠️ **`app/core/resources.py` 에 listener 정지 코드를 넣지 마세요.** 왜 그런지와 각 장치가
-무엇을 막는지는 **[로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md)** 에 전부 적어 뒀습니다.
+무엇을 막는지는 **[로깅과 종료](./docs/guides/LOGGING-AND-SHUTDOWN.md)** 에 전부 적어 뒀습니다.
 
 ### 환경 변수 설정
 
@@ -899,14 +902,15 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000  # uvicorn 표준 CL
 
 ```python
 # app/core/resources.py
-async with _log_queue(), _database(app), _background_tasks():
+async with _log_queue(), _database(app), _redis(app), _background_tasks():
     ...
-# 정리: background drain → DB dispose → 로그 큐 flush
+# 정리: background drain → Redis close → DB dispose → 로그 큐 flush
 ```
 
 ```
 [shutdown] 애플리케이션 요청 처리 자원 해제 시작
 [shutdown] background task 정리 완료
+[shutdown] Redis client 정리 완료
 [dispose_engine] Disposing 2 database engine(s)...
 [shutdown] DB engine 정리 완료
 [shutdown] 애플리케이션 요청 처리 자원 해제 완료     ← 정리가 끝까지 갔다는 확인선
@@ -915,12 +919,13 @@ Finished server process                              (uvicorn)
 [log-lifecycle] stop 완료                            ← listener 정지
 ```
 
-DB 를 쓰는 주체(background task)를 먼저 멈춘 뒤에 커넥션 풀을 닫고, 로그 정리는 언제나
+자원을 쓰는 주체(background task)를 먼저 멈춘 뒤 Redis와 DB 커넥션 풀을 닫고, 로그 정리는 언제나
 **가장 마지막**입니다.
 
 | 자원 | 예산 |
 |---|---|
 | background task drain | 5초 |
+| Redis client close | 5초 |
 | DB engine dispose | 10초 |
 | 로그 큐 flush | 2초 |
 | **전체 상한** | **20초** |
@@ -934,7 +939,7 @@ DB 를 쓰는 주체(background task)를 먼저 멈춘 뒤에 커넥션 풀을 �
 lifespan 을 직접 호출하는 단위 테스트로는 이 계열 결함이 **보이지 않습니다** — 문제가 사는
 곳이 lifespan 바깥(프로세스 종료·신호 처리·uvicorn 내부)이기 때문입니다.
 
-> 각 장치가 무엇을 막는지는 **[로깅과 종료](./docs/LOGGING-AND-SHUTDOWN.md)** 를 보세요.
+> 각 장치가 무엇을 막는지는 **[로깅과 종료](./docs/guides/LOGGING-AND-SHUTDOWN.md)** 를 보세요.
 
 ---
 
@@ -1224,7 +1229,7 @@ curl -X POST localhost:8000/api/v1/auth/refresh \
 
 ## 신규 기능 개발 가이드
 
-> 상세 아키텍처 및 각 파일의 역할은 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** 를 참고하세요.
+> 상세 아키텍처 및 각 파일의 역할은 **[docs/guides/ARCHITECTURE.md](docs/guides/ARCHITECTURE.md)** 를 참고하세요.
 
 새 기능은 `app/features/<name>/` vertical slice 를 만든 뒤 **`main.py` 에 라우터를 명시 등록**합니다.
 등록을 빠뜨리면 라우터가 연결되지 않습니다.
@@ -1346,7 +1351,7 @@ app.include_router(<name>.router, prefix="/api")   # ← 취합 한 줄 추가
 #### 데이터 접근 참조 예제 — catalog(ORM) · reports(Raw SQL)
 
 같은 앱 안에서 두 방식을 나란히 보여주는 예제입니다. 자세한 사용 기준은
-[ORM/Raw 워크플로우 개발 지침서](./docs/orm-raw-repository/2026-08-13/workflow-guide.md)에
+[ORM/Raw 워크플로우 개발 지침서](./docs/guides/ORM-RAW-WORKFLOW.md)에
 있습니다.
 
 | 메서드 | 경로 | 설명 |

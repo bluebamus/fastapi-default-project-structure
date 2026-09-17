@@ -7,12 +7,12 @@ startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생�
 자원마다 작은 async context manager 를 두고 **획득 순서대로 중첩**한다. 정리는 파이썬이
 그 **역순**으로 실행하므로, 순서를 따로 강제할 장치가 필요 없다 (ADR-017)::
 
-    async with _log_queue(), _database(...), _background_tasks():
+    async with _log_queue(), _database(...), _redis(...), _background_tasks():
         ...
-    # 정리 순서: background drain → DB dispose → 로그 큐 flush
+    # 정리 순서: background drain → Redis close → DB dispose → 로그 큐 flush
 
-이 순서인 이유는 의존 관계다. DB 를 쓰는 주체(background task)를 먼저 멈춰야 커넥션 풀을
-닫는 것이 안전하다.
+이 순서인 이유는 의존 관계다. 외부 자원을 쓰는 주체(background task)를 먼저 멈춰야
+Redis client와 DB 커넥션 풀을 닫는 것이 안전하다.
 
 **logging listener 는 여기서 멈추지 않는다** (ADR-018). 소유자는 프로세스이고
 ``app/utils/logs/setup.py`` 의 ``atexit`` 훅과 신호 핸들러(ADR-022)가 정리한다.
@@ -39,8 +39,8 @@ lifespan 이 멈추면 그 뒤에 uvicorn 이 남기는 최종 로그와 startup
 ``Base.metadata.tables`` 의 실제 개수로 판정한다. 모델이 0개면 DB 에 접속조차 하지
 않는다(AR-007).
 
-자원 소유권은 FastAPI API 프로세스가 만든 것으로 한정한다. Celery worker 의
-broker/backend 연결은 worker 프로세스가 소유하며 여기서 닫지 않는다(AR-006).
+자원 소유권은 FastAPI API 프로세스가 만든 것으로 한정한다. startup 검증용 Redis client는
+여기서 닫지만, Celery worker의 별도 broker/backend 연결은 worker가 소유한다(AR-006).
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
 from app.core.db.models_registry import import_all_models
 from app.core.db.session import create_db_tables, dispose_engine
@@ -60,13 +61,14 @@ from app.core.models.models_base import Base
 from app.utils.logs import get_logger
 from app.utils.logs.queue_handler import LOG_FLUSH_TIMEOUT_SECONDS
 from app.utils.logs.setup import flush_log_queue
-from config import app_settings
+from config import app_settings, redis_settings
 
 logger = get_logger("resources")
 
 # 자원별 shutdown 예산 (확정 정책 6). 합이 전체 예산을 넘지 않아야 한다.
 BACKGROUND_DRAIN_TIMEOUT_SECONDS = 5.0
 DB_DISPOSE_TIMEOUT_SECONDS = 10.0
+REDIS_TIMEOUT_SECONDS = 5.0
 SHUTDOWN_TOTAL_TIMEOUT_SECONDS = 20.0
 # logging listener 의 종료 예산은 여기 없다 — 프로세스 종료 훅의 몫이다 (ADR-018).
 
@@ -129,6 +131,29 @@ async def _drain_background_tasks() -> None:
 
 async def _dispose_db_engines() -> None:
     await _run_cleanup("DB engine", dispose_engine, DB_DISPOSE_TIMEOUT_SECONDS)
+
+
+@asynccontextmanager
+async def _redis(app: FastAPI) -> AsyncIterator[None]:
+    """Redis 연결을 startup 에 검증하고 shutdown 에 닫는다."""
+    client = Redis.from_url(
+        redis_settings.REDIS_URL,
+        socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
+        socket_timeout=REDIS_TIMEOUT_SECONDS,
+    )
+    app.state.redis = None
+    try:
+        try:
+            await client.ping()
+        except Exception as exc:
+            logger.error("[startup] Redis 연결 실패: %s", type(exc).__name__)
+            raise
+        app.state.redis = client
+        logger.info("[startup] Redis 연결 확인 완료")
+        yield
+    finally:
+        app.state.redis = None
+        await _run_cleanup("Redis client", client.aclose, REDIS_TIMEOUT_SECONDS)
 
 
 async def _prepare_database(resources: ApplicationResources) -> None:
@@ -219,9 +244,9 @@ async def manage_application_resources(
     logger.info("[startup] 애플리케이션 자원 초기화 시작 (DEBUG=%s)", app_settings.DEBUG)
 
     # 획득 순서대로 중첩하면 정리는 자동으로 역순이다 (모듈 독스트링 참조).
-    async with _log_queue(), _database(app), _background_tasks():
-        # startup 작업은 두 컨텍스트에 **모두 진입한 뒤** 실행한다. 여기서 실패하면
-        # 두 finally 가 전부 돌아 이미 열려 있던 engine 이 정리된다 — engine 은 이
+    async with _log_queue(), _database(app), _redis(app), _background_tasks():
+        # startup 작업은 모든 자원 컨텍스트에 진입한 뒤 실행한다. 여기서 실패하면
+        # 진입한 컨텍스트의 finally가 돌아 이미 연 client와 engine이 정리된다 — engine은 이
         # 컨텍스트가 만든 것이 아니라 import 시점에 이미 존재하므로 startup 성공
         # 여부와 무관하게 닫아야 한다.
         await _prepare_database(resources)
