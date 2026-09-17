@@ -308,7 +308,7 @@ def check_cited_commits_reachable() -> None:
 
 # 요구 ID 를 선언하는 문서. 여기 나타나면 "실재하는 근거" 로 본다.
 REQUIREMENT_SOURCES = (
-    "docs/orm-raw-repository/2026-08-13/requirements.md",
+    "docs/specs/orm-raw-repository/requirements.md",
     "docs/crp/groups/orm-raw-repository/design-baseline.md",
     "docs/crp/groups/orm-raw-repository/charter.md",
 )
