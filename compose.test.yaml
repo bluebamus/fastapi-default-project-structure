@@ -13,7 +13,7 @@
 # 남길 이유가 없다. 재시작하면 깨끗한 상태로 돌아온다.
 #
 #   docker compose -f compose.test.yaml up -d --wait   # MySQL + Redis 기동 (healthy 까지 대기)
-#   pytest -m mysql                                # 통합 테스트만
+#   uv run python -m pytest -m mysql --mysql-required   # 통합 테스트만(닿지 못하면 실패)
 #   docker compose -f compose.test.yaml down -v    # 정리
 #
 # WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
@@ -21,7 +21,7 @@
 #
 # 3308 을 다른 MySQL 이 쓰고 있으면(`Access denied` 로만 보인다) 포트를 옮긴다:
 #   MYSQL_TEST_PORT=3311 docker compose -f compose.test.yaml up -d --wait mysql-test
-#   MYSQL_TEST_PORT=3311 pytest -m mysql --mysql-required
+#   MYSQL_TEST_PORT=3311 uv run python -m pytest -m mysql --mysql-required
 
 services:
   mysql-test:

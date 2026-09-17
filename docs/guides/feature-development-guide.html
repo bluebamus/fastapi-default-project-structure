@@ -1,0 +1,281 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="fastapi-default-project-structure 신규 뷰·테이블 개발 안내서 — catalog ORM과 reports Raw SQL을 따라 신규 기능을 연결">
+<title>신규 뷰·테이블 개발 안내서 | MVC·DI·Repository·비동기 지침</title>
+<style>
+:root{color-scheme:light;--ink:#183047;--muted:#4d6175;--accent:#12657a;--line:#d5e0e8;--paper:#fff;--bg:#edf3f6}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:1rem}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.85 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}a{color:#085a88;text-underline-offset:3px}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #d78300;outline-offset:4px}
+.skip{position:absolute;top:-80px;padding:12px;background:#fff;z-index:5}.skip:focus{top:0}
+header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{color:#abdce7;font-size:.9rem;letter-spacing:.08em}h1{font-size:clamp(1.8rem,3vw,2.8rem);line-height:1.35;max-width:1050px;margin:.6rem 0 1rem}header p{max-width:1050px}header a{color:#caedf5}.layout{display:grid;grid-template-columns:260px minmax(0,1050px);gap:2rem;max-width:1450px;margin:auto;padding:2rem 1.5rem}nav{position:sticky;top:1rem;align-self:start;max-height:95vh;overflow:auto;font-size:.94rem}nav ol{padding-left:1.5rem}nav li{margin:.45rem 0}nav a{text-decoration:none}main{min-width:0}section{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:2rem;margin-bottom:1.5rem;overflow-wrap:anywhere}h2{font-size:1.65rem;line-height:1.45;margin:0 0 1rem}h3{font-size:1.22rem;line-height:1.55;margin:1.7rem 0 .65rem}p{margin:.7rem 0}li{margin:.35rem 0}code,pre{font-family:Consolas,"Cascadia Code",monospace;font-size:.88em}code{background:#eef3f6;border-radius:4px;padding:.15rem .3rem}pre{background:#122e40;color:#eff6fb;padding:1rem;border-radius:8px;overflow:auto;line-height:1.65;white-space:pre}pre code{background:none;padding:0;color:inherit}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:.93rem;margin:1rem 0}th,td{border:1px solid var(--line);padding:.65rem .8rem;text-align:left;vertical-align:top}th{background:#e8f1f5}td code{white-space:normal}.callout{padding:1rem 1.2rem;background:#eaf5f7;border-left:5px solid var(--accent);margin:1rem 0}.warning{background:#fff4e5;border-color:#b76d0d}.meta,.source,figcaption{font-size:.87rem;color:var(--muted)}.pill{display:inline-block;background:#e0f0f4;color:#174f62;border-radius:20px;padding:.15rem .65rem;font-size:.85rem}.figure{margin:1.2rem 0;border:1px solid var(--line);border-radius:8px;padding:1rem;overflow:auto}.mermaid{min-height:1rem}.mermaid svg{max-width:100%;height:auto}details{margin:1rem 0;border:1px solid var(--line);border-radius:6px;padding:.65rem 1rem}summary{cursor:pointer;font-weight:600}details pre{font-size:.8rem}footer{max-width:1050px;margin:0 auto;padding:1rem 2rem 3rem;color:var(--muted)}button{font:inherit;padding:.4rem .8rem;border:1px solid var(--line);border-radius:6px;background:white;cursor:pointer}
+@media(max-width:1000px){.layout{grid-template-columns:1fr;padding:1rem}nav{position:static;max-height:none;background:#fff;border:1px solid var(--line);padding:1rem;border-radius:8px}nav ol{columns:2}section{padding:1.3rem}}
+@media(max-width:600px){nav ol{columns:1}body{font-size:16px}header{padding:2rem 1rem}}
+@media print{body{background:white;font-size:10.5pt}header{background:white;color:#000;padding:0}header a{color:#000}.layout{display:block;padding:0}nav,.skip,button{display:none}section{border:0;border-bottom:1px solid #aaa;border-radius:0;padding:1rem 0;break-inside:auto}h2,h3{break-after:avoid}pre{white-space:pre-wrap;background:#f3f3f3;color:#000}table{font-size:9pt}.figure{break-inside:avoid}.meta{color:#333}footer{padding:1rem 0}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main-content">본문으로 바로 이동</a>
+<header><div class="eyebrow">fastapi-default-project-structure · 신규 뷰·테이블 개발 안내서</div><h1>새 뷰·테이블 개발: MVC·DI·Repository·비동기 지침</h1><p>catalog ORM과 reports Raw SQL을 따라 신규 기능을 연결하는 안내서. 절차·체크리스트의 원본은 <a href="DEVELOPMENT.md">DEVELOPMENT</a>이고, 이 문서는 한 요청을 따라가며 요약한다. 둘이 다르면 코드가 정답이며 두 문서를 함께 고친다.</p><p>기준일: 2026-09-16 · 최종 갱신: 2026-09-17 · 기준: 현재 작업 트리의 소스·기존 테스트 · <a href="../../README.md">저장소 README</a> · <a href="DEVELOPMENT.md">DEVELOPMENT</a> · <a href="server-lifecycle-guide.html">서버 수명주기 안내서</a></p></header>
+<div class="layout">
+<nav aria-label="문서 목차"><strong>목차</strong><ol><li><a href="#overview">이 안내서의 범위와 개발 기준</a></li><li><a href="#mvc">MVC와 이 프로젝트의 계층·패턴 대응</a></li><li><a href="#existing-models">기존 테이블은 어떻게 등록·사용되는가</a></li><li><a href="#product">Product 모델·Schema·기본값·제약</a></li><li><a href="#view-runtime">기본 API View와 prefix의 실제 합성</a></li><li><a href="#create-trace">상품 생성 한 요청의 클래스·함수 추적</a></li><li><a href="#read-update">조회·수정·삭제와 Repository 공개 계약</a></li><li><a href="#di">주입·재사용·read-only/writer 선택</a></li><li><a href="#transactions">비동기 트랜잭션·오류·응답 경계</a></li><li><a href="#raw">ORM과 Raw 선택: reports의 실제 처리</a></li><li><a href="#new-feature">새 기능·뷰·테이블 추가: 파일과 설치 절차</a></li><li><a href="#recipe">작은 신규 기능 예시: 기존 기반을 재사용</a></li><li><a href="#migrations">테이블 생성·변경·SQL VIEW의 관리 절차</a></li><li><a href="#async-background">비동기·background·Celery 개발 원칙</a></li><li><a href="#security-tests">권한·테스트·관리·완료 기준</a></li><li><a href="#checklist">개발 작업 순서 요약과 문서 유지</a></li></ol></nav>
+<main id="main-content">
+<aside class="callout"><span class="pill">도식 읽기</span><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·코드·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section id="overview"><h2>1. 이 안내서의 범위와 개발 기준</h2>
+<p>이 문서는 <code>fastapi-default-project-structure</code>의 <strong>2026-09-17 작업 트리</strong> 기준 신규 API View·DB 테이블 개발 지침이다. 기동 환경은 <a href="server-lifecycle-guide.html">서버 수명주기 안내서</a>와 분리하고 여기서는 실제 catalog와 reports를 따라 데이터·호출·트랜잭션 경계를 설명한다. 별도 DI container나 추상 interface를 새로 도입하는 안내가 아니라 기존 클래스·함수를 재사용하는 절차이다.</p><aside class="callout">기본 경로: 입력 Schema → View/Router → 주입된 Service → Repository → AsyncSession → DB. 응답은 ORM 객체 또는 Raw 결과를 Pydantic DTO로 검증해 HTTP 계약으로 내보낸다.</aside><p>“뷰”는 이 저장소에서 API endpoint 함수의 HTTP 역할을 주로 뜻한다. 전통적 HTML template View, SQLAdmin ModelView, DB의 SQL VIEW는 서로 다른 개념이다. 아래 MVC 매핑은 프로젝트를 이해하기 위한 대응이지 FastAPI가 MVC 폴더를 강제한다는 뜻이 아니다. 새 inventory 코드는 교육용 제안이며 현재 앱에 구현된 기능으로 표시하지 않는다.</p><p class="source">코드 근거: <a data-source="app/features/catalog/api/routers/v1/products.py" href="../../app/features/catalog/api/routers/v1/products.py">app/features/catalog/api/routers/v1/products.py</a> · <a data-source="app/features/catalog/services/catalog_service.py" href="../../app/features/catalog/services/catalog_service.py">app/features/catalog/services/catalog_service.py</a> · <a data-source="app/features/catalog/repositories/product_repository.py" href="../../app/features/catalog/repositories/product_repository.py">app/features/catalog/repositories/product_repository.py</a> · <a data-source="app/features/reports/repositories/sales_report_repository.py" href="../../app/features/reports/repositories/sales_report_repository.py">app/features/reports/repositories/sales_report_repository.py</a></p>
+</section>
+<section id="mvc"><h2>2. MVC와 이 프로젝트의 계층·패턴 대응</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">개념</th><th scope="col">현재 대응</th><th scope="col">책임 / 두지 않는 것</th></tr></thead><tbody><tr><td>Model</td><td><code>models/models.py</code></td><td>DB 테이블·컬럼·PK·시간 필드. HTTP response 계약을 대신하지 않음</td></tr><tr><td>입출력 계약</td><td><code>schemas</code></td><td>Pydantic 입력 검증·응답 공개 필드·문서. 테이블 생성하지 않음</td></tr><tr><td>Controller / API View</td><td><code>api/routers/v1/*.py</code></td><td>경로·파라미터·Service 호출·응답·쓰기 commit. SQL/업무 규칙을 몰아넣지 않음</td></tr><tr><td>애플리케이션 Service</td><td><code>BaseService → CatalogService</code></td><td>업무 분기·오케스트레이션. Repository에 세션을 전달하며 유스케이스 안에서 임의 commit하지 않음</td></tr><tr><td>Repository</td><td><code>BaseRepository / RawRepositoryBase</code></td><td>데이터 접근·SQL·결과 획득. HTTP 응답을 만들거나 중간 commit하지 않음</td></tr><tr><td>Composition root / DI</td><td><code>dependencies</code></td><td>writer/read-only 세션 선택·Service 객체 조립. 유스케이스를 미리 실행하거나 teardown commit하지 않음</td></tr><tr><td>자원 관리</td><td><code>lifespan / manage_application_resources</code></td><td>프로세스 공유 client·pool의 준비·정리. 요청별 세션과 구분</td></tr><tr><td>관리 UI</td><td><code>admin.py / admin_views</code></td><td>SQLAdmin ModelView. 일반 API의 권한 계약과 자동 공유되는 보안 장치 아님</td></tr></tbody></table></div><p>Repository 패턴은 SQL 변경을 View에서 분리하고, Service Layer는 동일 업무를 API·background·Celery에서 재사용할 지점을 제공한다. 생성자 주입은 Service(session)처럼 실제 필요한 객체를 전달하는 방식이다. 공통 필드는 작은 Mixin을 조합한다. main의 명시 조립과 모델 탐색의 단일 import helper가 배선 누락을 추적할 지점이다.</p><p>UnitOfWork 클래스는 없다. 트랜잭션 상태는 AsyncSession이 갖고, 요청 commit 경계는 쓰기 handler 본문이다. 새 UnitOfWork·Factory·Strategy를 요구가 없는데 추가하지 않는다. ORM과 Raw는 같은 업무 경계를 따르지만 모든 public method 이름·결과 타입이 서로 동일한 interface는 아니다.</p><figure class="figure"><figcaption>계층과 조립 관계 — Dependency는 객체 조립, 실선은 호출·데이터 이동의 주요 관계이다.</figcaption><div class="mermaid">flowchart LR
+client[&quot;클라이언트&quot;] --&gt; view[&quot;API View / Router&quot;]
+inputSchema[&quot;입력 Schema&quot;] --&gt; view
+dependency[&quot;Depends / 세션 선택&quot;] --&gt; service[&quot;Service&quot;]
+view --&gt; service
+service --&gt; repository[&quot;Repository&quot;]
+repository --&gt; asyncSession[&quot;AsyncSession&quot;]
+asyncSession --&gt; database[&quot;Database&quot;]
+repository --&gt; service
+service --&gt; view
+view --&gt; outputSchema[&quot;응답 DTO&quot;]
+outputSchema --&gt; client</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
+client[&quot;클라이언트&quot;] --&gt; view[&quot;API View / Router&quot;]
+inputSchema[&quot;입력 Schema&quot;] --&gt; view
+dependency[&quot;Depends / 세션 선택&quot;] --&gt; service[&quot;Service&quot;]
+view --&gt; service
+service --&gt; repository[&quot;Repository&quot;]
+repository --&gt; asyncSession[&quot;AsyncSession&quot;]
+asyncSession --&gt; database[&quot;Database&quot;]
+repository --&gt; service
+service --&gt; view
+view --&gt; outputSchema[&quot;응답 DTO&quot;]
+outputSchema --&gt; client</code></pre></details></figure><p class="source">코드 근거: <a data-source="app/core/services/services_base.py" href="../../app/core/services/services_base.py">app/core/services/services_base.py</a> · <a data-source="app/core/repositories/repository_base.py" href="../../app/core/repositories/repository_base.py">app/core/repositories/repository_base.py</a> · <a data-source="app/core/repositories/raw_repository_base.py" href="../../app/core/repositories/raw_repository_base.py">app/core/repositories/raw_repository_base.py</a> · <a data-source="app/core/models/models_base.py" href="../../app/core/models/models_base.py">app/core/models/models_base.py</a> · <a data-source="app/features/catalog/dependencies/catalog_dependencies.py" href="../../app/features/catalog/dependencies/catalog_dependencies.py">app/features/catalog/dependencies/catalog_dependencies.py</a></p>
+</section>
+<section id="existing-models"><h2>3. 기존 테이블은 어떻게 등록·사용되는가</h2>
+<p>모델 class 정의가 import되면 SQLAlchemy declarative 매핑을 통해 Base.metadata에 Table 정보가 등록된다. 이것은 DB 서버에 테이블이 이미 생성됐다는 뜻이 아니다. 개발 DDL 또는 Alembic이 별도 생성/변경 작업을 한다. Schema 모델을 작성하는 것만으로 metadata·DB 테이블이 생기지 않는다.</p><div class="table-wrap"><table><thead><tr><th scope="col">기능</th><th scope="col">모델</th><th scope="col">테이블</th><th scope="col">역할</th></tr></thead><tbody><tr><td><code>home</code></td><td><a data-source="app/features/home/models/models.py" data-symbol="UserAccessLog" href="../../app/features/home/models/models.py">app/features/home/models/models.py · UserAccessLog</a></td><td><code>user_access_logs</code></td><td>접속 로그 / background sink</td></tr><tr><td><code>blog</code></td><td><a data-source="app/features/blog/models/models.py" data-symbol="Post" href="../../app/features/blog/models/models.py">app/features/blog/models/models.py · Post</a></td><td><code>blog_posts</code></td><td>게시글 CRUD</td></tr><tr><td><code>reply</code></td><td><a data-source="app/features/reply/models/models.py" data-symbol="Reply" href="../../app/features/reply/models/models.py">app/features/reply/models/models.py · Reply</a></td><td><code>replies</code></td><td>댓글 CRUD</td></tr><tr><td><code>sns</code></td><td><a data-source="app/features/sns/models/models.py" data-symbol="SnsPost" href="../../app/features/sns/models/models.py">app/features/sns/models/models.py · SnsPost</a></td><td><code>sns_posts</code></td><td>SNS 게시물 CRUD</td></tr><tr><td><code>user</code></td><td><a data-source="app/features/user/models/models.py" data-symbol="User" href="../../app/features/user/models/models.py">app/features/user/models/models.py · User</a></td><td><code>users</code></td><td>사용자·인증용 데이터</td></tr><tr><td><code>catalog</code></td><td><a data-source="app/features/catalog/models/models.py" data-symbol="Product" href="../../app/features/catalog/models/models.py">app/features/catalog/models/models.py · Product</a></td><td><code>catalog_products</code></td><td>ORM 참조 예제</td></tr><tr><td><code>reports</code></td><td><a data-source="app/features/reports/models/models.py" data-symbol="SalesOrder" href="../../app/features/reports/models/models.py">app/features/reports/models/models.py · SalesOrder</a></td><td><code>sales_orders</code></td><td>Raw 일별 매출 원본</td></tr><tr><td><code>reports</code></td><td><a data-source="app/features/reports/models/models.py" data-symbol="SalesDailySnapshot" href="../../app/features/reports/models/models.py">app/features/reports/models/models.py · SalesDailySnapshot</a></td><td><code>sales_daily_snapshots</code></td><td>Raw 집계 결과의 영속 적재</td></tr></tbody></table></div><p>auth는 인증 endpoint를 제공하지만 독립 models/models.py 테이블이 없는 기능이다. 기능·router·모델은 1:1 필수 관계가 아니다. 예제 모델 사이에 이름이 비슷한 user_id/customer 등이 있더라도 선언되지 않은 FK·ORM relationship을 추정해서 만들지 않는다.</p><p>모델 탐색은 import_all_models가 기능 디렉터리의 models.models를 찾는 방식이다. 라우터 main 명시 목록과 별개이다.</p><p>전역 metadata는 이미 import된 class를 유지하므로 같은 Python 프로세스의 테스트·실험 모델이 섞일 수 있다. 앱 제거는 router뿐 아니라 테이블·데이터·migration 소유권까지 검토한다. 앱 미설치가 기존 DB 테이블을 자동 삭제하는 동작은 아니다.</p><p class="source">코드 근거: <a data-source="app/core/db/models_registry.py" href="../../app/core/db/models_registry.py">app/core/db/models_registry.py</a> · <a data-source="app/core/db/session.py" href="../../app/core/db/session.py">app/core/db/session.py</a> · <a data-source="migrations/env.py" href="../../migrations/env.py">migrations/env.py</a></p>
+</section>
+<section id="product"><h2>4. Product 모델·Schema·기본값·제약</h2>
+<p>Product는 <code>catalog_products</code>에 매핑되고 문자열 UUID id와 created_at/updated_at을 공통 Mixin에서 받는다. UUIDTimestampModel을 상속한다. 금액은 Numeric(12,2)와 Decimal로 다룬다.</p><figure class="figure"><figcaption>실제 Product 스키마 일부 — 단일 테이블의 실제 필드 요약이며 선언되지 않은 관계선은 추가하지 않았다. 타입은 개념 표기이다.</figcaption><div class="mermaid">erDiagram
+    catalog_products {
+        string id PK
+        string name
+        Decimal price
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+    }</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>erDiagram
+    catalog_products {
+        string id PK
+        string name
+        Decimal price
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+    }</code></pre></details></figure><p>UUID·시간 default는 class import 때 모든 행에 한 번 채우는 값이 아니라 행 INSERT 시 적용되는 Python 기본 생성 함수이다. UpdatedAtMixin.onupdate는 ORM/Core가 발행하는 UPDATE에 적용되며 Raw SQL이 이를 자동 호출하지 않는다. Raw INSERT/UPDATE는 필요한 PK·시간·default를 SQL 바인딩 또는 DB server_default로 직접 다뤄야 한다.</p><p>DB nullable/unique/type/index와 Pydantic min_length/price 범위는 목적이 다르다. API 입력은 schema에서 검증하고 동시성 상황의 최종 무결성은 DB 제약으로 보호한다. 현재 생성 price는 gt=0이다. name은 1~200자이다. DB Numeric 선언 자체가 같은 양수/재고 규칙을 전부 강제하는 것은 아니다.</p><p>응답 ProductResponse의 from_attributes=True는 ORM 속성에서 읽는 설정이다. 현재 ProductResponse는 created_at/updated_at도 포함한다. 모델.to_dict를 바로 공개하면 해시·내부 컬럼까지 유출할 수 있으므로 응답 필드를 Schema로 정한다.</p><aside class="callout warning">선택적인 PATCH 필드의 None은 “미전달”과 다르다. exclude_unset=True는 안 보낸 필드만 제외하므로 명시 null은 남는다. 현재 ProductUpdate의 name·price는 DB에서 non-nullable이지만 스키마 타입은 None을 허용하므로, 새 기능은 null 허용·거부 정책을 명확히 정하고 테스트한다. 바뀔 값이 없으면 UPDATE를 보내지 않는다(<code>CatalogService.update_product</code>, <a href="DEVELOPMENT.md#4-트랜잭션-규칙">DEVELOPMENT §4</a>).</aside><p class="source">코드 근거: <a data-source="app/features/catalog/models/models.py" href="../../app/features/catalog/models/models.py">app/features/catalog/models/models.py</a> · <a data-source="app/features/catalog/schemas/catalog_schema.py" href="../../app/features/catalog/schemas/catalog_schema.py">app/features/catalog/schemas/catalog_schema.py</a> · <a data-source="app/core/models/models_base.py" href="../../app/core/models/models_base.py">app/core/models/models_base.py</a></p>
+</section>
+<section id="view-runtime"><h2>5. 기본 API View와 prefix의 실제 합성</h2>
+<p>최하위 products.py는 APIRouter와 endpoint 함수를 선언한다. 상위 catalog/api/routers/router.py의 catalog_router가 <code>prefix=&quot;/v1/catalog&quot;</code>로 포함하고, main이 기능 패키지 router를 <code>prefix=&quot;/api&quot;</code>에 포함한다. 따라서 파일 내부 <code>&quot;/products&quot;</code>의 최종 URL은 <code>/api/v1/catalog/products</code>이다.</p><figure class="figure"><figcaption>URL 조립 — 디렉터리 이름으로 자동 URL을 계산하는 것이 아니라 include_router prefix를 더한다.</figcaption><div class="mermaid">flowchart LR
+leafRouter[&quot;products.py /products&quot;] --&gt; featureRouter[&quot;catalog_router /v1/catalog&quot;]
+featureRouter --&gt; appRouter[&quot;app 조립 /api&quot;]
+appRouter --&gt; finalPath[&quot;/api/v1/catalog/products&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
+leafRouter[&quot;products.py /products&quot;] --&gt; featureRouter[&quot;catalog_router /v1/catalog&quot;]
+featureRouter --&gt; appRouter[&quot;app 조립 /api&quot;]
+appRouter --&gt; finalPath[&quot;/api/v1/catalog/products&quot;]</code></pre></details></figure><div class="table-wrap"><table><thead><tr><th scope="col">method</th><th scope="col">최종 경로</th><th scope="col">현재 함수·세션</th></tr></thead><tbody><tr><td>POST</td><td><code>/api/v1/catalog/products</code></td><td><code>create_product / get_catalog_service / writer</code></td></tr><tr><td>GET</td><td><code>/api/v1/catalog/products</code></td><td><code>list_products / get_catalog_service_readonly</code></td></tr><tr><td>GET</td><td><code>/api/v1/catalog/products/{product_id}</code></td><td><code>get_product / readonly</code></td></tr><tr><td>PATCH</td><td><code>/api/v1/catalog/products/{product_id}</code></td><td><code>update_product / writer</code></td></tr><tr><td>DELETE</td><td><code>/api/v1/catalog/products/{product_id}</code></td><td><code>delete_product / writer</code></td></tr><tr><td>GET</td><td><code>/api/v1/reports/sales/daily</code></td><td><code>get_daily_sales_report / readonly</code></td></tr><tr><td>POST</td><td><code>/api/v1/reports/sales/daily/snapshots</code></td><td><code>load_daily_sales_snapshots / get_report_service / writer</code></td></tr></tbody></table></div><p>View는 HTTP parameter/body를 Pydantic으로 받아 Service를 호출한다. Query의 skip&gt;=0, 1&lt;=limit&lt;=100은 범위 방어선이다. Path가 UUID라고 설명돼도 실제 타입이 str이면 문자열 UUID 형식을 자동 엄격 검증하는 것은 아니다. 신규 경로는 필요할 때 UUID 타입이나 별도 검증을 명시한다.</p><p>OpenAPI operation_id는 앱 전체에서 유일하게 하고 summary/description/tags/response_model/responses를 실제 반환 계약과 맞춘다. API_VERSION 설정이 존재하지만 catalog/reports prefix는 현재 /v1 선언을 직접 사용한다. config 값만 바꿔 모든 endpoint가 새 버전으로 바뀐다고 가정하지 않는다.</p><p class="source">코드 근거: <a data-source="app/features/catalog/api/routers/router.py" href="../../app/features/catalog/api/routers/router.py">app/features/catalog/api/routers/router.py</a> · <a data-source="app/features/catalog/api/routers/v1/products.py" href="../../app/features/catalog/api/routers/v1/products.py">app/features/catalog/api/routers/v1/products.py</a> · <a data-source="app/features/reports/api/routers/router.py" href="../../app/features/reports/api/routers/router.py">app/features/reports/api/routers/router.py</a> · <a data-source="app/features/reports/api/routers/v1/sales_reports.py" href="../../app/features/reports/api/routers/v1/sales_reports.py">app/features/reports/api/routers/v1/sales_reports.py</a> · <a data-source="app/core/tags_metadata.py" href="../../app/core/tags_metadata.py">app/core/tags_metadata.py</a></p>
+</section>
+<section id="create-trace"><h2>6. 상품 생성 한 요청의 클래스·함수 추적</h2>
+<figure class="figure"><figcaption>POST의 정상 경로 — 응답 DTO 검증 → commit → 201. 모든 쓰기 핸들러가 같은 순서다.</figcaption><div class="mermaid">sequenceDiagram
+participant Client
+participant View
+participant Dependency
+participant Service
+participant Repository
+participant Database
+Client-&gt;&gt;View: POST /api/v1/catalog/products
+View-&gt;&gt;Dependency: get_catalog_service
+Dependency--&gt;&gt;View: CatalogService / writer session
+View-&gt;&gt;Service: create_product(payload)
+Service-&gt;&gt;Repository: create(payload.model_dump())
+Repository-&gt;&gt;Database: add / flush / refresh
+Database--&gt;&gt;Repository: Product / 기본값
+Repository--&gt;&gt;Service: Product
+Service--&gt;&gt;View: Product
+View-&gt;&gt;View: ProductResponse.model_validate
+View-&gt;&gt;Service: commit
+Service-&gt;&gt;Database: COMMIT
+Database--&gt;&gt;Service: 성공
+View--&gt;&gt;Client: 검증된 응답 / 201</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+participant Client
+participant View
+participant Dependency
+participant Service
+participant Repository
+participant Database
+Client-&gt;&gt;View: POST /api/v1/catalog/products
+View-&gt;&gt;Dependency: get_catalog_service
+Dependency--&gt;&gt;View: CatalogService / writer session
+View-&gt;&gt;Service: create_product(payload)
+Service-&gt;&gt;Repository: create(payload.model_dump())
+Repository-&gt;&gt;Database: add / flush / refresh
+Database--&gt;&gt;Repository: Product / 기본값
+Repository--&gt;&gt;Service: Product
+Service--&gt;&gt;View: Product
+View-&gt;&gt;View: ProductResponse.model_validate
+View-&gt;&gt;Service: commit
+Service-&gt;&gt;Database: COMMIT
+Database--&gt;&gt;Service: 성공
+View--&gt;&gt;Client: 검증된 응답 / 201</code></pre></details></figure><p>get_catalog_service는 get_writer_db_session을 Depends로 받아 CatalogService(session)를 반환한다. Service 생성자는 BaseService에 세션을 보관하고 동일 세션으로 ProductRepository를 만든다. create_product는 입력을 model_dump해 Repository.create로 전달한다. Repository는 Product 인스턴스를 생성하고 CRUDBase._add가 session.add → await flush → await refresh를 수행한다. flush는 INSERT를 보내 기본값·제약을 확인하지만 아직 commit은 아니다.</p><p class="meta">create_product의 핵심 순서 (app/features/catalog/api/routers/v1/products.py)</p><pre><code>product = await service.create_product(payload)
+response = ProductResponse.model_validate(product)
+await service.commit()
+return response</code></pre><p>catalog·blog·reply·sns·user·auth의 모든 쓰기 핸들러는 <strong>응답 DTO 검증 → commit → 반환</strong> 단일 규칙을 따른다. 검증이 실패하면 commit 0회로 500이 되어 아무것도 확정되지 않는다(<code>tests/test_write_dto_before_commit.py</code>). commit을 dependency yield 이후에 두지 않으므로 commit 실패도 2xx가 되지 않는다. reports 스냅샷 적재는 Service가 commit 전에 응답 DTO를 만들어 돌려준다. 응답에 필요한 필드는 Repository에서 명시적으로 로드한다(<a href="DEVELOPMENT.md#4-트랜잭션-규칙">DEVELOPMENT §4</a>).</p><aside class="callout warning">DB commit과 HTTP 전송은 하나의 원자적 트랜잭션이 아니다. commit 성공 후 연결 단절·응답 직렬화 실패가 생길 수 있다. 중요한 생성 업무는 idempotency 키·중복 처리 정책을 요구사항으로 정한다. “클라이언트가 2xx를 못 받았으니 저장 안 됨”으로 단정하지 않는다.</aside><p class="source">코드 근거: <a data-source="app/features/catalog/dependencies/catalog_dependencies.py" href="../../app/features/catalog/dependencies/catalog_dependencies.py">app/features/catalog/dependencies/catalog_dependencies.py</a> · <a data-source="app/features/catalog/services/catalog_service.py" href="../../app/features/catalog/services/catalog_service.py">app/features/catalog/services/catalog_service.py</a> · <a data-source="app/core/repositories/crud_base.py" href="../../app/core/repositories/crud_base.py">app/core/repositories/crud_base.py</a> · <a data-source="app/features/catalog/api/routers/v1/products.py" href="../../app/features/catalog/api/routers/v1/products.py">app/features/catalog/api/routers/v1/products.py</a> · <a data-source="app/core/services/services_base.py" href="../../app/core/services/services_base.py">app/core/services/services_base.py</a></p>
+</section>
+<section id="read-update"><h2>7. 조회·수정·삭제와 Repository 공개 계약</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">작업</th><th scope="col">이 저장소의 BaseRepository method</th><th scope="col">설명</th></tr></thead><tbody><tr><td>생성</td><td><code>create(data)</code></td><td>입력 dict를 바꾸지 않고 add → flush → refresh. commit 없음</td></tr><tr><td>PK 조회</td><td><code>get_by_id(pk)</code></td><td>없으면 None</td></tr><tr><td>PK 조회(예외)</td><td><code>get_by_id_or_raise(pk)</code></td><td>없으면 NotFoundException</td></tr><tr><td>목록</td><td><code>list(skip, limit)</code></td><td>단순 페이지 조회(정렬 없음). 필요한 정렬은 feature method에서 명시</td></tr><tr><td>개수·존재</td><td><code>count(**filters) / exists(pk)</code></td><td>개수 / SQL EXISTS</td></tr><tr><td>수정</td><td><code>update_by_id(pk, data)</code></td><td>전달 필드 반영. 없으면 None</td></tr><tr><td>삭제</td><td><code>delete_by_id(pk)</code></td><td>삭제 여부 bool 반환. commit 없음</td></tr></tbody></table></div><p><code>BaseRepository[ModelT, PrimaryKeyT]</code>(PrimaryKeyT 기본 str)의 공개 계약은 위 8개가 전부다. 모든 경로에서 IntegrityError는 DuplicateException, 그 밖의 SQLAlchemyError는 DatabaseException으로 바뀌고 응답 detail에는 모델·연산 이름만 실린다. 공통 계층이 모든 domain 조회·eager loading·정렬을 해결한다고 확대하지 않는다(<a href="ARCHITECTURE.md#52-orm--baserepository">ARCHITECTURE §5.2</a>).</p><p>CatalogService가 get_product·delete_product의 부재를 ProductNotFoundException으로 변환한다. active_only이면 list_active와 count_active를 함께 호출해 전체 수를 같은 필터로 계산한다.</p><p>현재 일부 base 목록에는 order_by가 없다. 신규 pagination은 고정 정렬과 동률 PK를 명시하고 같은 필터로 count를 계산한다. 빈 PATCH/no-op, 동일값 UPDATE의 rowcount=0, 동시 삭제·갱신은 별도 시나리오로 검사한다. 상태 전환·재고 차감은 무조건 조회 후 UPDATE만으로 안전하지 않으며 조건부 UPDATE·잠금·제약 등 실제 동시성 정책을 설계한다.</p><p>도메인 SQL은 ProductRepository의 명시적 메서드로 추가한다. 잘못된 문자열 컬럼명에 의존하는 범용 filter를 늘리기보다 SQLAlchemy 모델 속성을 사용한다. 반환이 Sequence[Product]인지 DTO projection인지 책임 경계를 명확히 한다.</p><p class="source">코드 근거: <a data-source="app/core/repositories/repository_base.py" href="../../app/core/repositories/repository_base.py">app/core/repositories/repository_base.py</a> · <a data-source="app/features/catalog/services/catalog_service.py" href="../../app/features/catalog/services/catalog_service.py">app/features/catalog/services/catalog_service.py</a> · <a data-source="app/features/catalog/repositories/product_repository.py" href="../../app/features/catalog/repositories/product_repository.py">app/features/catalog/repositories/product_repository.py</a> · <a data-source="app/features/catalog/api/routers/v1/products.py" href="../../app/features/catalog/api/routers/v1/products.py">app/features/catalog/api/routers/v1/products.py</a></p>
+</section>
+<section id="di"><h2>8. 주입·재사용·read-only/writer 선택</h2>
+<p class="meta">실제 dependency 구조</p><pre><code>async def get_catalog_service(
+    db_session: AsyncSession = Depends(get_writer_db_session),
+) -&gt; CatalogService:
+    return CatalogService(db_session)
+
+async def get_catalog_service_readonly(
+    db_session: AsyncSession = Depends(get_read_only_db_session),
+) -&gt; CatalogService:
+    return CatalogService(db_session)</code></pre><p>FastAPI가 dependency 그래프를 풀어 세션을 생성하고 반환한 Service를 endpoint parameter에 넣는다. 타입 annotation만으로 Service를 자동 생성하는 것이 아니라 Depends에 지정한 callable이 객체 조립을 수행한다. 일반 Service/Repository는 FastAPI를 모르는 생성자 주입으로도 실행할 수 있어 background·테스트에서 재사용 가능하다.</p><p>같은 요청의 같은 dependency는 기본 use_cache=True로 재사용된다. writer getter와 read-only getter는 다른 callable이므로 무조건 동일 세션은 아니다. 서로 다른 Service가 하나의 원자적 쓰기에 참여해야 한다면 <strong>같은 writer session</strong>을 주입하고 그 요청의 commit 주체는 하나로 둔다. Service 자체를 전역 싱글턴으로 두면 보관한 session이 요청을 넘나들 수 있으므로 금지한다.</p><figure class="figure"><figcaption>세션 의도 선택 — branch 문구는 유스케이스 질문이며 GET/POST 이름만으로 DB 의도를 판단하지 않는다.</figcaption><div class="mermaid">flowchart TD
+useCase[&quot;유스케이스 분석&quot;] --&gt; writeDecision{&quot;쓰기 / 조회 후 쓰기 / 잠금?&quot;}
+writeDecision --&gt; writer[&quot;get_writer_db_session&quot;]
+writeDecision --&gt; readDecision{&quot;복제 지연 허용 조회?&quot;}
+readDecision --&gt; readonly[&quot;get_read_only_db_session&quot;]
+readDecision --&gt; consistentRead[&quot;writer 고정 조회&quot;]
+writer --&gt; oneCommit[&quot;동일 writer session / 응답 전 commit&quot;]
+readonly --&gt; noCommit[&quot;조회 / commit 없음&quot;]
+consistentRead --&gt; noCommit</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+useCase[&quot;유스케이스 분석&quot;] --&gt; writeDecision{&quot;쓰기 / 조회 후 쓰기 / 잠금?&quot;}
+writeDecision --&gt; writer[&quot;get_writer_db_session&quot;]
+writeDecision --&gt; readDecision{&quot;복제 지연 허용 조회?&quot;}
+readDecision --&gt; readonly[&quot;get_read_only_db_session&quot;]
+readDecision --&gt; consistentRead[&quot;writer 고정 조회&quot;]
+writer --&gt; oneCommit[&quot;동일 writer session / 응답 전 commit&quot;]
+readonly --&gt; noCommit[&quot;조회 / commit 없음&quot;]
+consistentRead --&gt; noCommit</code></pre></details></figure><p>DB_ROUTER_ENABLED와 DB_REPLICATION_ENABLED가 모두 활성일 때 reader 분산을 고려한다. replica가 없거나 복제가 꺼졌으면 읽기도 writer로 간다. 쓰기 이후 sticky는 세션 내부 정책이며 새 요청의 read-only session까지 복제 지연을 없애지 않는다.</p><aside class="callout warning">read-only 표시의 쓰기 차단은 RoutingSession의 쓰기 판정에 의존한다. DB_ROUTER_ENABLED=false이면 단일 엔진 세션에서 동일 차단이 보장되지 않는다. Raw 구문 선두 판별은 WITH로 감싼 DML 같은 복잡한 SQL을 오판할 수 있다. DB read-only credential을 별도 보안 경계로 사용한다.</aside><p>읽기 전용 표시·session.info는 DB 권한을 대체하는 보안 장치가 아니다. 개발 경계와 운영의 read-only 계정·권한을 함께 설계한다. <a href="https://fastapi.tiangolo.com/tutorial/dependencies/">DI 공식 문서</a>.</p><p class="source">코드 근거: <a data-source="app/core/db/session.py" href="../../app/core/db/session.py">app/core/db/session.py</a> · <a data-source="app/core/db/router.py" href="../../app/core/db/router.py">app/core/db/router.py</a> · <a data-source="app/features/catalog/dependencies/catalog_dependencies.py" href="../../app/features/catalog/dependencies/catalog_dependencies.py">app/features/catalog/dependencies/catalog_dependencies.py</a> · <a data-source="app/core/repositories/repository_base.py" href="../../app/core/repositories/repository_base.py">app/core/repositories/repository_base.py</a></p>
+</section>
+<section id="transactions"><h2>9. 비동기 트랜잭션·오류·응답 경계</h2>
+<p>flush는 현재 트랜잭션 내부에 SQL을 내보내고 refresh는 DB 값을 다시 읽는다. commit은 전체 변경을 확정한다. Repository 또는 여러 Service 중간에서 commit하면 이후 실패가 앞 변경을 rollback하지 못한다. 기존 구조대로 요청의 쓰기 handler 본문에서 한 번 commit한다. 조회 dependency는 commit하지 않는다.</p><p>yield dependency는 현재 기본 request scope에서 응답 후 teardown된다. scope="function"은 응답 전 종료로 선택할 수 있으므로 “모든 FastAPI yield 정리는 언제나 응답 후”라고 일반화하지 않는다. 이 프로젝트는 기본 dependency 경계를 사용하며 commit을 teardown에 맡기지 않는다. <a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/#early-exit-and-scope">FastAPI scope 공식 근거</a>.</p><p>DB 오류는 SQLAlchemyError·IntegrityError 등으로 발생할 수 있고 기존 Base/기능별 변환 범위가 서로 다르다. Repository의 create 변환이 commit 단계 오류까지 자동 포함하는 것은 아니다. 현재 BaseService.commit은 세션 commit을 직접 await한다. 새 오류 계약은 commit 실패도 포함해 점검한다. 사용자 응답에는 SQL·bind 값·DSN·secret을 넣지 않는다.</p><p>전달된 예외에서 session generator는 rollback 후 재전파하고 async with가 close를 담당한다. 이미 commit한 뒤 실패했다면 rollback이 저장을 되돌리지 않는다. 취소는 BaseException 계열이라 일반 except Exception과 다르므로 취소·timeout 테스트가 필요하다.</p><p class="meta">쓰기 경로의 형태 — 모든 기존 핸들러와 같은 순서. route decorator·metadata는 기존 예제에 맞춰 추가</p><pre><code>async def create_product(payload: ProductCreate, service: CatalogService = Depends(get_catalog_service)):
+    product = await service.create_product(payload)
+    response = ProductResponse.model_validate(product)
+    await service.commit()
+    return response</code></pre><p class="source">코드 근거: <a data-source="app/core/services/services_base.py" href="../../app/core/services/services_base.py">app/core/services/services_base.py</a> · <a data-source="app/core/db/session.py" href="../../app/core/db/session.py">app/core/db/session.py</a> · <a data-source="app/core/exception.py" href="../../app/core/exception.py">app/core/exception.py</a> · <a data-source="app/features/catalog/api/routers/v1/products.py" href="../../app/features/catalog/api/routers/v1/products.py">app/features/catalog/api/routers/v1/products.py</a></p>
+</section>
+<section id="raw"><h2>10. ORM과 Raw 선택: reports의 실제 처리</h2>
+<p>일반 단건 CRUD·관계 조회는 ORM을 기본값으로 한다. 실제 집계·대량 집합 연산·측정한 실행 계획 때문에 Raw가 필요한 경우만 기능 RawRepository를 둔다. Raw는 “항상 빠름”이나 “Schema/Service 불필요”를 뜻하지 않는다.</p><p>현재 <code>/api/v1/reports/sales/daily</code>는 View → <code>get_daily_sales()</code> → SalesReportRawRepository.daily_sales → RawRepositoryBase.fetch_all → RowMapping → Pydantic DTO로 이어진다. 계산 결과는 원본 테이블 한 행이 아니므로 일별 DTO를 영속 ORM class처럼 만들 필요가 없다. 원본 sales_orders는 프로젝트 소유 테이블이므로 모델·migration이 존재한다.</p><p>reports는 created_at 기준 [start_at,end_at)으로 집계하며 Service가 포함 종료일을 다음날 00:00으로 변환하고 최대 366일(<code>MAX_REPORT_DAYS</code>)·정렬 규칙을 검증한다. 정렬 식별자는 Repository가 소유한 allowlist를 거친 코드 상수만 보간하고, 허용 밖이면 Service가 422로 바꾼다. Raw 쓰기 예제 <code>POST /api/v1/reports/sales/daily/snapshots</code>(View <code>load_daily_sales_snapshots</code> → Service <code>refresh_daily_snapshots</code>)는 기간 DELETE + INSERT … SELECT를 동일 writer session에서 수행하고 View가 한 번 commit해 집계를 sales_daily_snapshots에 적재한다. <code>generated_at</code>은 바인드 값으로 넣는다. 동시 적재의 직렬화까지 보장하지는 않는다(<a href="DEVELOPMENT.md#67-raw-쓰기--스냅샷-적재">DEVELOPMENT §6.7</a>).</p><div class="table-wrap"><table><thead><tr><th scope="col">Raw 공개 메서드</th><th scope="col">결과/책임</th></tr></thead><tbody><tr><td><code>fetch_one</code></td><td>첫 RowMapping 또는 None</td></tr><tr><td><code>fetch_all</code></td><td>RowMapping 목록/Sequence</td></tr><tr><td><code>fetch_scalar</code></td><td>단일 값. 실제 query별 타입 검증 필요</td></tr><tr><td><code>execute</code></td><td>영향 행 수 등 DML 실행 결과. commit 없음</td></tr></tbody></table></div><p>값은 named bind parameter로 전달한다. 테이블·컬럼·ASC/DESC 같은 식별자는 bind 값으로 대체되지 않으므로 동적 요청값 보간을 하지 않는다. 필요한 정렬은 resolve_identifier/resolve_sort_direction의 allowlist을 쓴다. query_name은 <code>sales_report.daily_sales</code>같은 안정적 코드 식별자이다. 도메인 SQL·alias·query_name은 feature Repository가 소유한다.</p><p>Raw DML은 ORM Mixin의 Python default/onupdate를 우회할 수 있다. 필요 컬럼을 명시하고 DB 반환 타입의 Decimal·날짜를 DTO에서 확인한다. SQL 안전 검사·테스트 통과는 DB 권한·대상 방언·실행 계획까지 대신하지 않는다.</p><p class="source">코드 근거: <a data-source="app/features/reports/api/routers/v1/sales_reports.py" href="../../app/features/reports/api/routers/v1/sales_reports.py">app/features/reports/api/routers/v1/sales_reports.py</a> · <a data-source="app/features/reports/services/report_service.py" href="../../app/features/reports/services/report_service.py">app/features/reports/services/report_service.py</a> · <a data-source="app/features/reports/repositories/sales_report_repository.py" href="../../app/features/reports/repositories/sales_report_repository.py">app/features/reports/repositories/sales_report_repository.py</a> · <a data-source="app/core/repositories/raw_repository_base.py" href="../../app/core/repositories/raw_repository_base.py">app/core/repositories/raw_repository_base.py</a> · <a data-source="app/core/repositories/raw_crud_base.py" href="../../app/core/repositories/raw_crud_base.py">app/core/repositories/raw_crud_base.py</a> · <a data-source="app/features/reports/models/models.py" href="../../app/features/reports/models/models.py">app/features/reports/models/models.py</a></p>
+</section>
+<section id="new-feature"><h2>11. 새 기능·뷰·테이블 추가: 파일과 설치 절차</h2>
+<p>먼저 API method/path·입력·공개 응답·권한·읽기/쓰기 의도·데이터 소유·동시성 요구를 정한다. 기존 기능의 endpoint만 추가하면 된다면 새 앱·테이블을 만들지 않는다. 새 영속 데이터가 실제 필요할 때 다음 파일을 만든다.</p><div class="table-wrap"><table><thead><tr><th scope="col">파일/폴더</th><th scope="col">작성 책임·점검</th></tr></thead><tbody><tr><td><code>models/models.py</code></td><td>Base+Mixin, table name, PK/null/unique/index/FK·default</td></tr><tr><td><code>models/__init__.py</code></td><td>패키지 표식. 신규 기능은 catalog/reports처럼 빈 파일로 둔다(blog 등 옛 기능은 모델 class를 재노출). metadata 등록은 기능 <code>__init__.py</code>의 models import와 models_registry가 담당</td></tr><tr><td><code>schemas</code></td><td>Create/Update/Response·List DTO, null·검증·공개 필드</td></tr><tr><td><code>repositories</code></td><td>최소 BaseRepository 상속 또는 기능 Raw SQL</td></tr><tr><td><code>services</code></td><td>업무 규칙·동일 session Repository 조립</td></tr><tr><td><code>dependencies</code></td><td>writer/read-only getter, return Service(session)</td></tr><tr><td><code>api/routers/v1</code></td><td>endpoint·HTTP metadata·DTO·응답 전 commit</td></tr><tr><td><code>api/routers/router.py</code></td><td>inventory_router + 버전 prefix 취합</td></tr><tr><td><code>__init__.py</code></td><td><code>router</code> 공개·models import. admin_views는 재노출하지 않음</td></tr><tr><td><code>exceptions.py</code></td><td>기능 예외(<code>app/core/exception.py</code>의 AppException 하위)</td></tr><tr><td><code>admin.py</code></td><td>모델이 있으면 ModelView + admin_views(<code>tests/test_admin_wiring.py</code>가 검사). 외부 공개 보안은 별도</td></tr><tr><td><code>tests</code></td><td>단위·endpoint·DB 방언·트랜잭션·등록 계약</td></tr></tbody></table></div><p>기능 밖에서 함께 고치는 곳 — 빠뜨리면 테스트가 잡는다(상세: <a href="DEVELOPMENT.md#22-기능-밖에서-손댈-곳">DEVELOPMENT §2.2</a>):</p><div class="table-wrap"><table><thead><tr><th scope="col">파일</th><th scope="col">할 일</th></tr></thead><tbody><tr><td><code>main.py</code></td><td>기능 import와 <code>app.include_router(&lt;name&gt;.router, prefix=&quot;/api&quot;)</code> 한 줄 (<code>tests/test_router_registration.py</code>)</td></tr><tr><td><code>app/features/admin.py</code></td><td>admin_views 명시 import + <code>ADMIN_VIEWS</code>에 사전순 한 줄 (<code>tests/test_admin_wiring.py</code>)</td></tr><tr><td><code>app/core/tags_metadata.py</code></td><td>라우터 tag와 같은 이름의 설명 (<code>tests/test_openapi_contract.py</code>)</td></tr><tr><td><code>tests/test_route_inventory.py</code></td><td>새 경로·메서드를 골든 목록에 추가</td></tr><tr><td><code>migrations/versions</code></td><td>검토한 스키마 변경 revision</td></tr><tr><td>README API 표</td><td>경로 추가</td></tr></tbody></table></div><p class="meta">신규 기능 예시 — main.py에 명시 취합</p><pre><code>from app.features import inventory
+app.include_router(inventory.router, prefix=&quot;/api&quot;)</code></pre><p>inventory/__init__.py가 inventory_router를 router로 공개하고 필요한 모델을 import한다. 모델 탐색은 models/models.py를 자동으로 찾지만 endpoint는 main에 포함하지 않으면 열리지 않는다. 생성 스크립트는 없으니 catalog의 최소 구조를 본뜬다. <strong>기능명 = URL 세그먼트</strong>(<code>/api/v1/inventory/…</code>)여야 등록 테스트가 통과한다.</p><p>같은 method/path·operation_id가 중복되지 않게 한다. 기능 <code>__init__.py</code>로 admin_views를 재노출하지 않는다 — 재노출하면 라우터 import만으로 sqladmin이 로드된다. 새 공용 설정이 필요하면 <code>config.py</code>에 필드를 추가하고 <code>.env.example</code>에도 적는다(<code>tests/core/test_settings_contract.py</code>). DEBUG와 ADMIN은 독립이다.</p><p class="source">코드 근거: <a data-source="app/core/db/models_registry.py" href="../../app/core/db/models_registry.py">app/core/db/models_registry.py</a> · <a data-source="app/core/tags_metadata.py" href="../../app/core/tags_metadata.py">app/core/tags_metadata.py</a> · <a data-source="app/features/catalog/__init__.py" href="../../app/features/catalog/__init__.py">app/features/catalog/__init__.py</a> · <a data-source="app/features/admin.py" href="../../app/features/admin.py">app/features/admin.py</a></p>
+</section>
+<section id="recipe"><h2>12. 작은 신규 기능 예시: 기존 기반을 재사용</h2>
+<p>아래는 inventory/Item이라는 <strong>교육용 제안</strong>이다. 현재 코드에는 없다. 예시는 생성 1건의 핵심 배선만 보이며 전체 CRUD·권한·migration·테스트를 구현한 완성 기능은 아니다. 기존 catalog를 참고해 각 파일로 나누고 11절의 설치를 반드시 마친다.</p><p class="meta">신규 models/models.py 예시</p><pre><code>from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
+from app.core.models.models_base import UUIDTimestampModel
+
+class Item(UUIDTimestampModel):
+    __tablename__ = &quot;inventory_items&quot;
+    name: Mapped[str] = mapped_column(String(200), nullable=False)</code></pre><p class="meta">신규 schemas/item_schema.py 예시 — 시간·내부 필드는 필요할 때만 공개</p><pre><code>from pydantic import BaseModel, ConfigDict, Field
+
+class ItemCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200, description=&quot;품목명&quot;)
+
+class ItemResponse(ItemCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str</code></pre><p class="meta">신규 Repository/Service 배선 예시 — 실제 파일에서는 AsyncSession·입력/반환 타입 annotation을 추가</p><pre><code>from app.core.repositories.repository_base import BaseRepository
+from app.core.services.services_base import BaseService
+from app.features.inventory.models.models import Item
+
+class ItemRepository(BaseRepository[Item, str]):
+    model = Item
+
+class InventoryService(BaseService):
+    def __init__(self, db_session): 
+        super().__init__(db_session)
+        self.repository = ItemRepository(db_session)
+
+    async def create_item(self, payload):
+        return await self.repository.create(payload.model_dump())</code></pre><p class="meta">신규 Dependency/View 핵심 예시 — 여기서의 endpoint는 현재 저장소에 존재하지 않음</p><pre><code>from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.db.session import get_writer_db_session
+# 새 Service·Schema를 위 실제 제안 모듈에서 import
+
+async def get_inventory_service(
+    db_session: AsyncSession = Depends(get_writer_db_session),
+) -&gt; InventoryService:
+    return InventoryService(db_session)
+
+router = APIRouter()
+
+@router.post(&quot;/items&quot;, response_model=ItemResponse, status_code=201,
+             summary=&quot;품목 생성&quot;, description=&quot;새 품목을 생성합니다.&quot;,
+             operation_id=&quot;createInventoryItem&quot;)
+async def create_item(payload: ItemCreate,
+                      service: InventoryService = Depends(get_inventory_service)) -&gt; ItemResponse:
+    item = await service.create_item(payload)
+    response = ItemResponse.model_validate(item)
+    await service.commit()
+    return response</code></pre><p class="meta">신규 api/routers/router.py 예시</p><pre><code>from fastapi import APIRouter
+from app.features.inventory.api.routers.v1 import items
+
+inventory_router = APIRouter()
+inventory_router.include_router(items.router, prefix=&quot;/v1/inventory&quot;, tags=[&quot;Inventory&quot;])</code></pre><p>새 목록은 <code>BaseRepository.list</code>를 쓰거나, 정렬이 필요하면 feature Repository에 order_by를 명시한 메서드를 둔다. 새 수정은 <code>update_by_id</code>·삭제는 <code>delete_by_id</code>이다. <code>inventory/__init__.py</code>는 <code>from app.features.inventory.models import models as _models</code>로 모델을 import한다. 예시 데이터에 금액·재고·권한이 추가되면 각각 Decimal·범위·동시성·인증 계약을 함께 추가한다.</p><p class="source">코드 근거: <a data-source="app/core/models/models_base.py" href="../../app/core/models/models_base.py">app/core/models/models_base.py</a> · <a data-source="app/core/repositories/repository_base.py" href="../../app/core/repositories/repository_base.py">app/core/repositories/repository_base.py</a> · <a data-source="app/core/services/services_base.py" href="../../app/core/services/services_base.py">app/core/services/services_base.py</a> · <a data-source="app/features/catalog/api/routers/router.py" href="../../app/features/catalog/api/routers/router.py">app/features/catalog/api/routers/router.py</a></p>
+</section>
+<section id="migrations"><h2>13. 테이블 생성·변경·SQL VIEW의 관리 절차</h2>
+<figure class="figure"><figcaption>스키마 변경 순서 — 운영 변경은 배포 호환성에 따라 단계 분리. 단순 create_all로 기존 스키마 변경을 대신하지 않는다.</figcaption><div class="mermaid">flowchart TD
+designModel[&quot;모델·제약·소유권 정의&quot;] --&gt; registerModel[&quot;현재 설치 규칙에 모델 등록&quot;]
+registerModel --&gt; migrationCandidate[&quot;alembic revision --autogenerate&quot;]
+migrationCandidate --&gt; reviewMigration[&quot;upgrade / downgrade / 데이터 영향 수동 검토&quot;]
+reviewMigration --&gt; testMigration[&quot;빈 DB·기존 DB·방언 검증&quot;]
+testMigration --&gt; applyMigration[&quot;writer에 upgrade head&quot;]
+applyMigration --&gt; deployCode[&quot;호환 가능한 앱 배포 / ready 검사&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+designModel[&quot;모델·제약·소유권 정의&quot;] --&gt; registerModel[&quot;현재 설치 규칙에 모델 등록&quot;]
+registerModel --&gt; migrationCandidate[&quot;alembic revision --autogenerate&quot;]
+migrationCandidate --&gt; reviewMigration[&quot;upgrade / downgrade / 데이터 영향 수동 검토&quot;]
+reviewMigration --&gt; testMigration[&quot;빈 DB·기존 DB·방언 검증&quot;]
+testMigration --&gt; applyMigration[&quot;writer에 upgrade head&quot;]
+applyMigration --&gt; deployCode[&quot;호환 가능한 앱 배포 / ready 검사&quot;]</code></pre></details></figure><p class="meta">개발 DB에서 실행할 명령 예시 — 이 작업에서는 migration을 생성·적용하지 않음</p><pre><code>uv run alembic revision --autogenerate -m &quot;add inventory items&quot;
+# 생성된 migration의 upgrade/downgrade·drop·nullable·데이터 이동 검토
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic heads</code></pre><p>migrations/env.py는 db_settings.ALEMBIC_URL로 writer 동기 URL을 선택한다. 신규 model 등록 후 candidate를 생성하고 실제 upgrade/downgrade·인덱스·FK·default·기존 데이터 영향을 검토한다. rename을 자동 감지한다고 가정하지 않는다. <a href="https://alembic.sqlalchemy.org/en/latest/autogenerate.html">Alembic 공식 문서</a>도 생성 후보의 수동 검토를 요구한다.</p><p>이미 create_all로 만든 개발 DB와 migration을 섞을 때는 실제 revision 체인(<a href="ARCHITECTURE.md#14-alembic">ARCHITECTURE §14</a>)에 맞춘다. 빈 DB에서 head까지와 모델 일치는 <code>tests/core/test_migration_chain.py</code>(SQLite)가, MySQL 왕복은 <code>tests/integration/test_mysql_raw_sql.py</code>가 확인한다. 실데이터가 있는 DB에서 무조건 drop/recreate·stamp head를 실행하지 않는다. stamp는 테이블을 만들지 않으며 검증 없이 이력만 맞추면 schema drift를 숨긴다.</p><p>현재 reports는 SELECT 집계이며 DB SQL VIEW 객체를 생성하는 기능은 아니다. SQL VIEW가 실제 필요한 경우 방언에 맞는 CREATE/DROP VIEW를 명시 migration으로 관리하고 Repository는 읽기 SQL·DTO 계약을 소유한다. 일반 Table 모델만으로 Alembic이 VIEW 정의 변경을 자동 추적한다고 가정하지 않는다. 별도 설계 예시이지 현재 구현 아니다.</p><p>다중 worker가 DEBUG=true로 동시에 개발 DDL을 수행할 수 있으므로 운영에서는 별도 migration 실행 주체를 두고 DEBUG=false를 명시한다. schema 확장→코드 전환→구 컬럼 제거 같은 호환 배포는 데이터·동시 운영 요구가 있을 때 계획한다.</p><p class="source">코드 근거: <a data-source="migrations/env.py" href="../../migrations/env.py">migrations/env.py</a> · <a data-source="app/core/db/session.py" href="../../app/core/db/session.py">app/core/db/session.py</a> · <a data-source="README.md" href="../../README.md">README.md</a></p>
+</section>
+<section id="async-background"><h2>14. 비동기·background·Celery 개발 원칙</h2>
+<p>async def는 await 가능한 I/O를 기다리는 동안 다른 요청이 진행할 수 있게 한다. CPU 연산이 자동 병렬화되거나 동기 SDK 호출이 자동 비동기화되는 것은 아니다. 모든 path operation은 <code>async def</code>이어야 하고(게이트 INV-10), async endpoint에서 time.sleep·동기 HTTP·파일 처리·큰 CPU 루프를 직접 돌리면 event loop를 막는다. 게이트는 요청 경로의 <code>open</code>·<code>input</code>·<code>time.sleep</code>·<code>shutil.copy*</code>·<code>subprocess.run</code>을 AST로 찾는다. 필요한 blocking I/O는 적절한 thread 경계, 무거운 CPU/내구 작업은 worker 정책을 검토한다. <a href="https://fastapi.tiangolo.com/async/">FastAPI async 공식 설명</a>.</p><p>동일 AsyncSession으로 asyncio.gather를 실행하지 않는다. 한 트랜잭션의 여러 SQL은 순차 await하고 독립 병렬 작업은 작업별 session을 쓴다. 같은 엔진 pool도 다른 event loop에서 이미 생성된 연결을 임의 재사용하지 않는다. <a href="https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html#using-asyncsession-with-concurrent-tasks">SQLAlchemy AsyncSession 공식 근거</a>.</p><p>응답 Schema가 접근할 관계/컬럼은 Repository에서 selectinload 등 명시 로딩으로 준비한다. lazy relationship/deferred/expired 속성이 DTO 검증 중 암묵 I/O를 발생시키지 않도록 한다. 현재 공통 모델이 AsyncAttrs를 제공한다고 가정하지 않는다. <code>expire_on_commit=False</code>가 모든 relationship 로딩 문제를 해결하지 않는다.</p><p class="meta">요청 밖 작업 제안 — SomeService/do_write는 설명용 placeholder, 실제 import·업무 구현 필요</p><pre><code>async with background_db_session() as db_session:
+    service = SomeService(db_session)
+    await service.do_write()
+    await db_session.commit()</code></pre><p>FastAPI Depends는 일반 coroutine을 직접 부른다고 자동 해결되지 않는다. 요청 밖에서는 위처럼 자원 context를 열고 Service를 직접 조립한다. 요청의 살아 있는 session·Service·Request를 Celery payload로 넘기지 말고 JSON 직렬화 가능한 id·값만 넘긴다. task는 자기 session을 열고 실패/재시도·중복 정책을 정의한다.</p><p>현재 access_log_tasks runner는 비핵심 로그를 드롭할 수 있다. 중요한 업무의 내구 큐가 아니다. Celery도 단순 전송만으로 정확히 한 번 처리를 보장하지 않으며 재시도·중복·DB commit과 enqueue 사이의 실패를 테스트한다. outbox 등 추가 구조는 실제 일관성 요구가 있을 때 선택한다.</p><p>새 공유 Redis 사용은 app.state.redis의 lifecycle 상태를 확인하는 작은 Depends accessor로 제공할 수 있지만 현재 공통 Redis dependency가 모든 기능에 자동 주입되어 있지는 않다. Redis 장애는 handler/runtime 오류 계약을 별도로 정한다.</p><p class="source">코드 근거: <a data-source="app/core/db/session.py" href="../../app/core/db/session.py">app/core/db/session.py</a> · <a data-source="app/core/middlewares/background_tasks.py" href="../../app/core/middlewares/background_tasks.py">app/core/middlewares/background_tasks.py</a> · <a data-source="app/features/home/access_log_sink.py" href="../../app/features/home/access_log_sink.py">app/features/home/access_log_sink.py</a> · <a data-source="app/celery/tasks.py" href="../../app/celery/tasks.py">app/celery/tasks.py</a> · <a data-source="app/celery/task.py" href="../../app/celery/task.py">app/celery/task.py</a> · <a data-source="app/celery/lifecycle.py" href="../../app/celery/lifecycle.py">app/celery/lifecycle.py</a> · <a data-source="app/core/resources.py" href="../../app/core/resources.py">app/core/resources.py</a></p>
+</section>
+<section id="security-tests"><h2>15. 권한·테스트·관리·완료 기준</h2>
+<p>catalog/reports 예제에 endpoint가 있다고 현재 모든 CRUD에 사용자 권한 보호가 붙어 있다고 가정하지 않는다. JWT 발급/검증은 기존 auth feature와 utils/authenticator를 확인하고 새 endpoint에 필요한 인증·소유권·역할 검사를 명시한다. 인증 성공과 해당 데이터 수정 권한은 별개이다. SQLAdmin은 무인증이므로 운영 비활성/프록시 제한을 별도 관리한다.</p><div class="table-wrap"><table><thead><tr><th scope="col">시험 범위</th><th scope="col">필수 시나리오</th></tr></thead><tbody><tr><td>Schema</td><td>필수값·길이·금액·음수·null·미전달·공개 응답 필드</td></tr><tr><td>Service</td><td>업무 분기·부재·범위·상태 전환·Repository 협력</td></tr><tr><td>Repository</td><td>flush까지, commit 없음, bind·filter·정렬·count·오류</td></tr><tr><td>Endpoint</td><td>201/200/204·404/409/422/500·operation_id·권한·응답 DTO</td></tr><tr><td>트랜잭션</td><td>commit 실패 시 2xx 없음·여러 쓰기 중간 실패 rollback·DTO 검증 실패·idempotency</td></tr><tr><td>등록</td><td>신규 router·모델·Admin/hook 설치 및 제거·잘못된 export·중복 path</td></tr><tr><td>비동기/수명</td><td>요청 session background 전용 여부·취소·timeout·Redis 불가·정리 순서</td></tr><tr><td>실제 DB</td><td>MySQL Decimal·날짜·제약·locking·동시 업데이트·Raw 방언·migration</td></tr><tr><td>문서/운영</td><td>링크·실제 함수명·config 예시·기동 Redis 필요·DEBUG/ADMIN·로그 임계값</td></tr></tbody></table></div><p>기존 테스트는 tests와 feature별 tests에서 test_*.py 규약을 사용한다. endpoint 단위 테스트는 dependency_overrides로 Service/세션을 대체하거나 기존 fixture 패턴을 따른다. overrides는 테스트 종료 시 복원한다. lifespan을 검증할 때는 client context 또는 app.router.lifespan_context처럼 실제 context 진입을 수행한다. ASGITransport 요청만으로 startup이 자동 검증됐다고 가정하지 않는다.</p><p class="meta">검토용 기존 도구 명령 — 전체 명령·마커·CI는 <a href="../../README.md#테스트검수ci">README 테스트·검수·CI</a></p><pre><code>uv run python -m pytest -m "not mysql"          # CI gate job 과 같은 집합
+uv run ruff check . &amp;&amp; uv run ruff format --check .
+uv run mypy .
+uv run python -m scripts.review_gate --fast     # pytest 제외 검수 게이트</code></pre><p>전체 pytest에는 별도 인프라가 필요한 범위가 포함된다. <code>-m mysql</code> 통합 테스트는 compose.test.yaml의 MySQL 8.4(호스트 포트 3308, 선점 시 <code>MYSQL_TEST_PORT</code>로 이동)가, <code>tests/integration/test_uvicorn_lifecycle.py</code>는 실제 Redis(<code>REDIS_HOST</code>/<code>REDIS_PORT</code>, compose 기본 6379 — 선점 시 <code>REDIS_TEST_PORT</code>)가 필요하며 준비되지 않으면 skip된다. 통합 결과를 근거로 쓸 때는 <code>--mysql-required</code>를 붙인다. 인프라가 없어 skip·미실행인 것은 성공 연결 검증이 아니다. 새 SQL의 SQLite 테스트가 통과해도 MySQL 방언·제약·시간대·Decimal 정확성·잠금은 대상 DB에서 확인한다. 현재 Raw 예제에서 사용한 동일 SQL도 반환 타입 차이를 DTO·실제 DB 테스트로 확인한다.</p><p class="source">코드 근거: <a data-source="tests/core/test_resources.py" href="../../tests/core/test_resources.py">tests/core/test_resources.py</a> · <a data-source="tests/core/test_settings_contract.py" href="../../tests/core/test_settings_contract.py">tests/core/test_settings_contract.py</a> · <a data-source="pyproject.toml" href="../../pyproject.toml">pyproject.toml</a> · <a data-source="app/features/auth/api/routers/v1/auth.py" href="../../app/features/auth/api/routers/v1/auth.py">app/features/auth/api/routers/v1/auth.py</a> · <a data-source="app/utils/authenticator/auth.py" href="../../app/utils/authenticator/auth.py">app/utils/authenticator/auth.py</a></p>
+</section>
+<section id="checklist"><h2>16. 개발 작업 순서 요약과 문서 유지</h2>
+<ul><li>새 endpoint·테이블이 필요한지 확인하고 현재 feature 확장으로 해결되면 그 안에서 작업한다.</li><li>HTTP 계약·데이터 소유·권한·read-only/writer·동시성·실패 응답을 먼저 정한다.</li><li>모델/Mixin·Schema·Repository·Service·Dependency·View를 기존 방식대로 작성한다.</li><li>해당 저장소의 설치/export·router prefix·tag/operation_id·필요한 Admin을 연결한다.</li><li>모델 등록 후 migration 후보를 생성·검토하고 개발 DB에서 변경 전후를 확인한다.</li><li>필드 로딩·응답 DTO 검증 → commit → 반환 순서·rollback·취소·background session 경계를 점검한다.</li><li>단위·endpoint·등록·트랜잭션·대상 MySQL 테스트와 lint/type 검사를 수행한다.</li><li>기동 Redis·DB readiness·운영 DEBUG/ADMIN/secret/CORS를 확인하고 관련 문서를 함께 갱신한다.</li></ul><p>현재 동작은 소스가 기준이며 <a href="ARCHITECTURE.md">ARCHITECTURE</a>(구조·런타임)·<a href="DEVELOPMENT.md">DEVELOPMENT</a>(절차·리뷰 체크리스트)와 함께 읽는다. CRP 문서는 리뷰 상태·결정·잔여 위험 이력이지 runtime 등록 파일이 아니다. 이 안내서의 제안 예제는 새 기능을 실제 구현·실행했다는 증거가 아니며 모든 운영·동시성 시나리오를 검증했다는 의미도 아니다.</p><aside class="callout">함수명·세션 이름·DTO 필드·reports 경로·설치 방식이 바뀌면 DEVELOPMENT.md와 이 HTML, server-lifecycle-guide.html을 함께 수정한다. 백틱·<code>&lt;code&gt;</code>로 적은 파일 경로는 <code>tests/test_docs_guides.py</code>가 실재 여부를 검사한다.</aside><p class="source">코드 근거: <a data-source="README.md" href="../../README.md">README.md</a> · <a data-source="app/core/db/models_registry.py" href="../../app/core/db/models_registry.py">app/core/db/models_registry.py</a> · <a data-source="app/core/resources.py" href="../../app/core/resources.py">app/core/resources.py</a></p>
+</section>
+</main>
+</div>
+<footer><p>현재 구현과 권장 예시를 구분합니다. 소스 변경 시 실제 호출 경로·설정·테스트와 대조하여 갱신하세요. 이 문서 자체는 DB·Redis 연결이나 신규 앱을 실행하지 않습니다.</p></footer>
+
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 단계별 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

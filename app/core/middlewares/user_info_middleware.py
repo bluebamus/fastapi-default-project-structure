@@ -176,7 +176,8 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             "referer": request.headers.get("Referer"),
             # 추가 헤더
             "accept_language": request.headers.get("Accept-Language"),
-            # 사용자 정보 (인증 미들웨어에서 설정될 수 있음)
+            # 사용자 정보. session_id 는 쿠키 값이다. user_id 는 request.state.user_id 를
+            # 읽지만 현재 그 값을 설정하는 코드(인증 미들웨어 등)가 없어 항상 None 이다.
             "session_id": request.cookies.get("session_id"),
             "user_id": getattr(request.state, "user_id", None),
         }

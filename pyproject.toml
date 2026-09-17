@@ -6,7 +6,7 @@ authors = [
     {name = "Your Name", email = "you@example.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi (>=0.141.1,<0.142.0)",
     "sqlalchemy (>=2.0.38,<3.0.0)",
@@ -94,9 +94,9 @@ markers = [
     "integration: 통합 테스트",
     "unit: 단위 테스트",
     # compose.test.yaml 의 MySQL 8.4 가 떠 있어야 하는 테스트.
-    # 미가용이면 자동 skip 한다(tests/integration/conftest.py).
-    #   docker compose -f compose.test.yaml up -d
-    #   pytest -m mysql
+    # 미가용이면 자동 skip 한다(tests/integration/conftest.py, --mysql-required 면 실패).
+    #   docker compose -f compose.test.yaml up -d --wait
+    #   uv run python -m pytest -m mysql --mysql-required
     "mysql: MySQL 8.4 통합 테스트 (compose.test.yaml 필요)",
 ]
 
@@ -162,7 +162,7 @@ exclude_lines = [
 # =============================================================================
 [tool.ruff]
 # 대상 Python 버전
-target-version = "py312"
+target-version = "py313"
 
 # 라인 최대 길이
 line-length = 100
@@ -208,7 +208,7 @@ known-first-party = ["app", "config"]
 # =============================================================================
 [tool.mypy]
 # Python 버전
-python_version = "3.12"
+python_version = "3.13"
 
 # 엄격 모드
 strict = false

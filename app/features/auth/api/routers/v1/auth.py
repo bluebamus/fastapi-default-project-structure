@@ -49,8 +49,10 @@ async def register(
     service: AuthService = Depends(get_auth_service),
 ) -> AuthUserResponse:
     user = await service.register(payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = AuthUserResponse.model_validate(user)
     await service.commit()
-    return AuthUserResponse.model_validate(user)
+    return response
 
 
 @router.post(

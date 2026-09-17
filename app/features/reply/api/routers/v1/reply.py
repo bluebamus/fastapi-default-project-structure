@@ -2,7 +2,9 @@
 Reply v1 API 엔드포인트 — 댓글 CRUD.
 
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
-비즈니스 로직과 트랜잭션 경계는 services / dependencies 가 담당한다(UnitOfWork 제거).
+비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
+트랜잭션 경계는 쓰기 핸들러 본문이 닫는다 — 응답 DTO 검증 → ``await service.commit()`` → 반환
+(UnitOfWork 없음, docs/guides/ARCHITECTURE.md §3.2).
 """
 
 from typing import Any
@@ -42,8 +44,10 @@ async def create_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> ReplyResponse:
     reply = await service.create_reply(payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = ReplyResponse.model_validate(reply)
     await service.commit()
-    return ReplyResponse.model_validate(reply)
+    return response
 
 
 @router.get(
@@ -97,8 +101,10 @@ async def update_reply(
     service: ReplyService = Depends(get_reply_service),
 ) -> ReplyResponse:
     reply = await service.update_reply(reply_id, payload)
+    # 응답 DTO 를 먼저 검증하고 그다음 한 번 커밋한다 — 검증이 실패하면 아무것도 확정되지 않는다.
+    response = ReplyResponse.model_validate(reply)
     await service.commit()
-    return ReplyResponse.model_validate(reply)
+    return response
 
 
 @router.delete(
