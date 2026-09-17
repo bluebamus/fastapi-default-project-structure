@@ -26,15 +26,15 @@
 
 기준 문서 3종 (이 그룹의 상위 요구 출처):
 
-- `docs/orm-raw-repository/2026-08-13/requirements.md` — 요구 명세 (최우선)
-- `docs/orm-raw-repository/2026-08-13/development-plan.md` — 설계·실행 순서
-- `docs/orm-raw-repository/2026-08-13/workflow-guide.md` — 구현 지침·예시 코드
+- `docs/specs/orm-raw-repository/requirements.md` — 요구 명세 (최우선)
+- `docs/specs/orm-raw-repository/development-plan.md` — 설계·실행 순서
+- `docs/specs/orm-raw-repository/workflow-guide.md` — 구현 지침·예시 코드
 
 ## 2. 요구사항 레지스터 (요청 히스토리 — append-only)
 
 | Req-ID | 날짜 | 요청(원문 요약) | 도출된 요구사항 | 상태 | 연결 |
 |---|---|---|---|---|---|
-| REQ-001 | 2026-08-13 | `docs/orm-raw-repository/2026-08-13` 문서 기반 시나리오 개발 진행, 이후 테스트·검수로 서비스에 문제 없도록 | 세 문서가 정의한 **Phase 0~7 전체** 구현 + 전체 품질 게이트 통과 | Active | ADR-001 |
+| REQ-001 | 2026-08-13 | `docs/specs/orm-raw-repository` 문서 기반 시나리오 개발 진행, 이후 테스트·검수로 서비스에 문제 없도록 | 세 문서가 정의한 **Phase 0~7 전체** 구현 + 전체 품질 게이트 통과 | Active | ADR-001 |
 | REQ-002 | 2026-08-13 | MySQL 통합 검증을 WSL 컨테이너로 고려 | MySQL 8.4 **전용 컨테이너 신규 생성**, 포트 변경(3307), 기존 3306 공유 인스턴스 무접촉 | Active | ADR-002 → **ADR-008**(포트 3308 로 정정) |
 | REQ-003 | 2026-08-13 | 각 단계 진행 후 테스트·검수 수행, 버그/문제를 지속 관리해 코드 품질 유지 | Phase 종료마다 **검수 게이트 의무화**: 품질 게이트 4종 + 불변식 점검 + 발견 문제를 `ledger.md` 에 누적. Open Fix 0 이 아니면 다음 Phase 로 넘어가지 않는다 | Active | ADR-006 |
 | REQ-004 | 2026-08-19 | 작업이 제대로 완료됐는지 재확인하고 준비 상태를 만들 것 | 독립 검증 패스(문서 주장 ↔ 실제 코드 대조) 수행 + MySQL 통합 환경 기동. 발견된 **거버넌스 문서 결함은 Round 8 로 처리**하고, 같은 결함이 재발하지 않도록 게이트에 기계 검사를 추가한다 | Active | ADR-008, ADR-009 |

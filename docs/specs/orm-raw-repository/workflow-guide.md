@@ -1,10 +1,5 @@
 # ORM/Raw 공통 워크플로우 개발 지침서
 
-검토 기준: **2026-09-17 현재 작업 트리**. 이 문서는 데이터 접근 개발 절차를 설명한다.
-실제 기존 모델·API·DTO 계약과 MVC·DI·비동기 개발 전체는 [개발 HTML 안내서](./feature-development-guide.html),
-설정·startup·shutdown은 [서버 수명 HTML 안내서](./server-lifecycle-guide.html)를 함께 읽는다.
-요구 ID와 착수 시점의 설계 기준선은 [ORM/Raw 설계 명세](../specs/orm-raw-repository/README.md)에 있다.
-
 ## 1. 적용 원칙
 
 ORM과 Raw SQL은 Repository 구현에서만 갈라진다.
@@ -69,15 +64,12 @@ Dependency 인자와 Service/Repository 생성자 및 속성은 `db_session`과
 deprecated alias였으며 **MIG-002 단계 9에서 제거했다**. 위 표의 이름이 전부다.
 (되살아나지 않도록 `tests/core/test_db_session_naming.py`가 검사한다.)
 
-JWT 발급·검증은 이미 `auth` feature와 `app/utils/authenticator/`에 구현되어 있다.
-그렇다고 모든 catalog/reports API에 인증·권한 검사가 자동 적용되는 것은 아니다.
-새 endpoint는 인증 dependency와 소유권·역할 정책을 명시하고 별도 테스트한다.
+JWT는 향후 기본 인증 방식으로 적용하지만 이 지침의 현재 구현 범위에는 포함하지 않는다.
+기존 인증 회귀만 보호하며 token lifecycle과 권한 정책은 별도 후속 명세로 관리한다.
 
 ## 3. ORM 시나리오: 상품 CRUD
 
-아래는 현재 Base 계약을 이용한 **축약 교육용 예시**다. 기존 catalog 코드를 그대로 복제한 것은
-아니며 Schema의 전체 공개 필드·에러 응답·필터·정렬·권한을 생략한다. 기존 API를 변경할 때는
-실제 `catalog_schema.py`·뷰·테스트를 기준으로 삼고 예시로 공개 계약을 덮어쓰지 않는다.
+아래 코드는 확정된 목표 Base 시그니처를 기준으로 한 예시다.
 
 ### 3.1 ORM 모델
 
@@ -158,8 +150,6 @@ class ProductListResponse(BaseModel):
 
 ```python
 # app/features/catalog/repositories/product_repository.py
-from sqlalchemy import select
-
 from app.core.repositories.repository_base import BaseRepository
 from app.features.catalog.models.models import Product
 
@@ -297,7 +287,7 @@ async def list_products(
 ### 4.1 Raw Base 사용 계약
 
 ```python
-# 현재 public 계약을 축약한 인터페이스 예시 (타입 import·본문 생략)
+# 목표 인터페이스 예시
 class RawCRUDBase:
     async def _fetch_all(self, statement: TextClause, params=None): ...
     async def _fetch_one(self, statement: TextClause, params=None): ...
@@ -359,7 +349,7 @@ Pydantic으로 검증한다.
 
 ```python
 # app/features/reports/repositories/sales_report_repository.py
-from datetime import datetime
+from datetime import date
 
 from sqlalchemy import text
 
@@ -391,21 +381,19 @@ class SalesReportRawRepository(RawRepositoryBase):
         )
 ```
 
-주의: 위 SQL은 MySQL 대상 집계 예시이며 `DATE_ADD`를 쓰지 않는다. 날짜 함수·Numeric 반환
-등의 동작은 대상 DB에서 검증한다. SQLite에서는 Base 계약만 빠르게 검증하고 실제 SQL과
-Alembic migration은 `compose.test.yaml`의 MySQL 8.4(호스트 포트 3308)에서 `-m mysql`로 검증한다.
+주의: 위 SQL은 MySQL 방언 예시다. SQLite에서는 Base 계약만 빠르게 검증하고 실제 SQL과
+Alembic migration은 로컬 및 CI가 공유하는 `compose.test.yaml` MySQL service에서 검증한다.
 운영 SQL을 테스트 편의 때문에 문자열 치환하지 않는다.
 
 ### 4.4 Raw Service
 
 ```python
 # app/features/reports/services/report_service.py
-from datetime import date, datetime, time, timedelta
+from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.services.services_base import BaseService
-from app.features.reports.exceptions import InvalidDateRangeException
 from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
 )
@@ -419,25 +407,17 @@ class ReportService(BaseService):
 
     async def get_daily_sales(self, *, start_date: date, end_date: date):
         if end_date < start_date:
-            raise InvalidDateRangeException(message="종료일은 시작일보다 앞설 수 없습니다.")
-        if (end_date - start_date).days + 1 > 366:
-            raise InvalidDateRangeException(message="한 번에 조회할 수 있는 기간은 최대 366일입니다.")
+            raise ValueError("end_date must not precede start_date")
 
         rows = await self.repository.daily_sales(
-            start_at=datetime.combine(start_date, time.min),
-            end_at=datetime.combine(end_date + timedelta(days=1), time.min),
+            start_date=start_date,
+            end_date=end_date,
         )
         return [DailySalesItem.model_validate(dict(row)) for row in rows]
 ```
 
 날짜 범위 규칙은 비즈니스 규칙이므로 Service에 둔다. SQL과 컬럼 alias는 Repository가
 소유한다.
-
-실제 `ReportService`는 공통 `_validate_range()`와 정렬 허용 목록 오류의 422 변환도 제공한다.
-Default에는 `POST /api/v1/reports/sales/daily/snapshots`도 있다. 같은 writer session에서
-기존 기간 스냅샷 DELETE → 집계 INSERT를 실행한 뒤 **View가 commit 1회** 한다.
-`SalesDailySnapshot`은 실제 보관 테이블 모델이며 단순 조회 결과 DTO와 다르다.
-동시 실행의 직렬화까지 자동 보장하는 구현은 아니므로 중복 실행·동시성 정책을 별도로 검토한다.
 
 ### 4.5 Raw Dependency
 
@@ -455,9 +435,6 @@ async def get_report_service_readonly(
 ) -> ReportService:
     return ReportService(db_session)
 ```
-
-실제 파일에는 스냅샷 적재 POST용 writer 의존성 `get_report_service`
-(`Depends(get_writer_db_session)`)도 함께 있다.
 
 ### 4.6 Raw View
 
@@ -536,8 +513,7 @@ from app.features import reports
 app.include_router(reports.router, prefix="/api")
 ```
 
-**라우터 자동 탐색은 사용하지 않는다.** 모델은 `models_registry`가 자동 import하므로
-라우터 등록과 모델 등록을 혼동하지 않는다. 누락은 `test_router_registration.py` 계열 테스트로 찾는다.
+자동 탐색은 사용하지 않는다. 누락은 `test_router_registration.py` 계열 테스트로 찾는다.
 
 ## 6. Raw SQL 보안 규칙
 
@@ -545,7 +521,7 @@ app.include_router(reports.router, prefix="/api")
 
 ```python
 statement = text("SELECT * FROM orders WHERE user_id = :user_id")
-await self.fetch_all(statement, {"user_id": user_id}, query_name="orders.by_user")
+await self.fetch_all(statement, {"user_id": user_id})
 ```
 
 ### 금지
@@ -562,14 +538,11 @@ SORT_COLUMNS = {
     "date": "o.created_at",
     "amount": "o.total_amount",
 }
-column = resolve_identifier(requested_sort, SORT_COLUMNS)
+column = SORT_COLUMNS[requested_sort]
 statement = text(f"SELECT ... ORDER BY {column} DESC")
 ```
 
 이 경우 f-string 값은 외부 입력이 아니라 코드가 소유한 상수에서만 나온다.
-`resolve_identifier`는 `app.core.repositories.raw_repository_base`에서 import한다.
-실제 reports의 `SORTABLE_COLUMNS`·`resolve_sort_direction`·고정 `query_name` 패턴을 따른다.
-범용 allowlist는 DB의 전체 컬럼 목록이 아니라 해당 쿼리가 허용한 키 목록이어야 한다.
 
 ## 7. 트랜잭션 지침
 
@@ -593,12 +566,6 @@ POST/PATCH/DELETE View
   -> View에서 await service.commit()
   -> 응답 반환
 ```
-
-현재 Default catalog는 commit 뒤 DTO를 만든다. 신규 View에는 DTO 검증을 먼저 마치고
-commit → 반환하는 순서를 권장한다. `expire_on_commit=False`라 commit 자체가 속성을
-만료시키지는 않지만, DTO 변환이 실패하면 저장됐는데 클라이언트는 500을 받는 문제가 남는다.
-`get_read_only_db_session`의 쓰기 차단은 Default에서 `DB_ROUTER_ENABLED=true`일 때의
-RoutingSession 검사에 의존한다. false에서는 동일한 보호가 적용된다고 가정하지 않는다.
 
 금지 항목:
 
@@ -661,16 +628,10 @@ RoutingSession 검사에 의존한다. false에서는 동일한 보호가 적용
 
 ### MySQL 통합 환경
 
-- 프로젝트 루트의 `compose.test.yaml`에 MySQL 8.4 test service(`mysql-test`, 호스트 포트 3308,
-  tmpfs, healthcheck)를 정의한다. 접속 값은 `tests/integration/conftest.py`의 상수와 같다.
-- `@pytest.mark.mysql` 테스트는 MySQL에 닿지 못하면 skip된다. 루트 `conftest.py`의
-  `--mysql-required`를 주면 skip 대신 실패한다(`pytest -m mysql --mysql-required`).
-- 현재 `.github/workflows/ci.yml`은 MySQL/Redis 컨테이너를 띄우지 않고, pytest 요약에
-  skipped가 있으면 게이트를 실패시킨다. CI에서 통합 테스트를 돌리려면 서비스 기동 단계가 따로 필요하다.
-- Raw SQL 통합 테스트는 테스트마다 스키마를 지우고 `Base.metadata.create_all`로 다시 만든다
-  (`mysql_session_maker` fixture).
-- migration chain 테스트는 빈 스키마에서 head까지 upgrade → downgrade → 재-upgrade를 검증한다
-  (`tests/integration/test_mysql_raw_sql.py::test_migration_chain_upgrades_downgrades_and_reapplies`).
+- 프로젝트 루트의 `compose.test.yaml`에 MySQL test service를 정의한다.
+- 로컬과 CI가 같은 compose 파일, healthcheck, migration 명령과 pytest marker를 사용한다.
+- 테스트 시작 시 Alembic head까지 upgrade하고 Raw SQL/migration 테스트를 실행한다.
+- migration chain은 현재 head → 신규 revision 순차 upgrade, downgrade, 재-upgrade를 검증한다.
 - SQLite는 Base와 Service의 빠른 단위 테스트에만 사용하며 MySQL 방언 승인의 근거로 삼지 않는다.
 
 ### Service
@@ -719,7 +680,6 @@ RoutingSession 검사에 의존한다. false에서는 동일한 보호가 적용
 
 ```python
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
 
 from app.core.resources import manage_application_resources
 
@@ -743,10 +703,6 @@ async def _background_tasks():
         yield
     finally:
         await _drain_background_tasks()
-
-
-# _redis(app)는 Redis.from_url(...) → await ping() → yield → finally aclose()이다.
-# ping 실패 시 오류를 기록하고 재전파한다. 전체 구현은 resources.py를 참조한다.
 
 
 @asynccontextmanager
@@ -775,25 +731,25 @@ async def manage_application_resources(app: FastAPI):
     app.state.resources = resources
 
     # 획득 순서대로 중첩 → 정리는 자동으로 역순
-    async with _log_queue(), _database(app), _redis(app), _background_tasks():
+    async with _log_queue(), _database(app), _background_tasks():
         await _prepare_database(resources)
         yield resources
 ```
 
-종료 순서는 **중첩 순서의 역순**이다: background drain → Redis close → DB dispose → 로그 큐 flush.
+종료 순서는 **중첩 순서의 역순**이다: background drain → DB dispose → 로그 큐 flush.
 cleanup별 로깅과 timeout은 `_run_cleanup()` wrapper가 담당한다.
 
 > ⚠️ **`_run_cleanup()` 이 "앞 단계가 실패해도 뒤 단계가 실행된다" 를 보장하지는 않는다.**
 > 이 지침서의 이전 판에 그렇게 적혀 있었는데 **틀렸다**(F-034). wrapper 는
 > `except Exception` 인데 `asyncio.CancelledError` 는 `Exception` 이 아니라
 > `BaseException` 이라 그물을 통과한다. 취소에서 뒤 단계를 지키는 것은 wrapper 가 아니라
-> **중첩 컨텍스트 구조 자체**다 — 취소가 전파되어도 바깥 `__aexit__`를 시도하기 때문이다.
-> 모든 정리의 성공을 보장하는 것은 아니며 반복 취소·강제 종료는 별도로 고려한다.
+> **중첩 컨텍스트 구조 자체**다 — 바깥 `__aexit__` 는 반드시 실행되기 때문이다.
 
 > **이력.** 초판(2026-08-13)은 `AsyncExitStack` 등록 역순이었다. ADR-016(2026-08-25)이 평문
 > `try/finally` 로 대체했으나, 그 형태는 **취소 경로에서 뒤 단계를 건너뛴다**는 것이
-> 확인돼(F-028) ADR-017(2026-08-27)이 중첩 `async with`로 다시 바꿨다.
-> 로그 리스너 수명(ADR-018·022·023)의 배경은 [로깅과 종료](./LOGGING-AND-SHUTDOWN.md)를 보라.
+> 확인돼(F-028) ADR-017(2026-08-27)이 중첩 `async with` 로 다시 바꿨다. 실측 대조는
+> `docs/2026-08-25/shutdown-sequence-analysis.md` 의 정정 블록에 있다.
+> 로그 리스너 수명(ADR-018·022·023)의 배경은 `docs/LOGGING-AND-SHUTDOWN.md` 를 보라.
 
 ### 모델과 테이블 생성
 
@@ -808,8 +764,7 @@ cleanup별 로깅과 timeout은 `_run_cleanup()` wrapper가 담당한다.
 | 종류 | 관리 위치 |
 |---|---|
 | DB engine/pool | Resource Manager |
-| Redis client | Resource Manager |
-| logging queue/listener | lifespan에서 마지막 flush, 프로세스 종료 훅에서 stop |
+| logging queue/listener | Resource Manager에서 마지막 flush/stop |
 | access log background tasks | Resource Manager에서 shutdown drain |
 | 요청별 AsyncSession | `get_writer_db_session`/`get_read_only_db_session` Dependency |
 | Celery broker/backend | Celery worker process |
@@ -822,41 +777,33 @@ engine pool을 종료하는 주체는 Resource Manager 하나만 둔다.
 ```text
 1. FastAPI가 신규 요청 수신 중단
 2. in-flight background task drain
-3. Redis client close
-4. DB writer/read/background engine dispose
-5. lifespan에서 logging queue flush (listener는 계속 살아 있음)
-6. 프로세스 종료 훅에서 listener stop
+3. DB writer/read/background engine dispose
+4. logging queue flush 및 listener stop
 ```
 
 자원을 해제한다는 이유로 DB table을 drop하지 않는다.
 
 ### 자원 Dependency
 
-장기 수명 자원이 필요하면 module global을 새로 만들지 않고 app.state에서 Dependency로
-제공한다. **현재 Redis는 `app.state.redis`에 있으며 ApplicationResources의 필드가 아니다.**
-다음 accessor는 신규 작성 제안이며 현재 코드에 구현된 함수는 아니다.
+장기 수명 자원이 필요하면 module global을 새로 만들지 않고 `app.state.resources`에서
+Dependency로 제공한다.
 
 ```python
 def get_application_resources(request: Request) -> ApplicationResources:
-    resources = getattr(request.app.state, "resources", None)
+    resources = request.app.state.resources
     if resources is None:
         raise RuntimeError("Application resources are not available")
     return resources
 ```
 
-위 제안에는 `from fastapi import Request`와
-`from app.core.resources import ApplicationResources` import가 필요하다.
-Redis getter를 만든다면 `getattr(request.app.state, "redis", None)`을 검사한다.
-
 ### 추가 체크리스트
 
 - [ ] startup 중간 실패에도 cleanup이 실행되는가
 - [ ] 모델이 없으면 DB 연결을 시도하지 않는가
-- [ ] Redis `ping()` 실패 시 startup이 중단되고 client가 닫히는가
+- [ ] 사용하지 않는 선택 자원을 생성하지 않는가
 - [ ] background task가 사용하는 client보다 task를 먼저 종료하는가
 - [ ] cleanup 실패가 다음 cleanup을 막지 않는가
-- [ ] task 5초·Redis close 5초·DB 10초와 로그 flush의 개별 예산을 유지하는가
-- [ ] 전체 20초 상수만 있고 전체 timeout은 적용되지 않는 현재 한계를 고려했는가
+- [ ] task 5초, DB 10초, logging 5초, 전체 20초 제한이 적용됐는가
 - [ ] Celery worker cleanup에 별도 10초 제한이 적용됐는가
 - [ ] multi-worker별 DB pool 연결 수가 DB 한도를 넘지 않는가
 - [ ] `/health`와 `/ready`의 목적이 분리되어 있는가
@@ -895,22 +842,17 @@ root logger
 production/staging 애플리케이션 파일 handler는 사용하지 않는다. Docker, Kubernetes 또는
 운영 agent가 파일 저장과 rotation을 담당하며 각 worker는 독립 queue/listener를 가진다.
 
-**listener의 소유자는 Resource Manager가 아니라 프로세스다.**
-`app/utils/logs/setup.py`의 `configure_logging()`이 queue listener를 준비하고,
-lifespan은 `_log_queue()`에서 `await flush_log_queue()`만 수행한다.
+Resource Manager는 listener의 lifecycle을 관리한다.
 
 ```python
-# lifespan 종료: 멈추지 않고 이미 쌓인 로그가 처리되기를 기다린다.
-await flush_log_queue()
-# 실제 정지는 setup.py의 atexit / 지원하는 종료 신호 훅이 맡는다.
+listener = build_queue_listener()
+listener.start()
+resources.log_listener = listener
+cleanup.push_async_callback(stop_log_listener_async, listener)
 ```
 
-`ApplicationResources`에는 `log_listener` 필드가 없고 `build_queue_listener()`도 이 저장소의
-현재 API가 아니다. `stop_log_listener_async()`는 `app.utils.logs`에 공개돼 있지만
-(`stop_log_listener()`를 `asyncio.to_thread()`로 감싼 것) **lifespan은 이를 호출하지 않는다** —
-listener 정지를 lifespan으로 되돌리지 않는다(ADR-018).
-큐 상한(`LOG_QUEUE_MAX_SIZE=10_000`)·sentinel 적재 2초·join 5초·flush 2초 예산의 실제 primitive는
-`app/utils/logs/queue_handler.py`와 `app/utils/logs/setup.py`를 확인한다.
+`stop_log_listener_async()`는 동기 `listener.stop()`과 flush/join을
+`await asyncio.to_thread(...)`로 격리한다.
 
 구현 체크리스트:
 

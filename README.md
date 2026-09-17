@@ -188,13 +188,14 @@ fastapi-default-project-structure/
 ├── migrations/                  # Alembic (env.py 가 import_all_models() SSOT 로 메타데이터 수집)
 ├── .github/workflows/ci.yml     # CI 게이트 (ruff · format · mypy 콜드캐시 · pytest · bandit · alembic)
 ├── scripts/review_gate.py       # 검수 게이트 12종 — 아래 [테스트와 검수] 참고
-├── compose.test.yaml            # 통합 테스트용 MySQL 8.4 (호스트 포트 3308)
+├── compose.test.yaml            # 통합 테스트용 MySQL 8.4 (호스트 포트 3308) · Redis 7 (6379)
 ├── docs/
 │   ├── guides/                  # 현행 사용자·개발자 가이드
 │   │   ├── ARCHITECTURE.md      # 아키텍처 공식 문서 (SSOT)
 │   │   ├── QUICKSTART.md        # 최소 실행 경로
 │   │   ├── ORM-RAW-WORKFLOW.md  # ORM/Raw 워크플로우 개발 지침서
 │   │   └── LOGGING-AND-SHUTDOWN.md # 로깅·종료 구조 설명
+│   ├── specs/orm-raw-repository/ # ORM/Raw 요구명세·개발계획·지침 원본 (착수 기준선)
 │   └── crp/groups/              # 작업 그룹별 설계 기준선·결함 원장
 └── media/ static/ poc/ logs/    # 런타임·예약 디렉터리 (.gitkeep 만 추적)
                                  #   logs/ 는 파일 로깅 제거 후 남은 예약 자리다
