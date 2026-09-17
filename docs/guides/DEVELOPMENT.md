@@ -96,6 +96,8 @@ __all__ = ["router"]
 **기능명 = URL 세그먼트**(`/api/v1/inventory/…`)여야 등록 테스트가 통과합니다.
 새 공용 설정이 필요하면 `config.py` 에 필드를 추가하고 `.env.example` 에도 적습니다
 (`tests/core/test_settings_contract.py`). 환경 변수는 `config.py` 밖에서 읽지 않습니다.
+새 서명·세션 비밀 키를 추가하면 `validate_deployment_safety()` 의 검사 대상에도 넣습니다
+(staging/production 에서 예시 값 거부, `tests/core/test_deployment_safety.py`).
 
 ### 2.3 작업 순서 요약
 
