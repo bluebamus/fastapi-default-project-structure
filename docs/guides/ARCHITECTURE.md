@@ -422,7 +422,7 @@ uv run alembic upgrade head
 > 통합 테스트는 MySQL 이 없으면 **skip** 됩니다(실패가 아닙니다). `test_uvicorn_lifecycle.py`
 > 는 Redis 가 없으면 skip 됩니다. 스키마 검증만 필요하면 컨테이너 없이
 > `uv run python -m pytest` 로 충분하고, Raw SQL 의 실제 방언 동작까지 확인하려면
-> 컨테이너를 띄웁니다. 포트 3308 은 다른 로컬 MySQL 과 겹치지 않도록 고른 값입니다.
+> 컨테이너를 띄웁니다. 포트 3308 은 다른 로컬 MySQL 과 겹치지 않도록 고른 값이며, 이미 쓰이고 있으면 `MYSQL_TEST_PORT` 로 compose 와 테스트를 함께 옮길 수 있습니다.
 > 서버 자체는 Redis 없이 기동되지 않습니다(§4.2).
 
 `[tool.uv] package = false` — 루트 패키지 빌드 없이 의존성만 설치(flat layout).

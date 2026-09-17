@@ -18,6 +18,10 @@
 #
 # WSL 에서 컨테이너를 띄우고 Windows 쪽 pytest 로 접속해도 된다 —
 # WSL2 의 localhost forwarding 으로 127.0.0.1:3308 이 그대로 연결된다.
+#
+# 3308 을 다른 MySQL 이 쓰고 있으면(`Access denied` 로만 보인다) 포트를 옮긴다:
+#   MYSQL_TEST_PORT=3311 docker compose -f compose.test.yaml up -d --wait mysql-test
+#   MYSQL_TEST_PORT=3311 pytest -m mysql --mysql-required
 
 services:
   mysql-test:
@@ -38,7 +42,9 @@ services:
       TZ: Asia/Seoul
     ports:
       # 호스트 3308 -> 컨테이너 3306. 개발 머신의 기존 MySQL 과 겹치지 않는다.
-      - "3308:3306"
+      # 3308 이 이미 쓰이면 MYSQL_TEST_PORT 로 덮어쓴다 — tests/integration/conftest.py 도
+      # 같은 변수를 읽으므로 두 곳이 함께 움직인다.
+      - "127.0.0.1:${MYSQL_TEST_PORT:-3308}:3306"
     tmpfs:
       - /var/lib/mysql
     healthcheck:
