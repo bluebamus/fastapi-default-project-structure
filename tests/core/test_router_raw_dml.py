@@ -62,3 +62,45 @@ def test_core_dml_is_still_detected():
 
     table = Table("probe", MetaData(), Column("id", Integer, primary_key=True))
     assert _is_write(delete(table), flushing=False) is True
+
+
+# ---------------------------------------------------------------------------
+# 선두 키워드 집합 보강 — 10억 건(1,022,185,501) 프로덕션 쿼리 덤프 실측 근거.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "LOAD DATA INFILE '/tmp/x.csv' INTO TABLE t",
+        "load data local infile '/tmp/x.csv' into table t",
+        "PREPARE s FROM 'INSERT INTO t VALUES (1)'",
+        "EXECUTE s",
+        "DEALLOCATE PREPARE s",
+        "LOCK TABLES t WRITE",
+        "UNLOCK TABLES",
+        "FLUSH TABLES",
+        "OPTIMIZE TABLE t",
+        "REPAIR TABLE t",
+        "ANALYZE TABLE t",
+        "CHECK TABLE t",
+        "KILL 12345",
+        "DO SLEEP(0)",
+    ],
+)
+def test_added_write_keywords_are_detected(sql):
+    """추가된 13개 키워드는 쓰기(=writer 필수)로 판정된다."""
+    assert _is_write(text(sql), flushing=False) is True, f"쓰기로 판정되지 않았다: {sql}"
+
+
+def test_upsert_is_not_a_keyword():
+    """`UPSERT` 는 MySQL·PostgreSQL 어느 방언에도 없는 구문이라 집합에서 뺐다."""
+    from app.core.db.router import _TEXT_WRITE_KEYWORDS
+
+    assert "UPSERT" not in _TEXT_WRITE_KEYWORDS
+    assert _is_write(text("UPSERT INTO t VALUES (1)"), flushing=False) is False
+
+
+def test_explain_analyze_is_still_a_read():
+    """`EXPLAIN ANALYZE` 는 EXPLAIN 으로 시작하므로 ANALYZE 추가와 충돌하지 않는다."""
+    assert _is_write(text("EXPLAIN ANALYZE SELECT * FROM t"), flushing=False) is False

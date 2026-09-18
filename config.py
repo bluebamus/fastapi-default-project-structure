@@ -1052,7 +1052,8 @@ upload_settings = get_upload_settings()
 # =============================================================================
 # 배포 안전 검사 (ADR-027)
 # =============================================================================
-# 비밀 키 규칙만 검사한다. ADMIN·SERVER_HOST 등 다른 운영 조합은 여전히 막지 않는다(C-8).
+# 비밀 키 규칙과 debug 모드만 검사한다. ADMIN·SERVER_HOST 등 다른 운영 조합은
+# 여전히 막지 않는다(C-8).
 DEPLOYED_ENVS = frozenset({"staging", "production"})
 
 
@@ -1066,14 +1067,16 @@ def validate_deployment_safety(
     app: AppSettings | None = None,
     jwt: JWTSettings | None = None,
     session: SessionSettings | None = None,
+    log: LogSettings | None = None,
 ) -> None:
-    """staging/production 에서 예시 비밀 키·access==refresh 를 기동 시점에 거부한다.
+    """staging/production 에서 예시 비밀 키·access==refresh·debug 모드를 기동 시점에 거부한다.
 
     위반을 모두 모아 RuntimeError 하나로 올린다. 메시지에는 설정 **이름**만 담는다(값 금지).
     """
     app = app or app_settings
     jwt = jwt or jwt_settings
     session = session or session_settings
+    log = log or log_settings
     if app.ENV not in DEPLOYED_ENVS:
         return
 
@@ -1089,6 +1092,12 @@ def validate_deployment_safety(
     ]
     if jwt.ACCESS_TOKEN_SECRET_KEY == jwt.REFRESH_TOKEN_SECRET_KEY:
         violations.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
+    # debug 모드는 배포 환경에서 켜지면 안 된다 — 유효 로그 레벨이 DEBUG 가 되고,
+    # 롤백 상세 로그가 실행된 SQL 과 바인딩된 값을 그대로 남긴다(NFR-001).
+    if app.DEBUG:
+        violations.append("DEBUG 가 켜져 있습니다")
+    if (log.LOG_LEVEL or "").strip().upper() == "DEBUG":
+        violations.append("LOG_LEVEL 이 디버그 레벨입니다")
     if violations:
         raise RuntimeError(
             f"ENV={app.ENV} 배포 안전 검사 실패 — " + "; ".join(violations) + ". "
