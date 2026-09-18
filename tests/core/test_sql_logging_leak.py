@@ -15,9 +15,15 @@ SQL 을 보고 싶은 개발자는 ``LOG_SQL_ECHO_ENABLED=true`` 로 명시적�
 from __future__ import annotations
 
 import logging
+from unittest import mock
 
 import pytest
 
+# 로깅 dictConfig 는 import 시점에 root 핸들러를 갈아끼운다 — caplog 핸들러가
+# 걷히지 않도록 대상 모듈을 테스트 함수 밖에서 미리 import 한다.
+from app.core.db import session as session_module
+from app.core.middlewares import user_info_middleware as middleware_module
+from app.core.middlewares.user_info_middleware import UserInfoMiddleware
 from app.utils.logs.filters import SQL_NOISE_LOGGER_PREFIXES, SqlNoiseFilter
 
 
@@ -109,3 +115,91 @@ async def test_end_to_end_parameters_do_not_reach_handlers(caplog):
 
     captured = " ".join(record.getMessage() for record in caplog.records)
     assert secret not in captured, f"바인딩 파라미터가 로그로 유출됐다: {captured[:400]}"
+
+
+# ---------------------------------------------------------------------------
+# 롤백 로그가 예외 **메시지**를 싣지 않는다 (NFR-001).
+# DB 예외의 str() 에는 실행된 SQL 과 바인딩된 값이 들어 있고, 세션 모듈의 로거
+# 이름(app.core.db.session)은 위 SqlNoiseFilter 를 통과한다 — 필터로는 못 막는다.
+# ---------------------------------------------------------------------------
+
+_LEAKY_SQL = "INSERT INTO users (token) VALUES (%(token)s)"
+_LEAKY_PARAM = "SUPER-SECRET-TOKEN"
+
+
+def _leaky_db_error() -> Exception:
+    """str() 에 SQL 과 바인딩 값이 들어 있는 실제 모양의 DB 예외."""
+    from sqlalchemy.exc import IntegrityError
+
+    return IntegrityError(_LEAKY_SQL, {"token": _LEAKY_PARAM}, Exception("Duplicate entry"))
+
+
+async def _drive_rollback(dependency, error: Exception) -> None:
+    """세션 의존성을 한 번 yield 시킨 뒤 예외를 던져 롤백 경로를 태운다."""
+    agen = dependency()
+    await agen.__anext__()
+    with pytest.raises(type(error)):
+        await agen.athrow(error)
+
+
+@pytest.mark.parametrize(
+    "dependency_name",
+    ["get_routed_db_session", "get_background_db_session"],
+)
+async def test_rollback_log_does_not_leak_sql_or_parameters(caplog, dependency_name):
+    """기본(INFO) 로그의 ROLLBACK 레코드에는 예외 타입만 남는다."""
+    dependency = getattr(session_module, dependency_name)
+    error = _leaky_db_error()
+    assert _LEAKY_PARAM in str(error), "테스트 전제: 예외 str() 에 바인딩 값이 들어 있다"
+
+    with caplog.at_level(logging.INFO, logger=session_module.logger.name):
+        await _drive_rollback(dependency, error)
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors, "ROLLBACK ERROR 레코드가 없다"
+    message = " ".join(r.getMessage() for r in errors)
+    assert "IntegrityError" in message, f"예외 타입은 남아야 한다: {message}"
+    assert _LEAKY_PARAM not in message, f"바인딩 값이 로그로 샜다: {message}"
+    assert "INSERT INTO" not in message.upper(), f"SQL 이 로그로 샜다: {message}"
+    assert all(r.exc_info is None for r in errors), "ERROR 레코드에 트레이스백이 붙어 SQL 이 샌다"
+
+
+@pytest.mark.parametrize(
+    "dependency_name",
+    ["get_routed_db_session", "get_background_db_session"],
+)
+async def test_debug_level_keeps_full_rollback_detail(caplog, dependency_name):
+    """debug 모드에서는 추적에 필요한 SQL·바인딩 값·트레이스백 전문을 남긴다."""
+    dependency = getattr(session_module, dependency_name)
+
+    with caplog.at_level(logging.DEBUG, logger=session_module.logger.name):
+        await _drive_rollback(dependency, _leaky_db_error())
+
+    details = [r for r in caplog.records if r.levelno == logging.DEBUG and r.exc_info is not None]
+    assert details, "DEBUG 상세 레코드가 없다"
+    formatted = " ".join(logging.Formatter().format(r) for r in details)
+    assert _LEAKY_PARAM in formatted, "debug 모드인데 바인딩 값이 없다"
+    assert "IntegrityError" in formatted, "debug 모드인데 트레이스백이 없다"
+
+
+async def test_access_log_failure_does_not_leak_exception_message(caplog):
+    """접속 로그 저장 실패도 같은 기준이다 — 기본 로그는 예외 타입만."""
+    middleware = UserInfoMiddleware.__new__(UserInfoMiddleware)
+    error = _leaky_db_error()
+
+    class _FailingSink:
+        async def save(self, data):
+            raise error
+
+    with mock.patch(
+        "app.core.middlewares.user_info_middleware.get_access_log_sink",
+        return_value=_FailingSink(),
+    ):
+        with caplog.at_level(logging.INFO, logger=middleware_module.logger.name):
+            await middleware._save_access_log({"ip_address": "1.2.3.4"})
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors, "실패 로그가 없다"
+    message = " ".join(r.getMessage() for r in errors)
+    assert _LEAKY_PARAM not in message, f"바인딩 값이 로그로 샜다: {message}"
+    assert all(r.exc_info is None for r in errors), "ERROR 레코드에 트레이스백이 붙어 SQL 이 샌다"

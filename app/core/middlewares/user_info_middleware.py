@@ -195,8 +195,11 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
                 return
             await sink.save(data)
         except Exception as e:
-            # 로그 저장 실패가 요청 처리에 영향을 주지 않도록 함
-            logger.error(f"접속 로그 저장 실패: {e}", exc_info=True)
+            # 로그 저장 실패가 요청 처리에 영향을 주지 않도록 함.
+            # 예외 메시지·트레이스백은 기본 로그에 남기지 않는다 — sink 는 DB 쓰기라
+            # 예외의 str() 에 실행된 SQL 과 바인딩된 접속 정보가 들어 있다.
+            logger.error("접속 로그 저장 실패: %s", type(e).__name__)
+            logger.debug("접속 로그 저장 실패 상세", exc_info=True)
 
     async def dispatch(
         self,

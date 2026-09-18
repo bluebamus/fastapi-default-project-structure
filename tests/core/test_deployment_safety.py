@@ -36,10 +36,16 @@ def _example_secrets() -> dict[str, str]:
     return values
 
 
-def _check(env: str, secrets: dict[str, str]) -> None:
+def _check(
+    env: str,
+    secrets: dict[str, str],
+    *,
+    debug: bool = False,
+    log_level: str | None = "INFO",
+) -> None:
     """.env·프로세스 환경과 무관하게 주어진 값만으로 검사를 실행한다."""
     config.validate_deployment_safety(
-        app=config.AppSettings(_env_file=None, ENV=env),
+        app=config.AppSettings(_env_file=None, ENV=env, DEBUG=debug),
         jwt=config.JWTSettings(
             _env_file=None,
             ACCESS_TOKEN_SECRET_KEY=secrets["ACCESS_TOKEN_SECRET_KEY"],
@@ -48,6 +54,7 @@ def _check(env: str, secrets: dict[str, str]) -> None:
         session=config.SessionSettings(
             _env_file=None, SESSION_SECRET_KEY=secrets["SESSION_SECRET_KEY"]
         ),
+        log=config.LogSettings(_env_file=None, LOG_LEVEL=log_level),
     )
 
 
@@ -120,7 +127,15 @@ def test_development_and_test_are_not_checked(env):
 
 
 def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, **extra_env, "PYTHONIOENCODING": "utf-8"}
+    # DEBUG·LOG_LEVEL 은 이제 배포 안전 검사 대상이다. 개발자 `.env` 값에 좌우되지
+    # 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
+    env = {
+        **os.environ,
+        "DEBUG": "false",
+        "LOG_LEVEL": "INFO",
+        **extra_env,
+        "PYTHONIOENCODING": "utf-8",
+    }
     return subprocess.run(
         [sys.executable, "-c", "import config"],
         cwd=PROJECT_ROOT,
@@ -149,3 +164,45 @@ def test_import_succeeds_in_production_with_strong_secrets():
     """(f) 같은 경로에서 강한 키면 import 가 성공한다."""
     result = _import_config({"ENV": "production", **STRONG})
     assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# debug 모드 거부 — 롤백 상세 로그가 debug 에서 SQL·바인딩 값을 남기므로,
+# 배포 환경에서 debug 가 켜지지 못하게 같은 검사에서 막는다 (NFR-001).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_debug_mode_is_rejected(env):
+    """(g) `DEBUG=true` 는 배포 환경에서 거부되고, 메시지는 설정 이름만 담는다."""
+    with pytest.raises(RuntimeError) as exc_info:
+        _check(env, STRONG, debug=True)
+    assert "DEBUG" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("value", ["DEBUG", "debug", "Debug"])
+def test_debug_log_level_is_rejected(value):
+    """(h) `LOG_LEVEL=DEBUG` 는 대소문자와 무관하게 거부된다."""
+    with pytest.raises(RuntimeError) as exc_info:
+        _check("production", STRONG, log_level=value)
+    assert "LOG_LEVEL" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("log_level", [None, "INFO", "WARNING", "ERROR"])
+def test_non_debug_log_levels_pass(log_level):
+    """디버그가 아닌 레벨은 통과한다(미설정 포함 — DEBUG=false 면 INFO 로 풀린다)."""
+    _check("production", STRONG, log_level=log_level)
+
+
+@pytest.mark.parametrize("env", ["development", "test"])
+def test_debug_mode_is_allowed_outside_deployed_envs(env):
+    """개발·테스트에서는 debug 모드를 계속 쓴다."""
+    _check(env, STRONG, debug=True, log_level="DEBUG")
+
+
+def test_import_fails_in_production_with_debug_enabled():
+    """(i) 검사는 import 시점에 실제로 돈다 — DEBUG=true 면 비정상 종료."""
+    result = _import_config({"ENV": "production", **STRONG, "DEBUG": "true"})
+    assert result.returncode != 0
+    assert "RuntimeError" in result.stderr
+    assert "DEBUG" in result.stderr
