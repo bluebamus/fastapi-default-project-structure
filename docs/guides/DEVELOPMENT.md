@@ -460,6 +460,36 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
   판별하지 못합니다(ARCHITECTURE §4.3).
 - 안전 검사·테스트 통과가 DB 권한·방언·실행 계획 검토를 대신하지 않습니다.
 
+### 7.1 쓰기 판별 키워드를 고칠 때
+
+고치는 곳은 `app/core/db/router.py` 의 `_TEXT_WRITE_KEYWORDS` 한 곳입니다. 이 집합은
+`_text_is_write` → `_is_write` → `RoutingSession.get_bind()` 경로에서만 쓰이므로, 단어를 넣고 빼는 것이
+곧 라우팅 판정을 바꿉니다.
+
+| 상황 | 판단 |
+|---|---|
+| Raw `text()` 로 쓰거나 서버 상태를 바꾸는 구문인데 집합에 없다 | **추가한다** |
+| 그 단어로 **시작하는 읽기 구문이 없다** | 추가 비용이 0 — 읽기가 writer 로 새는 오탐이 생길 수 없다 |
+| 그 단어로 시작하는 읽기 구문이 있다 | 오탐 범위를 먼저 보고 정한다 |
+| `BEGIN`·`START`·`COMMIT`·`ROLLBACK`·`SAVEPOINT` 류 | **넣지 않는다** — 아래 참조 |
+
+- **애매하면 넣습니다.** 쓰기를 읽기로 오판하면 DML 이 replica 로 새어 데이터가 사라집니다. 읽기를
+  쓰기로 오판하면 SELECT 하나가 writer 로 갈 뿐입니다. 비대칭이 큽니다.
+- **트랜잭션 제어어는 죽은 항목입니다.** DBAPI 커넥션이 `get_bind()` **아래 레이어**에서 내보내므로
+  집합에 넣어도 평가되지 않습니다(덤프 실측 250만 건 전부 드라이버 발신).
+- **`SET` 을 정규식으로 세분화하지 않습니다.** 덤프의 23.96%(2억 4,496만 건)가 `SET` 이지만 전부
+  `SET NAMES`·`SET SESSION sql_mode`·`SET AUTOCOMMIT` 같은 세션 스코프이고 드라이버가 핸드셰이크에
+  내보내 `get_bind()` 를 타지 않습니다(`SET GLOBAL`·`SET @변수` 는 0건). 지금 세분화는 측정된 비용이
+  0 인 상태의 조기 최적화입니다. 앱 코드가 `text("SET ...")` 을 부르는 것이 관측되면 그때 다시 봅니다.
+- **파서(`sqlparse`)를 도입하지 않습니다.** 선두 키워드 방식이 못 잡는 구조 — CTE 로 감싼
+  DML(`WITH … INSERT/UPDATE/DELETE`), 힌트 주석으로 시작하는 문장, 다중문장 DML,
+  `SELECT … FOR UPDATE` — 가 10억 건(1,022,185,501건 실행 / 고유 지문 1,735개) 덤프에서 **0건**이었습니다.
+  실측이 0 에 가까우면 의존성을 늘리지 않습니다.
+- **바꿀 때 반드시**: `tests/core/test_router_raw_dml.py` 에 케이스를 추가하고, 근거를 CRP
+  `orm-raw-repository` 그룹의 ADR(`docs/crp/groups/orm-raw-repository/design-baseline.md`)로 남깁니다.
+- 덤프 근거의 한계: 수집 IP 69개 중 일부가 TLS 라 암호화 구간은 수집되지 않았고, 덤프는 기존 프로덕션
+  트래픽이지 이 저장소의 `text()` 호출 기록이 아닙니다. 그래서 실측 0 건이어도 안전 측으로 기웁니다.
+
 ## 8. 마이그레이션
 
 ```bash
