@@ -9,9 +9,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.core.db import session as db_session
 
@@ -136,3 +141,83 @@ def test_dispose_engine_signature_is_unchanged():
         if param.default is inspect.Parameter.empty
     ]
     assert required == [], f"dispose_engine 에 필수 인자가 생겼다: {required}"
+
+
+# ---------------------------------------------------------------------------
+# 세션 Dependency 의 예외 경로 정리
+#
+# `get_writer_db_session()`·`get_read_only_db_session()` 에는 명시적인
+# `except Exception: await session.rollback(); raise` 가 있었다. 죽은 코드다 —
+# `AsyncSession.__aexit__` 이 `asyncio.shield(create_task(self.close()))` 이고,
+# `close()` 는 `if self.is_active: self._connection_rollback_impl()` 로 ROLLBACK 을
+# 이미 보낸다. 게다가 `except Exception` 은 `asyncio.CancelledError`(BaseException
+# 상속, 클라이언트 연결 끊김)를 **못 잡는데** `__aexit__` 의 shield 는 잡는다.
+#
+# `get_routed_db_session()`·`get_background_db_session()` 은 except 블록에
+# 로깅 부수효과가 있으므로 그대로 둔다.
+# ---------------------------------------------------------------------------
+
+SIMPLE_DEPENDENCIES = ("get_writer_db_session", "get_read_only_db_session")
+LOGGING_DEPENDENCIES = ("get_routed_db_session", "get_background_db_session")
+
+
+@pytest_asyncio.fixture
+async def rollbacks(monkeypatch):
+    """엔진 이벤트로 ROLLBACK 횟수를 세는 in-memory 세션 팩토리로 갈아끼운다."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    counted: list[str] = []
+    event.listen(engine.sync_engine, "rollback", lambda connection: counted.append("rollback"))
+
+    maker = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
+
+    yield counted
+    await engine.dispose()
+
+
+async def _raise_inside(dependency_name: str, error: BaseException) -> None:
+    """Dependency 를 열고 트랜잭션을 연 뒤 본문에서 예외가 난 상황을 재현한다."""
+    generator = getattr(db_session, dependency_name)()
+    session = await generator.__anext__()
+    await session.execute(text("SELECT 1"))  # 트랜잭션을 연다
+
+    with pytest.raises(type(error)):
+        await generator.athrow(error)
+
+
+@pytest.mark.parametrize("dependency_name", SIMPLE_DEPENDENCIES)
+@pytest.mark.parametrize(
+    "error", [RuntimeError("boom"), asyncio.CancelledError()], ids=["exception", "cancelled"]
+)
+async def test_exception_path_rolls_back_exactly_once(rollbacks, dependency_name, error):
+    """명시적 rollback 을 지워도 ROLLBACK 은 정확히 1회 나간다.
+
+    `CancelledError` 도 같다 — `except Exception` 은 못 잡지만 `__aexit__` 은 잡는다.
+    """
+    await _raise_inside(dependency_name, error)
+
+    assert rollbacks == ["rollback"]
+
+
+@pytest.mark.parametrize("dependency_name", SIMPLE_DEPENDENCIES)
+def test_simple_dependencies_have_no_explicit_rollback(dependency_name):
+    """정리는 `async with` 에 맡긴다 — 중복 rollback 코드를 되살리지 않는다.
+
+    독스트링이 "왜 없는지" 를 설명하느라 rollback 을 언급하므로 호출 형태로 본다.
+    """
+    source = inspect.getsource(getattr(db_session, dependency_name))
+
+    assert "session.rollback()" not in source
+
+
+@pytest.mark.parametrize("dependency_name", LOGGING_DEPENDENCIES)
+def test_logging_dependencies_keep_their_except_block(dependency_name):
+    """로깅 부수효과가 있는 쪽은 except 블록이 필요하다 — 함께 지우지 않는다."""
+    source = inspect.getsource(getattr(db_session, dependency_name))
+
+    assert "except Exception" in source
+    assert "ROLLBACK" in source
