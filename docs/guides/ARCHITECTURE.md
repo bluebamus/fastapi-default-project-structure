@@ -379,7 +379,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 - 타입 오류·validator 위반은 `config` import 자체를 실패시켜 lifespan 전에 기동을 막습니다.
   validator: 복제 설정 모순·replica 주소 형식(`DatabaseSettings`), `CORS_ALLOW_ORIGINS=["*"]` +
   `CORS_ALLOW_CREDENTIALS=true`(`CORSSettings`), `SMTP_TLS` + `SMTP_SSL`(`SMTPSettings`).
-- 전역 객체를 만든 뒤 파일 끝에서 배포 안전 검사가 돕니다. `ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나 access 와 refresh 가 같으면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027). 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
+- 전역 객체를 만든 뒤 파일 끝에서 배포 안전 검사가 돕니다. `ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나, access 와 refresh 가 같거나, `DEBUG=true`·`LOG_LEVEL=DEBUG` 면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027·ADR-028·ADR-030). `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 검사합니다 — 인증 없는 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다. 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
   예시 값 판정은 `is_placeholder_secret()` 하나가 맡습니다(`tests/core/test_deployment_safety.py`). 다른 운영 조합
   (`ADMIN`·`SERVER_HOST`·`DEBUG` 등)은 여전히 막지 않습니다(C-8).
 - 환경 변수를 직접 읽는 곳은 `config.py` 뿐입니다(`tests/core/test_settings_contract.py`).

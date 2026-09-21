@@ -1052,8 +1052,8 @@ upload_settings = get_upload_settings()
 # =============================================================================
 # 배포 안전 검사 (ADR-027)
 # =============================================================================
-# 비밀 키 규칙과 debug 모드만 검사한다. ADMIN·SERVER_HOST 등 다른 운영 조합은
-# 여전히 막지 않는다(C-8).
+# 비밀 키·비밀번호 규칙과 debug 모드만 검사한다. ADMIN·SERVER_HOST 등 다른 운영
+# 조합은 여전히 막지 않는다(C-8).
 DEPLOYED_ENVS = frozenset({"staging", "production"})
 
 
@@ -1068,8 +1068,11 @@ def validate_deployment_safety(
     jwt: JWTSettings | None = None,
     session: SessionSettings | None = None,
     log: LogSettings | None = None,
+    db: DatabaseSettings | None = None,
+    redis: RedisSettings | None = None,
+    smtp: SMTPSettings | None = None,
 ) -> None:
-    """staging/production 에서 예시 비밀 키·access==refresh·debug 모드를 기동 시점에 거부한다.
+    """staging/production 에서 예시 비밀 키·비밀번호·access==refresh·debug 모드를 거부한다.
 
     위반을 모두 모아 RuntimeError 하나로 올린다. 메시지에는 설정 **이름**만 담는다(값 금지).
     """
@@ -1077,6 +1080,9 @@ def validate_deployment_safety(
     jwt = jwt or jwt_settings
     session = session or session_settings
     log = log or log_settings
+    db = db or db_settings
+    redis = redis or redis_settings
+    smtp = smtp or smtp_settings
     if app.ENV not in DEPLOYED_ENVS:
         return
 
@@ -1084,7 +1090,17 @@ def validate_deployment_safety(
         "ACCESS_TOKEN_SECRET_KEY": jwt.ACCESS_TOKEN_SECRET_KEY,
         "REFRESH_TOKEN_SECRET_KEY": jwt.REFRESH_TOKEN_SECRET_KEY,
         "SESSION_SECRET_KEY": session.SESSION_SECRET_KEY,
+        # DB 는 이 스켈레톤이 반드시 붙는 대상이라, 빈 비밀번호(=인증 없는 접속)도 위반이다.
+        "MYSQL_PASSWORD": db.MYSQL_PASSWORD,
     }
+    # Redis·SMTP 는 **비어 있는 것이 정당한 구성**이다 — 인증 없는 사설망 Redis,
+    # SMTP 미사용. 그래서 비어 있으면 검사하지 않고, 값이 있을 때만 예시 값인지 본다.
+    for name, optional in (
+        ("REDIS_PASSWORD", redis.REDIS_PASSWORD or ""),
+        ("SMTP_PASSWORD", smtp.SMTP_PASSWORD),
+    ):
+        if optional.strip():
+            secrets[name] = optional
     violations = [
         f"{name} 가 예시 값(placeholder)입니다"
         for name, value in secrets.items()
