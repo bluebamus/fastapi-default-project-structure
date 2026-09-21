@@ -278,15 +278,22 @@ DB `max_connections` 안에 들어오는지 배포 전에 계산합니다.
 
 | `routing_mode` | 조건 | 결과 |
 |---|---|---|
-| `single` | `DB_ROUTER_ENABLED=false`(기본) | 단일 엔진 세션. **읽기 세션의 쓰기 차단도 동작하지 않는다** |
-| `router-single` | 라우터만 켬 | 전부 primary, 쓰기 차단은 동작 |
+| `single` | `DB_ROUTER_ENABLED=false`(기본) | 단일 엔진 세션. 라우팅만 없고 **읽기 세션의 쓰기 차단은 동작한다** |
+| `router-single` | 라우터만 켬 | 전부 primary |
 | `router-replicated` | 라우터 + 복제 + `MYSQL_REPLICA_HOSTS` | SELECT → replica, 쓰기 → primary |
+
+읽기 세션의 쓰기 차단은 위 모드와 **무관합니다**. `app/core/db/router.py` 가 `Session` 기반 클래스에
+`before_flush`·`do_orm_execute` 리스너를 전역 등록하므로, 어떤 sessionmaker 로 만든 세션이든
+`mark_read_only()` 가 걸린 세션에서는 ORM flush·Core DML·Raw `text()` DML 이 `ReadOnlyRoutingError`
+로 거부됩니다. 판정은 default-deny 이고 절차는 DEVELOPMENT §7.2 에 있습니다.
 
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
-- 한계: `text()` 판별은 선두 키워드 기준이라 `WITH … DELETE` 같은 CTE DML 을 읽기로 오판합니다
-  (residual-risk R-001). sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
+- 한계: **라우팅** 판별(`_text_is_write`)은 선두 키워드 기준이라 `WITH … DELETE` 같은 CTE DML 을
+  읽기로 오판해 replica 로 보낼 수 있습니다(residual-risk R-001). 읽기 세션의 **차단** 판별은 괄호
+  깊이 0 스캔이라 `WITH … DELETE` 를 거부합니다 — 두 판정은 방향이 반대인 별개입니다.
+  sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
   (`MYSQL_REPLICA_USER`)을 함께 씁니다.
 
