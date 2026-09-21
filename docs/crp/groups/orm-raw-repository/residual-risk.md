@@ -46,8 +46,12 @@
   (`sqladmin 0.31.0` 부터 `starlette>=0.50,<2.0` 명시). 상향 후 `pip-audit` 은 **0건**이다.
   `uv lock` 에서 움직인 패키지는 이 셋뿐(82개 중 3개)이고, `-m "not mysql"` 577 passed ·
   `-m mysql --mysql-required` 8 passed(MySQL 8.4 실제 컨테이너)로 기준선이 유지됐다.
-- **게이트가 이것을 보지 못한다.** `scripts/review_gate.py` 에는 의존성 감사 단계가 없다.
+- ~~**게이트가 이것을 보지 못한다.**~~ `scripts/review_gate.py` 에는 의존성 감사 단계가 없다.
   그래서 21건이 초록불 아래에서 조용히 쌓였다. 감사 단계를 게이트에 넣을지는 정책 판단이며,
   넣는다면 기존 권고가 전부 실패로 잡히므로 상향과 **같은 작업으로 묶어야** 한다.
+  **해소 (2026-09-21, ADR-035)**: 상향(ADR-034) 직후 `scripts/review_gate.py` 의 mypy 단계
+  뒤에 `pip_audit --strict` 를 항목으로 넣었다(`--fast` 에서도 건너뛰지 않는다). 0건 상태에서
+  초록으로 시작하므로 다음부터는 **새로 공개된 권고가 곧바로 빨간불**이 된다. 적색-녹색 실증:
+  venv 에 `aiomysql==0.2.0` 을 되돌리자 해당 항목이 패키지명과 함께 `[FAIL]` 로 떴다.
 - 재현: `uv run --with pip-audit python -m pip_audit`
 
