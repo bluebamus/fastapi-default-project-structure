@@ -183,7 +183,7 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 [ARCHITECTURE 부록](./docs/guides/ARCHITECTURE.md#부록-설정-필드-전체)에 있고,
 `config.py` 와 `.env.example` 은 `tests/core/test_settings_contract.py` 가 양방향으로 맞춰 둡니다.
 
-`ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나 access 와 refresh 가 같으면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027). 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
+`ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나, access 와 refresh 가 같거나, `DEBUG=true`·`LOG_LEVEL=DEBUG` 면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027·ADR-028·ADR-030). `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 규칙으로 봅니다 — 인증 없는 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다. 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
 키는 키마다 따로 만듭니다: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"`
 
 | 변수 | 기본값 | 의미 |
@@ -296,7 +296,7 @@ DELETE 는 204(본문 없음)입니다. 오류 응답은 `{"error_code", "messag
 | 1 | `ADMIN=false` 를 **명시**했는가 | 기본값 `true` 라 인증 없는 `/admin` 이 열린다 — 사용자·게시글·댓글·접속로그 조회·수정·삭제와 CSV 내보내기 가능(비밀번호 해시만 제외) |
 | 2 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` 인가 (`python main.py` 실행 시) | 기본값 `0.0.0.0` |
 | 3 | 리버스 프록시·방화벽이 `/admin` 을 막는가 | 1·2 가 뚫리면 마지막 방어선이 없다 |
-| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY` 를 교체했는가 | `ENV=staging`/`production` 이면 기동 거부(`RuntimeError`, 이름만 표시). 그 밖의 `ENV` 로 띄우면 검사가 없어 누구나 토큰을 위조한다 |
+| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD`·`SMTP_PASSWORD` 도) | `ENV=staging`/`production` 이면 기동 거부(`RuntimeError`, 이름만 표시). 그 밖의 `ENV` 로 띄우면 검사가 없어 누구나 토큰을 위조하고 DB 에 붙는다 |
 | 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출, worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
 | 7 | `CORS_ALLOW_ORIGINS` 를 실제 출처로 좁혔는가 | 기본값 `["*"]` |

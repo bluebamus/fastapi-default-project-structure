@@ -42,6 +42,9 @@ def _check(
     *,
     debug: bool = False,
     log_level: str | None = "INFO",
+    mysql_password: str = "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
+    redis_password: str | None = None,
+    smtp_password: str = "",
 ) -> None:
     """.env·프로세스 환경과 무관하게 주어진 값만으로 검사를 실행한다."""
     config.validate_deployment_safety(
@@ -55,6 +58,9 @@ def _check(
             _env_file=None, SESSION_SECRET_KEY=secrets["SESSION_SECRET_KEY"]
         ),
         log=config.LogSettings(_env_file=None, LOG_LEVEL=log_level),
+        db=config.DatabaseSettings(_env_file=None, MYSQL_PASSWORD=mysql_password),
+        redis=config.RedisSettings(_env_file=None, REDIS_PASSWORD=redis_password),
+        smtp=config.SMTPSettings(_env_file=None, SMTP_PASSWORD=smtp_password),
     )
 
 
@@ -127,12 +133,15 @@ def test_development_and_test_are_not_checked(env):
 
 
 def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    # DEBUG·LOG_LEVEL 은 이제 배포 안전 검사 대상이다. 개발자 `.env` 값에 좌우되지
-    # 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
+    # DEBUG·LOG_LEVEL·비밀번호 3종은 배포 안전 검사 대상이다. 개발자 `.env` 값에
+    # 좌우되지 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
     env = {
         **os.environ,
         "DEBUG": "false",
         "LOG_LEVEL": "INFO",
+        "MYSQL_PASSWORD": "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
+        "REDIS_PASSWORD": "",
+        "SMTP_PASSWORD": "",
         **extra_env,
         "PYTHONIOENCODING": "utf-8",
     }
@@ -206,3 +215,104 @@ def test_import_fails_in_production_with_debug_enabled():
     assert result.returncode != 0
     assert "RuntimeError" in result.stderr
     assert "DEBUG" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# 비밀번호 3종 — `.env.example` 값 그대로 배포 환경에 뜨는 것을 막는다.
+#
+# 빈 값 취급이 둘로 갈린다:
+#   - `MYSQL_PASSWORD` 는 **비어 있으면 그 자체가 위반**이다. DB 는 이 스켈레톤이
+#     반드시 붙는 대상이고, 빈 비밀번호는 인증 없는 접속을 뜻한다.
+#   - `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **비어 있는 것이 정당한 구성**이다
+#     (인증 없는 사설망 Redis, SMTP 미사용). 값이 있을 때만 예시 값인지 본다.
+# ---------------------------------------------------------------------------
+
+PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD", "SMTP_PASSWORD")
+
+
+def _example_value(name: str) -> str:
+    """`.env.example` 에 적힌 설정 값(없으면 빈 문자열)."""
+    for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == name:
+            return value.strip()
+    raise AssertionError(f".env.example 에 {name} 이 없다")
+
+
+@pytest.mark.parametrize("name", ["MYSQL_PASSWORD", "SMTP_PASSWORD"])
+def test_env_example_passwords_are_placeholders(name):
+    """`.env.example` 의 비밀번호 예시는 검사에 걸리는 모양이어야 한다."""
+    assert config.is_placeholder_secret(_example_value(name))
+
+
+def test_env_example_redis_password_is_empty():
+    """Redis 는 인증 없는 구성이 기본이라 예시를 비워 둔다(위반 아님)."""
+    assert _example_value("REDIS_PASSWORD") == ""
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_example_mysql_password_is_rejected(env):
+    """`.env.example` 의 MySQL 비밀번호 그대로면 거부되고, 값은 새지 않는다."""
+    value = _example_value("MYSQL_PASSWORD")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _check(env, STRONG, mysql_password=value)
+
+    assert "MYSQL_PASSWORD" in str(exc_info.value)
+    assert value not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_empty_mysql_password_is_rejected(env):
+    """빈 MySQL 비밀번호 = 인증 없는 접속 — 배포 환경에서는 위반이다."""
+    with pytest.raises(RuntimeError, match="MYSQL_PASSWORD"):
+        _check(env, STRONG, mysql_password="")
+
+
+@pytest.mark.parametrize("value", ["your-app-password", "change-this-redis-password"])
+def test_placeholder_redis_password_is_rejected(value):
+    """값을 넣었는데 예시 값이면 거부한다."""
+    with pytest.raises(RuntimeError) as exc_info:
+        _check("production", STRONG, redis_password=value)
+
+    assert "REDIS_PASSWORD" in str(exc_info.value)
+    assert value not in str(exc_info.value)
+
+
+def test_placeholder_smtp_password_is_rejected():
+    value = _example_value("SMTP_PASSWORD")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _check("production", STRONG, smtp_password=value)
+
+    assert "SMTP_PASSWORD" in str(exc_info.value)
+    assert value not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_unused_redis_and_smtp_passwords_pass(env):
+    """비어 있는 Redis·SMTP 비밀번호는 "기능을 안 쓴다" 는 뜻이라 통과한다."""
+    _check(env, STRONG, redis_password=None, smtp_password="")
+    _check(env, STRONG, redis_password="", smtp_password="   ")
+
+
+@pytest.mark.parametrize("env", ["development", "test"])
+def test_passwords_are_not_checked_outside_deployed_envs(env):
+    """개발·테스트는 예시 비밀번호로 그냥 뜬다."""
+    _check(
+        env,
+        STRONG,
+        mysql_password="",
+        redis_password="your-redis-password",
+        smtp_password=_example_value("SMTP_PASSWORD"),
+    )
+
+
+def test_import_fails_in_production_with_example_passwords():
+    """검사는 config import 시점에 실제로 돈다 — 값은 출력되지 않는다."""
+    mysql_password = _example_value("MYSQL_PASSWORD")
+    result = _import_config({"ENV": "production", **STRONG, "MYSQL_PASSWORD": mysql_password})
+
+    assert result.returncode != 0
+    assert "MYSQL_PASSWORD" in result.stderr
+    assert mysql_password not in result.stderr
