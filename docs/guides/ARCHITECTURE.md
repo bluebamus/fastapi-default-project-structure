@@ -278,15 +278,22 @@ DB `max_connections` 안에 들어오는지 배포 전에 계산합니다.
 
 | `routing_mode` | 조건 | 결과 |
 |---|---|---|
-| `single` | `DB_ROUTER_ENABLED=false`(기본) | 단일 엔진 세션. **읽기 세션의 쓰기 차단도 동작하지 않는다** |
-| `router-single` | 라우터만 켬 | 전부 primary, 쓰기 차단은 동작 |
+| `single` | `DB_ROUTER_ENABLED=false`(기본) | 단일 엔진 세션. 라우팅만 없고 **읽기 세션의 쓰기 차단은 동작한다** |
+| `router-single` | 라우터만 켬 | 전부 primary |
 | `router-replicated` | 라우터 + 복제 + `MYSQL_REPLICA_HOSTS` | SELECT → replica, 쓰기 → primary |
+
+읽기 세션의 쓰기 차단은 위 모드와 **무관합니다**. `app/core/db/router.py` 가 `Session` 기반 클래스에
+`before_flush`·`do_orm_execute` 리스너를 전역 등록하므로, 어떤 sessionmaker 로 만든 세션이든
+`mark_read_only()` 가 걸린 세션에서는 ORM flush·Core DML·Raw `text()` DML 이 `ReadOnlyRoutingError`
+로 거부됩니다. 판정은 default-deny 이고 절차는 DEVELOPMENT §7.2 에 있습니다.
 
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
-- 한계: `text()` 판별은 선두 키워드 기준이라 `WITH … DELETE` 같은 CTE DML 을 읽기로 오판합니다
-  (residual-risk R-001). sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
+- 한계: **라우팅** 판별(`_text_is_write`)은 선두 키워드 기준이라 `WITH … DELETE` 같은 CTE DML 을
+  읽기로 오판해 replica 로 보낼 수 있습니다(residual-risk R-001). 읽기 세션의 **차단** 판별은 괄호
+  깊이 0 스캔이라 `WITH … DELETE` 를 거부합니다 — 두 판정은 방향이 반대인 별개입니다.
+  sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
   (`MYSQL_REPLICA_USER`)을 함께 씁니다.
 
@@ -372,7 +379,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 - 타입 오류·validator 위반은 `config` import 자체를 실패시켜 lifespan 전에 기동을 막습니다.
   validator: 복제 설정 모순·replica 주소 형식(`DatabaseSettings`), `CORS_ALLOW_ORIGINS=["*"]` +
   `CORS_ALLOW_CREDENTIALS=true`(`CORSSettings`), `SMTP_TLS` + `SMTP_SSL`(`SMTPSettings`).
-- 전역 객체를 만든 뒤 파일 끝에서 배포 안전 검사가 돕니다. `ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나 access 와 refresh 가 같으면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027). 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
+- 전역 객체를 만든 뒤 파일 끝에서 배포 안전 검사가 돕니다. `ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나, access 와 refresh 가 같거나, `DEBUG=true`·`LOG_LEVEL=DEBUG` 면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027·ADR-028·ADR-030). `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 검사합니다 — 인증 없는 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다. 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
   예시 값 판정은 `is_placeholder_secret()` 하나가 맡습니다(`tests/core/test_deployment_safety.py`). 다른 운영 조합
   (`ADMIN`·`SERVER_HOST`·`DEBUG` 등)은 여전히 막지 않습니다(C-8).
 - 환경 변수를 직접 읽는 곳은 `config.py` 뿐입니다(`tests/core/test_settings_contract.py`).

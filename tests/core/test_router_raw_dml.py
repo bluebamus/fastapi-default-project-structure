@@ -1,12 +1,11 @@
 """Raw ``text()`` DML 의 쓰기 판정 — RAW-REP-007 (F-011).
 
 ``TextClause`` 는 ``UpdateBase`` 가 아니라서, 타입만 보면 Raw DML 이 읽기로 분류된다.
-그러면 두 가지가 깨진다:
+그러면 복제가 켜져 있을 때 **UPDATE 가 replica 로 나간다** — 조용히 잘못된 서버로
+쓰기가 간다.
 
-    1. read-only 세션의 쓰기 차단이 뚫린다.
-    2. 복제가 켜져 있으면 **UPDATE 가 replica 로 나간다.**
-
-두 번째가 더 위험하다 — 조용히 잘못된 서버로 쓰기가 간다.
+여기서 보는 것은 **라우팅 방향**(이 구문을 writer 로 보낼까)이다. read-only 세션의
+거부 여부는 방향이 반대인 별개의 판정이고 ``tests/core/test_read_only_guard.py`` 가 본다.
 """
 
 from __future__ import annotations

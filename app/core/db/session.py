@@ -29,6 +29,7 @@ DB 세션 Dependency (정식 이름 — TX-005):
     DB_ROUTER_ENABLED=true 면 세션이 구문 성격에 따라 엔진을 자동 선택합니다.
     DB_REPLICATION_ENABLED=true 를 함께 켜면 SELECT 는 replica 로, 쓰기는 primary 로
     나갑니다. 라우터를 끄면 모든 쿼리가 단일 엔진으로 갑니다(기존 동작).
+    읽기 전용 세션의 쓰기 차단은 라우터 설정과 무관하게 항상 동작합니다.
     자세한 규칙은 app/core/db/router.py 를 참고하세요.
 
 사용 예시:
@@ -293,9 +294,10 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
     """
     읽기 전용 DB 세션 (FastAPI DI) — GET/HEAD 의 기본값
 
-    라우터가 켜져 있으면 세션이 replica 에 고정되고, 쓰기를 시도하면
-    ``ReadOnlyRoutingError`` 로 즉시 실패해 "읽기 전용 핸들러가 몰래 쓰는" 사고를
-    코드 수준에서 차단합니다.
+    쓰기를 시도하면 ``ReadOnlyRoutingError`` 로 즉시 실패해 "읽기 전용 핸들러가 몰래
+    쓰는" 사고를 코드 수준에서 차단합니다. 이 차단은 ``Session`` 이벤트 리스너가
+    집행하므로 ``DB_ROUTER_ENABLED`` 와 무관하게 동작합니다. 라우터가 켜져 있으면
+    여기에 더해 세션이 replica 에 고정됩니다.
 
     Yields:
         AsyncSession: 읽기 전용 데이터베이스 세션
@@ -307,17 +309,17 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
         ): ...
 
     Note:
-        - DB_ROUTER_ENABLED=false 면 라우팅·쓰기 차단이 동작하지 않고
-          단일 엔진 세션을 반환합니다.
+        - DB_ROUTER_ENABLED=false 면 **라우팅만** 동작하지 않고 단일 엔진 세션을
+          반환합니다. 쓰기 차단은 그대로 걸립니다.
         - 복제 지연을 허용할 수 없는 읽기라면 get_writer_db_session() 을 쓰세요.
+        - 예외 경로의 정리는 ``async with`` 가 맡습니다 — ``AsyncSession.__aexit__``
+          이 ``close()`` 를 shield 로 감싸 실행하고 ``close()`` 가 ROLLBACK 을 보냅니다.
+          명시적 ``except Exception: rollback()`` 은 ROLLBACK 을 한 번 더 보내지도
+          않으면서 ``CancelledError`` 는 못 잡아, 오히려 좁습니다.
     """
     async with AsyncSessionLocal() as session:
         mark_read_only(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        yield session
 
 
 async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
@@ -329,14 +331,13 @@ async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
 
     Yields:
         AsyncSession: primary 에 고정된 데이터베이스 세션
+
+    Note:
+        - 예외 경로의 정리는 ``async with`` 가 맡습니다(get_read_only_db_session 참고).
     """
     async with AsyncSessionLocal() as session:
         using_writer(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        yield session
 
 
 async def get_background_db_session() -> AsyncGenerator[AsyncSession]:
