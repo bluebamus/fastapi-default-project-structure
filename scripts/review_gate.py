@@ -18,6 +18,7 @@
     9. 코드·문서가 인용한 요구 ID 가 실제로 선언돼 있음 (ADR-014)
    10. 모든 path operation 이 async 이고 요청 경로에 동기 I/O 가 없음 (INV-10/NFR-009)
    11. charter 인수기준이 열린 채로 수렴을 선언하지 않음 (ADR-015)
+   12. 설치된 의존성에 공개된 취약점 권고가 0건 (pip-audit, ADR-035)
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ def report(name: str, ok: bool, detail: str = "") -> None:
         failures.append(f"{name}: {detail}" if detail else name)
 
 
-def run_tool(name: str, args: list[str]) -> None:
+def run_tool(name: str, args: list[str], tail_lines: int = 1) -> None:
     proc = subprocess.run(  # noqa: S603
         [str(PYTHON), *args],
         cwd=REPO_ROOT,
@@ -75,7 +76,10 @@ def run_tool(name: str, args: list[str]) -> None:
         errors="replace",
     )
     tail = (proc.stdout or proc.stderr or "").strip().splitlines()
-    report(name, proc.returncode == 0, "" if proc.returncode == 0 else (tail[-1] if tail else ""))
+    # 한 줄만 보여 주면 pip-audit 처럼 표로 답하는 도구는 **어느 패키지가 걸렸는지**가
+    # 잘려 나간다. 실패한 항목만 꼬리를 길게 잡는다(통과 시 출력은 종전대로 없음).
+    detail = "" if proc.returncode == 0 else "\n       ".join(tail[-tail_lines:])
+    report(name, proc.returncode == 0, detail)
 
 
 def iter_source_files(*relative: str):
@@ -515,6 +519,13 @@ def main() -> int:
     run_tool("ruff check", ["-m", "ruff", "check", "."])
     run_tool("ruff format --check", ["-m", "ruff", "format", "--check", "."])
     run_tool("mypy", ["-m", "mypy", ".", "--cache-dir", ".mypy_tmp"])
+    # 의존성 권고는 코드가 바뀌지 않아도 **밖에서** 늘어난다. 게이트 밖에 두면
+    # 초록불 아래에서 조용히 쌓인다 — 실제로 19건이 그렇게 쌓였다(ADR-034/035).
+    run_tool(
+        "의존성 취약점 0건 (ADR-035)",
+        ["-m", "pip_audit", "--strict", "--progress-spinner", "off"],
+        tail_lines=30,
+    )
     check_layering()
     check_public_api_unchanged()
     check_test_port_single_source()
