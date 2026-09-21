@@ -312,14 +312,14 @@ async def get_read_only_db_session() -> AsyncGenerator[AsyncSession]:
         - DB_ROUTER_ENABLED=false 면 **라우팅만** 동작하지 않고 단일 엔진 세션을
           반환합니다. 쓰기 차단은 그대로 걸립니다.
         - 복제 지연을 허용할 수 없는 읽기라면 get_writer_db_session() 을 쓰세요.
+        - 예외 경로의 정리는 ``async with`` 가 맡습니다 — ``AsyncSession.__aexit__``
+          이 ``close()`` 를 shield 로 감싸 실행하고 ``close()`` 가 ROLLBACK 을 보냅니다.
+          명시적 ``except Exception: rollback()`` 은 ROLLBACK 을 한 번 더 보내지도
+          않으면서 ``CancelledError`` 는 못 잡아, 오히려 좁습니다.
     """
     async with AsyncSessionLocal() as session:
         mark_read_only(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        yield session
 
 
 async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
@@ -331,14 +331,13 @@ async def get_writer_db_session() -> AsyncGenerator[AsyncSession]:
 
     Yields:
         AsyncSession: primary 에 고정된 데이터베이스 세션
+
+    Note:
+        - 예외 경로의 정리는 ``async with`` 가 맡습니다(get_read_only_db_session 참고).
     """
     async with AsyncSessionLocal() as session:
         using_writer(session)
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+        yield session
 
 
 async def get_background_db_session() -> AsyncGenerator[AsyncSession]:
