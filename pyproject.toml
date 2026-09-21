@@ -35,8 +35,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0.0,<9.0.0",
-    "pytest-asyncio>=0.24.0,<0.25.0",
+    # PYSEC-2026-1845 은 pytest 9.0.3 에서 고쳐졌다 — 하한을 그 아래로 내리지 말 것.
+    "pytest>=9.0.3,<10.0.0",
+    "pytest-asyncio>=1.0.0,<2.0.0",
     "pytest-cov>=6.0.0,<7.0.0",
     "pytest-env>=1.1.0",
     "httpx>=0.28.0,<0.29.0",
@@ -79,6 +80,11 @@ python_classes = ["Test*"]
 
 # asyncio 모드 설정
 asyncio_mode = "auto"
+
+# async fixture 의 이벤트 루프 범위. 미설정이면 pytest-asyncio 가 "설정하라"는
+# PytestDeprecationWarning 을 띄우고, 암묵 기본값("fixture" 캐싱 범위)이 다음 메이저에서
+# "function" 으로 바뀐다. 지금 명시해 두면 그 전환에 흔들리지 않는다.
+asyncio_default_fixture_loop_scope = "function"
 
 # 기본 실행 옵션
 addopts = [
