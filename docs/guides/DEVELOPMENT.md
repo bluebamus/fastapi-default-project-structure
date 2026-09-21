@@ -140,8 +140,9 @@ async def get_catalog_service_readonly(
 - 인자·속성 이름은 `db_session`/`self.db_session` 입니다.
 - 한 요청에서 여러 Service 가 하나의 원자적 쓰기에 참여하면 **같은 writer 세션**을 넘기고, 커밋 주체는
   View 하나로 둡니다. Service 를 전역 싱글턴으로 두지 않습니다(세션이 요청을 넘나듭니다).
-- 기본값 `DB_ROUTER_ENABLED=false` 에서는 읽기 세션이 쓰기를 막지 않습니다. 쓰기는 처음부터 writer
-  의존성으로 고정하고, 운영에서는 DB 권한(읽기 전용 계정)을 함께 씁니다.
+- 읽기 세션의 쓰기 차단은 `DB_ROUTER_ENABLED` 와 무관하게 동작합니다(기본값 `false` 포함). 그래도
+  쓰기는 처음부터 writer 의존성으로 고정하고, 운영에서는 DB 권한(읽기 전용 계정)을 함께 씁니다 —
+  `session.info` 표시는 보안 경계가 아닙니다.
 - 장기 자원(예: Redis client)이 필요하면 모듈 전역을 새로 만들지 말고 `app/core/resources.py` 에 자원
   컨텍스트를 추가하고 `app.state` 에서 꺼내는 작은 의존성을 둡니다(현재 `app.state.redis` 를 주입하는
   공용 의존성은 없습니다). 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
@@ -456,8 +457,9 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
 
 - allowlist 는 DB 의 전체 컬럼이 아니라 **그 쿼리가 허용한 키**만 담습니다.
 - `query_name` 을 항상 넘기고, SQL 본문과 params 를 직접 로그에 남기지 않습니다.
-- 읽기 세션에서 Raw DML 을 실행하면 라우터가 켜진 환경에서 `ReadOnlyRoutingError` 입니다. CTE 로 감싼 DML 은
-  판별하지 못합니다(ARCHITECTURE §4.3).
+- 읽기 세션에서 Raw DML 을 실행하면 `DB_ROUTER_ENABLED` 와 무관하게 `ReadOnlyRoutingError` 입니다.
+  `WITH … UPDATE/DELETE` 같은 CTE DML 도 거부됩니다(§7.2). 다만 **라우팅** 방향 판별은 선두 키워드
+  기준이라 CTE DML 을 replica 로 보낼 수 있습니다(ARCHITECTURE §4.3).
 - 안전 검사·테스트 통과가 DB 권한·방언·실행 계획 검토를 대신하지 않습니다.
 
 ### 7.1 쓰기 판별 키워드를 고칠 때
@@ -489,6 +491,41 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
   `orm-raw-repository` 그룹의 ADR(`docs/crp/groups/orm-raw-repository/design-baseline.md`)로 남깁니다.
 - 덤프 근거의 한계: 수집 IP 69개 중 일부가 TLS 라 암호화 구간은 수집되지 않았고, 덤프는 기존 프로덕션
   트래픽이지 이 저장소의 `text()` 호출 기록이 아닙니다. 그래서 실측 0 건이어도 안전 측으로 기웁니다.
+
+### 7.2 읽기 전용 판정을 확장·변경할 때
+
+§7.1 이 **라우팅 방향**(writer 로 보낼까)을 정한다면, 여기는 **읽기 전용 세션의 거부 여부**를 정합니다.
+방향이 반대인 별개의 판정이라 한 함수로 합치지 않습니다. 판정은 괄호 깊이 0 의 단어만 봅니다 — CTE
+정의는 전부 괄호 안이므로 깊이 0 에 남는 단어가 곧 최상위 구문입니다. 그래서 `WITH … SELECT` 는
+통과하고 `WITH … UPDATE/DELETE` 는 거부됩니다.
+
+| 단계 | 위치 (`app/core/db/router.py`) |
+|---|---|
+| 집행 지점 | `_block_read_only_execute`(`do_orm_execute` 이벤트) · `_block_read_only_flush`(`before_flush` 이벤트) — `Session` 기반 클래스에 전역 등록되므로 sessionmaker 종류·`DB_ROUTER_ENABLED` 와 무관합니다 |
+| 구문 분류 | `_statement_is_readable` — Core `UpdateBase` 거부, `Select` 허용, `TextClause` 는 아래로 |
+| Raw SQL 판정 | `_text_is_readable` — 주석 제거 → multi-statement 거부 → 잠금 조회 거부 → 깊이 0 스캔 |
+| 깊이 0 스캔 | `_depth0_words` — 따옴표·역따옴표 안을 건너뛰고, 스캔이 무너지면 `None` |
+
+| 하고 싶은 것 | 건드릴 곳 |
+|---|---|
+| 새 읽기 구문을 허용 (예: `TABLE`, `VALUES`) | `_READABLE_LEAD` — `words[0]` 의 허용 시작 키워드 집합 |
+| 새 쓰기 구문을 차단 | `_TOP_LEVEL_WRITE` 에 소문자 한 단어 추가 |
+| 잠금 획득 패턴을 추가 | `_LOCKING_READ` 정규식 |
+
+**판정 원칙**
+
+- default-deny 입니다. 확실히 읽기라고 판단되지 않으면 거부합니다.
+- 스캔이 무너지면(따옴표 미종료, 괄호 불일치) 거부로 떨어집니다(fail-closed).
+- **애매하면 막습니다.** 잘못 허용하면 DML 이 replica 로 새어 조용히 데이터가 어긋나고, 잘못 막으면
+  개발자가 즉시 알아챕니다. 비대칭이 한쪽으로만 위험합니다.
+- 읽기가 막혔다면 판정을 고칠 일이지 writer 세션으로 바꿀 일이 아닙니다.
+
+**바꿀 때 반드시**: `tests/core/test_read_only_guard.py` 의 `_READABLE`/`_UNREADABLE` 적대적 케이스
+표에 새 케이스를 추가하고(문자열 안의 키워드, `''` 이스케이프, 역따옴표 식별자, 중첩 서브쿼리, 미종료
+따옴표, 괄호 불일치가 이미 들어 있습니다), 근거를 CRP ADR
+(`docs/crp/groups/orm-raw-repository/design-baseline.md` §3)로 남깁니다.
+
+**한계.** 이건 파서가 아닙니다 — 방언별 신종 구문은 못 잡을 수 있습니다.
 
 ## 8. 마이그레이션
 

@@ -51,7 +51,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 - **명시적 트랜잭션 경계** — 쓰기 핸들러 본문이 응답 DTO 를 검증한 뒤 `await service.commit()` 을
   한 번 호출하고 응답을 반환합니다. 의존성·Repository 는 커밋하지 않습니다(UnitOfWork 없음).
 - **읽기/쓰기 세션 분리** — 조회는 `get_read_only_db_session`, 쓰기는 `get_writer_db_session`.
-  `DB_ROUTER_ENABLED=true` 면 replica 라우팅과 읽기 세션의 쓰기 차단이 켜집니다.
+  읽기 세션의 쓰기 차단은 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하고,
+  `DB_ROUTER_ENABLED=true` 면 여기에 replica 라우팅이 더해집니다.
 - **ORM·Raw SQL 두 가지 Repository** — `BaseRepository`(ORM)와 `RawRepositoryBase`(Raw SQL)는
   상속 관계가 없는 평행 계층입니다. 참조 예제: `app/features/catalog/`(ORM),
   `app/features/reports/`(Raw).

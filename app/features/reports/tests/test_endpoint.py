@@ -493,9 +493,9 @@ async def test_raw_dml_rolls_back_without_commit(sales_engine):
 async def test_raw_dml_is_blocked_on_a_read_only_session(sales_engine):
     """read-only 세션에서 Raw DML 은 즉시 실패해야 한다 (RAW-REP-007).
 
-    쓰기 차단은 **라우팅 세션**의 기능이다. ``DB_ROUTER_ENABLED=false`` 인 기본
-    설정에서는 단일 엔진 세션이라 차단이 동작하지 않는다(문서화된 동작). 그래서
-    여기서는 라우터를 켠 세션을 직접 만들어 계약을 검증한다.
+    쓰기 차단은 ``Session`` 이벤트 리스너가 집행하므로 ``DB_ROUTER_ENABLED`` 와
+    무관하게 동작한다. 여기서는 라우터를 켠 구성으로 검증하고, 라우터 off 를 포함한
+    두 구성의 대조는 ``tests/core/test_read_only_guard.py`` 가 맡는다.
     """
     engine, _ = sales_engine
 
