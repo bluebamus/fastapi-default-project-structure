@@ -32,8 +32,9 @@ Django 의 ``DATABASE_ROUTERS`` 와 같은 역할을 SQLAlchemy 에서 수행한
     await session.execute(select(Post))         # → writer
 
 Note:
-    라우터를 끄면(``DB_ROUTER_ENABLED=false``) 이 모듈은 쓰이지 않고
-    세션은 단일 엔진에 직접 바인딩된다(기존 동작 그대로).
+    라우터를 끄면(``DB_ROUTER_ENABLED=false``) **라우팅**은 쓰이지 않고 세션은 단일
+    엔진에 직접 바인딩된다(기존 동작 그대로). 읽기 전용 세션의 쓰기 차단은 이와
+    무관하게 동작한다 — 이 모듈 끝의 ``Session`` 이벤트 리스너가 집행한다.
 """
 
 from __future__ import annotations
@@ -43,9 +44,9 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Engine, UpdateBase
+from sqlalchemy import Engine, Select, UpdateBase, event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import ORMExecuteState, Session
 from sqlalchemy.sql.elements import TextClause
 
 # 세션 단위 라우팅 상태를 담는 ``Session.info`` 키.
@@ -164,8 +165,9 @@ def _text_is_write(clause: Any) -> bool:
     """``text()`` 구문이 쓰기인지 선두 키워드로 판별한다.
 
     ``TextClause`` 는 ``UpdateBase`` 가 아니라서 타입만 봐서는 Raw DML 을 읽기로
-    오인한다. 그러면 두 가지가 깨진다 — read-only 세션의 쓰기 차단이 뚫리고
-    (RAW-REP-007), 복제가 켜져 있으면 **UPDATE 가 replica 로 나간다**.
+    오인한다. 그러면 복제가 켜져 있을 때 **UPDATE 가 replica 로 나간다**.
+    (read-only 세션의 쓰기 차단은 이 함수가 아니라 아래 ``_statement_is_readable``
+    경로가 맡는다 — 방향이 반대인 별개의 판정이다.)
 
     ponytail: 선두 키워드 판별. ``WITH ... INSERT`` 처럼 CTE 로 감싼 DML 은
     읽기로 오판한다 — 그런 SQL 을 쓰게 되면 sqlparse 같은 파서로 올린다.
@@ -211,6 +213,9 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
             info = self.info
 
             if _is_write(clause, self._flushing):
+                # 보통은 아래 이벤트 리스너가 먼저 잡아 여기까지 오지 않는다. 남겨 두는
+                # 것은 `get_bind()` 가 `do_orm_execute`/`before_flush` 를 거치지 않는
+                # 경로(예: `Session.connection()`)로도 불리기 때문이다 — 백스톱이다.
                 if info.get(_READ_ONLY):
                     raise ReadOnlyRoutingError(
                         "읽기 전용 세션에서 쓰기를 시도했습니다. "
@@ -253,3 +258,181 @@ def create_routing_sessionmaker(
         sync_session_class=make_routing_session_class(router),
         **kwargs,
     )
+
+
+# =============================================================================
+# read-only 계약의 중앙 집행
+# =============================================================================
+# 예전에는 차단이 `RoutingSession.get_bind()` 안에만 있었다. `RoutingSession` 은
+# `DB_ROUTER_ENABLED=true` 일 때만 만들어지므로, **기본값(false)** 과 background 세션
+# 팩토리에서는 `mark_read_only()` 를 불러도 쓰기가 그대로 통과했다.
+#
+# read-only 는 replica 라우팅의 부산물이 아니라 **Dependency 계약**이다. 그래서 집행
+# 지점을 `Session` 기반 클래스의 이벤트로 옮긴다 — 어떤 sessionmaker 로 만들었든,
+# 엔진이 무엇이든 동일하게 적용된다.
+#
+# `session.info` 는 보안 경계가 아니다. 운영 배포는 read-only DB credential 또는
+# 트랜잭션 read-only 설정을 최종 방어선으로 둔다.
+#
+# 주의: 위의 `_text_is_write()` 는 **라우팅 방향**(이 구문을 writer 로 보낼까)을 정하고,
+# 아래 `_text_is_readable()` 은 **읽기 전용 세션의 거부 여부**를 정한다. 판정 방향이
+# 반대라서 한 함수로 합치지 않는다.
+
+_SQL_COMMENT = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
+_LOCKING_READ = re.compile(
+    r"\bfor\s+(?:update|share)\b|\block\s+in\s+share\s+mode\b", re.IGNORECASE
+)
+
+# 괄호 깊이 0 에 나타나면 그 구문은 읽기가 아니다.
+_TOP_LEVEL_WRITE = frozenset({"insert", "update", "delete", "replace", "merge", "into", "set"})
+_READABLE_LEAD = frozenset({"select", "with"})
+
+
+def is_read_only(session: Session | AsyncSession) -> bool:
+    """이 세션이 읽기 전용으로 표시됐는가."""
+    return bool(_session_info(session).get(_READ_ONLY))
+
+
+def assert_writable(session: Session | AsyncSession, detail: str = "") -> None:
+    """읽기 전용 세션이면 ``ReadOnlyRoutingError`` 를 낸다.
+
+    Raises:
+        ReadOnlyRoutingError: 세션이 read-only 로 표시돼 있을 때.
+    """
+    if is_read_only(session):
+        raise ReadOnlyRoutingError(
+            "읽기 전용 세션에서 쓰기를 시도했습니다"
+            f"{f' ({detail})' if detail else ''}. "
+            "쓰기에는 get_writer_db_session()/get_routed_db_session() 을 사용하세요."
+        )
+
+
+def _depth0_words(sql: str) -> list[str] | None:
+    """따옴표·역따옴표 안을 건너뛰며 괄호 깊이 0 의 단어만 모은다.
+
+    따옴표가 닫히지 않거나 괄호가 맞지 않으면 ``None`` — 호출부는 거부한다(fail-closed).
+    """
+    words: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    i = 0
+    n = len(sql)
+    while i < n:
+        char = sql[i]
+        if char in "'\"`":
+            if buf:
+                words.append("".join(buf).lower())
+                buf = []
+            quote = char
+            i += 1
+            closed = False
+            while i < n:
+                if sql[i] == "\\" and quote != "`":
+                    i += 2
+                    continue
+                if sql[i] == quote:
+                    if i + 1 < n and sql[i + 1] == quote:  # '' 로 이스케이프
+                        i += 2
+                        continue
+                    closed = True
+                    break
+                i += 1
+            if not closed:
+                return None
+            i += 1
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        if char.isalnum() or char == "_":
+            buf.append(char)
+        else:
+            if buf:
+                if depth == 0:
+                    words.append("".join(buf).lower())
+                buf = []
+        i += 1
+    if buf and depth == 0:
+        words.append("".join(buf).lower())
+    return None if depth != 0 else words
+
+
+def _text_is_readable(sql: str) -> bool:
+    """Raw SQL 문자열이 **확실히** 읽기인지 판별한다(default-deny).
+
+    parser 없이 SQL 을 완전히 분류할 수는 없다. 그래서 주석을 걷어낸 단일 문장을
+    **괄호 깊이 0 의 단어**로 훑어(`_depth0_words`), 최상위 구문이 읽기임이 확실할
+    때만 통과시킨다. CTE 정의는 전부 괄호 안에 있으므로 깊이 0 에 남는 단어가 곧
+    최상위 구문이고, 거기 쓰기 키워드가 있으면 그 문장은 쓰기다.
+
+    깊이 0 을 보는 이유는 **CTE 정의 뒤에 오는 최상위 키워드가 쓰기일 수 있기
+    때문**이다. MySQL 8.4 기준으로 이렇다.
+
+    - ``WITH c AS (...) SELECT ...`` — 읽기 (통과한다)
+    - ``WITH c AS (...) UPDATE ...`` — **쓰기** (유효한 문법이다 → 거부)
+    - ``WITH c AS (...) DELETE ...`` — **쓰기** (유효한 문법이다 → 거부)
+    - ``WITH c AS (...) INSERT ...`` — 문법 오류. INSERT 는 `WITH` 로 시작할 수 없다
+      (``INSERT INTO t WITH c AS (...) SELECT ...`` 형태만 유효하고, 이건 첫 토큰이
+      `insert` 라 아래 검사가 이미 잡는다). `REPLACE` 도 같다.
+
+    즉 위험 표면은 **UPDATE 와 DELETE 둘**이고, 깊이 0 스캔이 그 둘을 그대로 잡는다.
+    CTE 안에 DML 을 넣는 ``WITH x AS (DELETE ... RETURNING ...)`` 은 PostgreSQL
+    문법이고 MySQL 에서는 문법 오류라 이 저장소의 위협이 아니다.
+
+    fail-closed: 따옴표가 닫히지 않거나 괄호가 맞지 않아 스캔이 무너지면 거부한다.
+    판정을 넓히거나 좁히는 절차는 `docs/guides/DEVELOPMENT.md` §7.2 에 있다.
+    """
+    stripped = _SQL_COMMENT.sub(" ", sql).strip()
+    head, separator, tail = stripped.partition(";")
+    if separator and tail.strip():
+        return False  # multi-statement — 뒤 문장을 검사할 수 없다
+    head = head.strip()
+    if not head:
+        return False
+    if _LOCKING_READ.search(head):
+        return False  # SELECT ... FOR UPDATE 는 잠금을 잡는 쓰기 성격이다
+    words = _depth0_words(head)
+    if not words:
+        return False  # 스캔이 무너졌거나(fail-closed) 단어가 없다
+    if words[0] not in _READABLE_LEAD:
+        return False
+    return not any(word in _TOP_LEVEL_WRITE for word in words)
+
+
+def _statement_is_readable(clause: Any) -> bool:
+    """실행하려는 구문이 read-only 세션에서 허용되는지 판별한다(default-deny)."""
+    if isinstance(clause, UpdateBase):
+        return False  # Insert / Update / Delete / DDL
+    if isinstance(clause, Select):
+        return True
+    if isinstance(clause, TextClause):
+        return _text_is_readable(str(clause))
+    return False  # 판별 불가 — 거부
+
+
+@event.listens_for(Session, "before_flush")
+def _block_read_only_flush(session: Session, flush_context: Any, instances: Any) -> None:
+    """ORM flush(=INSERT/UPDATE/DELETE)를 read-only 세션에서 차단한다."""
+    assert_writable(session, "ORM flush")
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _block_read_only_execute(orm_execute_state: ORMExecuteState) -> None:
+    """`Session.execute()` 로 나가는 모든 구문을 검사한다.
+
+    Core DML 과 `text()` Raw SQL 이 모두 이 경계를 지난다 — 실행 지점이 하나라서
+    호출부마다 검사를 흩뿌리지 않아도 된다.
+    """
+    if not is_read_only(orm_execute_state.session):
+        return
+    if not _statement_is_readable(orm_execute_state.statement):
+        raise ReadOnlyRoutingError(
+            "읽기 전용 세션에서 읽기로 판별되지 않는 구문을 실행하려 했습니다. "
+            "SELECT 와 읽기 전용 CTE(WITH ... SELECT)만 허용되며, 최상위에 쓰기 키워드가 "
+            "있거나(WITH ... UPDATE·DELETE 포함) 잠금을 획득하거나 multi-statement 이거나 "
+            "따옴표·괄호가 맞지 않아 판별할 수 없는 문장은 기본 거부됩니다. "
+            "쓰기에는 get_writer_db_session() 을 사용하세요."
+        )
