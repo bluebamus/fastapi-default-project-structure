@@ -104,7 +104,9 @@ class ValidationException(AppException):
     입력 데이터의 유효성 검증에 실패한 경우 발생합니다.
     """
 
-    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    # starlette 1.x 에서 `HTTP_422_UNPROCESSABLE_ENTITY` 는 폐기 예고(StarletteDeprecationWarning)다.
+    # 값은 그대로 422 이고 이름만 바뀌었다.
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     error_code = "VALIDATION_ERROR"
     message = "입력 데이터 유효성 검증에 실패했습니다."
 

@@ -8,14 +8,14 @@ resolution-markers = [
 
 [[package]]
 name = "aiomysql"
-version = "0.2.0"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pymysql" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/76/2c5b55e4406a1957ffdfd933a94c2517455291c97d2b81cec6813754791a/aiomysql-0.2.0.tar.gz", hash = "sha256:558b9c26d580d08b8c5fd1be23c5231ce3aeff2dadad989540fee740253deb67", size = 114706, upload-time = "2023-06-11T19:57:53.608Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/e0/302aeffe8d90853556f47f3106b89c16cc2ec2a4d269bdfd82e3f4ae12cc/aiomysql-0.3.2.tar.gz", hash = "sha256:72d15ef5cfc34c03468eb41e1b90adb9fd9347b0b589114bd23ead569a02ac1a", size = 108311, upload-time = "2025-10-22T00:15:21.278Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/87/c982ee8b333c85b8ae16306387d703a1fcdfc81a2f3f15a24820ab1a512d/aiomysql-0.2.0-py3-none-any.whl", hash = "sha256:b7c26da0daf23a5ec5e0b133c03d20657276e4eae9b73e040b72787f6f6ade0a", size = 44215, upload-time = "2023-06-11T19:57:51.09Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/af/aae0153c3e28712adaf462328f6c7a3c196a1c1c27b491de4377dd3e6b52/aiomysql-0.3.2-py3-none-any.whl", hash = "sha256:c82c5ba04137d7afd5c693a258bea8ead2aad77101668044143a991e04632eb2", size = 71834, upload-time = "2025-10-22T00:15:15.905Z" },
 ]
 
 [[package]]
@@ -521,7 +521,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiomysql", specifier = ">=0.2.0,<0.3.0" },
+    { name = "aiomysql", specifier = ">=0.3.2,<0.4.0" },
     { name = "alembic", specifier = ">=1.15.1,<2.0.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "celery", extras = ["redis"], specifier = ">=5.4,<6.0" },
@@ -536,7 +536,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "redis", specifier = ">=5.0.0,<6.0.0" },
     { name = "scalar-fastapi", specifier = ">=1.0.0,<2.0.0" },
-    { name = "sqladmin", specifier = ">=0.20.0,<1.0.0" },
+    { name = "sqladmin", specifier = ">=0.32.0,<1.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.38,<3.0.0" },
     { name = "tzdata", specifier = ">=2026.2" },
     { name = "user-agents", specifier = ">=2.2.0,<3.0.0" },
@@ -1256,7 +1256,7 @@ wheels = [
 
 [[package]]
 name = "sqladmin"
-version = "0.24.0"
+version = "0.32.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
@@ -1265,9 +1265,9 @@ dependencies = [
     { name = "starlette" },
     { name = "wtforms" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/34/33fec68662aadddae8bbeb815653062298516d3330d68925888a0814ca03/sqladmin-0.24.0.tar.gz", hash = "sha256:186680182855c30d9b912267bd5a5f66493b15ee2f8ca296d16c420faa6cfb96", size = 1437857, upload-time = "2026-03-30T12:55:01.812Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/ea/ba6e016faf975531fd9911e3ae11093b86894d176c86b9a0ba3b8177fa4a/sqladmin-0.32.0.tar.gz", hash = "sha256:4433dd89f6442856efa8f1ed1acf4b1b8ba67abe15ca54f9364c043ed301c823", size = 1029593, upload-time = "2026-09-20T23:18:00.088Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/06/7901983e5ce10948cde3e15ea906ab031a7ab35c7521843cca1379eff611/sqladmin-0.24.0-py3-none-any.whl", hash = "sha256:ff9b9ad29723bc23334f6f37953250817e9fc2347d4bdcc3a64920dbeb5e742a", size = 1451273, upload-time = "2026-03-30T12:55:03.034Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/89/df5319e0d786a53929f9eb44711d759fd3b7fa56b5c95cbb056250b99a4b/sqladmin-0.32.0-py3-none-any.whl", hash = "sha256:4f5cff4ab8e5349a3dcad17f3a4d46a7867b54b92ac45e5626fdb96e465c127f", size = 1071265, upload-time = "2026-09-20T23:17:58.685Z" },
 ]
 
 [[package]]
@@ -1306,15 +1306,15 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "0.46.2"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", version = "4.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
     { name = "anyio", version = "4.15.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/20/08dfcd9c983f6a6f4a1000d934b9e6d626cff8d2eeb77a89a68eef20a2b7/starlette-0.46.2.tar.gz", hash = "sha256:7f7361f34eed179294600af672f565727419830b54b7b084efe44bb82d2fccd5", size = 2580846, upload-time = "2025-04-13T13:56:17.942Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/0c/9d30a4ebeb6db2b25a841afbb80f6ef9a854fc3b41be131d249a977b4959/starlette-0.46.2-py3-none-any.whl", hash = "sha256:595633ce89f8ffa71a015caed34a5b2dc1c0cdb3f0f1fbd1e69339cf2abeec35", size = 72037, upload-time = "2025-04-13T13:56:16.21Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
 ]
 
 [[package]]
