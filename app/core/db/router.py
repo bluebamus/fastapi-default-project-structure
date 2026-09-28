@@ -118,8 +118,9 @@ def mark_read_only(session: Session | AsyncSession) -> None:
     _session_info(session)[_READ_ONLY] = True
 
 
-# ``text()`` 로 쓴 구문의 선두 키워드. Core 구문(UpdateBase)과 달리 타입으로는
-# 읽기/쓰기를 알 수 없어 SQL 첫 단어를 본다.
+# ``text()`` 로 쓴 구문의 **선두** 키워드. Core 구문(UpdateBase)과 달리 타입으로는
+# 읽기/쓰기를 알 수 없어 구문의 첫 단어를 본다(CTE 뒤에 오는 최상위 쓰기 키워드는
+# 아래 `_TOP_LEVEL_WRITE` 가 맡는다).
 #
 # 오탐(읽기를 writer 로 보내는 것) 위험이 0 인 이유: 아래 단어로 **시작하는** 읽기
 # 구문이 MySQL·PostgreSQL 어느 방언에도 없다. 읽기는 SELECT·WITH·SHOW·DESCRIBE·
@@ -156,34 +157,39 @@ _TEXT_WRITE_KEYWORDS = frozenset(
     }
 )
 
-# 선행 주석(-- ... / /* ... */)과 공백을 걷어내고 첫 단어를 뽑는다.
-_LEADING_NOISE = re.compile(r"^(?:\s+|--[^\n]*\n|/\*.*?\*/)+", re.DOTALL)
-_FIRST_WORD = re.compile(r"^([A-Za-z_]+)")
-
 
 def _text_is_write(clause: Any) -> bool:
-    """``text()`` 구문이 쓰기인지 선두 키워드로 판별한다.
+    """``text()`` 구문이 쓰기인지 판별한다(쓰기면 writer).
 
     ``TextClause`` 는 ``UpdateBase`` 가 아니라서 타입만 봐서는 Raw DML 을 읽기로
     오인한다. 그러면 복제가 켜져 있을 때 **UPDATE 가 replica 로 나간다**.
     (read-only 세션의 쓰기 차단은 이 함수가 아니라 아래 ``_statement_is_readable``
     경로가 맡는다 — 방향이 반대인 별개의 판정이다.)
 
-    ponytail: 선두 키워드 판별. ``WITH ... INSERT`` 처럼 CTE 로 감싼 DML 은
-    읽기로 오판한다 — 그런 SQL 을 쓰게 되면 sqlparse 같은 파서로 올린다.
-    10억 건 프로덕션 쿼리 덤프 실측에서 CTE 로 감싼 DML 은 0건이었다.
+    read-only 쪽과 같은 스캐너(`_depth0_words`, 아래에 정의)를 쓴다. 선두 키워드만
+    보면 ``WITH r AS (...) UPDATE ...`` 처럼 CTE 로 감싼 DML 이 첫 단어 `WITH` 때문에
+    읽기로 새어 나갔다. 깊이 0 단어에 최상위 쓰기 키워드가 있으면 쓰기다.
+
+    fail-safe 방향이 read-only 쪽과 반대다: 스캔이 무너지면(`None`) **쓰기**로 본다.
+    읽기로 오판하면 DML 이 replica 로 새지만, 쓰기로 오판해 봐야 SELECT 하나가
+    writer 로 갈 뿐이다.
     """
-    sql = _LEADING_NOISE.sub("", str(clause))
-    match = _FIRST_WORD.match(sql)
-    if match is None:
+    sql = _SQL_COMMENT.sub(" ", str(clause))
+    words = _depth0_words(sql)
+    if words is None:
+        return True  # 스캔이 무너졌다 — 안전한 쪽(writer)으로 보낸다
+    if not words:
         return False
 
-    keyword = match.group(1).upper()
-    if keyword in _TEXT_WRITE_KEYWORDS:
+    lead = words[0]
+    if lead.upper() in _TEXT_WRITE_KEYWORDS:
+        return True
+    # CTE 로 감싼 DML — `WITH ... UPDATE|DELETE` 는 유효한 MySQL 문법이다.
+    if lead == "with" and any(word in _TOP_LEVEL_WRITE for word in words):
         return True
     # 잠금 읽기(SELECT ... FOR UPDATE)는 primary 로 가야 한다 — replica 에서 잠가도
     # 의미가 없고, 잠근 행을 곧이어 쓰는 것이 보통이다.
-    return keyword == "SELECT" and "FOR UPDATE" in sql.upper()
+    return lead in _READABLE_LEAD and "FOR UPDATE" in sql.upper()
 
 
 def _is_write(clause: Any, flushing: bool) -> bool:
@@ -276,7 +282,8 @@ def create_routing_sessionmaker(
 #
 # 주의: 위의 `_text_is_write()` 는 **라우팅 방향**(이 구문을 writer 로 보낼까)을 정하고,
 # 아래 `_text_is_readable()` 은 **읽기 전용 세션의 거부 여부**를 정한다. 판정 방향이
-# 반대라서 한 함수로 합치지 않는다.
+# 반대라서 한 함수로 합치지 않는다 — 스캐너(`_depth0_words`)만 공유한다. 실패 방향도
+# 반대다: 라우팅은 fail-safe(쓰기로), 읽기 전용은 fail-closed(거부).
 
 _SQL_COMMENT = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
 _LOCKING_READ = re.compile(

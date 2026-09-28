@@ -290,9 +290,9 @@ DB `max_connections` 안에 들어오는지 배포 전에 계산합니다.
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
-- 한계: **라우팅** 판별(`_text_is_write`)은 선두 키워드 기준이라 `WITH … DELETE` 같은 CTE DML 을
-  읽기로 오판해 replica 로 보낼 수 있습니다(residual-risk R-001). 읽기 세션의 **차단** 판별은 괄호
-  깊이 0 스캔이라 `WITH … DELETE` 를 거부합니다 — 두 판정은 방향이 반대인 별개입니다.
+- **라우팅** 판별(`_text_is_write`)과 읽기 세션의 **차단** 판별(`_text_is_readable`)은 방향이 반대인
+  별개지만 같은 괄호 깊이 0 스캐너(`_depth0_words`)를 씁니다. 둘 다 `WITH … UPDATE/DELETE` 를
+  잡습니다(ADR-036). 스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.
   sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
   (`MYSQL_REPLICA_USER`)을 함께 씁니다.
