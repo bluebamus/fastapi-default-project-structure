@@ -103,3 +103,51 @@ def test_upsert_is_not_a_keyword():
 def test_explain_analyze_is_still_a_read():
     """`EXPLAIN ANALYZE` 는 EXPLAIN 으로 시작하므로 ANALYZE 추가와 충돌하지 않는다."""
     assert _is_write(text("EXPLAIN ANALYZE SELECT * FROM t"), flushing=False) is False
+
+
+# ---------------------------------------------------------------------------
+# CTE 로 감싼 DML — 선두 키워드가 `WITH` 라 예전 판정은 읽기로 봤다(R-001 의 라우팅 절반).
+# 판정을 read-only 쪽과 같은 괄호 깊이 0 스캔(`_depth0_words`)으로 옮긴 뒤의 계약.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH r AS (SELECT id FROM item) UPDATE item SET name = 'x'",
+        "with r as (select id from item) update item set name = 'x'",
+        "WITH r AS (SELECT id FROM item) DELETE FROM item WHERE id IN (SELECT id FROM r)",
+        "/* 주석 */ WITH r AS (SELECT 1) UPDATE t SET a = 1",
+        "WITH r AS (SELECT id FROM item) SELECT id FROM r FOR UPDATE",
+    ],
+)
+def test_cte_wrapped_dml_is_a_write(sql):
+    """CTE 로 감싼 DML 은 writer 로 가야 한다 — replica 로 새면 조용히 잘못된 서버에 쓴다."""
+    assert _is_write(text(sql), flushing=False) is True, f"쓰기로 판정되지 않았다: {sql}"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 'abc",  # 따옴표 미종료
+        "SELECT * FROM (t",  # 괄호 불일치
+        "WITH r AS (SELECT 1 SELECT * FROM r",
+    ],
+)
+def test_broken_scan_routes_to_writer(sql):
+    """스캔이 무너지면 writer 로 — 읽기로 오판하면 DML 이 replica 로 샌다."""
+    assert _is_write(text(sql), flushing=False) is True, f"fail-safe 가 동작하지 않았다: {sql}"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH r AS (SELECT id FROM item) SELECT id FROM r",
+        "SELECT * FROM t WHERE note = 'please DELETE this row'",
+        "SELECT `update` FROM t",
+        "SELECT * FROM t WHERE a = 1 -- UPDATE t SET a = 2",
+    ],
+)
+def test_reads_that_merely_mention_write_words(sql):
+    """문자열·역따옴표·주석 안의 쓰기 단어는 판정에 쓰이지 않는다."""
+    assert _is_write(text(sql), flushing=False) is False, f"읽기가 쓰기로 판정됐다: {sql}"
