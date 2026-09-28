@@ -118,10 +118,20 @@ env = [
     "ENV=test",
 ]
 
-# 필터 경고
+# 폐기 예고는 게이트에서 **실패**시킨다. 블랭킷 `ignore` 는 앞으로 올 모든 폐기
+# 예고를 조용히 삼킨다 — 실제로 pytest-asyncio 경고 하나가 그렇게 묻혀 있었다.
+#
+# `UserWarning` 은 켜지 않는다. `StarletteDeprecationWarning` 이 `UserWarning` 을
+# 상속해서, 켜면 서드파티 폐기 예고 하나가 빌드 전체를 인질로 잡는다.
+# (남아 있는 `fastapi/testclient.py` 의 httpx 폐기 예고 1건이 그것이다 — 보이는 채로
+# 둔다. `ignore` 도 넣지 않는다.)
+#
+# 예외 목록이 비어 있는 이유: Python 3.12 의 sqlite3 기본 datetime 어댑터 폐기
+# (aiosqlite 경유 48건)는 `ignore` 대신 루트 `conftest.py` 의 어댑터 등록으로 원인을
+# 없앴다. 여기에 줄을 더할 때는 **반드시 이유를 주석으로** 남긴다.
 filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
 ]
 
 
