@@ -460,8 +460,8 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
 - allowlist 는 DB 의 전체 컬럼이 아니라 **그 쿼리가 허용한 키**만 담습니다.
 - `query_name` 을 항상 넘기고, SQL 본문과 params 를 직접 로그에 남기지 않습니다.
 - 읽기 세션에서 Raw DML 을 실행하면 `DB_ROUTER_ENABLED` 와 무관하게 `ReadOnlyRoutingError` 입니다.
-  `WITH … UPDATE/DELETE` 같은 CTE DML 도 거부됩니다(§7.2). 다만 **라우팅** 방향 판별은 선두 키워드
-  기준이라 CTE DML 을 replica 로 보낼 수 있습니다(ARCHITECTURE §4.3).
+  `WITH … UPDATE/DELETE` 같은 CTE DML 도 거부됩니다(§7.2). **라우팅** 방향 판별도 같은 스캐너를 쓰므로
+  CTE DML 은 writer 로 갑니다(§7.1).
 - 안전 검사·테스트 통과가 DB 권한·방언·실행 계획 검토를 대신하지 않습니다.
 
 ### 7.1 쓰기 판별 키워드를 고칠 때
@@ -470,11 +470,27 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
 `_text_is_write` → `_is_write` → `RoutingSession.get_bind()` 경로에서만 쓰이므로, 단어를 넣고 빼는 것이
 곧 라우팅 판정을 바꿉니다.
 
+판정 방식은 **괄호 깊이 0 스캔**입니다(ADR-036) — §7.2 와 같은 `_depth0_words()` 를 씁니다. 순서는
+이렇습니다.
+
+1. 주석을 걷어내고 깊이 0 의 단어를 모읍니다. 스캔이 무너지면(따옴표 미종료·괄호 불일치) **쓰기**로
+   봅니다 — 라우팅에서는 그쪽이 안전한 방향입니다.
+2. **선두** 단어가 `_TEXT_WRITE_KEYWORDS` 에 있으면 쓰기입니다.
+3. 선두가 `WITH` 이고 깊이 0 에 `_TOP_LEVEL_WRITE`(`update`·`delete`·`insert`·…)가 있으면 쓰기입니다 —
+   `WITH r AS (…) UPDATE …` 같은 CTE DML 이 여기서 잡힙니다.
+4. 선두가 `SELECT`/`WITH` 이고 `FOR UPDATE` 가 있으면 잠금 읽기라 writer 로 보냅니다.
+
+따옴표·역따옴표·주석 안의 단어는 스캐너가 건너뛰므로 `'please DELETE this row'` 나 `` `update` `` 는
+판정에 쓰이지 않습니다. `_TEXT_WRITE_KEYWORDS` 는 **선두** 단어만, `_TOP_LEVEL_WRITE` 는 CTE 뒤의
+최상위 구문만 봅니다 — 두 집합은 목적이 달라 합치지 않습니다(합치면 `EXPLAIN ANALYZE SELECT` 나
+`SELECT … INTO` 같은 문장에서 판정이 섞입니다).
+
 | 상황 | 판단 |
 |---|---|
 | Raw `text()` 로 쓰거나 서버 상태를 바꾸는 구문인데 집합에 없다 | **추가한다** |
 | 그 단어로 **시작하는 읽기 구문이 없다** | 추가 비용이 0 — 읽기가 writer 로 새는 오탐이 생길 수 없다 |
 | 그 단어로 시작하는 읽기 구문이 있다 | 오탐 범위를 먼저 보고 정한다 |
+| CTE 뒤에 올 수 있는 최상위 쓰기 구문이다 | `_TOP_LEVEL_WRITE`(§7.2 와 공용) 쪽에 넣는다 |
 | `BEGIN`·`START`·`COMMIT`·`ROLLBACK`·`SAVEPOINT` 류 | **넣지 않는다** — 아래 참조 |
 
 - **애매하면 넣습니다.** 쓰기를 읽기로 오판하면 DML 이 replica 로 새어 데이터가 사라집니다. 읽기를
@@ -485,10 +501,11 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
   `SET NAMES`·`SET SESSION sql_mode`·`SET AUTOCOMMIT` 같은 세션 스코프이고 드라이버가 핸드셰이크에
   내보내 `get_bind()` 를 타지 않습니다(`SET GLOBAL`·`SET @변수` 는 0건). 지금 세분화는 측정된 비용이
   0 인 상태의 조기 최적화입니다. 앱 코드가 `text("SET ...")` 을 부르는 것이 관측되면 그때 다시 봅니다.
-- **파서(`sqlparse`)를 도입하지 않습니다.** 선두 키워드 방식이 못 잡는 구조 — CTE 로 감싼
-  DML(`WITH … INSERT/UPDATE/DELETE`), 힌트 주석으로 시작하는 문장, 다중문장 DML,
-  `SELECT … FOR UPDATE` — 가 10억 건(1,022,185,501건 실행 / 고유 지문 1,735개) 덤프에서 **0건**이었습니다.
-  실측이 0 에 가까우면 의존성을 늘리지 않습니다.
+- **파서(`sqlparse`)를 도입하지 않습니다.** 10억 건(1,022,185,501건 실행 / 고유 지문 1,735개) 덤프에서
+  CTE 로 감싼 DML·힌트 주석 선두 문장·다중문장 DML·`SELECT … FOR UPDATE` 는 **0건**이었고, 그중
+  CTE DML·주석 선두·`FOR UPDATE` 는 깊이 0 스캔이 이미 잡습니다. 실측이 0 에 가까우면 의존성을
+  늘리지 않습니다. 남는 사각은 다중문장(`SELECT 1; DELETE …`)입니다 — 라우팅은 선두 단어로 판정하고,
+  드라이버가 기본적으로 다중문장을 막습니다. 읽기 전용 차단(§7.2)은 다중문장 자체를 거부합니다.
 - **바꿀 때 반드시**: `tests/core/test_router_raw_dml.py` 에 케이스를 추가하고, 근거를 CRP
   `orm-raw-repository` 그룹의 ADR(`docs/crp/groups/orm-raw-repository/design-baseline.md`)로 남깁니다.
 - 덤프 근거의 한계: 수집 IP 69개 중 일부가 TLS 라 암호화 구간은 수집되지 않았고, 덤프는 기존 프로덕션

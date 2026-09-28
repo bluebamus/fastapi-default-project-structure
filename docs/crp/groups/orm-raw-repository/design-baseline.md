@@ -54,6 +54,10 @@
 | REQ-020 | 2026-09-21 | "pytest도 9로 테스트 및 고도화를 진행해줘" | 테스트 하네스를 `pytest 9.1.1` · `pytest-asyncio 1.4.0` 으로 올리고(PYSEC-2026-1845 해소), 0.x → 1.x 메이저 전환에서 deprecated 된 설정을 실제 대체물로 바꾼다. 기준선(`-m "not mysql"` 577 passed)을 유지한다 | Active | ADR-033 |
 | REQ-021 | 2026-09-21 | "해결 방안을 제시하고 다음 작업을 정리해줘" → "진행해줘" | 남은 권고 19건 보고 / 고유 10건 / 3패키지(`starlette` · `sqladmin` · `aiomysql`)를 **한 커밋으로 함께** 상향해 0건으로 만든다. starlette 은 0.46 → 1.x 메이저 전환이라 `TestClient` · 커스텀 미들웨어 · SQLAdmin 화면을, aiomysql 은 드라이버 교체라 MySQL 8.4 실제 통합 테스트를 함께 검증한다 | Active | ADR-034 |
 | REQ-022 | 2026-09-21 | "해결 방안을 제시하고 다음 작업을 정리해줘" → "진행해줘" | 같은 권고가 다시 초록불 아래 쌓이지 않도록 `scripts/review_gate.py` 에 **의존성 감사 단계**를 넣는다. 상향(REQ-021) 뒤에 넣어 0건 상태에서 초록으로 시작한다 | Active | ADR-035 |
+| ADR-036 | 2026-09-28 | `_text_is_write()` 가 `_LEADING_NOISE`/`_FIRST_WORD` 정규식 대신 **`_SQL_COMMENT` + `_depth0_words()`** (읽기 전용 판정이 쓰던 그 스캐너)를 쓴다. ① 선두 단어가 `_TEXT_WRITE_KEYWORDS` 에 있으면 쓰기 ② 선두가 `with` 이고 깊이 0 에 `_TOP_LEVEL_WRITE` 가 있으면 쓰기 ③ 선두가 `select`/`with` 이고 `FOR UPDATE` 가 있으면 쓰기 ④ 스캔이 무너지면(`None`) **쓰기**(fail-safe). 두 상수 `_TEXT_WRITE_KEYWORDS`·`_TOP_LEVEL_WRITE` 는 **합치지 않는다**. | 판정기가 둘인데 한쪽만 괄호 깊이 0 스캔이었다 — 읽기 전용 세션은 `WITH … UPDATE` 를 거부하는데 라우팅은 같은 문장을 replica 로 보냈다(R-001 잔여 절반). 새 알고리즘을 만들지 않고 같은 파일의 스캐너를 재사용했다. fail 방향이 반대인 이유: 읽기로 오판하면 DML 이 replica 로 새지만, 쓰기로 오판해봐야 SELECT 하나가 writer 로 갈 뿐이다. 상수를 합치지 않은 이유: `_TEXT_WRITE_KEYWORDS` 는 **선두**만 보는 집합이라 `FLUSH`·`KILL`·`ANALYZE` 처럼 문장 중간에 나타나면 오탄이 되는 단어를 담고(`EXPLAIN ANALYZE SELECT` 가 writer 로 간다), `_TOP_LEVEL_WRITE` 는 `into`·`set` 처럼 **절 단어**를 담아 선두 판정에 쓰면 `UPSERT INTO …` 같은 비문법까지 쓰기로 끌어올린다. 의미가 섞이므로 스캐너만 공유한다. 회귀 테스트: `tests/core/test_router_raw_dml.py`(구현 전 8건 실패 확인, 변이 검증에서 7건 재실패). | Accepted | — |
+| ADR-037 | 2026-09-28 | `pyproject.toml` 의 `filterwarnings` 를 `error::DeprecationWarning` · `error::PendingDeprecationWarning` 으로 바꾼다. **예외 목록은 비워 둔다.** `-W always` 실측에서 나온 48건(aiosqlite 경유 sqlite3 기본 date/datetime 어댑터 폐기)는 `ignore` 가 아니라 루트 `conftest.py` 에서 `sqlite3.register_adapter(datetime/date, ...)` 로 **원인을 없앤다**. 형식은 폐기된 기본 어댑터와 같게(`datetime` 은 공백 구분자) 맞추고, converter 는 등록하지 않는다. `error::UserWarning` 은 켜지 않는다. | 블랭킷 억제는 지금 있는 경고뿐 아니라 **앞으로 올 모든 폐기 예고**를 게이트에서 안 보이게 만든다 — 실제로 pytest-asyncio 경고 하나가 그렇게 묻혀 있었다(ADR-033 에서야 드러났다). aiosqlite 경고를 `ignore` 로 덮지 않은 이유: 서드파티 버그가 아니라 Python 3.12 가 "어댑터를 직접 등록하라" 고 요구하는 것이고, 등록하면 경고가 사라진다(실측: 50건 → 2건). `UserWarning` 을 켜지 않는 이유: `StarletteDeprecationWarning` 이 `UserWarning` 을 상속해(설치본 `starlette/exceptions.py` 확인), 켜면 우리가 고칠 수 없는 서드파티 폐기 예고 1건이 빌드 전체를 인질로 잡는다. 그 1건은 `ignore` 도 넣지 않고 보이는 채로 둔다. 실측: 전 50경고(datetime 36 + date 12 + Starlette 1 + ResourceWarning 1) → 후 2경고. | Accepted | — |
+| REQ-023 | 2026-09-28 | "라우팅 판정의 CTE 사각지대를 없애라" | `_text_is_write()` 가 선두 키워드만 보아 `WITH … UPDATE` 를 읽기로 오판한다. 이미 있는 `_depth0_words()` 스캐너를 재사용해 맞춘다(R-001 잔여 절반) | Active | ADR-036 |
+| REQ-024 | 2026-09-28 | "경고 위생 — 승인안 가" | 블랭킷 `ignore::DeprecationWarning` 을 `error::` 로 바꿔 폐기 예고를 게이트에서 실패시킨다. 예외는 이유 주석과 함께만, `UserWarning` 은 건들지 않는다 | Active | ADR-037 |
 
 ## 3. 설계 결정 기록 (ADR — 확정 후 불변)
 
@@ -152,6 +156,8 @@
 - v0.19 (2026-09-21): REQ-020 · ADR-033 등록 — 테스트 하네스를 pytest 9.1.1 · pytest-asyncio 1.4.0 으로 상향(PYSEC-2026-1845 해소), `asyncio_default_fixture_loop_scope` 명시. residual-risk 의 2026-09-21 절에서 pytest 권고를 해소 표기.
 - v0.20 (2026-09-21): REQ-021 · ADR-034 등록 — `starlette 1.6.0` · `sqladmin 0.32.0` · `aiomysql 0.3.2` 를 한 커밋으로 상향해 남은 권고 19건을 0건으로 만듦. residual-risk 의 2026-09-21 절에서 세 패키지를 해소 표기.
 - v0.21 (2026-09-21): REQ-022 · ADR-035 등록 — `review_gate.py` 에 `pip-audit` 감사 단계 추가. residual-risk 의 2026-09-21 절에서 "게이트가 이것을 보지 못한다" 를 해소 표기.
+- v0.22 (2026-09-28): REQ-023 · ADR-036 등록 — `_text_is_write()` 를 괄호 깊이 0 스캔으로 전환해 CTE 로 감온 DML 을 writer 로 보낸다. residual-risk R-001 을 완전 해소 표기.
+- v0.23 (2026-09-28): REQ-024 · ADR-037 등록 — `filterwarnings` 를 `error::` 로 전환하고 sqlite3 어댑터를 루트 `conftest.py` 에서 직접 등록해 aiosqlite 폐기 경고 48건의 원인을 없앱다.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**
