@@ -187,9 +187,14 @@ def _text_is_write(clause: Any) -> bool:
     # CTE 로 감싼 DML — `WITH ... UPDATE|DELETE` 는 유효한 MySQL 문법이다.
     if lead == "with" and any(word in _TOP_LEVEL_WRITE for word in words):
         return True
-    # 잠금 읽기(SELECT ... FOR UPDATE)는 primary 로 가야 한다 — replica 에서 잠가도
-    # 의미가 없고, 잠근 행을 곧이어 쓰는 것이 보통이다.
-    return lead in _READABLE_LEAD and "FOR UPDATE" in sql.upper()
+    # 잠금 읽기(`FOR UPDATE` · `FOR SHARE` · `LOCK IN SHARE MODE`)는 primary 로
+    # 가야 한다 — replica 에서 잠가도 의미가 없고, 잠근 행을 곧이어 쓰는 것이 보통이다.
+    # 읽기 전용 가드와 **같은** `_LOCKING_READ` 를 쓴다. 예전에는 이 줄만 따로
+    # `"FOR UPDATE" in sql.upper()` 로 판정해서, 같은 개념이 두 군데 다르게 정의돼
+    # 공유 잠금(`FOR SHARE`)이 라우팅에서만 새어 나갔다.
+    # 원본 문자열이 아니라 `words` 를 본다 — 이미 따옴표 안을 건너뛰고 공백을
+    # 정규화한 결과라, `WHERE note = 'for share'` 같은 리터럴에 걸리지 않는다.
+    return lead in _READABLE_LEAD and _LOCKING_READ.search(" ".join(words)) is not None
 
 
 def _is_write(clause: Any, flushing: bool) -> bool:
