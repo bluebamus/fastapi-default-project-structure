@@ -55,3 +55,27 @@
   venv 에 `aiomysql==0.2.0` 을 되돌리자 해당 항목이 패키지명과 함께 `[FAIL]` 로 떴다.
 - 재현: `uv run --with pip-audit python -m pip_audit`
 
+
+## 2026-09-29 — Redis 테스트 포트가 두 변수다 (ADR-039 측정 중 드러남)
+
+`tests/integration/test_uvicorn_lifecycle.py` 는 `REDIS_HOST`/`REDIS_PORT` 로 접속을 확인하고,
+닿지 않으면 **모듈 전체를 skip** 한다. 그런데 컨테이너 발행 포트는 `REDIS_TEST_PORT` 다
+(`compose.test.yaml`). 둘은 **다른 변수**이고, 로컬 6379 가 이미 쓰이고 있어 포트를 옮길 때
+`REDIS_TEST_PORT` 만 주면 테스트는 여전히 6379 를 보고 **조용히 3건이 skip 된다**.
+
+실측(2026-09-29): `REDIS_TEST_PORT=6381` 만 → `609 passed, 3 skipped`.
+`REDIS_PORT=6381` 을 함께 주면 → `612 passed, 0 skipped`.
+
+**왜 위험한가.** 하필 그 3건이 uvicorn 수명주기(정상 종료·신호 처리·큐 로그 배수) 검증이다.
+uvicorn 을 0.34 → 0.54 로 올리는 판단의 근거가 되어야 할 테스트가, 올리는 순간에 안 돌면서
+초록으로 보인다. R-003(MySQL skip)과 같은 부류이고, MySQL 쪽은 ADR-008 로 **단일 출처**를
+만들고 게이트 항목까지 두었는데 Redis 에는 그 장치가 없다.
+
+`compose.test.yaml` 주석에 두 변수를 함께 주라고 적혀 있으므로 **문서화된 계약**이지
+버그는 아니다. 다만 "적혀 있다" 와 "안 주면 실패한다" 는 다르다 — 지금은 안 주면 skip 이다.
+
+**해소 방안(미착수, 정책 판단 필요).** ① MySQL 의 ADR-008 처럼 `REDIS_TEST_PORT` 단일 출처로
+모으고 게이트에 정합 검사를 둔다. ② 또는 `--redis-required` 옵션을 만들어(R-003 완화와 같은
+방식) 수렴 판정 자리에서는 skip 을 실패로 바꾼다. ②가 R-003 의 전례를 그대로 쓰므로 싸다.
+
+- 재현: `MYSQL_TEST_PORT=3311 REDIS_TEST_PORT=6381 uv run python -m pytest -q` 의 skip 3건
