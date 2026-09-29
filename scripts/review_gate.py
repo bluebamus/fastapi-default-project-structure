@@ -66,7 +66,31 @@ def report(name: str, ok: bool, detail: str = "") -> None:
         failures.append(f"{name}: {detail}" if detail else name)
 
 
-def run_tool(name: str, args: list[str], tail_lines: int = 1) -> None:
+#: pytest 요약에 이것들이 0 이 아닌 개수로 있으면 "돌았는데 통과" 가 아니다.
+#: `skipped` 는 인프라가 없어 **안 돈** 것이고, `deselected` 는 전체를 돌린다면서
+#: 일부를 골라낸 것이다 — 어느 쪽도 전체 통과의 근거가 될 수 없다(residual-risk R-003).
+_BAD_OUTCOMES = ("skipped", "xfailed", "xpassed", "deselected")
+
+
+#: pytest 는 파이프로 캡처해도 요약에 ANSI 색상 코드를 섞는다. 그대로 두면
+#: `\x1b[1m3 skipped` 가 되어 `3` 앞 글자가 `m`(단어 문자)이라 `\b` 가 성립하지
+#: 않는다 — 정규식이 **아무것도 못 잡으면서 게이트는 초록**이 된다. 실측으로 확인했다.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _forbidden_outcomes(log: str) -> list[str]:
+    """pytest 요약에서 허용하지 않는 결과를 찾는다.
+
+    `1 skipped` 처럼 **0 이 아닌 개수**만 잡는다. `0 skipped` 도 정상 출력에 나오므로
+    그것까지 실패로 보면 게이트가 영원히 빨간불이 된다.
+    """
+    plain = _ANSI.sub("", log)
+    return [o for o in _BAD_OUTCOMES if re.search(rf"\b[1-9][0-9]* {o}\b", plain)]
+
+
+def run_tool(
+    name: str, args: list[str], tail_lines: int = 1, *, forbid_skips: bool = False
+) -> None:
     proc = subprocess.run(  # noqa: S603
         [str(PYTHON), *args],
         cwd=REPO_ROOT,
@@ -75,11 +99,26 @@ def run_tool(name: str, args: list[str], tail_lines: int = 1) -> None:
         encoding="utf-8",
         errors="replace",
     )
+    output = (proc.stdout or "") + (proc.stderr or "")
     tail = (proc.stdout or proc.stderr or "").strip().splitlines()
     # 한 줄만 보여 주면 pip-audit 처럼 표로 답하는 도구는 **어느 패키지가 걸렸는지**가
     # 잘려 나간다. 실패한 항목만 꼬리를 길게 잡는다(통과 시 출력은 종전대로 없음).
     detail = "" if proc.returncode == 0 else "\n       ".join(tail[-tail_lines:])
-    report(name, proc.returncode == 0, detail)
+
+    # returncode 가 0 이어도 **안 돈 것**이 섞여 있으면 통과로 보지 않는다. 통과 개수만
+    # 읽으면 인프라가 없어 빠진 테스트가 초록 뒤에 숨는다 — 실제로 Redis 포트 하나
+    # 때문에 uvicorn 수명주기 3건이 그렇게 빠져 있었다(2026-09-29).
+    bad = _forbidden_outcomes(output) if forbid_skips else []
+    if bad:
+        # `-rsxX` 가 찍은 사유 줄을 함께 보여 준다. 무엇이 왜 안 돌았는지 모르면 고칠 수 없다.
+        # 이 줄들도 ANSI 로 시작하므로(`\x1b[33mSKIPPED`) 걷어내고 판별한다.
+        plain_tail = [_ANSI.sub("", ln) for ln in tail]
+        reasons = [ln for ln in plain_tail if ln.startswith(("SKIPPED", "XFAIL", "XPASS"))]
+        detail = f"요약에 {' · '.join(bad)} 가 있다 — 안 돈 것은 통과가 아니다"
+        if reasons:
+            detail += "\n       " + "\n       ".join(reasons[:10])
+
+    report(name, proc.returncode == 0 and not bad, detail)
 
 
 def iter_source_files(*relative: str):
@@ -515,7 +554,14 @@ def main() -> int:
     print("=" * 70)
 
     if not args.fast:
-        run_tool("pytest", ["-m", "pytest", "-q", "--basetemp", ".pytest_tmp"])
+        run_tool(
+            "pytest",
+            # `-rsxX` 는 skip/xfail 의 **사유**를 찍는다. 사유 없이 조용한 skip 만
+            # 잡아내면 왜 안 돌았는지 알 수 없어 고칠 수가 없다.
+            ["-m", "pytest", "-q", "-rsxX", "--basetemp", ".pytest_tmp"],
+            tail_lines=15,
+            forbid_skips=True,
+        )
     run_tool("ruff check", ["-m", "ruff", "check", "."])
     run_tool("ruff format --check", ["-m", "ruff", "format", "--check", "."])
     run_tool("mypy", ["-m", "mypy", ".", "--cache-dir", ".mypy_tmp"])
