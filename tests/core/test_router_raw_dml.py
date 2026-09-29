@@ -151,3 +151,43 @@ def test_broken_scan_routes_to_writer(sql):
 def test_reads_that_merely_mention_write_words(sql):
     """문자열·역따옴표·주석 안의 쓰기 단어는 판정에 쓰이지 않는다."""
     assert _is_write(text(sql), flushing=False) is False, f"읽기가 쓰기로 판정됐다: {sql}"
+
+
+# ---------------------------------------------------------------------------
+# 공유 잠금 읽기도 writer 로 — ADR-038.
+# 예전에는 이 경로만 `"FOR UPDATE" in sql.upper()` 로 따로 판정해서, 읽기 전용 가드가
+# 쓰던 `_LOCKING_READ`(FOR UPDATE · FOR SHARE · LOCK IN SHARE MODE)와 어긋나 있었다.
+# 같은 개념이 두 군데 다르게 정의되면 한쪽만 조용히 새 나간다.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM t FOR SHARE",
+        "select * from t for share",
+        "SELECT * FROM t LOCK IN SHARE MODE",
+        "SELECT * FROM t lock  in   share  mode",
+        "SELECT * FROM t FOR UPDATE",
+        "SELECT * FROM t FOR SHARE NOWAIT",
+        "SELECT * FROM t FOR UPDATE SKIP LOCKED",
+        "WITH r AS (SELECT id FROM item) SELECT id FROM r FOR SHARE",
+    ],
+)
+def test_shared_locking_reads_go_to_writer(sql):
+    """잠금 읽기는 replica 에서 잠가도 의미가 없다 — 배타·공유 모두 primary 로 간다."""
+    assert _is_write(text(sql), flushing=False) is True, f"writer 로 가지 않았다: {sql}"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT share FROM t",  # 컬럼 이름일 뿐이다
+        "SELECT * FROM shares",
+        "SELECT * FROM t WHERE note = 'for share'",  # 따옴표 안 — 잠금이 아니다
+        "SELECT forupdate FROM t",
+    ],
+)
+def test_lock_lookalikes_stay_on_reader(sql):
+    """`share`·`update` 가 단어로 들어 있다고 잠금은 아니다 — 읽기는 reader 로 남는다."""
+    assert _is_write(text(sql), flushing=False) is False, f"읽기가 writer 로 샜다: {sql}"
