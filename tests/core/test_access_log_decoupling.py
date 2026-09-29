@@ -8,12 +8,13 @@ These tests verify that:
 
 import importlib
 import importlib.util
+from pathlib import Path
 
 
 def test_middleware_does_not_import_home():
     """Middleware source must not reference app.home or app.features.home."""
     src = importlib.util.find_spec("app.core.middlewares.user_info_middleware").origin
-    text = open(src, encoding="utf-8").read()
+    text = Path(src).read_text(encoding="utf-8")
     assert "app.home" not in text and "app.features.home" not in text
 
 
