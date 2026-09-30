@@ -167,6 +167,14 @@
 - v0.24 (2026-09-29): REQ-025 · ADR-038 등록 — 잠금 읽기 판정을 라우팅·가드 양쪽이 같은 `_LOCKING_READ` 로 보도록 일원화(`FOR SHARE`·`LOCK IN SHARE MODE` 포함). 아울러 `tests/core/test_access_log_decoupling.py` 의 닫지 않는 파일 핸들을 `Path.read_text()` 로 바꿔 ADR-037 실측에 남아 있던 `ResourceWarning` 1건을 없앴다.
 - v0.25 (2026-09-29): REQ-026 · ADR-039 등록 — `redis 5.3.1 → 6.4.0`(천장은 `kombu[redis]` 의 `<6.5`), `uvicorn 0.34.3 → 0.54.0`. 권고 0건 상태에서의 격차 해소이고, 두 패키지만 lock 에서 움직였다. 측정 중 `REDIS_TEST_PORT` 만으로는 uvicorn 수명주기 테스트 3건이 조용히 skip 된다는 것을 발견해 residual-risk 에 기록.
 - v0.26 (2026-09-29): REQ-027 · ADR-040 등록 — 게이트 pytest 단계가 요약의 `skipped`/`xfailed`/`xpassed`/`deselected` 를 실패로 본다. 판정 전 ANSI 제거가 핵심이며(없으면 단어 경계가 깨져 조용히 무력화된다) 회귀 테스트 10건과 변이 검증을 함께 뒀다. 적-녹 실증 포함.
+- v0.27 (2026-09-30): 문서 검수(새 REQ/ADR 없음) — 살아 있는 서술을 코드와 대조해 정정했다. README 의
+  `Uvicorn 0.34`·`redis-py 5`(ADR-039 로 0.54·6.4.0), 게이트 표에 빠져 있던 pip-audit 단계와 skip 거부
+  (ADR-035·ADR-040), ARCHITECTURE §3.2·§4.2 의 "세션 의존성의 `except` 가 rollback 한다"(ADR-031 로
+  삭제된 코드), ARCHITECTURE §4.3·DEVELOPMENT §7.1 의 잠금 읽기가 `FOR UPDATE` 뿐이라는 서술(ADR-038 로
+  `_LOCKING_READ` 3형태·깊이 0 단어 기준), `feature-development-guide.html` 의 "라우팅은 선두 키워드
+  기준이라 CTE DML 을 replica 로 보낼 수 있다"(ADR-036 으로 해소). `scripts/review_gate.py` 독스트링의
+  번호 목록을 이름 목록으로 바꾸고 누락돼 있던 `pip-audit`·`check_process_level_tests_collected` 를
+  넣었다 — 번호 12 가 charter 와 서로 다른 검사를 가리키고 있었다.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

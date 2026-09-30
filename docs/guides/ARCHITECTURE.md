@@ -157,7 +157,7 @@ app.include_router(catalog.router, prefix="/api")
               → 기능 의존성 get_<name>_service[_readonly] → Service(db_session)
      → View 본문: Service 유스케이스 호출 → (쓰기면) await service.commit() → 응답 DTO
      → 응답 → UserInfoMiddleware 가 접속 로그 저장 태스크 제출 (§10)
-     → 의존성 teardown: 예외로 빠졌으면 rollback, 세션 close
+     → 의존성 teardown: 세션 close (닫히면서 ROLLBACK 이 나간다)
 ```
 
 | 계층 | 하는 일 | 하지 않는 일 |
@@ -193,7 +193,8 @@ async def create_product(payload: ProductCreate, service: CatalogService = Depen
   모든 쓰기 핸들러(catalog·blog·reply·sns·user·auth)가 이 순서이며, DTO 검증이 실패하면 커밋 0회로
   500 이 됩니다(`tests/test_write_dto_before_commit.py`). reports 스냅샷 적재는 Service 가 커밋 전에
   응답 DTO 를 만들어 돌려줍니다.
-- **예외**: 커밋이 실행되지 않고 세션 의존성의 `except` 가 `rollback()` 후 재전파합니다.
+- **예외**: 커밋이 실행되지 않고 예외는 그대로 올라갑니다. 롤백은 `async with` 종료가 맡습니다 —
+  `AsyncSession.__aexit__` 이 shield 로 감싼 `close()` 를 실행하고 `close()` 가 ROLLBACK 을 보냅니다(ADR-031).
 - **조회**: `_readonly` 의존성 → `get_read_only_db_session`, 커밋 0회(TX-002).
 - **요청 밖**(background·Celery): `async with background_db_session() as db_session:` 에서 호출자가
   직접 커밋합니다(별도 풀).
@@ -264,15 +265,23 @@ DB `max_connections` 안에 들어오는지 배포 전에 계산합니다.
 | `get_background_db_session` | DI 안에서 background 풀이 필요할 때 | background 엔진 |
 | `background_db_session()` | 요청 밖 컨텍스트(Celery·fire-and-forget) | 예외 시 rollback, 종료 시 close, 커밋은 호출자 |
 
-세 요청 의존성은 `async with` 안에서 세션을 내주고, 전달된 `Exception` 에 `rollback()` 후 재전파하며,
-종료 시 close 합니다. 세션은 풀에서 빌린 연결이므로 반드시 이 경로로 닫혀야 합니다.
+넷 모두 `async with` 안에서 세션을 내주고 종료 시 close 합니다. 세션은 풀에서 빌린 연결이므로 반드시 이
+경로로 닫혀야 합니다. `get_read_only_db_session`·`get_writer_db_session` 에는 `try/except/rollback` 이
+**없습니다**(ADR-031) — `AsyncSession.__aexit__` 이 shield 로 감싼 `close()` 를 실행하고 `close()` 가
+ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `CancelledError` 를 놓쳐 오히려 좁았습니다.
+`get_routed_db_session`·`get_background_db_session` 만 `except` 를 남겨 두었습니다. 그 블록은
+`await session.rollback()` 을 **여전히 호출하지만**, 그 호출은 위와 같은 이유로 중복입니다 — 블록을
+남긴 이유는 롤백이 아니라 **로그 부수효과**(예외 타입·소요 시간, DEBUG 에서는 전문)입니다.
+예외 **메시지**를 기본 로그에 남기지 않는 것도 의도입니다: DB 예외의 `str()` 에는 실행된 SQL 과
+바인딩 값이 들어 있고 이 로거 이름(`app.core.*`)은 SQL 소음 필터를 통과합니다.
 
 ### 4.3 읽기/쓰기 라우팅
 
 `DB_ROUTER_ENABLED=true` 면 `create_routing_sessionmaker()` 의 `RoutingSession.get_bind()` 가 구문마다
 엔진을 고릅니다(`app/core/db/router.py`).
 
-1. ORM flush·Core DML·`text()` 의 쓰기 키워드(`INSERT`·`UPDATE`·`DELETE`·`CREATE`… , `SELECT … FOR UPDATE`) → writer
+1. ORM flush·Core DML·`text()` 의 쓰기 키워드(`INSERT`·`UPDATE`·`DELETE`·`CREATE`…), CTE 로 감싼 DML
+   (`WITH … UPDATE/DELETE`), 잠금 읽기(`FOR UPDATE`·`FOR SHARE`·`LOCK IN SHARE MODE`) → writer
 2. 그 밖의 SELECT → 세션당 하나의 replica(라운드로빈으로 고른 뒤 고정)
 3. 쓰기가 일어난 세션의 이후 SELECT → writer (`DB_READ_STICKY_AFTER_WRITE=true`, 기본)
 
@@ -292,7 +301,10 @@ DB `max_connections` 안에 들어오는지 배포 전에 계산합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
 - **라우팅** 판별(`_text_is_write`)과 읽기 세션의 **차단** 판별(`_text_is_readable`)은 방향이 반대인
   별개지만 같은 괄호 깊이 0 스캐너(`_depth0_words`)를 씁니다. 둘 다 `WITH … UPDATE/DELETE` 를
-  잡습니다(ADR-036). 스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.
+  잡습니다(ADR-036). 잠금 읽기도 같은 `_LOCKING_READ` 정규식 하나로 판정합니다 — `FOR UPDATE`·
+  `FOR SHARE`·`LOCK IN SHARE MODE` 전부이고, 원본 문자열이 아니라 깊이 0 단어 목록에 적용하므로
+  `WHERE note = 'for share'` 같은 리터럴에는 걸리지 않습니다(ADR-038).
+  스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.
   sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
   (`MYSQL_REPLICA_USER`)을 함께 씁니다.
