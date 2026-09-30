@@ -69,10 +69,10 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | 구분 | 기술 |
 |---|---|
 | Python | 3.14 (`.python-version`, CI 동일). 최소 3.13 — `TypeVar(default=...)` 사용 |
-| Web | FastAPI 0.141, Uvicorn 0.34 |
+| Web | FastAPI 0.141, Uvicorn 0.54 |
 | DB | SQLAlchemy 2.0 async + aiomysql(MySQL), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
-| Redis | startup 연결 검증 + Celery broker/backend (redis-py 5) |
+| Redis | startup 연결 검증 + Celery broker/backend (redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
 | 작업 큐 | Celery 5 (중앙 `app/celery/`) |
 | 인증 | PyJWT, bcrypt |
 | 관리·문서 | SQLAdmin, Scalar |
@@ -239,7 +239,8 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 
 | 검사 | 무엇을 보나 |
 |---|---|
-| pytest · ruff check · ruff format · mypy | 도구 4종 (`--fast` 는 pytest 제외) |
+| pytest · ruff check · ruff format · mypy | 도구 4종 (`--fast` 는 pytest 제외). pytest 는 `returncode` 뿐 아니라 요약도 본다 — `skipped`·`xfailed`·`xpassed`·`deselected` 가 0 이 아니면 실패다(ADR-040) |
+| 의존성 취약점 0건 | `pip-audit --strict` — 설치된 의존성에 공개된 권고가 하나라도 있으면 실패(ADR-035) |
 | 계층 불변식 INV-1·2·5 | View 가 SQL/세션을 직접 다루지 않음, Repository·Dependency 가 커밋하지 않음, Raw Base 가 ORM Base 를 상속하지 않음 — AST 로 확인 |
 | 공개 API 불변 INV-11 | `docs/crp/groups/orm-raw-repository/baseline/openapi.json` 대비 경로·성공 상태 코드 제거·변경 |
 | MySQL 테스트 포트 단일 출처 | `compose.test.yaml`·`tests/integration/conftest.py`·charter 의 기본 포트 일치 |

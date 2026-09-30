@@ -6,19 +6,29 @@
     python scripts/review_gate.py            # 전체
     python scripts/review_gate.py --fast     # 정적 검사만(테스트 제외)
 
-점검 항목:
-    1. pytest 전건 통과
-    2. ruff check
-    3. ruff format --check
-    4. mypy
-    5. 계층 불변식 (INV-1/2/5) 정적 점검
-    6. 기존 공개 API 불변 (baseline/openapi.json 대비, INV-11)
-    7. MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
-    8. 문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
-    9. 코드·문서가 인용한 요구 ID 가 실제로 선언돼 있음 (ADR-014)
-   10. 모든 path operation 이 async 이고 요청 경로에 동기 I/O 가 없음 (INV-10/NFR-009)
-   11. charter 인수기준이 열린 채로 수렴을 선언하지 않음 (ADR-015)
-   12. 설치된 의존성에 공개된 취약점 권고가 0건 (pip-audit, ADR-035)
+점검 항목 — **번호가 아니라 이름으로 가리킨다.** 검사를 추가할 때마다 번호가 밀려 문서와 어긋나고,
+실제로 charter 의 "게이트 검사 12" 와 이 목록의 12번이 서로 다른 검사를 가리킨 적이 있다.
+
+    pytest                      전건 통과. `returncode` 뿐 아니라 요약의 결과 종류도 본다 —
+                                `skipped`·`xfailed`·`xpassed`·`deselected` 가 0 이 아니면 실패다(ADR-040)
+    ruff check
+    ruff format --check
+    mypy
+    pip-audit                   설치된 의존성에 공개된 취약점 권고가 0건 (ADR-035)
+    check_layering              계층 불변식 (INV-1/2/5) 정적 점검
+    check_public_api_unchanged  기존 공개 API 불변 (baseline/openapi.json 대비, INV-11)
+    check_test_port_single_source
+                                MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
+    check_cited_commits_reachable
+                                문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
+    check_cited_requirement_ids_exist
+                                코드·문서가 인용한 요구 ID 가 실제로 선언돼 있음 (ADR-014)
+    check_async_path_operations 모든 path operation 이 async 이고 요청 경로에 동기 I/O 가 없음
+                                (INV-10/NFR-009)
+    check_process_level_tests_collected
+                                취소·프로세스 종료 계약 테스트가 삭제·개명되지 않고 수집됨
+    check_charter_criteria_closed
+                                charter 인수기준이 열린 채로 수렴을 선언하지 않음 (ADR-015)
 """
 
 from __future__ import annotations

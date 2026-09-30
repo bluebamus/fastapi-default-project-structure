@@ -478,7 +478,10 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
 2. **선두** 단어가 `_TEXT_WRITE_KEYWORDS` 에 있으면 쓰기입니다.
 3. 선두가 `WITH` 이고 깊이 0 에 `_TOP_LEVEL_WRITE`(`update`·`delete`·`insert`·…)가 있으면 쓰기입니다 —
    `WITH r AS (…) UPDATE …` 같은 CTE DML 이 여기서 잡힙니다.
-4. 선두가 `SELECT`/`WITH` 이고 `FOR UPDATE` 가 있으면 잠금 읽기라 writer 로 보냅니다.
+4. 선두가 `SELECT`/`WITH` 이고 `_LOCKING_READ`(`FOR UPDATE` · `FOR SHARE` · `LOCK IN SHARE MODE`)에
+   걸리면 잠금 읽기라 writer 로 보냅니다. §7.2 의 읽기 전용 가드와 **같은 정규식**이고(ADR-038), 원본
+   문자열이 아니라 3단계에서 모은 깊이 0 단어 목록에 적용하므로 `WHERE note = 'for share'` 같은
+   리터럴에는 걸리지 않습니다.
 
 따옴표·역따옴표·주석 안의 단어는 스캐너가 건너뛰므로 `'please DELETE this row'` 나 `` `update` `` 는
 판정에 쓰이지 않습니다. `_TEXT_WRITE_KEYWORDS` 는 **선두** 단어만, `_TOP_LEVEL_WRITE` 는 CTE 뒤의
@@ -529,7 +532,7 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
 |---|---|
 | 새 읽기 구문을 허용 (예: `TABLE`, `VALUES`) | `_READABLE_LEAD` — `words[0]` 의 허용 시작 키워드 집합 |
 | 새 쓰기 구문을 차단 | `_TOP_LEVEL_WRITE` 에 소문자 한 단어 추가 |
-| 잠금 획득 패턴을 추가 | `_LOCKING_READ` 정규식 |
+| 잠금 획득 패턴을 추가 | `_LOCKING_READ` 정규식 — 라우팅(§7.1)도 같은 것을 쓰므로 한 곳을 고치면 둘이 함께 움직입니다 |
 
 **판정 원칙**
 
