@@ -18,7 +18,9 @@ Django 의 ``DATABASE_ROUTERS`` 와 같은 역할을 SQLAlchemy 에서 수행한
 여러 replica 로 흩어지면 스냅샷 일관성이 깨지기 때문이다.
 
 사용 예시:
-    # 1) 투명 라우팅 — 기존 코드를 그대로 두면 알아서 갈린다
+    # 1) 투명 라우팅 — **승인된 특수 경로 전용**이다. 기능 코드의 기본값이 아니다:
+    #    의도가 드러나지 않아 읽는 사람이 쓰기 여부를 알 수 없다. 기능에서는
+    #    아래 2)·3) 처럼 읽기/쓰기를 이름으로 선언한다.
     async def handler(db_session: AsyncSession = Depends(get_routed_db_session)):
         await session.execute(select(Post))     # → reader
         session.add(Post(...))                  # → writer (이후 세션은 writer 고정)
@@ -230,7 +232,7 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
                 if info.get(_READ_ONLY):
                     raise ReadOnlyRoutingError(
                         "읽기 전용 세션에서 쓰기를 시도했습니다. "
-                        "쓰기에는 get_routed_db_session()/get_writer_db_session() 을 사용하세요."
+                        "쓰기에는 get_writer_db_session() 을 사용하세요."
                     )
                 # 이후 SELECT 가 복제 지연에 걸리지 않도록 이 세션을 writer 에 고정한다.
                 if router.sticky_after_write:
@@ -315,7 +317,7 @@ def assert_writable(session: Session | AsyncSession, detail: str = "") -> None:
         raise ReadOnlyRoutingError(
             "읽기 전용 세션에서 쓰기를 시도했습니다"
             f"{f' ({detail})' if detail else ''}. "
-            "쓰기에는 get_writer_db_session()/get_routed_db_session() 을 사용하세요."
+            "쓰기에는 get_writer_db_session() 을 사용하세요."
         )
 
 
