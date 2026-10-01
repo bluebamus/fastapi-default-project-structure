@@ -213,3 +213,29 @@ def test_contract_checks_are_not_vacuous(schema):
     """
     assert len(list(_operations(schema))) >= 30
     assert len(schema.get("components", {}).get("schemas", {})) >= 20
+
+
+def test_schema_examples_use_the_openapi_31_keyword(schema):
+    """스키마 예시는 `examples`(배열)로 나가야 한다 — `example`(단수)은 3.1 키워드가 아니다.
+
+    FastAPI 는 OpenAPI **3.1** 을 낸다. 3.1 은 JSON Schema 를 따르므로 예시 키워드가
+    `examples`(배열)이고, 3.0 의 `example`(단수)을 적으면 **오류 없이 조용히 무시된다**.
+    통과하는 것처럼 보이지만 문서에는 예시가 뜨지 않는다 — 그래서 눈으로는 못 잡는다.
+
+    실제로 `ErrorResponse` 가 단수로 적혀 있었고(2026-10-01 발견), 스키마에 `example` 키가
+    그대로 실려 나갔다. 이 테스트는 그 부류가 다시 들어오는 것을 막는다.
+    """
+    assert schema["openapi"].startswith("3.1"), (
+        f"OpenAPI 버전이 3.1 이 아니다({schema['openapi']}) — 이 규칙의 전제가 깨졌으니 "
+        "규칙 자체를 재검토할 것"
+    )
+
+    offenders = [
+        name
+        for name, definition in schema.get("components", {}).get("schemas", {}).items()
+        if "example" in definition
+    ]
+
+    assert (
+        not offenders
+    ), f"`example`(단수)을 쓴 스키마: {sorted(offenders)} — `examples`(배열)로 바꿀 것"
