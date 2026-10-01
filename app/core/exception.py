@@ -27,13 +27,18 @@ class ErrorResponse(BaseModel):
         ),
     )
 
+    # OpenAPI **3.1** 이다(FastAPI 기본, `app.openapi()["openapi"] == "3.1.0"` 로 실측).
+    # 3.0 의 `example`(단수)은 3.1 의 키워드가 **아니다** — JSON Schema 를 따르므로
+    # `examples`(배열)이고, 단수로 적으면 도구에 따라 **조용히 무시된다**(오류도 없다).
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "error_code": "NOT_FOUND",
-                "message": "리소스를 찾을 수 없습니다.",
-                "detail": {"resource": "User", "id": 1},
-            }
+            "examples": [
+                {
+                    "error_code": "NOT_FOUND",
+                    "message": "리소스를 찾을 수 없습니다.",
+                    "detail": {"resource": "User", "id": 1},
+                }
+            ]
         }
     }
 
