@@ -136,8 +136,9 @@ cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -D
 
 - `.env.example` 은 복사용 견본이지 자동 fallback 이 아닙니다. `.env` 가 없으면 코드 기본값을 씁니다.
 - 우선순위: **프로세스 환경 변수 → `.env` → 코드 기본값**.
-- `.env.example` 의 `MYSQL_PASSWORD=your_password` 는 3단계의 빈 비밀번호 컨테이너와 맞지 않습니다.
-  복사했다면 값을 맞추세요.
+- `.env.example` 의 `MYSQL_PASSWORD=change-this-mysql-password` 는 3단계의 빈 비밀번호 컨테이너와
+  맞지 않습니다. 복사했다면 값을 맞추세요. 이 예시값은 그대로 두면 `ENV=staging|production`
+  기동이 거부됩니다(배포 안전 검사).
 - 리스트 값은 JSON 배열로 씁니다: `CORS_ALLOW_ORIGINS=["http://localhost:3000"]`.
 
 ### 5. 실행 명령과 접속 주소
