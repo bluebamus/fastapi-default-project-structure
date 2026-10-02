@@ -377,6 +377,30 @@ REQUIREMENT_ID = re.compile(
 # 목록에 기대면 안 되므로 늘리지 않는다.
 LEGACY_UNDECLARED_IDS = frozenset({"ADR-019", "REQ-008", "REQ-009"})
 
+# design-baseline 의 두 레지스터는 **자리까지** 본다 (ADR-041). ADR 은 §3, REQ 은 §2.
+REGISTER_SECTION = {"REQ": "2", "ADR": "3"}
+_SECTION_HEADING = re.compile(r"^##\s*(\d+)\.")
+
+
+def _register_declared(text: str) -> set[str]:
+    """design-baseline 에서 **옳은 절 안에** 적힌 REQ/ADR 만 선언으로 본다 (ADR-041).
+
+    §5 변경 이력이나 §2 의 "연결" 칸처럼 **인용**으로 적힌 번호는 선언이 아니다.
+    """
+    declared: set[str] = set()
+    section = ""
+    for line in text.splitlines():
+        heading = _SECTION_HEADING.match(line)
+        if heading:
+            section = heading.group(1)
+            continue
+        declared.update(
+            found
+            for found in REQUIREMENT_ID.findall(line)
+            if REGISTER_SECTION.get(found[:3]) == section
+        )
+    return declared
+
 
 def check_cited_requirement_ids_exist() -> None:
     """코드·문서가 인용한 요구 ID 가 실제로 선언돼 있는지 (ADR-014).
@@ -386,15 +410,27 @@ def check_cited_requirement_ids_exist() -> None:
     **따라갈 수 있을 때만** 근거이고, 따라가 보면 없는 조항은 있는 것보다 나쁘다 —
     근거가 있다고 믿게 만들기 때문이다.
 
-    ponytail: 선언 판정은 "출처 문서에 그 ID 가 나타나는가" 다. 출처 문서 자신의 오타는
-    스스로를 선언한 것으로 통과한다. 인용처(코드)의 dangling 을 잡는 것이 목적이므로
-    여기까지가 상한이고, 필요해지면 정의 위치(표 행·제목)만 파싱하도록 좁힌다.
+    ADR-041 로 **REQ/ADR 만 절 단위로 좁혔다.** 파일 전역에서 문자열을 찾으면 §2 요구사항
+    표에 잘못 적힌 ADR 도 "선언됨" 으로 통과한다 — 실제로 ADR-036~039 가 그 상태였고,
+    인용처는 §3 을 찾아가도 번호가 없다. 위 ponytail 주석이 적어 둔 상향 경로("정의 위치만
+    파싱하도록 좁힌다")가 바로 이 경우다. 다른 ID 계열(SCN·NFR·TX·AR…)은 표가 아니라
+    본문·제목으로 선언되므로 종전대로 "문서에 나타나면 선언" 이다.
+
+    ponytail: 절 단위까지만 본다 — 표 행인지 주석인지는 가리지 않는다. §3 주석에 번호를
+    적어 선언을 대신하는 장치가 이미 있고(ADR-019·ADR-041), 그 관례를 깨지 않는 가장 좁은
+    규칙이다. 행 단위 파싱이 필요해지면 그때 좁힌다.
     """
     declared: set[str] = set()
     for rel in REQUIREMENT_SOURCES:
         source = REPO_ROOT / rel
-        if source.exists():
-            declared.update(REQUIREMENT_ID.findall(source.read_text(encoding="utf-8")))
+        if not source.exists():
+            continue
+        text = source.read_text(encoding="utf-8")
+        found = set(REQUIREMENT_ID.findall(text))
+        if source.name == "design-baseline.md":
+            found = {i for i in found if i[:3] not in REGISTER_SECTION}
+            found |= _register_declared(text)
+        declared.update(found)
     declared |= LEGACY_UNDECLARED_IDS
 
     sites = list(iter_source_files("app", "tests", "migrations", "scripts"))
