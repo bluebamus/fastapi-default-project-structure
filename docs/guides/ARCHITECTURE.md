@@ -265,11 +265,11 @@ DB `max_connections` 안에 들어오는지 배포 전에 계산합니다.
 | `get_background_db_session` | DI 안에서 background 풀이 필요할 때 | background 엔진 |
 | `background_db_session()` | 요청 밖 컨텍스트(Celery·fire-and-forget) | 예외 시 rollback, 종료 시 close, 커밋은 호출자 |
 
-넷 모두 `async with` 안에서 세션을 내주고 종료 시 close 합니다. 세션은 풀에서 빌린 연결이므로 반드시 이
+다섯 모두 `async with` 안에서 세션을 내주고 종료 시 close 합니다. 세션은 풀에서 빌린 연결이므로 반드시 이
 경로로 닫혀야 합니다. `get_read_only_db_session`·`get_writer_db_session` 에는 `try/except/rollback` 이
 **없습니다**(ADR-031) — `AsyncSession.__aexit__` 이 shield 로 감싼 `close()` 를 실행하고 `close()` 가
 ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `CancelledError` 를 놓쳐 오히려 좁았습니다.
-`get_routed_db_session`·`get_background_db_session` 만 `except` 를 남겨 두었습니다. 그 블록은
+의존성 넷 중 `get_routed_db_session`·`get_background_db_session` 만 `except` 를 남겨 두었습니다. 그 블록은
 `await session.rollback()` 을 **여전히 호출하지만**, 그 호출은 위와 같은 이유로 중복입니다 — 블록을
 남긴 이유는 롤백이 아니라 **로그 부수효과**(예외 타입·소요 시간, DEBUG 에서는 전문)입니다.
 예외 **메시지**를 기본 로그에 남기지 않는 것도 의도입니다: DB 예외의 `str()` 에는 실행된 SQL 과
@@ -301,9 +301,10 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
 - **라우팅** 판별(`_text_is_write`)과 읽기 세션의 **차단** 판별(`_text_is_readable`)은 방향이 반대인
   별개지만 같은 괄호 깊이 0 스캐너(`_depth0_words`)를 씁니다. 둘 다 `WITH … UPDATE/DELETE` 를
-  잡습니다(ADR-036). 잠금 읽기도 같은 `_LOCKING_READ` 정규식 하나로 판정합니다 — `FOR UPDATE`·
-  `FOR SHARE`·`LOCK IN SHARE MODE` 전부이고, 원본 문자열이 아니라 깊이 0 단어 목록에 적용하므로
-  `WHERE note = 'for share'` 같은 리터럴에는 걸리지 않습니다(ADR-038).
+  잡습니다(ADR-036). 잠금 읽기도 같은 `_LOCKING_READ` 정규식 하나로 판정합니다 — `FOR UPDATE`·`FOR SHARE`·
+  `LOCK IN SHARE MODE` 전부입니다. 다만 적용 대상은 다릅니다: 라우팅(`_text_is_write`)은 깊이 0 단어 목록에
+  적용해 `WHERE note = 'for share'` 같은 리터럴에 걸리지 않지만(ADR-038), 차단(`_text_is_readable`)은 주석만
+  걷어낸 원본 문자열에 적용하므로 그런 리터럴도 거부합니다(fail-closed).
   스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.
   sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
@@ -822,7 +823,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
 | Redis 는 필수 startup 조건 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011) |
 | `/admin` 무인증 + `ADMIN=true` 기본값, 앱이 운영 조합을 막지 않음 | 개발 우선 템플릿. 차단 책임은 배포(C-8) |
-| 단, staging/production 의 예시 비밀 키·access==refresh 는 기동 거부 | 예시 키로 뜨면 누구나 토큰을 위조한다 — 배포 점검에만 맡기기엔 피해가 크다(ADR-027, C-8 축소) |
+| 단, staging/production 의 예시 비밀 키·access==refresh·`DEBUG=true`·`LOG_LEVEL=DEBUG` 는 기동 거부 | 예시 키로 뜨면 누구나 토큰을 위조하고, debug 는 SQL 과 바인딩 값을 로그로 내보낸다 — 배포 점검에만 맡기기엔 피해가 크다(ADR-027·028·030, C-8 축소) |
 | 응답 직렬화는 FastAPI 기본(Pydantic) | `ORJSONResponse` 는 이득이 없고 0.141 에서 deprecated. 제거 전후 응답 바이트 동일 확인 |
 | 템플릿 프로필 분리(minimal/api-db/production) 보류 | 세 벌을 유지하는 비용이 크다. "무겁다" 는 피드백이 반복되면 선택 기능을 걷어내는 스크립트 쪽으로 재검토 |
 | 라우트 검사는 `app.openapi()` 기준 | FastAPI 0.141 부터 `app.routes` 가 하위 라우터를 평탄화하지 않는다(`_IncludedRouter`) |
