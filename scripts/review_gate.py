@@ -331,6 +331,12 @@ def check_cited_commits_reachable() -> None:
     author rewrite 는 인용 해시 12건을 한꺼번에 무효화했고, 그래도 게이트는 초록이었다.
     근거로 못 따라가는 해시는 근거가 아니다. 얕은 클론에서는 판정할 수 없으므로 skip 한다
     — 여기서 억지로 실패시키면 CI 가 오탐으로 빨개지고, 그러면 아무도 안 본다.
+
+    ponytail: **아예 없는 해시는 검사하지 않는다.** 이 저장소에 없는 객체는 Alembic revision
+    id 일 수도, 다른 저장소의 커밋일 수도 있어서 구분이 안 된다 — 실제로 `ledger.md` 의 F-024
+    비고가 자매 저장소 커밋 하나를 일부러 인용한다. 그래서 "존재하지만 HEAD 에서 끊긴" 해시만
+    본다. 없는 해시까지 잡으려면 `migrations/versions/` 의 revision id 를 모아 빼야 하는데,
+    지금 그 구멍으로 샌 사례가 없으므로 넣지 않는다.
     """
 
     def git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -349,17 +355,16 @@ def check_cited_commits_reachable() -> None:
     for doc in sorted((REPO_ROOT / "docs/crp/groups").rglob("*.md")):
         cited.update(re.findall(r"`([0-9a-f]{7,40})`", doc.read_text(encoding="utf-8")))
 
-    stale = [
-        h
-        for h in sorted(cited)
-        # 커밋이 아닌 토큰(Alembic revision id 등)은 대상이 아니다.
-        if git("cat-file", "-e", f"{h}^{{commit}}").returncode == 0
-        and git("merge-base", "--is-ancestor", h, "HEAD").returncode != 0
-    ]
+    # 커밋이 아닌 토큰(Alembic revision id 등)은 대상이 아니다.
+    commits = [h for h in sorted(cited) if git("cat-file", "-e", f"{h}^{{commit}}").returncode == 0]
+    stale = [h for h in commits if git("merge-base", "--is-ancestor", h, "HEAD").returncode != 0]
     report(
         "문서 인용 커밋 도달성 (ADR-009)",
         not stale,
-        f"HEAD 에서 도달 불가 {len(stale)}건: {stale}" if stale else f"검사 {len(cited)}건",
+        f"HEAD 에서 도달 불가 {len(stale)}건: {stale}"
+        if stale
+        # 두 수를 함께 적는다 — 전에는 토큰 수만 적어 실제 검사량보다 커 보였다.
+        else f"커밋 {len(commits)}건 검사 (해시꼴 토큰 {len(cited)}건 중)",
     )
 
 
