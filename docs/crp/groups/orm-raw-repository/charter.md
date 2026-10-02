@@ -80,7 +80,9 @@
 > 각 칸은 **무엇을 보고 닫았는지**를 함께 적는다. 표시만 바꾸는 것은 닫는 것이 아니다
 > (F-021 이 그 실패였다 — "지웠다" 는 기록만 있고 실제로는 남아 있었다).
 
-- [x] 전 테스트 실제 실행·통과 — **417 tests** (단위 409 + MySQL 8.4 통합 8), failed 0 · skipped 0.
+- [x] 전 테스트 실제 실행·통과 — **Round 12 종결 시점(2026-08-27) 417 tests** (단위 409 + MySQL 8.4
+      통합 8), failed 0 · skipped 0. **이 값은 칸을 닫을 때의 근거라 갱신하지 않는다** — §1 기준선
+      실측과 같은 취급이다(v0.3). 현재 실측은 run-log·checklist 가 갖는다.
       MySQL 마커는 컨테이너 기동 후 **실제 실행**했다. Round 12 부터는 `--mysql-required` 로
       **skip 이 곧 실패**가 되게 해 "안 돌았는데 초록" 을 구조적으로 막는다 (R-003)
 - [x] **취소·프로세스 종료 검증** — lifespan 취소에서 남은 정리가 실행되고
@@ -88,18 +90,18 @@
       운영과 같은 신호로 끄면 `자원 해제 완료` → `Application shutdown complete` →
       listener 정지 순서가 관측된다 (`tests/integration/test_uvicorn_lifecycle.py` 3건).
       이 축은 Round 11 까지 **검사된 적이 없었고**, 열자마자 결함 12건이 나왔다.
-      게이트 검사 12 가 이 테스트들의 실재를 기계로 확인한다
-- [x] `ruff check .` / `ruff format --check .` / `mypy .` 클린 — 게이트 검사 2·3·4
-- [x] INV-1 → 게이트 검사 5(AST 계층 위반 검사) / INV-2·3 → 게이트 검사 5 + `tests/test_read_path_no_commit.py`
+      게이트 `check_process_level_tests_collected` 가 이 테스트들의 실재를 기계로 확인한다
+- [x] `ruff check .` / `ruff format --check .` / `mypy .` 클린 — 게이트의 `ruff check` · `ruff format --check` · `mypy` 단계
+- [x] INV-1 → 게이트 `check_layering`(AST 계층 위반 검사) / INV-2·3 → 게이트 `check_layering` + `tests/test_read_path_no_commit.py`
 - [x] INV-4 → `tests/core/test_raw_repository_base.py`(injection 입력 + 식별자 allowlist, 18건) +
       `tests/core/test_router_raw_dml.py`(read-only 세션 Raw DML 차단)
-- [x] INV-5 → 게이트 검사 5 (AST 로 실제 base 목록만 본다 — 문자열 검색은 F-010 에서 오탐을 냈다)
-- [x] INV-6 → `tests/test_openapi_contract.py`(9건) + `tests/test_response_serialization.py`
-- [x] INV-7·8·9 → `tests/core/test_resources.py`(13건, 모델 0/1+ · startup 실패 cleanup · 종료 순서) +
-      `tests/core/test_background_tasks.py`(7건, drain 취소 회수)
-- [x] INV-10 → **게이트 검사 10** (`check_async_path_operations`, 36건). 이 칸은 Round 10 이전까지
+- [x] INV-5 → 게이트 `check_layering` (AST 로 실제 base 목록만 본다 — 문자열 검색은 F-010 에서 오탐을 냈다)
+- [x] INV-6 → `tests/test_openapi_contract.py`(10건) + `tests/test_response_serialization.py`
+- [x] INV-7·8·9 → `tests/core/test_resources.py`(16건, 모델 0/1+ · startup 실패 cleanup · 종료 순서) +
+      `tests/core/test_background_tasks.py`(10건, drain 취소 회수)
+- [x] INV-10 → **게이트 `check_async_path_operations`** (36건). 이 칸은 Round 10 이전까지
       **근거가 존재한 적이 없었다** — F-025 로 기록했고, 검사를 만들어 닫는다
-- [x] INV-11 → 게이트 검사 6 (`baseline/openapi.json` 대비 기존 30개 operation 불변)
+- [x] INV-11 → 게이트 `check_public_api_unchanged` (`baseline/openapi.json` 대비 기존 30개 operation 불변)
 - [x] INV-12 → `tests/test_router_registration.py` + `tests/test_route_inventory.py`(골든 스냅샷)
 - [x] Alembic: 신규 revision **3개**(Phase 5 의 2개 + REQ-005 의 `e5f7a9b1c4d5`)의 upgrade → downgrade →
       재-upgrade — `tests/core/test_migration_chain.py`, MySQL 8.4 에서 실제 실행
@@ -113,3 +115,7 @@
 - v0.4 (2026-08-20): §3 인수기준 12칸을 근거와 함께 닫는다 (F-024). INV-10 칸은 검사 신설 후 닫았다 (F-025).
 - v0.3 (2026-08-20): REQ-005 반영 — 인벤토리에 Raw 쓰기 경로·신규 revision, 인수기준의 revision 수 정정.
   **§1 의 기준선 실측(2026-08-13)은 착수 시점의 역사적 값이므로 갱신하지 않는다** — 현재 실측은 run-log·checklist 가 갖는다.
+- v0.5 (2026-10-02): §3 의 게이트 검사 **번호**를 검사 **이름**으로 바꿨다 — pip-audit 단계(ADR-035)가
+  들어오며 번호가 한 칸씩 밀려 5·6·10 이 다른 검사를 가리키고 있었다(`review_gate.py` 독스트링이
+  "번호가 아니라 이름으로 가리킨다"고 정한 규칙). 인용 테스트 건수도 실측에 맞췄다
+  (openapi_contract 9→10 · resources 13→16 · background_tasks 7→10).
