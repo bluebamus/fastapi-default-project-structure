@@ -19,6 +19,8 @@
     check_public_api_unchanged  기존 공개 API 불변 (baseline/openapi.json 대비, INV-11)
     check_test_port_single_source
                                 MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
+                                + 그 값이 3306(공유 인스턴스)이 아님 (C-7)
+    check_no_table_drop_in_app  운영 코드(`app/`·`main.py`)에 `drop_all` 이 없음 (C-6 / AR-006)
     check_cited_commits_reachable
                                 문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
     check_cited_requirement_ids_exist
@@ -318,10 +320,53 @@ def check_test_port_single_source() -> None:
     ]
     missing = [name for name, port in sources if port is None]
     ports = {port for _, port in sources if port is not None}
+    # C-7 — 테스트가 **공유 인스턴스(3306)** 를 가리키면 안 된다. 같은 값으로 맞춰 놓고
+    # 그 값이 3306 이면 단일 출처 판정은 통과하는데 제약은 깨진다. 한 줄로 막는다.
+    shared = "3306" in ports
     report(
-        "MySQL 테스트 포트 단일 출처 (ADR-008)",
-        not missing and len(ports) == 1,
-        f"추출실패={missing} 값={sorted(ports)}" if (missing or len(ports) != 1) else "",
+        "MySQL 테스트 포트 단일 출처 (ADR-008) + 공유 인스턴스 회피 (C-7)",
+        not missing and len(ports) == 1 and not shared,
+        f"추출실패={missing} 값={sorted(ports)}"
+        + (" — 3306 은 공유 인스턴스다(C-7)" if shared else "")
+        if (missing or len(ports) != 1 or shared)
+        else "",
+    )
+
+
+def check_no_table_drop_in_app() -> None:
+    """운영 코드에 테이블 삭제 경로가 없는지 — C-6 (AR-006).
+
+    "shutdown 에서 DB table 을 drop 하지 않는다" 는 §4 의 불가침 제약인데 **강제하는 검사가
+    없었다**(2026-10-06 발견). 지금은 `app/` 과 `main.py` 에 `drop_all` 이 0건이라 *코드에
+    없어서* 지켜지는 상태다 — 누가 lifespan 종료에 한 줄 넣으면 아무도 못 잡는다. 그게
+    통합 테스트 DB 라면 데이터가 사라지고, 운영이라면 사고다.
+
+    ponytail: `drop_all` 이라는 **이름**만 본다. `DROP TABLE` 을 Raw 로 쓰는 경로까지 보려면
+    SQL 파서가 필요한데, Raw 문장은 이미 읽기 전용 가드와 `_text_is_write()` 가 보고 있고
+    여기서 노리는 사고는 "편의로 `Base.metadata.drop_all` 을 부르는 것" 이다. 필요해지면
+    키워드를 늘린다.
+
+    테스트 픽스처는 대상이 아니다 — `tests/integration/conftest.py` 는 매 실행마다 스키마를
+    새로 만들어야 해서 drop 이 **설계**다. 그래서 `app/` 과 `main.py` 만 본다.
+    """
+    offenders: list[str] = []
+    targets = [*iter_source_files("app"), REPO_ROOT / "main.py"]
+    for path in targets:
+        if not path.exists():
+            continue
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        if "/tests/" in rel:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "drop_all" in line:
+                offenders.append(f"{rel}:{number}")
+
+    report(
+        "C-6 운영 코드에 테이블 삭제 없음 (AR-006)",
+        not offenders,
+        f"`drop_all` {len(offenders)}건: {offenders}"
+        if offenders
+        else f"검사 {len(targets)}개 파일",
     )
 
 
@@ -626,6 +671,7 @@ def main() -> int:
     check_layering()
     check_public_api_unchanged()
     check_test_port_single_source()
+    check_no_table_drop_in_app()
     check_cited_commits_reachable()
     check_cited_requirement_ids_exist()
     check_async_path_operations()
