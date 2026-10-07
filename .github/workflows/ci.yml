@@ -83,7 +83,7 @@ jobs:
       # deselected 는 위 -m 필터가 만드는 정상 결과라 판정에서 뺀다.
       - name: SKIP·xfail 0건 확인 (charter §3)
         run: |
-          if grep -qE '[0-9]+ (skipped|xfailed|xpassed)' pytest.log; then
+          if grep -qE '[1-9][0-9]* (skipped|xfailed|xpassed)' pytest.log; then
             echo "::error::charter §3 위반 — 조용한 SKIP/xfail 이 있습니다. 요약을 확인하세요."
             grep -E '(skipped|xfailed|xpassed)' pytest.log || true
             exit 1
@@ -138,7 +138,7 @@ jobs:
         run: |
           set -o pipefail
           uv run python -m pytest -m mysql --mysql-required -q -rsxX | tee mysql.log
-          if grep -qE '[0-9]+ skipped' mysql.log; then
+          if grep -qE '[1-9][0-9]* skipped' mysql.log; then
             echo "::error::MySQL 통합 테스트가 skip 됐습니다. compose 기동을 확인하세요."
             exit 1
           fi
