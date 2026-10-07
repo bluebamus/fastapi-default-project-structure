@@ -24,7 +24,7 @@
 | MySQL 통합 환경 | `compose.test.yaml` | 설정 | **Phase 5 신규**, mysql:8.4 / 3308 |
 | 문서 | `README.md`(구 `QUICKSTART.md` 흡수, ADR-025), `docs/guides/ARCHITECTURE.md` | 문서 | Phase 7 갱신 |
 
-기준선 실측 (2026-08-13, 커밋 `59b3736` + 인코딩 수정):
+기준선 실측 (2026-08-13, 커밋 `892a9bf` + 인코딩 수정):
 
 - 소스 `.py` 146개 · 테스트 파일 52개 · 테스트 201개 (201 collected / 201 passed)
 - OpenAPI: paths 18 · operations 30 · operationId 누락 0 · 중복 0
