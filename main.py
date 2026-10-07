@@ -22,7 +22,7 @@ from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, catalog, home, reply, reports, sns, user
 from app.utils.logs import get_logger
-from config import app_settings
+from config import DEPLOYED_ENVS, app_settings
 
 logger = get_logger("main")
 
@@ -299,7 +299,15 @@ if app_settings.ADMIN:
     from app.features.admin import register_admin
 
     admin = register_admin(app, engine)
-    logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
+    if app_settings.ENV in DEPLOYED_ENVS:
+        # 여기 왔다면 ADMIN_ALLOW_UNAUTHENTICATED=true 다(없으면 config 가 기동을 멈춘다).
+        # 운영 로그를 보는 사람이 이 상태를 놓치지 않도록 매 기동 경고한다(ADR-045 ③).
+        logger.warning(
+            "SQLAdmin 이 인증 없이 열려 있습니다 (ENV=%s, ADMIN_ALLOW_UNAUTHENTICATED=true): /admin",
+            app_settings.ENV,
+        )
+    else:
+        logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
 else:
     logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")
 

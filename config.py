@@ -15,8 +15,11 @@
     3. Field의 default 값
 """
 
+import os
+from collections.abc import Mapping
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -160,10 +163,21 @@ class AppSettings(BaseSettings):
     # 않기로 확정했다(영구 비목표). 즉 ADMIN=True 이면 /admin 이 **자격증명 없이**
     # 열리고, 게시글·댓글·사용자·접속로그의 조회·수정·삭제와 CSV 내보내기가 가능하다
     # (비밀번호 해시만 SQLAdmin 설정으로 제외된다).
-    # → 운영·스테이징은 ADMIN=false 를 **명시적으로** 넘기거나, 프록시에서 /admin 을 막는다.
+    # → 운영·스테이징(ENV=staging/production)에서 ADMIN=true 로 기동하려면 아래
+    #   ADMIN_ALLOW_UNAUTHENTICATED=true 를 **함께** 줘야 한다. 없으면 배포 안전 검사가
+    #   기동을 멈춘다(ADR-045). 기본값 true 를 그대로 들고 배포한 실수와, 인증 없는
+    #   /admin 을 알고 켠 경우를 구분하기 위해서다.
     ADMIN: bool = Field(
         default=True,
-        description="관리자 페이지 활성화 (인증 없음 — 운영에서는 false 권장)",
+        description="관리자 페이지 활성화 (인증 없음 — 배포 환경은 ADMIN_ALLOW_UNAUTHENTICATED 필요)",
+    )
+
+    # 배포 환경에서 인증 없는 /admin 을 **의도적으로** 연다는 확인. ADMIN=true 일 때만 의미가
+    # 있고 development/test 에서는 보지 않는다. 켜고 기동하면 main.py 가 매 기동 WARNING 을
+    # 남긴다. 로그인 고도화로 SQLAdmin 에 인증이 붙으면 이 플래그는 필요 없어진다.
+    ADMIN_ALLOW_UNAUTHENTICATED: bool = Field(
+        default=False,
+        description="staging/production 에서 인증 없는 /admin 허용 확인 (ADMIN=true 와 함께)",
     )
 
     # 실행 환경 — 로그 출력 구성(시각 표기, staging/production 의 stderr 추가)에 쓴다.
@@ -1050,11 +1064,52 @@ upload_settings = get_upload_settings()
 
 
 # =============================================================================
-# 배포 안전 검사 (ADR-027)
+# 설정 검사 (ADR-027 · ADR-028 · ADR-045)
 # =============================================================================
-# 비밀 키·비밀번호 규칙과 debug 모드만 검사한다. ADMIN·SERVER_HOST 등 다른 운영
-# 조합은 여전히 막지 않는다(C-8).
+# 값의 **출처**(.env 또는 환경 변수)와 **내용**(예시 값·약한 키·배포 금지 조합)을 import
+# 시점에 본다. 잘못된 설정은 조용히 넘어가지 않고 기동 실패로 드러나야 한다 — 개발자는
+# 오류 메시지를 보고 `.env` 를 고친다. test 는 검사하지 않는다(pytest 가 ENV=test 를 준다).
+# SERVER_HOST 등 그 밖의 운영 조합은 여전히 막지 않는다(C-8).
 DEPLOYED_ENVS = frozenset({"staging", "production"})
+
+# 서명·세션 키의 최소 길이. `secrets.token_urlsafe(48)` 은 64자다.
+SECRET_KEY_MIN_LENGTH = 32
+
+# `.env` 파일이 없을 때 환경 변수로 **직접** 들어와야 하는 값. 컨테이너처럼 파일 없이
+# 주입하는 배포는 이것들이 모두 있으면 통과한다. 하나라도 없으면 기본값으로 뜨게 되므로
+# (예: ENV 가 없으면 development 로 간주돼 배포 검사가 꺼진다) 기동을 멈춘다.
+REQUIRED_WITHOUT_ENV_FILE = (
+    "ENV",
+    "ACCESS_TOKEN_SECRET_KEY",
+    "REFRESH_TOKEN_SECRET_KEY",
+    "SESSION_SECRET_KEY",
+    "MYSQL_HOST",
+    "MYSQL_USER",
+    "MYSQL_PASSWORD",
+    "MYSQL_DATABASE",
+)
+
+
+def validate_env_source(
+    env: str,
+    env_file: Path = Path(".env"),
+    environ: Mapping[str, str] = os.environ,
+) -> None:
+    """`.env` 가 없고 필수 값이 환경 변수로도 오지 않았으면 기동을 멈춘다 (ADR-045 ①).
+
+    `env_file` 은 Settings 들의 ``env_file=".env"`` 와 같은 기준(작업 디렉터리)이다.
+    메시지에는 빠진 설정 **이름**만 담는다.
+    """
+    if env == "test" or env_file.is_file():
+        return
+    missing = [name for name in REQUIRED_WITHOUT_ENV_FILE if name not in environ]
+    if missing:
+        raise RuntimeError(
+            ".env 파일이 없고, 필수 설정이 환경 변수로도 주어지지 않았습니다: "
+            + ", ".join(missing)
+            + ". 로컬에서는 `cp .env.example .env` 후 값을 채우고, 배포에서는 환경 변수로 "
+            "주입하세요."
+        )
 
 
 def is_placeholder_secret(value: str) -> bool:
@@ -1072,9 +1127,13 @@ def validate_deployment_safety(
     redis: RedisSettings | None = None,
     smtp: SMTPSettings | None = None,
 ) -> None:
-    """staging/production 에서 예시 비밀 키·비밀번호·access==refresh·debug 모드를 거부한다.
+    """설정 내용을 검사해 위반을 모두 모아 RuntimeError 하나로 올린다.
 
-    위반을 모두 모아 RuntimeError 하나로 올린다. 메시지에는 설정 **이름**만 담는다(값 금지).
+    - test 를 뺀 **모든 ENV**: 예시 비밀 키·비밀번호, 짧은 키, access==refresh (ADR-045 ②).
+      기본값·예시 값 그대로는 개발 환경에서도 오류다 — `.env` 를 채우라는 신호다.
+    - staging/production 만: DEBUG, LOG_LEVEL=DEBUG(ADR-028), 확인 없는 ADMIN=true(ADR-045 ③).
+
+    메시지에는 설정 **이름**만 담는다(값 금지).
     """
     app = app or app_settings
     jwt = jwt or jwt_settings
@@ -1083,7 +1142,7 @@ def validate_deployment_safety(
     db = db or db_settings
     redis = redis or redis_settings
     smtp = smtp or smtp_settings
-    if app.ENV not in DEPLOYED_ENVS:
+    if app.ENV == "test":
         return
 
     secrets = {
@@ -1106,20 +1165,35 @@ def validate_deployment_safety(
         for name, value in secrets.items()
         if is_placeholder_secret(value)
     ]
+    for name in ("ACCESS_TOKEN_SECRET_KEY", "REFRESH_TOKEN_SECRET_KEY", "SESSION_SECRET_KEY"):
+        value = secrets[name]
+        if not is_placeholder_secret(value) and len(value.strip()) < SECRET_KEY_MIN_LENGTH:
+            violations.append(f"{name} 가 {SECRET_KEY_MIN_LENGTH}자보다 짧습니다")
     if jwt.ACCESS_TOKEN_SECRET_KEY == jwt.REFRESH_TOKEN_SECRET_KEY:
         violations.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
-    # debug 모드는 배포 환경에서 켜지면 안 된다 — 유효 로그 레벨이 DEBUG 가 되고,
-    # 롤백 상세 로그가 실행된 SQL 과 바인딩된 값을 그대로 남긴다(NFR-001).
-    if app.DEBUG:
-        violations.append("DEBUG 가 켜져 있습니다")
-    if (log.LOG_LEVEL or "").strip().upper() == "DEBUG":
-        violations.append("LOG_LEVEL 이 디버그 레벨입니다")
+    if app.ENV in DEPLOYED_ENVS:
+        # debug 모드는 배포 환경에서 켜지면 안 된다 — 유효 로그 레벨이 DEBUG 가 되고,
+        # 롤백 상세 로그가 실행된 SQL 과 바인딩된 값을 그대로 남긴다(NFR-001).
+        if app.DEBUG:
+            violations.append("DEBUG 가 켜져 있습니다")
+        if (log.LOG_LEVEL or "").strip().upper() == "DEBUG":
+            violations.append("LOG_LEVEL 이 디버그 레벨입니다")
+        # 인증 없는 /admin 은 배포 환경에서도 쓸 수 있다 — 단, 알고 켰다는 확인이 있어야
+        # 한다. 기본값 ADMIN=true 를 그대로 들고 온 배포가 여기서 걸린다(ADR-045 ③).
+        if app.ADMIN and not app.ADMIN_ALLOW_UNAUTHENTICATED:
+            violations.append(
+                "ADMIN 이 켜져 있습니다 — /admin 은 인증 없이 열립니다. 쓰지 않으면 "
+                "ADMIN=false 로, 인증 없이 쓰는 것이 의도라면 "
+                "ADMIN_ALLOW_UNAUTHENTICATED=true 를 함께 설정하세요"
+            )
     if violations:
         raise RuntimeError(
-            f"ENV={app.ENV} 배포 안전 검사 실패 — " + "; ".join(violations) + ". "
-            'uv run python -c "import secrets; print(secrets.token_urlsafe(48))" 로 '
-            "서로 다른 키를 만들어 넣으세요."
+            f"ENV={app.ENV} 설정 검사 실패 — " + "; ".join(violations) + ". "
+            "`.env`(또는 환경 변수)를 고치세요. 비밀 키는 "
+            'uv run python -c "import secrets; print(secrets.token_urlsafe(48))" 로 키마다 따로 '
+            "만들고, 비밀번호는 실제 값을 넣습니다(Redis·SMTP 를 쓰지 않으면 비웁니다)."
         )
 
 
+validate_env_source(app_settings.ENV)
 validate_deployment_safety()

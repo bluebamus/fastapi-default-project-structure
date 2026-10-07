@@ -103,7 +103,29 @@ uv sync
 
 `[tool.uv] package = false` 라 루트 패키지는 설치하지 않고 의존성만 설치합니다.
 
-### 2. Redis 만으로 배선 확인
+### 2. `.env` 준비 — 먼저 채운다
+
+```bash
+cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -Destination .env
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # 키마다 한 번씩, 세 번 실행
+```
+
+`.env` 에서 아래를 바꿉니다. 바꾸지 않으면 **개발 환경에서도 기동하지 않습니다**(설정 검사, ADR-045).
+오류 메시지에 고칠 설정 이름이 나오므로 그대로 따라 고치면 됩니다.
+
+| 설정 | 할 일 |
+|---|---|
+| `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` | 위 명령으로 만든 값을 **서로 다르게** 넣는다(32자 이상) |
+| `MYSQL_PASSWORD` | 4단계에서 띄울 MySQL 의 비밀번호와 같은 값. 비워 두거나 예시 값이면 거부 |
+| `SMTP_PASSWORD` | 메일을 안 쓰면 **비운다**. 예시 값을 남겨 두면 거부 |
+
+- `.env` 가 없으면 기동하지 않습니다. 파일 없이 환경 변수로 주입하는 경우(컨테이너)는 `ENV`·비밀 키 3종·
+  `MYSQL_HOST/USER/PASSWORD/DATABASE` 가 모두 있어야 합니다.
+- 우선순위: **프로세스 환경 변수 → `.env` → 코드 기본값**. 코드 기본값은 그대로 두되, 예시 값·빈 비밀번호로는 뜨지 않습니다.
+- 리스트 값은 JSON 배열로 씁니다: `CORS_ALLOW_ORIGINS=["http://localhost:3000"]`.
+- 테스트(`ENV=test`, pytest 가 지정)는 이 검사를 하지 않습니다 — `.env` 없이 돕니다.
+
+### 3. Redis 만으로 배선 확인
 
 ```bash
 docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine
@@ -114,32 +136,19 @@ curl http://127.0.0.1:8000/health      # {"status":"healthy","version":"0.1.0"}
 PowerShell 은 `$env:DEBUG = "false"` 로 지정하고, 끝난 뒤 `Remove-Item Env:DEBUG` 로 되돌립니다.
 `compose.test.yaml` 의 Redis 를 써도 됩니다: `docker compose -f compose.test.yaml up -d --wait redis-test`.
 
-### 3. MySQL 추가 — 기능 API·문서까지
+### 4. MySQL 추가 — 기능 API·문서까지
 
 ```bash
 docker run -d --name fastapi-mysql -p 3306:3306 \
-  -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=fastapi_db mysql:8
+  -e MYSQL_ROOT_PASSWORD='<.env 의 MYSQL_PASSWORD 와 같은 값>' -e MYSQL_DATABASE=fastapi_db mysql:8
 uv run uvicorn main:app --reload --port 8000
 ```
 
-설정 기본값(`MYSQL_HOST=localhost`, `MYSQL_USER=root`, `MYSQL_PASSWORD=""`,
-`MYSQL_DATABASE=fastapi_db`)에 맞춘 **로컬 전용** 예시입니다(빈 root 비밀번호를 운영에 쓰지 않습니다).
+설정 기본값(`MYSQL_HOST=localhost`, `MYSQL_USER=root`, `MYSQL_DATABASE=fastapi_db`)에 맞춘 **로컬 전용**
+예시입니다. 빈 비밀번호는 개발 환경에서도 설정 검사가 거부하므로 비밀번호를 지정합니다.
 이 단일 컨테이너 경로는 실행 확인하지 않았습니다 — 검증된 것은 `compose.test.yaml`(포트 3308) 경로입니다.
 데이터베이스와 계정 권한은 미리 있어야 합니다. `DEBUG=true` 의 테이블 생성은 **없는 테이블만** 만드는
 개발 편의 기능이고 migration 이 아닙니다.
-
-### 4. `.env`
-
-```bash
-cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -Destination .env
-```
-
-- `.env.example` 은 복사용 견본이지 자동 fallback 이 아닙니다. `.env` 가 없으면 코드 기본값을 씁니다.
-- 우선순위: **프로세스 환경 변수 → `.env` → 코드 기본값**.
-- `.env.example` 의 `MYSQL_PASSWORD=change-this-mysql-password` 는 3단계의 빈 비밀번호 컨테이너와
-  맞지 않습니다. 복사했다면 값을 맞추세요. 이 예시값은 그대로 두면 `ENV=staging|production`
-  기동이 거부됩니다(배포 안전 검사).
-- 리스트 값은 JSON 배열로 씁니다: `CORS_ALLOW_ORIGINS=["http://localhost:3000"]`.
 
 ### 5. 실행 명령과 접속 주소
 
@@ -170,7 +179,10 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 | startup 에서 `Redis 연결 실패: <오류 타입>` | Redis 미기동·주소/포트/비밀번호 오류 | `REDIS_*` 확인. `DEBUG=false` 로 우회되지 않음 |
 | startup 에서 `Can't connect to MySQL server` | `DEBUG=true` 가 테이블 생성을 시도 | MySQL 을 띄우거나 `DEBUG=false` |
 | `/docs` 404 | `DEBUG=false` 는 문서를 끈다 | `DEBUG=true` (MySQL 필요) |
-| 기능 API 만 500 | 앱은 떴지만 DB 가 없다 | 3단계 |
+| 기능 API 만 500 | 앱은 떴지만 DB 가 없다 | 4단계 |
+| `.env 파일이 없고, 필수 설정이 …` | `.env` 가 없다 | 2단계. 컨테이너라면 메시지에 나온 환경 변수를 주입 |
+| `ENV=development 설정 검사 실패 — X 가 예시 값…` | `.env` 의 비밀 키·비밀번호가 예시 값·빈 값·32자 미만 | 2단계 표대로 X 를 고친다 |
+| `ENV=production 설정 검사 실패 — ADMIN 이 켜져 있습니다` | 배포 환경에서 `ADMIN=true`(기본값) | 쓰지 않으면 `ADMIN=false`, 의도라면 `ADMIN_ALLOW_UNAUTHENTICATED=true` |
 | startup INFO 로그가 안 보임 | `LOG_LEVEL`·`LOG_CONSOLE_LEVEL` 명시값이 더 높음 | [ARCHITECTURE §9.3](./docs/guides/ARCHITECTURE.md#93-레벨이-정해지는-방식) |
 | 새 기능 URL 이 404 | `main.py` 에 `include_router` 누락 | [DEVELOPMENT §2](./docs/guides/DEVELOPMENT.md#2-새-기능테이블-추가-절차) |
 | MySQL 테스트가 `Access denied` 로만 실패 | 3308 포트를 다른 MySQL 이 선점(IDE 포트 포워딩 등) | Windows `Get-NetTCPConnection -LocalPort 3308`, Linux `ss -ltn`. `MYSQL_TEST_PORT` 로 이동 |
@@ -184,14 +196,25 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 [ARCHITECTURE 부록](./docs/guides/ARCHITECTURE.md#부록-설정-필드-전체)에 있고,
 `config.py` 와 `.env.example` 은 `tests/core/test_settings_contract.py` 가 양방향으로 맞춰 둡니다.
 
-`ENV` 가 `staging`/`production` 이면 `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 중 예시 값(`change-this` 포함·`your-` 시작·빈 값)이 있거나, access 와 refresh 가 같거나, `DEBUG=true`·`LOG_LEVEL=DEBUG` 면 `config` import 가 `RuntimeError` 로 실패합니다(`validate_deployment_safety()`, ADR-027·ADR-028·ADR-030). `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 같은 규칙으로 봅니다 — 인증 없는 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다. 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. `development`/`test` 는 검사하지 않습니다.
+`config` import 시점의 설정 검사(ADR-027·028·030·045)가 잘못된 설정을 `RuntimeError` 로 알립니다. 메시지에는 설정 이름만 나오고 값은 나오지 않으며, 위반은 한 번에 모아 보여 줍니다. `ENV=test` 는 검사하지 않습니다.
+
+| 검사 | 적용 ENV |
+|---|---|
+| `.env` 가 없고 `ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE` 가 환경 변수로도 없음(`validate_env_source()`) | test 외 전부 |
+| `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 가 예시 값(`change-this` 포함·`your-` 시작·빈 값) | test 외 전부 |
+| `REDIS_PASSWORD`·`SMTP_PASSWORD` 가 **값이 있는데** 예시 값(빈 값은 "안 쓴다" 로 통과) | test 외 전부 |
+| 비밀 키 3종이 32자 미만, access 와 refresh 가 같음 | test 외 전부 |
+| `DEBUG=true`, `LOG_LEVEL=DEBUG` | staging·production |
+| `ADMIN=true` 인데 `ADMIN_ALLOW_UNAUTHENTICATED=true` 가 없음 | staging·production |
+
 키는 키마다 따로 만듭니다: `uv run python -c "import secrets; print(secrets.token_urlsafe(48))"`
 
 | 변수 | 기본값 | 의미 |
 |---|---|---|
 | `DEBUG` | `true` | true: DEBUG 로그 기본값·개발용 테이블 생성·`/docs`·`python main.py` reload. false: 모두 끔 |
-| `ADMIN` | `true` | `/admin` 마운트. **인증 없음**, `DEBUG` 와 독립 |
-| `ENV` | `development` | `development`/`test`/`staging`/`production` — 로그 출력 구성(시간대·stderr)에 사용. staging/production 은 비밀 키 검사(아래) |
+| `ADMIN` | `true` | `/admin` 마운트. **인증 없음**, `DEBUG` 와 독립. staging/production 은 아래 확인 플래그 필요 |
+| `ADMIN_ALLOW_UNAUTHENTICATED` | `false` | staging/production 에서 인증 없는 `/admin` 을 **의도적으로** 연다는 확인. 켜면 매 기동 WARNING |
+| `ENV` | `development` | `development`/`test`/`staging`/`production` — 로그 출력 구성(시간대·stderr)과 설정 검사 범위(위 표) |
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | `python main.py` 전용 바인딩 |
 | `MYSQL_HOST`·`MYSQL_PORT`·`MYSQL_USER`·`MYSQL_PASSWORD`·`MYSQL_DATABASE` | `localhost`·`3306`·`root`·`""`·`fastapi_db` | primary(writer) |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
@@ -290,16 +313,17 @@ DELETE 는 204(본문 없음)입니다. 오류 응답은 `{"error_code", "messag
 
 ## 운영 배포 체크리스트
 
-**앱은 아래 조합을 막지 않습니다(확정 정책, 2026-08-12).** `ENV=production` 과 `ADMIN=true` 를 함께
-줘도 기동은 성공합니다. 개발 기본값을 유지하는 대신 차단 책임을 배포 쪽에 둡니다.
-**예외는 비밀 키와 debug 모드입니다(ADR-027·028·030)** — 4번과 5번은 staging/production 에서 앱이 직접 거부합니다(`LOG_LEVEL=DEBUG` 도 함께).
+1·4·5번은 staging/production 에서 **앱이 직접 기동을 거부**합니다(설정 검사, ADR-027·028·030·045).
+`/admin` 은 배포 환경에서도 쓸 수 있지만, `ADMIN_ALLOW_UNAUTHENTICATED=true` 로 **알고 켰다는 확인**을
+줘야 하고 매 기동 WARNING 이 남습니다. 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않으므로 아래를 확인합니다.
 
 | # | 확인 | 빠뜨리면 |
 |---|---|---|
-| 1 | `ADMIN=false` 를 **명시**했는가 | 기본값 `true` 라 인증 없는 `/admin` 이 열린다 — 사용자·게시글·댓글·접속로그 조회·수정·삭제와 CSV 내보내기 가능(비밀번호 해시만 제외) |
+| 1 | `/admin` 을 쓰지 않으면 `ADMIN=false` 를 **명시**했는가. 쓴다면 `ADMIN_ALLOW_UNAUTHENTICATED=true` 와 3번을 함께 했는가 | 기본값 `ADMIN=true` 그대로면 기동 거부. 확인 플래그로 열면 인증 없이 사용자·게시글·댓글·접속로그 조회·수정·삭제와 CSV 내보내기가 가능하다(비밀번호 해시만 제외) |
 | 2 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` 인가 (`python main.py` 실행 시) | 기본값 `0.0.0.0` |
 | 3 | 리버스 프록시·방화벽이 `/admin` 을 막는가 | 1·2 가 뚫리면 마지막 방어선이 없다 |
-| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD`·`SMTP_PASSWORD` 도) | `ENV=staging`/`production` 이면 기동 거부(`RuntimeError`, 이름만 표시). 그 밖의 `ENV` 로 띄우면 검사가 없어 누구나 토큰을 위조하고 DB 에 붙는다 |
+| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD`·`SMTP_PASSWORD` 도) | 예시 값·빈 값·32자 미만이면 test 외 모든 `ENV` 에서 기동 거부(`RuntimeError`, 이름만 표시) |
+| 4-1 | `ENV=production`(또는 `staging`)을 **명시**했는가 | 기본값 `development` 로 뜨면 `DEBUG`·`LOG_LEVEL`·`ADMIN` 검사가 빠진다. `.env` 없이 환경 변수로 주입하는 배포는 `ENV` 가 없으면 기동 거부 |
 | 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출, worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
 | 7 | `CORS_ALLOW_ORIGINS` 를 실제 출처로 좁혔는가 | 기본값 `["*"]` |
