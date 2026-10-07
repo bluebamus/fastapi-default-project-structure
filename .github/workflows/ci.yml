@@ -13,6 +13,10 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+  # 의존성 권고는 코드가 바뀌지 않아도 밖에서 늘어난다(ADR-035). push 가 없는 주에도
+  # 게이트의 pip-audit 이 돌도록 주 1회 실행한다(ADR-044). 월요일 00:00 UTC = 09:00 KST.
+  schedule:
+    - cron: "0 0 * * 1"
 
 permissions:
   contents: read
@@ -30,6 +34,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # 전체 이력이 있어야 review_gate 의 "문서 인용 커밋 도달성" 이 실제로 돈다.
+          # 기본값(fetch-depth 1, 얕은 클론)이면 그 검사는 판정할 수 없어 skip 한다(ADR-044).
+          fetch-depth: 0
 
       - name: uv 설치
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
@@ -60,6 +68,12 @@ jobs:
       # (과거 외부 감사에서 LOW 전수 검토 결과 실질 이슈 0건 — 보고서는 저장소에 없다).
       - name: bandit (MEDIUM 이상)
         run: uv run bandit -ll -q -r app main.py config.py
+
+      # 계층 불변식(INV-1/2/5/10/11)·C-6·C-7·인용 정합·의존성 감사(pip-audit)는 이 스크립트에만
+      # 있다. 전에는 CI 가 부르지 않아 로컬에서 돌린 사람만 확인했다(ADR-044).
+      # --fast 는 게이트의 pytest 만 뺀다 — pytest 는 아래 단계가 skip 금지 조건으로 돌린다.
+      - name: review_gate (구조 불변식 + 의존성 감사)
+        run: uv run python -m scripts.review_gate --fast
 
       # ── 테스트 ──────────────────────────────────────────────────────────
       # -rsxX: 건너뛴 테스트를 로그에 드러낸다.
