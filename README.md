@@ -259,7 +259,7 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 | `mysql` | compose 의 `mysql-test` 기동 → `pytest -m mysql --mysql-required` → skip 또는 0건이면 실패 |
 
 두 job 은 테스트 집합이 정확히 상보입니다. 배포·이미지 빌드는 이 저장소 범위 밖입니다.
-커밋 전 훅은 `.pre-commit-config.yaml`(ruff·ruff-format·기본 위생 검사)에 있습니다.
+커밋 전 훅(`.pre-commit-config.yaml`)은 저장소가 추적하지 않는 로컬 선택 설정입니다 — 같은 검사는 CI 가 합니다.
 
 ---
 

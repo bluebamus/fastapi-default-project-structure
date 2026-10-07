@@ -76,7 +76,7 @@
 │   └── utils/                       # logs/ · authenticator/ · pagination/ · validators.py
 ├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
 ├── docs/                   # guides/ · specs/ · crp/  (색인은 README)
-└── media/ static/ poc/ logs/   # 예약 디렉터리 (.gitkeep 만 추적, 파일 로그는 쓰지 않는다)
+└── media/ static/ poc/ logs/   # 예약 디렉터리 (추적하지 않음, 파일 로그는 쓰지 않는다)
 ```
 
 ### 1.2 의존 방향과 기능 간 참조
