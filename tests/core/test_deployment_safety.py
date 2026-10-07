@@ -1,8 +1,10 @@
-"""배포 안전 검사(`config.validate_deployment_safety`) 테스트 — ADR-027.
+"""설정 검사(`config.validate_deployment_safety` · `config.validate_env_source`) 테스트.
 
-`ENV` 가 staging/production 이면 서명·세션 비밀 키가 예시 값(placeholder)이거나
-access 와 refresh 키가 같을 때 config import 가 실패해야 한다. 오류 메시지는 설정
-**이름**만 담고 값은 담지 않는다. development/test 는 검사하지 않는다.
+- ADR-027: 비밀 키가 예시 값(placeholder)이거나 access 와 refresh 키가 같으면 config import 가
+  실패한다. 오류 메시지는 설정 **이름**만 담고 값은 담지 않는다.
+- ADR-045 ①: `.env` 가 없고 필수 값이 환경 변수로도 없으면 실패한다(컨테이너 주입은 통과).
+- ADR-045 ②: 위 비밀값 검사는 test 를 뺀 **모든 ENV** 에 적용된다(개발 환경 포함).
+- ADR-045 ③: staging/production 의 ADMIN=true 는 ADMIN_ALLOW_UNAUTHENTICATED=true 가 있어야 뜬다.
 """
 
 import os
@@ -45,10 +47,18 @@ def _check(
     mysql_password: str = "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
     redis_password: str | None = None,
     smtp_password: str = "",
+    admin: bool = False,
+    admin_ack: bool = False,
 ) -> None:
     """.env·프로세스 환경과 무관하게 주어진 값만으로 검사를 실행한다."""
     config.validate_deployment_safety(
-        app=config.AppSettings(_env_file=None, ENV=env, DEBUG=debug),
+        app=config.AppSettings(
+            _env_file=None,
+            ENV=env,
+            DEBUG=debug,
+            ADMIN=admin,
+            ADMIN_ALLOW_UNAUTHENTICATED=admin_ack,
+        ),
         jwt=config.JWTSettings(
             _env_file=None,
             ACCESS_TOKEN_SECRET_KEY=secrets["ACCESS_TOKEN_SECRET_KEY"],
@@ -124,21 +134,47 @@ def test_non_placeholder_values(value):
     assert not config.is_placeholder_secret(value)
 
 
-@pytest.mark.parametrize("env", ["development", "test"])
-def test_development_and_test_are_not_checked(env):
-    """(e) development/test 는 placeholder·동일 키여도 통과한다."""
-    _check(env, _example_secrets())
+def test_test_env_is_not_checked():
+    """(e) test 는 placeholder·동일 키여도 통과한다 — pytest 가 ENV=test 로 돈다."""
+    _check("test", _example_secrets())
     same = dict.fromkeys(SECRET_KEYS, "change-this")
-    _check(env, same)
+    _check("test", same, mysql_password="")
+
+
+def test_development_rejects_example_secrets():
+    """(e') ADR-045 ②: 개발 환경도 `.env.example` 값 그대로면 오류다 — `.env` 를 채우라는 신호."""
+    secrets = _example_secrets()
+    with pytest.raises(RuntimeError) as exc_info:
+        _check("development", secrets)
+    message = str(exc_info.value)
+    for name in SECRET_KEYS:
+        assert name in message
+    for value in secrets.values():
+        assert value not in message
+
+
+@pytest.mark.parametrize("env", ["development", "staging", "production"])
+def test_short_secret_key_is_rejected(env):
+    """ADR-045 ②: 예시 값이 아니어도 32자보다 짧은 서명·세션 키는 거부한다."""
+    short = "k9Qz0vL3mX7pR2tY5wB8nC1dF4g"  # 27자
+    with pytest.raises(RuntimeError, match="SESSION_SECRET_KEY") as exc_info:
+        _check(env, {**STRONG, "SESSION_SECRET_KEY": short})
+    assert short not in str(exc_info.value)
 
 
 def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     # DEBUG·LOG_LEVEL·비밀번호 3종은 배포 안전 검사 대상이다. 개발자 `.env` 값에
     # 좌우되지 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
+    # ADMIN 기본값 true 는 배포 환경에서 확인 플래그 없이는 위반이다(ADR-045 ③) — 끈 채로 둔다.
+    # MYSQL_HOST·USER·DATABASE 는 `.env` 가 없는 환경(CI)에서 출처 검사(ADR-045 ①)를 통과시킨다.
     env = {
         **os.environ,
         "DEBUG": "false",
         "LOG_LEVEL": "INFO",
+        "ADMIN": "false",
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_USER": "app",
+        "MYSQL_DATABASE": "app",
         "MYSQL_PASSWORD": "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
         "REDIS_PASSWORD": "",
         "SMTP_PASSWORD": "",
@@ -296,16 +332,23 @@ def test_unused_redis_and_smtp_passwords_pass(env):
     _check(env, STRONG, redis_password="", smtp_password="   ")
 
 
-@pytest.mark.parametrize("env", ["development", "test"])
-def test_passwords_are_not_checked_outside_deployed_envs(env):
-    """개발·테스트는 예시 비밀번호로 그냥 뜬다."""
+def test_passwords_are_not_checked_in_test_env():
+    """테스트는 예시 비밀번호로 그냥 뜬다."""
     _check(
-        env,
+        "test",
         STRONG,
         mysql_password="",
         redis_password="your-redis-password",
         smtp_password=_example_value("SMTP_PASSWORD"),
     )
+
+
+@pytest.mark.parametrize("mysql_password", ["", "EXAMPLE"])
+def test_development_rejects_example_or_empty_mysql_password(mysql_password):
+    """ADR-045 ②: 개발 환경도 MySQL 비밀번호가 비었거나 예시 값이면 오류다."""
+    value = _example_value("MYSQL_PASSWORD") if mysql_password == "EXAMPLE" else ""
+    with pytest.raises(RuntimeError, match="MYSQL_PASSWORD"):
+        _check("development", STRONG, mysql_password=value)
 
 
 def test_import_fails_in_production_with_example_passwords():
@@ -316,3 +359,142 @@ def test_import_fails_in_production_with_example_passwords():
     assert result.returncode != 0
     assert "MYSQL_PASSWORD" in result.stderr
     assert mysql_password not in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# ADR-045 ③ — 배포 환경의 ADMIN=true 는 "알고 켰다" 는 확인이 있어야 뜬다.
+# 기본값 ADMIN=true 를 그대로 들고 온 배포와, 인증 없는 /admin 을 의도한 배포를 가른다.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_admin_without_ack_is_rejected_in_deployed_envs(env):
+    with pytest.raises(RuntimeError) as exc_info:
+        _check(env, STRONG, admin=True)
+    message = str(exc_info.value)
+    assert "ADMIN" in message
+    assert "ADMIN_ALLOW_UNAUTHENTICATED" in message  # 해결 방법을 함께 알려 준다
+
+
+@pytest.mark.parametrize("env", ["staging", "production"])
+def test_admin_with_ack_passes_in_deployed_envs(env):
+    _check(env, STRONG, admin=True, admin_ack=True)
+
+
+@pytest.mark.parametrize("env", ["development", "test"])
+def test_admin_needs_no_ack_outside_deployed_envs(env):
+    """개발용 /admin 은 지금처럼 확인 없이 뜬다."""
+    _check(env, STRONG, admin=True)
+
+
+def test_import_fails_in_production_with_admin_default():
+    """기본값 ADMIN=true 로 배포하면 import 에서 멈춘다."""
+    result = _import_config({"ENV": "production", **STRONG, "ADMIN": "true"})
+    assert result.returncode != 0
+    assert "ADMIN_ALLOW_UNAUTHENTICATED" in result.stderr
+
+
+def test_deployed_admin_with_ack_logs_warning_on_startup():
+    """확인 플래그로 연 /admin 은 기동마다 WARNING 을 남긴다 — 운영 로그에서 놓치지 않게."""
+    env = {
+        **os.environ,
+        "ENV": "production",
+        **STRONG,
+        "DEBUG": "false",
+        "LOG_LEVEL": "INFO",
+        "ADMIN": "true",
+        "ADMIN_ALLOW_UNAUTHENTICATED": "true",
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_USER": "app",
+        "MYSQL_DATABASE": "app",
+        "MYSQL_PASSWORD": "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
+        "REDIS_PASSWORD": "",
+        "SMTP_PASSWORD": "",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", "import main"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    output = result.stdout + result.stderr
+    assert "WARNING" in output
+    assert "SQLAdmin 이 인증 없이 열려 있습니다" in output
+
+
+# ---------------------------------------------------------------------------
+# ADR-045 ① — 설정의 출처. `.env` 가 없으면 필수 값이 환경 변수로 와야 한다.
+# ---------------------------------------------------------------------------
+
+FULL_ENVIRON = {
+    "ENV": "production",
+    **STRONG,
+    "MYSQL_HOST": "db",
+    "MYSQL_USER": "app",
+    "MYSQL_PASSWORD": "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
+    "MYSQL_DATABASE": "app",
+}
+
+
+def test_missing_env_file_without_environ_is_rejected(tmp_path):
+    with pytest.raises(RuntimeError) as exc_info:
+        config.validate_env_source("development", tmp_path / ".env", {})
+    message = str(exc_info.value)
+    assert ".env" in message
+    for name in config.REQUIRED_WITHOUT_ENV_FILE:
+        assert name in message
+
+
+def test_missing_env_file_names_only_what_is_missing(tmp_path):
+    environ = {k: v for k, v in FULL_ENVIRON.items() if k != "MYSQL_PASSWORD"}
+    with pytest.raises(RuntimeError) as exc_info:
+        config.validate_env_source("production", tmp_path / ".env", environ)
+    message = str(exc_info.value)
+    assert "MYSQL_PASSWORD" in message
+    assert "MYSQL_HOST" not in message
+    for value in environ.values():
+        assert value not in message
+
+
+def test_injected_environ_without_env_file_passes(tmp_path):
+    """컨테이너처럼 파일 없이 환경 변수로 모두 주입하면 통과한다."""
+    config.validate_env_source("production", tmp_path / ".env", FULL_ENVIRON)
+
+
+def test_existing_env_file_passes(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("ENV=development\n", encoding="utf-8")
+    config.validate_env_source("development", env_file, {})
+
+
+def test_test_env_skips_source_check(tmp_path):
+    config.validate_env_source("test", tmp_path / ".env", {})
+
+
+def test_import_fails_without_env_file_and_environ(tmp_path):
+    """검사는 import 시점에 실제로 돈다 — `.env` 없는 작업 디렉터리에서 필수 값 없이 import."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in config.REQUIRED_WITHOUT_ENV_FILE and k != "PYTHONPATH"
+    }
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+    env["PYTHONIOENCODING"] = "utf-8"
+    result = subprocess.run(
+        [sys.executable, "-c", "import config"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert ".env 파일이 없고" in result.stderr

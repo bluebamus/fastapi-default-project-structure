@@ -97,9 +97,10 @@ __all__ = ["router"]
 새 공용 설정이 필요하면 `config.py` 에 필드를 추가하고 `.env.example` 에도 적습니다
 (`tests/core/test_settings_contract.py`). 환경 변수는 `config.py` 밖에서 읽지 않습니다.
 새 비밀 키·비밀번호를 추가하면 `validate_deployment_safety()` 의 검사 대상에도 넣습니다
-(staging/production 에서 예시 값 거부, `tests/core/test_deployment_safety.py`). **반드시 있어야 하는
+(test 외 모든 ENV 에서 예시 값 거부, `tests/core/test_deployment_safety.py`). **반드시 있어야 하는
 값**이면 기존 `secrets` 딕셔너리에 넣어 빈 값도 위반으로 보고, **안 쓰는 것이 정당한 값**이면
-비어 있을 때 건너뛰는 쪽(`REDIS_PASSWORD`·`SMTP_PASSWORD`)에 넣습니다.
+비어 있을 때 건너뛰는 쪽(`REDIS_PASSWORD`·`SMTP_PASSWORD`)에 넣습니다. `.env` 없이 환경 변수로만
+주입하는 배포에서도 반드시 와야 하는 값이면 `REQUIRED_WITHOUT_ENV_FILE` 에도 넣습니다(ADR-045 ①).
 
 ### 2.3 작업 순서 요약
 
