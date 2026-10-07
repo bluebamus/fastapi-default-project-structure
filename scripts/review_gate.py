@@ -425,7 +425,9 @@ REQUIREMENT_ID = re.compile(
 # 이 그룹이 생기기 **전** 검수 라운드의 ID 다. 근거 문서가 이 저장소에 없어서 따라갈 수
 # 없지만, 고치는 것은 REQ-005 범위 밖이라 수용했다(residual-risk R-007). 새 코드가 이
 # 목록에 기대면 안 되므로 늘리지 않는다.
-LEGACY_UNDECLARED_IDS = frozenset({"ADR-019", "REQ-008", "REQ-009"})
+# `ADR-019` 는 2026-10-07 에 빠졌다 — 원 결정을 찾아 design-baseline §3 주석에 옮겨 적어서
+# 이제 정식으로 선언된다(ADR-043). 남은 둘은 출처를 찾지 못한 번호다.
+LEGACY_UNDECLARED_IDS = frozenset({"REQ-008", "REQ-009"})
 
 # design-baseline 의 두 레지스터는 **자리까지** 본다 (ADR-041). ADR 은 §3, REQ 은 §2.
 REGISTER_SECTION = {"REQ": "2", "ADR": "3"}
