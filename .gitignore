@@ -43,3 +43,10 @@ htmlcov/
 .Trashes
 Icon?
 .fseventsd
+
+# 필수가 아닌 dot 파일·예약 디렉터리 — 로컬에는 둬도 저장소는 추적하지 않는다 (2026-10-07)
+/.pre-commit-config.yaml
+/media/
+/static/
+/poc/
+/.gitattributes
