@@ -29,8 +29,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.db.models_registry import import_all_models
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
+from app.core.db.session import Base
 from main import app
+from tests.session_overrides import override_db_sessions
 
 import_all_models()
 
@@ -146,16 +147,14 @@ async def env():
     maker = async_sessionmaker(engine, expire_on_commit=False)
     calls = {"commit": 0}
 
-    async def _session():
-        async with maker() as session:
-            original = session.commit
+    def _wrap_session(session):
+        original = session.commit
 
-            async def _counting_commit(*args: Any, **kwargs: Any) -> None:
-                calls["commit"] += 1
-                await original(*args, **kwargs)
+        async def _counting_commit(*args: Any, **kwargs: Any) -> None:
+            calls["commit"] += 1
+            await original(*args, **kwargs)
 
-            session.commit = _counting_commit  # type: ignore[method-assign]
-            yield session
+        session.commit = _counting_commit  # type: ignore[method-assign]
 
     async def snapshot(table: str) -> list[tuple]:
         # table 은 위 CASES 의 테스트 상수다(외부 입력 아님).
@@ -163,8 +162,7 @@ async def env():
             rows = await conn.execute(text(f"SELECT * FROM {table} ORDER BY id"))
             return [tuple(row) for row in rows]
 
-    app.dependency_overrides[get_writer_db_session] = _session
-    app.dependency_overrides[get_read_only_db_session] = _session
+    override_db_sessions(app, maker, _wrap_session)
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client, calls, snapshot

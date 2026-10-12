@@ -15,9 +15,10 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
+from app.core.db.session import Base
 from app.features.catalog.models.models import Product  # noqa: F401  (테이블 등록)
 from main import app
+from tests.session_overrides import override_db_sessions
 
 BASE = "/api/v1/catalog/products"
 
@@ -36,20 +37,16 @@ async def client():
 
     counter = {"commits": 0}
 
-    async def _override_session():
-        async with maker() as db_session:
-            original_commit = db_session.commit
+    def _wrap_session(db_session):
+        original_commit = db_session.commit
 
-            async def _counting_commit(*args, **kwargs):
-                counter["commits"] += 1
-                return await original_commit(*args, **kwargs)
+        async def _counting_commit(*args, **kwargs):
+            counter["commits"] += 1
+            return await original_commit(*args, **kwargs)
 
-            db_session.commit = _counting_commit  # type: ignore[method-assign]
-            yield db_session
+        db_session.commit = _counting_commit  # type: ignore[method-assign]
 
-    # 조회는 read-only, 쓰기는 writer 세션을 쓴다 — 둘 다 같은 sqlite 로 보낸다.
-    app.dependency_overrides[get_writer_db_session] = _override_session
-    app.dependency_overrides[get_read_only_db_session] = _override_session
+    override_db_sessions(app, maker, _wrap_session)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client, counter
