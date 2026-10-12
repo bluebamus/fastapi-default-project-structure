@@ -520,3 +520,40 @@ async def test_raw_dml_is_blocked_on_a_read_only_session(sales_engine):
             query_name="sales_report.test_count",
         )
         assert remaining == len(SEED_ORDERS)
+
+
+@pytest.mark.parametrize(
+    ("start_date", "end_date"),
+    [
+        ("9999-12-31", "9999-12-31"),  # end_date + 1일 이 overflow 로 500 이던 값
+        ("9998-12-31", "9999-12-31"),
+        ("1969-12-31", "1970-01-01"),
+    ],
+    ids=["date-max", "crosses-max", "before-min"],
+)
+async def test_dates_outside_the_supported_range_are_422(client, start_date, end_date):
+    """날짜 범위 상·하한(service-hardening ADR-008 ③) — 조회와 적재 모두 같은 규칙."""
+    http_client, counter = client
+    params = {"start_date": start_date, "end_date": end_date}
+
+    read = await http_client.get(BASE, params=params)
+    load = await http_client.post(SNAPSHOTS, json=params)
+
+    for response in (read, load):
+        assert response.status_code == 422, response.text
+        assert response.json()["error_code"] == "REPORT_INVALID_DATE_RANGE"
+    assert counter["commits"] == 0
+
+
+async def test_boundary_dates_are_accepted(client):
+    http_client, _ = client
+
+    upper = await http_client.get(
+        BASE, params={"start_date": "9998-12-31", "end_date": "9998-12-31"}
+    )
+    lower = await http_client.get(
+        BASE, params={"start_date": "1970-01-01", "end_date": "1970-01-01"}
+    )
+
+    assert upper.status_code == 200, upper.text
+    assert lower.status_code == 200, lower.text

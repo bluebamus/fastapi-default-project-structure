@@ -23,26 +23,30 @@
     이 계층은 ``flush`` 까지만 한다. 커밋은 쓰기 View 본문이 응답 직전에
     정확히 한 번 수행한다(TX-004).
 
-예외 정책 (ORM-REP-006):
-    모든 공개 경로가 같은 변환을 거친다. 무결성 충돌은 ``DuplicateException``,
-    그 밖의 SQLAlchemy 오류는 ``DatabaseException`` 이다. 원본 예외는 chaining
-    으로 보존하되, **사용자에게 가는 detail 에는 원문·바인딩 파라미터를 싣지
-    않는다** — 오류 응답으로 입력값이 그대로 새어나가기 때문이다(NFR-001).
-    원문은 서버 로그에만 남는다.
+예외 정책 (ORM-REP-006 · service-hardening ADR-022):
+    모든 공개 경로가 같은 변환을 거친다 — 표는 ``app/core/repositories/db_errors.py`` 의
+    ``DatabaseErrorTranslator`` 하나다(중복 409, NOT NULL·참조 대상 없음 422, 참조 중 409,
+    그 밖 500). 기능 Repository 의 추가 쿼리도 ``_translated_errors`` 로 감싼다.
+    원본 예외는 chaining 으로 보존하되, **detail 과 로그에 원문·바인딩 파라미터를
+    싣지 않는다** — 드라이버 메시지에 입력값과 SQL 이 들어 있다(NFR-001). 로그에는
+    예외 타입과 드라이버 코드만 남는다. 원문은 debug 레벨 트레이스백에만 있다.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Generic, TypeVar, cast
 
-from sqlalchemy import CursorResult, delete, exists, func, select, update
+from sqlalchemy import CursorResult, Result, delete, exists, func, select, update
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql.selectable import TypedReturnsRows
 
-from app.core.exception import DatabaseException, DuplicateException, NotFoundException
+from app.core.exception import NotFoundException
 from app.core.repositories.crud_base import CRUDBase, ModelType
+from app.core.repositories.db_errors import DatabaseErrorTranslator
 from app.utils.logs import get_logger
 
 logger = get_logger("repository")
@@ -50,6 +54,9 @@ logger = get_logger("repository")
 # PK 타입 계약. 이 저장소의 모델은 문자열 UUID 를 쓰므로 기본값을 str 로 둔다 —
 # 덕분에 기존 ``BaseRepository[Model]`` 선언이 그대로 유효하다(ORM-MDL-003).
 PrimaryKeyT = TypeVar("PrimaryKeyT", default=str)
+
+# ``_execute`` 가 문장의 행 타입을 그대로 돌려주게 한다(``AsyncSession.execute`` 와 같은 타입).
+_RowT = TypeVar("_RowT", bound=tuple[Any, ...])
 
 
 class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
@@ -75,35 +82,38 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
     # ========================================================================
     @contextmanager
     def _translated_errors(self, operation: str, **context: Any) -> Iterator[None]:
-        """SQLAlchemy 오류를 프로젝트 예외로 바꾼다.
+        """SQLAlchemy 오류를 프로젝트 예외로 바꾼다(``DatabaseErrorTranslator``).
 
-        detail 에 원본 메시지를 넣지 않는다. 드라이버 오류 문자열에는 위반한 값이
-        그대로 들어 있어(예: 중복된 이메일) 오류 응답으로 유출된다.
+        detail·로그에 원본 메시지를 넣지 않는다. 드라이버 오류 문자열에는 위반한 값과
+        SQL 이 그대로 들어 있어(예: 중복된 이메일) 응답·로그 수집기로 유출된다.
         """
         try:
             yield
-        except IntegrityError as error:
-            logger.error(
-                "[%s] 무결성 제약 위반 (model=%s): %s",
-                operation.upper(),
-                self.model.__name__,
-                error,
-            )
-            raise DuplicateException(
-                message="요청한 데이터가 기존 데이터와 충돌합니다.",
-                detail={"model": self.model.__name__, "operation": operation, **context},
-            ) from error
         except SQLAlchemyError as error:
-            logger.error(
-                "[%s] 데이터베이스 오류 (model=%s): %s",
+            translated = DatabaseErrorTranslator.translate(
+                error,
+                detail={"model": self.model.__name__, "operation": operation, **context},
+            )
+            # 클라이언트 입력이 원인(4xx)이면 WARNING, 서버 쪽 실패면 ERROR.
+            logger.log(
+                logging.WARNING if translated.status_code < 500 else logging.ERROR,
+                "[%s] DB 오류 (model=%s): %s",
                 operation.upper(),
                 self.model.__name__,
-                error,
+                DatabaseErrorTranslator.describe(error),
             )
-            raise DatabaseException(
-                message="데이터베이스 처리 중 오류가 발생했습니다.",
-                detail={"model": self.model.__name__, "operation": operation, **context},
-            ) from error
+            raise translated from error
+
+    async def _execute(self, statement: TypedReturnsRows[_RowT], operation: str) -> Result[_RowT]:
+        """기능 Repository 의 추가 쿼리를 실행한다 — 공개 경로와 같은 오류 변환을 거친다.
+
+        기능 Repository 가 ``self.db_session.execute`` 를 직접 부르면 드라이버 예외가
+        변환 없이 새어 나가 500 응답 detail(DEBUG)·로그에 SQL 이 실린다
+        (service-hardening ADR-022). 그래서 추가 쿼리는 모두 이 메서드로 실행한다.
+        """
+        with self._translated_errors(operation):
+            result: Result[_RowT] = await self.db_session.execute(statement)
+            return result
 
     # ========================================================================
     # CREATE
@@ -116,8 +126,9 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
         모델의 ``UUIDPrimaryKeyMixin`` 이 만든다.
 
         Raises:
-            DuplicateException: 무결성 제약(unique/FK) 위반
-            DatabaseException: 그 밖의 DB 오류
+            DuplicateException: unique 위반 (409)
+            ValidationException: NOT NULL·참조 대상 없음 (422)
+            DatabaseException: 그 밖의 DB 오류 (500)
         """
         with self._translated_errors("create"):
             instance = self.model(**data)

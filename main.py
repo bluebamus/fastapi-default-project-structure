@@ -49,18 +49,26 @@ def _register_exception_handlers(app: FastAPI) -> None:
         애플리케이션 커스텀 예외 핸들러
 
         AppException 및 하위 예외들을 처리하여 일관된 에러 응답을 반환합니다.
+
+        로그 레벨은 상태 코드로 정한다(service-hardening ADR-008 ④). 4xx 는 클라이언트
+        입력이 원인이라 WARNING 이고 detail(요청 값이 들어 있을 수 있다)을 싣지 않는다 —
+        ERROR 로 쌓으면 경보가 흐려진다. 5xx 만 ERROR 로 detail 과 함께 남긴다.
         """
-        logger.error(
-            "[AppException] %s: %s",
-            exc.error_code,
-            exc.message,
-            extra={
-                "path": request.url.path,
-                "method": request.method,
-                "error_code": exc.error_code,
-                "detail": exc.detail,
-            },
-        )
+        extra = {
+            "path": request.url.path,
+            "method": request.method,
+            "error_code": exc.error_code,
+            "status_code": exc.status_code,
+        }
+        if exc.status_code < 500:
+            logger.warning("[AppException] %s: %s", exc.error_code, exc.message, extra=extra)
+        else:
+            logger.error(
+                "[AppException] %s: %s",
+                exc.error_code,
+                exc.message,
+                extra={**extra, "detail": exc.detail},
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_response().model_dump(mode="json"),

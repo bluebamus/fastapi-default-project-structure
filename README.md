@@ -224,6 +224,8 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 | `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | 없으면 `DEBUG` 에 따라 DEBUG/INFO |
 | `LOG_SQL_ECHO_ENABLED` | `false` | SQL 과 **바인딩 값** 로깅. 운영에서 켜지 않음 |
 | `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
+| `TRUSTED_PROXY_HOPS` | `0` | 접속 로그 IP 를 `X-Forwarded-For` 오른쪽에서 몇 번째로 읽을지(앞단 신뢰 프록시 수). 0 이면 헤더를 보지 않는다 — 프록시 뒤 배포는 단수만큼 설정 |
+| `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `password`·`token`·… | 접속 로그에 값을 `***` 로 저장할 쿼리스트링 키 |
 | `CORS_ALLOW_ORIGINS` / `CORS_ALLOW_CREDENTIALS` | `["*"]` / `false` | 와일드카드 + credentials 조합은 기동 시 거부 |
 
 ---

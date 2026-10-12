@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
 from app.utils.validators import EMAIL_PATTERN
 
 
@@ -18,8 +19,11 @@ class UserCreate(UserBase):
     """사용자 생성 요청."""
 
 
-class UserUpdate(BaseModel):
-    """사용자 수정 요청 — 전달된 필드만 부분 수정한다."""
+class UserUpdate(PatchSchema):
+    """사용자 수정 요청 — 전달된 필드만 부분 수정한다.
+
+    모든 컬럼이 NOT NULL 이라 명시적 ``null`` 은 422 다(``PatchSchema``).
+    """
 
     email: str | None = Field(None, max_length=255, pattern=EMAIL_PATTERN, description="이메일")
     is_active: bool | None = Field(None, description="활성 여부")
