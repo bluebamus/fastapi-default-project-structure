@@ -218,6 +218,66 @@
 - **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
   수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
 
+### Round 7 — 2026-10-12 · 단계 F2 (base SHA: `0f8f56a`, 커밋 `89530a8`)
+- **트리거:** 사용자 요청 REQ-001 (제안 9 후반 — 인가·소유권·운영 도구)
+- **검수 범위:** 모든 기능 라우트의 인증·인가 경로 전수(blog·sns·reply·user·catalog·reports·home·auth 39 오퍼레이션), 소유권 판정과
+  404/403 순서, 작성자 필드의 출처(요청 본문 → 인증 주체), access 토큰 claim(`su`), 사용자 상태 변경과 refresh 폐기, 접속 로그 `user_id`
+  수집 시점, 기능 간 import(해시기·provider 위치), 스키마·리비전 드리프트, 운영 도구의 비밀 입력 경로(설정 계약)
+- **GATE 통과:** 0 ☑ 1 ☑ 2 ☑ 3 ☑ 4 ☑ 5 ☑ — `pytest -m "not mysql"` **930 passed · 17 deselected · skipped 0**,
+  ruff check·format 그린(303 파일), mypy 199 파일 무결, `review_gate --fast` 전건 통과(ENV=test — 이번에는 mypy·pip-audit 단계도 그린),
+  `-m mysql` 17건 수집(+1 리비전 왕복), `alembic heads` 단일(`c9e1a3b5d7f0`), SQLite `upgrade head` → `alembic check` 드리프트 없음 →
+  `downgrade a7c9e1f3b5d6` → 재-`upgrade head` 성공, `uv lock --check` 통과
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0 (기존 F-022~F-024 를 닫았다)
+- **신규 Fix(계약 위반):** F-022·F-023·F-024 Fixed
+- **결정:** ADR-026(`PasswordHasher`·공용 provider core 이동, `su` 필수, 소유권 판정 순서, 작성자 서버 지정, `UserService` 조립,
+  `user_id` 읽는 시점·401 헤더, 운영 도구 조립, 리비전 하나, OpenAPI 기준선 불변)
+- **OpenAPI 기준선(C-10):** 갱신하지 않았다. INV-11 은 제거 0 · 2xx 변경 0 으로 통과한다 — F2 가 바꾼 것은 보호 라우트의 `401`·`403`
+  응답 선언과 `security`(OAuth2PasswordBearer) 추가, 요청 스키마에서 `author` 제거·`UserCreate.password`·`is_superuser` 추가,
+  응답 스키마의 `author_id`·`is_superuser` 추가다. 기준선은 이전 그룹 Phase 0 의 고정 비교점이라 바꿀 필요가 없을 때 바꾸지 않는다(ADR-026 ⑩).
+  **요청 스키마 변경은 호환되지 않는 변경이다** — 비밀번호 없는 `POST /users` 와 토큰 없는 쓰기는 이제 422·401 이다(의도된 변경, REQ-001-F2)
+- **fail-on-revert:** 대상 파일을 저장소 밖에 복사해 두고 변이를 하나씩 넣은 뒤 원본 바이트로 복원했다(서로 다른 변이 22개 — **전부** 해당 테스트가 실패).
+  - 소유권 — blog 의 `ensure_can_modify` 2곳 제거 → `test_other_users_cannot_modify_or_delete[blog]`·`test_row_without_owner_is_modifiable_only_by_superuser`,
+    sns·reply 도 각 기능 케이스 실패. user 단건 조회의 정책 제거 → `test_user_can_read_and_edit_self_but_not_others`·`test_unknown_user_id_is_403_for_normal_users`
+  - 슈퍼유저 — `require_superuser` 의 검사 제거 → 관리 경로 13건 + `test_require_superuser` 실패. catalog 쓰기 3개의 의존성 제거, home·reports 라우터
+    의존성 제거도 각각 해당 `test_admin_routes_are_403_for_normal_users` 케이스 실패. `is_active`·`is_superuser` 검사 제거 → `test_status_flags_are_superuser_only_even_on_self`
+  - 토큰 — `su` 를 선택 claim 으로(require 에서 빼고 `.get("su", False)`) → `test_bad_token_is_401[missing-su]`·`test_token_missing_a_required_claim_is_rejected[su]`·
+    `test_access_requires_username_and_su_but_refresh_does_not`. bool 검사 제거 → `[su-not-bool]`. 로그인이 DB 값 대신 `False` 를 실으면
+    `test_login_token_carries_superuser_flag_from_the_database`. HTTP 예외 핸들러가 헤더를 버리면 `test_write_without_token_is_401_with_bearer_challenge`
+  - 작성자 — 서비스가 요청 본문만 저장하면 `test_author_is_set_from_the_principal_not_the_body`
+  - 폐기 — 비활성화·삭제의 `revoke_user` 제거 → `test_deactivation_revokes_refresh_tokens`·`test_deletion_revokes_refresh_tokens`. 처음 작성한 두 테스트는
+    비활성 상태의 refresh 401 만 봐서 **변이를 놓쳤다** — 회전이 비활성 사용자를 따로 막기 때문이다(F1). 폐기 표시를 저장소에서 확인하고, 재활성화 뒤에도
+    401 인지 보도록 고쳐 잡았다
+  - 접속 로그 — `user_id` 를 `call_next` 전에 읽으면 `test_authenticated_request_records_user_id`, `get_current_principal` 이 `request.state.user_id` 를
+    안 채우면 같은 테스트와 `test_principal_is_built_from_claims_and_recorded_on_request_state`
+  - 운영 도구·스키마·계층 — 스크립트의 커밋 제거 → `test_create_superuser.py` 3건, 사용자 생성이 평문을 저장하면 `test_superuser_creates_user_with_argon2_hash_and_flag`,
+    리비전 파일 제거 → `tests/core/test_migration_chain.py` 2건(모델과 마이그레이션 결과의 드리프트), user 가 auth 를 import 하면
+    `test_features_import_each_other_only_through_allowed_edges`
+  - 수정 전 코드(`0f8f56a`)에는 인증 의존성이 없어 `tests/test_authorization.py` 의 401·403 케이스 전부가 2xx 로 실패한다(새 테스트가 새 동작만 본다)
+- **기존 테스트 영향:** 인가와 무관한 CRUD 테스트는 클라이언트 기본 헤더로 슈퍼유저 토큰(`tests/auth_headers.py` 의 `bearer()`)을 싣는다 — 의존성을
+  가짜로 바꾸지 않아 인증 경로가 운영과 같다. `test_patch_schema` 는 `author` 가 수정 스키마에서 빠져 nullable 필드 0 으로, `test_token_service` 는 `su`
+  필수에 맞췄다. `test_email_validation` 의 `UserCreate` 거부 테스트가 비밀번호 누락으로 **엉뚱하게 통과**하던 것을 비밀번호를 넣어 바로잡았다.
+  `test_update_noop` 은 서비스 생성자(소유권 정책)와 `principal` 인자를 받는다. `test_password_hasher.py` 는 해시기와 함께 `tests/core/` 로 옮겼다.
+  route inventory(24 경로 / 39 오퍼레이션)는 그대로다
+- **문서 갱신:** README(특징 "인가", API 표 접속 로그 슈퍼유저, 인증 흐름 401/403, **권한 표**, **첫 관리자 만들기**, 체크리스트 6-1 과 "인증 없음" 경고를
+  "API 는 인가가 걸렸지만 `/admin` 이 그 밖" 으로 갱신), ARCHITECTURE(구조도 `security/`, §6.2 `jwt_settings` 소비처, §10 `user_id`, §11 조립·토큰·§11.1 인가 신설,
+  §15 결정 2줄, §16 이력), DEVELOPMENT(§3.1 라우트 보호 신설), HTML 안내서 2편(권한 절·`user_id`). `.env.example` 은 새 설정이 없어 바꾸지 않았다
+- **수렴 판정:** `CONVERGED` (Open Fix 0 — 단계 F2 범위)
+- **잔여 위험 변화:** R-014(권한 회수가 access 만료까지 늦다), R-015(F2 이전 access 토큰 401 — refresh 로 해소) 추가
+- **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서도 따로 돌려 그린, uvicorn 수명주기 3건은 저장소 밖
+  fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
+
+## 그룹 종료 판정 (2026-10-12)
+
+단계 A~F2 일곱 라운드가 모두 `CONVERGED` 다. 종료 조건을 확인했다:
+
+- **charter §3 인수 기준** — 공통 게이트·A·B·C·D·E·F1·F2·fail-on-revert 전부 `[x]`(열린 칸 0, `review_gate` 의 정합 검사 통과)
+- **ledger** — F-001~F-026 전부 `Fixed`(Open 0 · Accept-out-of-scope 0 · Wont-fix 0). 각 항목에 커밋·회귀 테스트가 적혀 있다
+- **residual-risk** — R-001~R-015 전부 수용(재평가 조건 명시). 비목표 묶음은 R-009
+- **design-baseline** — REQ-001(A~F2) Active 충족, ADR-001~026 Accepted, 불가침 제약 C-1~C-10 위반 0
+
+이후 같은 요청은 "할 일 없음" 이다. 위 수용 위험의 재평가 조건이 생기거나 비목표(SQLAdmin 인증·RBAC 세분화·즉시 폐기 등)가 요구되면 새 그룹 또는
+새 REQ 로 연다.
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -227,3 +287,4 @@
 | 4 | 0 | 0 | 0 | 0 | 1 (F-016) | CONVERGED (단계 D) |
 | 5 | 0 | 0 | 0 | 0 | 2 (F-017·F-018) | CONVERGED (단계 E) |
 | 6 | 0 | 0 | 0 | 0 | 3 (F-019~F-021) | CONVERGED (단계 F1) |
+| 7 | 0 | 0 | 0 | 0 | 3 (F-022~F-024) | CONVERGED (단계 F2) — **그룹 종료** |
