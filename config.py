@@ -21,10 +21,12 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL, make_url
 
 
 # =============================================================================
@@ -205,16 +207,29 @@ class AppSettings(BaseSettings):
 # =============================================================================
 # 데이터베이스 설정
 # =============================================================================
-def format_host(host: str) -> str:
-    """DSN 에 넣을 호스트 표기를 만든다.
+def mysql_url(
+    drivername: str, *, username: str, password: str, host: str, port: int, database: str
+) -> URL:
+    """MySQL 접속 URL 을 ``URL.create`` 로 만든다 (service-hardening ADR-004).
 
-    IP(IPv4)·도메인은 그대로 두고, IPv6 만 대괄호로 감싼다. 감싸지 않으면 주소 안의
-    콜론과 포트 구분자가 뒤섞여 ``@::1:3306`` 같은 깨진 DSN 이 만들어진다.
+    문자열로 조립하면 비밀번호의 ``@ : / # % ?`` 가 구분자로 읽혀 접속 정보가 깨진다 —
+    운영 비밀번호에서만 드러나는 실패다. ``URL`` 은 각 부분을 따로 들고 있다가 문자열로
+    낼 때 필요한 만큼만 인코딩한다.
+
+    호스트는 대괄호 없는 값으로 넣는다. IPv6(``::1``)는 ``URL`` 이 문자열로 낼 때 스스로
+    ``[::1]`` 로 감싼다. 설정에 대괄호 표기(``[2001:db8::10]``)로 적어도 받아 준다.
     """
     host = host.strip()
-    if host.startswith("["):  # 이미 대괄호 표기
-        return host
-    return f"[{host}]" if ":" in host else host
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    return URL.create(
+        drivername,
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+    )
 
 
 def split_host_port(entry: str, default_port: int) -> tuple[str, int]:
@@ -251,21 +266,6 @@ def split_host_port(entry: str, default_port: int) -> tuple[str, int]:
         raise ValueError(f"replica 호스트 '{entry}' 의 포트가 숫자가 아닙니다.")
 
     return host, int(port) if port else default_port
-
-
-def mask_dsn(url: str) -> str:
-    """DSN 의 비밀번호를 가린다 (로그·헬스체크 노출용).
-
-    예: ``mysql+aiomysql://app:s3cr3t@db:3306/shop`` → ``mysql+aiomysql://app:***@db:3306/shop``
-    """
-    scheme, separator, rest = url.partition("://")
-    if not separator or "@" not in rest:
-        return url
-    credentials, _, location = rest.rpartition("@")
-    user, has_password, _ = credentials.partition(":")
-    if not has_password:
-        return url
-    return f"{scheme}://{user}:***@{location}"
 
 
 class DatabaseSettings(BaseSettings):
@@ -381,30 +381,34 @@ class DatabaseSettings(BaseSettings):
     )
 
     @property
-    def ALEMBIC_URL(self) -> str:
-        """Alembic 마이그레이션이 사용할 동기 DSN.
+    def ALEMBIC_URL(self) -> URL:
+        """Alembic 마이그레이션이 사용할 동기 URL.
 
         Alembic 은 동기로 실행되므로 aiomysql(비동기 드라이버)을 쓸 수 없다.
-        primary DSN 의 드라이버만 pymysql 로 바꿔서 같은 서버를 가리킨다.
+        primary URL 의 드라이버만 pymysql 로 바꿔서 같은 서버를 가리킨다.
         마이그레이션은 항상 primary 에서 실행한다 — replica 는 읽기 전용이다.
         """
         if self.ALEMBIC_DATABASE_URL:
-            return self.ALEMBIC_DATABASE_URL
-        return self.MYSQL_WRITER_URL.replace("+aiomysql", "+pymysql")
+            return make_url(self.ALEMBIC_DATABASE_URL)
+        return self.MYSQL_WRITER_URL.set(drivername="mysql+pymysql")
 
     @property
-    def MYSQL_URL(self) -> str:
+    def MYSQL_URL(self) -> URL:
         """SQLAlchemy 비동기 연결 URL (aiomysql 드라이버) — primary(쓰기) 서버
 
-        호스트는 IP·도메인 모두 가능하다 (IPv6 는 자동으로 대괄호 처리).
+        호스트는 IP·도메인 모두 가능하다 (IPv6 는 ``URL`` 이 대괄호로 감싼다).
         """
-        return (
-            f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
-            f"@{format_host(self.MYSQL_HOST)}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+        return mysql_url(
+            "mysql+aiomysql",
+            username=self.MYSQL_USER,
+            password=self.MYSQL_PASSWORD,
+            host=self.MYSQL_HOST,
+            port=self.MYSQL_PORT,
+            database=self.MYSQL_DATABASE,
         )
 
     @property
-    def MYSQL_WRITER_URL(self) -> str:
+    def MYSQL_WRITER_URL(self) -> URL:
         """primary(쓰기) 서버 URL — ``MYSQL_URL`` 의 의미를 드러낸 별칭"""
         return self.MYSQL_URL
 
@@ -414,7 +418,7 @@ class DatabaseSettings(BaseSettings):
         return [entry.strip() for entry in self.MYSQL_REPLICA_HOSTS if entry.strip()]
 
     @property
-    def MYSQL_REPLICA_URLS(self) -> list[str]:
+    def MYSQL_REPLICA_URLS(self) -> list[URL]:
         """replica(읽기) 서버 URL 목록. 복제가 비활성이면 빈 목록."""
         if not self.replication_active:
             return []
@@ -426,7 +430,16 @@ class DatabaseSettings(BaseSettings):
         urls = []
         for entry in self._replica_entries:
             host, port = split_host_port(entry, self.MYSQL_REPLICA_PORT)
-            urls.append(f"mysql+aiomysql://{user}:{password}@{host}:{port}/{database}")
+            urls.append(
+                mysql_url(
+                    "mysql+aiomysql",
+                    username=user,
+                    password=password,
+                    host=host,
+                    port=port,
+                    database=database,
+                )
+            )
         return urls
 
     @property
@@ -453,8 +466,10 @@ class DatabaseSettings(BaseSettings):
             "router_enabled": self.DB_ROUTER_ENABLED,
             "replication_enabled": self.DB_REPLICATION_ENABLED,
             "sticky_after_write": self.DB_READ_STICKY_AFTER_WRITE,
-            "writer": mask_dsn(self.MYSQL_WRITER_URL),
-            "readers": [mask_dsn(url) for url in self.MYSQL_REPLICA_URLS],
+            "writer": self.MYSQL_WRITER_URL.render_as_string(hide_password=True),
+            "readers": [
+                url.render_as_string(hide_password=True) for url in self.MYSQL_REPLICA_URLS
+            ],
         }
 
     @model_validator(mode="after")
@@ -726,9 +741,14 @@ class RedisSettings(BaseSettings):
 
     @property
     def REDIS_URL(self) -> str:
-        """Redis 연결 URL"""
+        """Redis 연결 URL (redis-py·Celery 가 문자열을 받는다).
+
+        비밀번호는 퍼센트 인코딩한다 — ``@ : / # %`` 가 그대로 들어가면 URL 파싱이 깨진다
+        (service-hardening ADR-004). redis-py 는 파싱할 때 다시 디코딩한다.
+        """
         if self.REDIS_PASSWORD:
-            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+            password = quote(self.REDIS_PASSWORD, safe="")
+            return f"redis://:{password}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
 

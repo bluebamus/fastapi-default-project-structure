@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|---|
 | F-001 | MED | REQ-001-A — CI 는 락 불일치에서 실패해야 한다 | Fix | Fixed | 단계 A1 · `tests/test_ci_contract.py` | 출처: 제안 1. `uv sync --frozen` 은 락을 검사하지 않는데 `ci.yml` 주석은 "어긋나면 실패한다" 고 적었다 |
 | F-002 | LOW | ADR-003 — 게이트 판정은 추적 파일만 본다 | Fix | Fixed | 단계 A1 · `review_gate.repo_files` + `tests/scripts/test_review_gate_tracked_files.py` | 출처: 제안 1. `review_gate.py` 가 `rglob` 으로 작업 트리를 훑어 추적되지 않은 로컬 파일까지 판정에 넣는다 |
-| F-003 | MED | INV-1 — DSN 은 어떤 비밀번호에서도 깨지지 않는다 | Fix | Open | 단계 A2 | 출처: R-10. f-string 조립이 `@ : / # % ?` 에서 깨진다. Redis URL 도 같다 |
+| F-003 | MED | INV-1 — DSN 은 어떤 비밀번호에서도 깨지지 않는다 | Fix | Fixed | 단계 A2 · `config.mysql_url` + `tests/core/test_dsn.py` · `test_percent_in_url_survives_alembic_config` | 출처: R-10. f-string 조립이 `@ : / # % ?` 에서 깨진다. Redis URL 도 같다 |
 | F-004 | MED | INV-2 — 잠금 읽기는 writer·read-only 거부 | Fix | Open | 단계 A3 | 출처: R-14. ORM `with_for_update()` 가 replica 로 가고 read-only 가드를 통과한다 |
 | F-005 | LOW | INV-3 — 목록 정렬은 결정적이다 | Fix | Open | 단계 A3 | 출처: 검수 데이터 계층 Low("기본 목록 조회에 ORDER BY 가 없음"). `created_at desc` 단일 키 쿼리 5곳도 동률 순서가 비결정적 |
 | F-006 | MED | INV-4 / ADR-006 — 신뢰 홉 밖의 헤더는 믿지 않는다 | Fix | Open | 단계 B1 | 출처: R-08. `X-Forwarded-For` 를 무조건 믿는다 |

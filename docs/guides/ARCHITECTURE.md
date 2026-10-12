@@ -299,7 +299,10 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
-- 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
+- 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다(`URL.render_as_string(hide_password=True)`).
+- DSN 은 문자열로 조립하지 않고 `config.mysql_url()` → `sqlalchemy.engine.URL.create()` 로 만듭니다.
+  `MYSQL_URL`·`MYSQL_WRITER_URL`·`MYSQL_REPLICA_URLS`·`ALEMBIC_URL` 은 `URL` 객체이고, 비밀번호의
+  `@ : / # % ?` 와 IPv6 호스트가 그대로 왕복합니다(`tests/core/test_dsn.py`, service-hardening ADR-004).
 - **라우팅** 판별(`_text_is_write`)과 읽기 세션의 **차단** 판별(`_text_is_readable`)은 방향이 반대인
   별개지만 같은 괄호 깊이 0 스캐너(`_depth0_words`)를 씁니다. 둘 다 `WITH … UPDATE/DELETE` 를
   잡습니다(ADR-036). 잠금 읽기도 같은 `_LOCKING_READ` 정규식 하나로 판정합니다 — `FOR UPDATE`·`FOR SHARE`·
@@ -804,11 +807,15 @@ main.py (ADMIN=true)
 fileConfig(config.config_file_name, disable_existing_loggers=False)   # 앱 로거를 끄지 않는다
 import_all_models()
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
+config.set_main_option(
+    "sqlalchemy.url",
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace("%", "%%"),
+)
 ```
 
-- URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값, 없으면 primary DSN 의 `+aiomysql` 을 `+pymysql` 로 바꾼 값.
-  마이그레이션은 항상 primary 에서 실행합니다.
+- URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값을 `make_url` 로 읽은 것, 없으면 primary URL 의 드라이버만
+  `mysql+pymysql` 로 바꾼 것. 마이그레이션은 항상 primary 에서 실행합니다. Alembic Config 는 ConfigParser 라
+  `%` 를 보간으로 읽으므로 `%%` 로 바꿔 넘깁니다(퍼센트 인코딩된 비밀번호 대비).
 - revision 체인(단일 head, CI 가 확인): `f4adf0ae24ea`(baseline — 기존 5개 테이블) → `b2f1a9c0d3e4`
   (`users.hashed_password`) → `c3d5e7f9a1b2`(`catalog_products`) → `d4e6f8a0b2c3`(`sales_orders`) →
   `e5f7a9b1c4d5`(`sales_daily_snapshots`).
@@ -909,7 +916,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 **MiddlewareSettings** — §10 표
 
 **RedisSettings** — `REDIS_HOST`=`localhost`, `REDIS_PORT`=`6379`, `REDIS_DB`=`0`, `REDIS_PASSWORD`=없음
-(`REDIS_URL` = `redis://[:비밀번호@]호스트:포트/DB`)
+(`REDIS_URL` = `redis://[:비밀번호@]호스트:포트/DB`, 비밀번호는 퍼센트 인코딩)
 
 **JWTSettings** — §11 표
 

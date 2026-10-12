@@ -82,3 +82,19 @@ def test_migrated_schema_matches_models(tmp_path, monkeypatch):
         engine.dispose()
 
     assert diff == [], f"마이그레이션 결과와 모델이 다르다: {diff}"
+
+
+def test_percent_in_url_survives_alembic_config(tmp_path, monkeypatch):
+    """URL 의 `%` 가 Alembic Config(ConfigParser 보간)에서 터지지 않는다 (service-hardening ADR-004).
+
+    퍼센트 인코딩된 비밀번호(`p%40ss`)나 경로의 `%` 를 그대로 `set_main_option` 에 넘기면
+    `invalid interpolation syntax` 로 마이그레이션이 시작도 못 한다. `migrations/env.py` 가
+    `%%` 로 바꿔 넘기는지를 실제 upgrade 로 확인한다.
+    """
+    directory = tmp_path / "50%off"
+    directory.mkdir()
+    engine = _upgrade_to_head(directory, monkeypatch)
+    try:
+        assert "users" in sa.inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
