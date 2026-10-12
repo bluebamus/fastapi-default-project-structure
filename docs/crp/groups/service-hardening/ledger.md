@@ -35,6 +35,7 @@
 | F-023 | HIGH | INV-7 — 접속 로그 조회는 슈퍼유저 | Fix | Open | 단계 F2 | 출처: R-02 |
 | F-024 | LOW | ADR-020 — 로그인 불가 계정을 만들지 않는다 | Fix | Open | 단계 F2 | 출처: 검수 설계 Low("/users POST 는 비밀번호 없이 생성") |
 | F-025 | MED | C-8 / ADR-022 — DB 실패 로그·예외 문자열에 SQL·바인딩 값이 없다 | Fix | Fixed | 단계 B5 `b5dfade` · `test_failure_log_has_no_sql_or_parameters` · `test_server_side_failure_logs_at_error` · `test_application_engines_hide_bound_parameters` · `test_feature_query_errors_are_translated` · `test_feature_repositories_do_not_execute_directly` | 출처: R-07. ORM 실패 로그가 `%s` 로 드라이버 메시지 전문을 찍었고, 기능 Repository 의 직접 `execute` 는 변환 없이 새어 DEBUG 500 detail 에 SQL 이 실렸다. 단계 B 진행 중 등록 |
+| F-026 | LOW | ADR-024 — 테스트 컨테이너는 loopback 에만 연다 | Fix | Fixed | 단계 E · `compose.test.yaml` redis-test + `tests/test_compose_test_contract.py` | 검수 보고서의 "테스트용 Redis 가 모든 인터페이스에 바인딩됨"(Low). `redis-test` 의 포트를 `127.0.0.1:` 에만 연다(MySQL 과 같은 규칙). 계약 테스트는 compose 의 모든 공개 포트를 보며, 수정 전 파일에서 실패한다(fail-on-revert 확인) |
 
 <!--
 규칙:

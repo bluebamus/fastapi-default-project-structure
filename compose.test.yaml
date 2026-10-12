@@ -69,7 +69,9 @@ services:
     # 테스트용이라 영속화하지 않는다.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
-      - "${REDIS_TEST_PORT:-6379}:6379"
+      # 127.0.0.1 에만 연다 — 인증 없는 Redis 를 0.0.0.0 에 열면 같은 네트워크의 다른 기기가
+      # 그대로 쓸 수 있다(MySQL 과 같은 이유, service-hardening ADR-024).
+      - "127.0.0.1:${REDIS_TEST_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
