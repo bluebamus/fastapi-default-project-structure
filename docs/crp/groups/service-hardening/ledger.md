@@ -26,8 +26,8 @@
 | F-014 | MED | ADR-009 — read-only override 는 read-only 로 표시된다 | Fix | Fixed | 단계 C1 `ba7bc19` · `tests/session_overrides.py` + `test_get_route_writing_through_read_only_override_is_rejected` · `test_tests_do_not_hand_roll_session_overrides` | 출처: R-15. 10개 파일이 두 세션 의존성을 표시 없는 같은 세션으로 바꿔 끼웠다 |
 | F-015 | MED | ADR-009 — ORM 경로도 MySQL 에서 검증한다 | Fix | Fixed | 단계 C2 `ed618df` · `tests/integration/test_mysql_orm_smoke.py`(`mysql` 마커 5건, CI `-m mysql --mysql-required` 가 실행) | 출처: R-16 |
 | F-016 | HIGH | INV-5 — UTC·마이크로초 저장 | Fix | Fixed | 단계 D `af55c67` · `app/core/models/types.py`(`UTCDateTime`) + `tests/core/test_utc_datetime.py` · `test_timestamp_columns_are_stored_as_utc` · `test_timestamps_are_rendered_with_utc_offset` · `test_order_after_local_midnight_counts_for_the_next_local_day`(SQLite·MySQL) · `test_utc_revision_converts_existing_kst_values`(MySQL) · `test_alembic_check_reports_no_drift_through_env` | 출처: R-05. KST 벽시계가 오프셋 없이 `DATETIME`(fsp 0)에 저장돼 "(UTC)" 설명과 어긋났고, Raw 바인드는 aware 값의 오프셋을 드라이버가 버렸다 |
-| F-017 | MED | ADR-011 — Redis 는 필수이며 `/ready` 가 본다 | Fix | Open | 단계 E1 | 출처: R-13. 사용자 결정 "redis 필수" 로 지적의 전제(API 가 Redis 를 안 씀)를 해소한다 |
-| F-018 | LOW | ADR-012 — 중앙 파일이 기능을 import 하지 않는다 | Fix | Open | 단계 E2 | 출처: 제안 8. `app/celery/tasks.py` 가 기능 태스크를 중앙 집중 |
+| F-017 | MED | ADR-011 — Redis 는 필수이며 `/ready` 가 본다 | Fix | Fixed | 단계 E1 `a902f89` · `app/core/redis.py`(`get_redis`) + `tests/core/test_redis_provider.py` · `test_ready_returns_503_when_redis_ping_fails` · `test_ready_returns_503_when_redis_ping_times_out` · `test_ready_checks_database_and_redis_concurrently` · `test_ready_returns_503_when_redis_client_is_missing` · `test_ready_logs_only_target_and_exception_type` | 출처: R-13. 사용자 결정 "redis 필수" 로 지적의 전제(API 가 Redis 를 안 씀)를 해소한다 |
+| F-018 | LOW | ADR-012 — 중앙 파일이 기능을 import 하지 않는다 | Fix | Fixed | 단계 E2 `a902f89` · `models_registry.iter_task_modules` + `tests/core/test_celery_app.py`(`test_celery_package_does_not_import_features` AST · `test_discovery_skips_features_without_tasks_and_does_not_import_them` · `test_removing_a_feature_removes_its_tasks_from_include`) · `test_task_builds_service_through_home_provider` | 출처: 제안 8. `app/celery/tasks.py` 가 기능 태스크를 중앙 집중 |
 | F-019 | MED | INV-6 — refresh 회전·재사용 탐지 | Fix | Open | 단계 F1 | 출처: R-11 |
 | F-020 | MED | ADR-016 — 로그인 시도 제한 | Fix | Open | 단계 F1 | 출처: R-12 |
 | F-021 | LOW | ADR-013 — 비밀번호가 조용히 잘리지 않는다 | Fix | Open | 단계 F1 | 출처: 검수 설계 Low("bcrypt 72바이트가 조용히 잘림") |
@@ -35,6 +35,7 @@
 | F-023 | HIGH | INV-7 — 접속 로그 조회는 슈퍼유저 | Fix | Open | 단계 F2 | 출처: R-02 |
 | F-024 | LOW | ADR-020 — 로그인 불가 계정을 만들지 않는다 | Fix | Open | 단계 F2 | 출처: 검수 설계 Low("/users POST 는 비밀번호 없이 생성") |
 | F-025 | MED | C-8 / ADR-022 — DB 실패 로그·예외 문자열에 SQL·바인딩 값이 없다 | Fix | Fixed | 단계 B5 `b5dfade` · `test_failure_log_has_no_sql_or_parameters` · `test_server_side_failure_logs_at_error` · `test_application_engines_hide_bound_parameters` · `test_feature_query_errors_are_translated` · `test_feature_repositories_do_not_execute_directly` | 출처: R-07. ORM 실패 로그가 `%s` 로 드라이버 메시지 전문을 찍었고, 기능 Repository 의 직접 `execute` 는 변환 없이 새어 DEBUG 500 detail 에 SQL 이 실렸다. 단계 B 진행 중 등록 |
+| F-026 | LOW | ADR-024 — 테스트 컨테이너는 loopback 에만 연다 | Fix | Fixed | 단계 E · `compose.test.yaml` redis-test + `tests/test_compose_test_contract.py` | 검수 보고서의 "테스트용 Redis 가 모든 인터페이스에 바인딩됨"(Low). `redis-test` 의 포트를 `127.0.0.1:` 에만 연다(MySQL 과 같은 규칙). 계약 테스트는 compose 의 모든 공개 포트를 보며, 수정 전 파일에서 실패한다(fail-on-revert 확인) |
 
 <!--
 규칙:

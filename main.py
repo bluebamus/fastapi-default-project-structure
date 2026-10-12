@@ -4,13 +4,15 @@
 최종 취합하고, 애플리케이션의 주요 설정(미들웨어·예외 핸들러·문서·lifespan·Admin)을 구성한다.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from redis.asyncio import Redis
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -18,6 +20,7 @@ from app.core.db.session import READINESS_TIMEOUT_SECONDS, engine, ping_writer_d
 from app.core.exception import AppException, ErrorResponse, ValidationException
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
+from app.core.redis import get_redis
 from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, catalog, home, reply, reports, sns, user
@@ -205,34 +208,46 @@ def _add_health_and_docs(app: FastAPI) -> None:
         tags=["Health"],
         summary="준비 상태(readiness)",
         description=(
-            "트래픽을 받을 준비가 됐는지 확인합니다. writer DB 에 `SELECT 1` 을 "
-            f"최대 {READINESS_TIMEOUT_SECONDS:.0f}초 안에 실행하고, 실패하거나 "
-            "시간을 넘기면 503 을 반환합니다."
+            "트래픽을 받을 준비가 됐는지 확인합니다. writer DB 의 `SELECT 1` 과 Redis `PING` 을 "
+            f"각각 최대 {READINESS_TIMEOUT_SECONDS:.0f}초 안에 동시에 실행하고, 하나라도 "
+            "실패하거나 시간을 넘기면 503 을 반환합니다."
         ),
         operation_id="readinessCheck",
         responses={
             503: {
                 "model": ErrorResponse,
-                "description": "DB 를 사용할 수 없거나 응답이 늦어 준비되지 않음",
+                "description": "DB 또는 Redis 를 사용할 수 없거나 응답이 늦어 준비되지 않음",
             }
         },
     )
-    async def readiness_check() -> ReadyResponse:
-        """writer DB 를 확인하고 준비 상태를 반환한다."""
-        try:
-            await ping_writer_db()
-        except Exception as exc:
-            # 상세는 서버 로그에만 남긴다. 헬스 엔드포인트는 보통 인증 없이 열려
-            # 있어, 응답에 DSN·자격증명·드라이버 오류 원문이 실리면 그대로 유출된다.
+    async def readiness_check(redis: Redis = Depends(get_redis)) -> ReadyResponse:
+        """writer DB 와 Redis 를 동시에 확인하고 준비 상태를 반환한다 (ADR-011)."""
+
+        async def ping_redis() -> None:
+            async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
+                await redis.ping()
+
+        targets = ("DB", "Redis")
+        results = await asyncio.gather(ping_writer_db(), ping_redis(), return_exceptions=True)
+        failures = [
+            (target, result)
+            for target, result in zip(targets, results, strict=True)
+            if isinstance(result, BaseException)
+        ]
+        for target, exc in failures:
+            # 상세는 서버 로그에만, 그것도 대상과 예외 타입만 남긴다. 헬스 엔드포인트는 보통
+            # 인증 없이 열려 있어, 응답이나 로그에 DSN·자격증명·드라이버 오류 원문이 실리면 새어 나간다.
             logger.warning(
-                "[Readiness] DB 준비 확인 실패: %s",
+                "[Readiness] %s 준비 확인 실패: %s",
+                target,
                 type(exc).__name__,
-                extra={"exception_type": type(exc).__name__},
+                extra={"readiness_target": target, "exception_type": type(exc).__name__},
             )
+        if failures:
             raise HTTPException(
                 status_code=503,
                 detail="서비스가 아직 요청을 받을 준비가 되지 않았습니다.",
-            ) from exc
+            )
         return ReadyResponse(status="ready")
 
     # Scalar API 문서 (DEBUG 모드에서만 활성화)

@@ -40,10 +40,13 @@
 - [x] MySQL 테스트(`mysql` 마커 3건 추가: 왕복·자정 경계·리비전 변환, 기존 시드 aware 로) — 로컬은 수집만(16건)
 - [x] 공통 게이트 그린 · run-log 갱신 — 769 passed · skipped 0
 
-## Round 5 — 단계 E (Redis 필수 · /ready · Celery 발견)
-- [ ] (F-017) `get_redis` provider + `/ready` DB·Redis 판정
-- [ ] (F-018) 기능별 `tasks.py` + 자동 발견 include
-- [ ] 공통 게이트 그린 · run-log 갱신
+## Round 5 — 2026-10-12 · 단계 E (Redis 필수 · /ready · Celery 발견)
+- [x] (F-017) `get_redis` provider(`app/core/redis.py`) + `/ready` DB·Redis 동시 판정(각 2초, 로그는 대상·타입만)
+- [x] (F-018) 기능별 `tasks.py`(`app/features/home/tasks.py`) + `iter_task_modules()` 자동 발견 include, 중앙 `app/celery/tasks.py` 삭제,
+      태스크 본문은 home provider `build_user_access_log_service(session)` 로 조립 — 세부는 ADR-024
+- [x] `compose.test.yaml` 의 `redis-test` 확인(이미 있음 — `${REDIS_TEST_PORT:-6379}`, 테스트는 `REDIS_PORT` 로 따로 준다)
+- [x] charter §3 C 체크 누락 정정(CI run `38208514130` 근거)
+- [x] 공통 게이트 그린 · run-log 갱신 — 783 passed · skipped 0
 
 ## Round 6 — 단계 F1 (인증 코어)
 - [ ] 의존성 추가(`pwdlib[argon2]`, dev `fakeredis`) — 이유는 ADR-013

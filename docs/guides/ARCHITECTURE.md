@@ -61,20 +61,22 @@
 │   │       ├── dependencies/        # <x>_dependencies.py — 세션 선택 + Service 조립
 │   │       ├── services/ repositories/ schemas/ models/
 │   │       ├── exceptions.py        # 기능 예외 (AppException 하위)
+│   │       ├── tasks.py             # (있으면) Celery 태스크 — worker include 에 자동 발견
 │   │       └── tests/
 │   ├── core/                        # 프레임워크 인프라
 │   │   ├── resources.py             # 프로세스 수명 자원의 생성·해제 단일 지점
+│   │   ├── redis.py                 # get_redis — lifespan Redis client 주입 provider
 │   │   ├── exception.py             # AppException 계층 + ErrorResponse
 │   │   ├── schemas.py               # PatchSchema(모든 Update 스키마의 기반 — null PATCH 거부)
 │   │   ├── tags_metadata.py         # OpenAPI 태그 설명
 │   │   ├── db/session.py            # 엔진·세션 팩토리·세션 의존성·create_db_tables·ping·dispose
 │   │   ├── db/router.py             # 읽기/쓰기 라우팅(RoutingSession)
-│   │   ├── db/models_registry.py    # 모델 모듈 탐색·import 단일 지점
+│   │   ├── db/models_registry.py    # 기능 모델·태스크 모듈 탐색 단일 지점(모델은 import)
 │   │   ├── models/models_base.py    # Base + UUID/Created/Updated Mixin
 │   │   ├── repositories/            # crud_base·repository_base(ORM) / raw_crud_base·raw_repository_base(Raw) / db_errors(DB 오류 변환 표)
 │   │   ├── services/services_base.py
 │   │   └── middlewares/             # cors_middleware·user_info_middleware·client_ip·background_tasks·access_log_sink
-│   ├── celery/                      # app.py(중앙 앱)·tasks.py(중앙 태스크)·task.py(run_async)·lifecycle.py
+│   ├── celery/                      # app.py(중앙 앱, include 는 기능 tasks.py 자동 발견)·task.py(run_async)·lifecycle.py
 │   └── utils/                       # logs/ · authenticator/ · pagination/ · validators.py
 ├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
 ├── docs/                   # guides/ · specs/ · crp/  (색인은 README)
@@ -90,7 +92,7 @@ features → core → utils        (config 는 누구나 import)
 | 영역 | 규칙 |
 |---|---|
 | `app/features/<name>/` | 비즈니스 코드는 전부 여기. `core` 를 쓰고 **다른 기능을 import 하지 않는다.** 예외: `auth` 는 횡단 관심사라 `user` 의 모델·Repository 를 쓴다. 기능 간 데이터 참조는 FK 없는 식별자로 둔다(예: `Reply.post_id`) |
-| `app/core/` | 특정 기능을 직접 알지 않는다. 기능이 core 에 붙어야 하면 등록 훅을 쓴다(`access_log_sink.set_access_log_sink()`). `models_registry` 만 등록 목적으로 기능 모델을 동적 import 한다 |
+| `app/core/` | 특정 기능을 직접 알지 않는다. 기능이 core 에 붙어야 하면 등록 훅을 쓴다(`access_log_sink.set_access_log_sink()`). `models_registry` 만 등록 목적으로 기능 모델을 동적 import 하고, 기능 `tasks.py` 의 존재를 찾아 Celery include 를 만든다(import 는 Celery 가 한다) |
 | `app/utils/` | 순수 유틸. 상위 계층에 의존하지 않는다 |
 
 ### 1.3 핵심 파일
@@ -232,7 +234,7 @@ startup 예외는 HTTP 핸들러가 처리하지 않습니다(§7.3).
 | 경로 | 의미 |
 |---|---|
 | `GET /health` | 프로세스 생존과 `VERSION`. 외부 연결을 검사하지 않는다 (liveness) |
-| `GET /ready` | `ping_writer_db()` — writer 엔진에서 `SELECT 1`, 2초(`READINESS_TIMEOUT_SECONDS`). 실패·초과 시 503, 원인은 서버 로그에만(DSN·드라이버 원문 비노출). **Redis 는 다시 검사하지 않는다** |
+| `GET /ready` | `ping_writer_db()`(writer 엔진에서 `SELECT 1`)와 Redis `PING`(`get_redis` 로 주입받은 lifespan client)을 **동시에**, 각각 2초(`READINESS_TIMEOUT_SECONDS`) 안에 실행한다. 하나라도 실패·초과면 503. 응답에는 원문이 없고, 서버 로그에는 대상(`DB`·`Redis`)과 예외 타입만 남긴다(DSN·호스트·드라이버 원문 비노출). client 가 없으면(lifespan 밖) provider 가 503 (service-hardening ADR-011) |
 
 ## 4. DB 엔진·세션·라우팅
 
@@ -487,8 +489,9 @@ async with _log_queue(), _database(app), _redis(app), _background_tasks():
 | `_prepare_database()` | `import_all_models()` → `len(Base.metadata.tables)`. 0개면 DB 접속 안 함 / `DEBUG=false` 면 DDL 생략 / `DEBUG=true` 면 `create_db_tables(import_models=False)` — writer `engine.begin()` 안에서 `create_all`, 30초 guard |
 | `yield` | 서버가 요청을 받기 시작한다 |
 
-`app.state.redis` 는 기동 확인에 쓴 client 를 보관할 뿐이고, 기능에 주입되는 공용 Redis 의존성은 아직
-없습니다. `create_all` 은 없는 테이블만 만들며 컬럼 변경·삭제·데이터 이동을 하지 않습니다.
+`app.state.redis` 의 client 는 주입 provider `get_redis(request)`(`app/core/redis.py`) 하나로만 꺼냅니다 —
+client 가 없으면 `ServiceUnavailableException`(503). 라우트·의존성이 `app.state` 를 직접 읽지 않으므로 테스트는
+`dependency_overrides[get_redis]` 로 바꿔 끼웁니다(service-hardening ADR-011). `create_all` 은 없는 테이블만 만들며 컬럼 변경·삭제·데이터 이동을 하지 않습니다.
 여러 worker 가 `DEBUG=true` 로 동시에 뜨면 DDL 도 동시에 시도되므로 운영은 `DEBUG=false` + Alembic 입니다.
 
 ### 7.3 기동 실패 경로
@@ -819,9 +822,17 @@ main.py (ADMIN=true)
 
 ## 13. Celery
 
-- 앱: `app/celery/app.py` 의 `celery_app` — broker·backend 모두 `REDIS_URL`, `include=["app.celery.tasks"]`,
-  JSON 직렬화, `timezone=TIME_ZONE`, `enable_utc=True`(내부 시각은 UTC, crontab 은 TIME_ZONE 으로 해석), 빈 `beat_schedule`. 기능별 `worker/` 디렉터리는 없고
-  모든 태스크를 `app/celery/tasks.py` 에 둡니다(예: `home.aggregate_access_stats`).
+- 앱: `app/celery/app.py` 의 `celery_app` — broker·backend 모두 `REDIS_URL`, `include=iter_task_modules()`,
+  JSON 직렬화, `timezone=TIME_ZONE`, `enable_utc=True`(내부 시각은 UTC, crontab 은 TIME_ZONE 으로 해석), 빈 `beat_schedule`.
+- 태스크는 각 기능의 `app/features/<name>/tasks.py` 에 둡니다(예: `app/features/home/tasks.py` 의
+  `home.aggregate_access_stats`). include 는 모델 등록과 같은 기능 패키지 탐색(`app/core/db/models_registry.py` 의
+  `iter_task_modules()`)이 만듭니다 — `tasks.py` 가 있는 기능만 들어가고, 탐색은 `find_spec` 으로 존재만 확인해
+  태스크 모듈을 import 하지 않습니다(태스크 모듈은 `celery_app` 을 import 하므로 앱 생성 중 import 하면 순환이 된다).
+  `app/celery` 는 기능을 import 하지 않으므로 **기능 디렉터리를 지우면 그 태스크도 include 에서 함께 빠지고 worker 는
+  깨지지 않습니다**(service-hardening ADR-012, `tests/core/test_celery_app.py` 가 AST 로 고정). 같은 모듈이
+  `import_all_models()` 로 기능 모델을 모두 등록합니다(worker 진입점이 이 모듈이다).
+- 태스크 본문의 서비스 조립은 그 기능의 provider 함수(세션을 인자로 받는 일반 함수, 예:
+  `build_user_access_log_service(session)`)를 재사용합니다 — HTTP provider 도 같은 함수를 부릅니다.
 - FastAPI 는 worker·beat 를 띄우지 않습니다. 실행 예:
   `uv run python -m celery -A app.celery.app:celery_app worker --loglevel=INFO` (Redis 필요, 이 문서
   작성 시점에 worker 기동은 검증하지 않음).
@@ -875,7 +886,7 @@ config.set_main_option(
 | ORM·Raw Base 독립 | Raw 결과에 ORM 의미가 새지 않게(AR-003) |
 | 로그는 큐 + stdout/stderr, 파일 없음, 앱별 로거 없음 | event loop 비차단(NFR-009), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
-| Redis 는 필수 startup 조건 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011) |
+| Redis 는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011) |
 | `/admin` 무인증 + `ADMIN=true` 기본값 | 개발 우선 템플릿. 배포 환경에서도 쓸 수 있으나 `ADMIN_ALLOW_UNAUTHENTICATED=true` 로 알고 켰다는 확인이 있어야 뜬다 — 기본값을 그대로 들고 온 배포와 의도한 배포를 가른다(ADR-045 ③, C-8 축소). 인증은 로그인 고도화에서 붙인다 |
 | 예시·빈 비밀값, 짧은 키, access==refresh 는 test 외 **모든 ENV** 에서 기동 거부. staging/production 은 `DEBUG=true`·`LOG_LEVEL=DEBUG` 도 거부 | 예시 키로 뜨면 누구나 토큰을 위조하고, debug 는 SQL 과 바인딩 값을 로그로 내보낸다. 잘못된 설정은 개발 단계부터 오류로 드러나야 `.env` 를 고친다(ADR-027·028·030·045) |
 | `.env` 가 없으면 필수 값이 환경 변수로 와야 한다 | 코드 기본값은 유지하되 기본값만으로는 뜨지 않게 한다. 파일 없이 주입하는 컨테이너 배포는 통과(ADR-045 ①) |
