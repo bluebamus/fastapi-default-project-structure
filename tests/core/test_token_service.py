@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.security.tokens import (
+    ACCESS_REQUIRED_CLAIMS,
     REQUIRED_CLAIMS,
     InvalidTokenException,
     TokenService,
@@ -56,6 +57,7 @@ def _claims(**overrides) -> dict:
         "iss": "test-issuer",
         "aud": "test-audience",
         "username": "alice",
+        "su": False,
     }
     claims.update(overrides)
     return claims
@@ -69,13 +71,14 @@ def _sign(claims: dict, key: str = ACCESS_KEY, algorithm: str = "HS256") -> str:
 # 발급
 # =============================================================================
 def test_access_token_carries_standard_claims_and_username(tokens):
-    issued = tokens.issue_access("user-1", "alice")
+    issued = tokens.issue_access("user-1", "alice", False)
 
     claims = tokens.decode(issued.token, TokenType.ACCESS)
 
     assert claims["sub"] == "user-1"
     assert claims["type"] == "access"
     assert claims["username"] == "alice"
+    assert claims["su"] is False
     assert claims["iss"] == "test-issuer"
     assert claims["aud"] == "test-audience"
     assert claims["jti"] == issued.jti and len(issued.jti) == 32
@@ -94,7 +97,7 @@ def test_refresh_token_carries_family(tokens):
 
 
 def test_every_token_gets_a_fresh_jti(tokens):
-    assert tokens.issue_access("u", "n").jti != tokens.issue_access("u", "n").jti
+    assert tokens.issue_access("u", "n", False).jti != tokens.issue_access("u", "n", False).jti
 
 
 # =============================================================================
@@ -130,7 +133,18 @@ def test_foreign_issuer_or_audience_is_rejected(tokens, overrides):
         tokens.decode(_sign(_claims(**overrides)), TokenType.ACCESS)
 
 
-@pytest.mark.parametrize("missing", REQUIRED_CLAIMS)
+def test_superuser_flag_is_carried_in_su_claim(tokens):
+    """인가는 토큰의 ``su`` 로 정해진다 — DB 조회 없이 Principal 을 만든다(service-hardening ADR-017)."""
+    claims = tokens.decode(tokens.issue_access("user-1", "root", True).token, TokenType.ACCESS)
+
+    assert claims["su"] is True
+
+
+def test_access_requires_username_and_su_but_refresh_does_not():
+    assert set(ACCESS_REQUIRED_CLAIMS) - set(REQUIRED_CLAIMS) == {"username", "su"}
+
+
+@pytest.mark.parametrize("missing", ACCESS_REQUIRED_CLAIMS)
 def test_token_missing_a_required_claim_is_rejected(tokens, missing):
     claims = _claims()
     del claims[missing]
@@ -140,7 +154,7 @@ def test_token_missing_a_required_claim_is_rejected(tokens, missing):
 
 
 def test_access_token_is_not_accepted_as_refresh(tokens):
-    access = tokens.issue_access("user-1", "alice").token
+    access = tokens.issue_access("user-1", "alice", False).token
 
     with pytest.raises(InvalidTokenException):
         tokens.decode(access, TokenType.REFRESH)
@@ -164,7 +178,7 @@ def test_algorithm_other_than_configured_is_rejected(tokens, algorithm):
 
 
 def test_tampered_signature_is_rejected(tokens):
-    header, payload, _ = tokens.issue_access("user-1", "alice").token.split(".")
+    header, payload, _ = tokens.issue_access("user-1", "alice", False).token.split(".")
     other = _sign(_claims(), key="x" * 64).split(".")[2]
 
     with pytest.raises(InvalidTokenException):

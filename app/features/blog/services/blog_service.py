@@ -3,12 +3,16 @@ Blog Service
 
 게시글 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
 트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_db_session)이 책임진다.
+
+작성자는 인증 주체(``Principal``)로 서버가 채우고, 수정·삭제는 주입된 ``OwnershipPolicy`` 가
+소유자 또는 슈퍼유저만 허용한다(service-hardening ADR-018).
 """
 
 from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security.authorization import OwnershipPolicy, Principal
 from app.core.services.services_base import BaseService
 from app.features.blog.exceptions import PostNotFoundException
 from app.features.blog.models.models import Post
@@ -19,14 +23,18 @@ from app.features.blog.schemas.blog_schema import PostCreate, PostUpdate
 class BlogService(BaseService):
     """게시글 비즈니스 로직 (세션 기반)."""
 
-    def __init__(self, db_session: AsyncSession) -> None:
+    def __init__(self, db_session: AsyncSession, ownership: OwnershipPolicy) -> None:
         super().__init__(db_session)
+        self.ownership = ownership
         self.repository = PostRepository(db_session)
 
-    async def create_post(self, data: PostCreate) -> Post:
+    async def create_post(self, data: PostCreate, principal: Principal) -> Post:
         """게시글을 생성한다(커밋은 호출자가 수행)."""
         self.log.debug("게시글 생성: title=%s", data.title)
-        return await self.repository.create(data.model_dump())
+        # 작성자는 요청 본문이 아니라 인증 주체에서 온다 — 남의 이름으로 쓰지 못한다.
+        return await self.repository.create(
+            {**data.model_dump(), "author_id": principal.id, "author": principal.username}
+        )
 
     async def get_post(self, post_id: str) -> Post:
         """게시글을 조회한다. 없으면 PostNotFoundException."""
@@ -47,18 +55,21 @@ class BlogService(BaseService):
         total = await self.repository.count()
         return posts, total
 
-    async def update_post(self, post_id: str, data: PostUpdate) -> Post:
+    async def update_post(self, post_id: str, data: PostUpdate, principal: Principal) -> Post:
         """게시글을 부분 수정한다. 없으면 PostNotFoundException."""
         self.log.debug("게시글 수정: id=%s", post_id)
         existing = await self.get_post(post_id)  # 존재 보장(없으면 404)
+        self.ownership.ensure_can_modify(existing.author_id, principal)
         updated = await self.repository.update_by_id(post_id, data.model_dump(exclude_unset=True))
         # updated 가 None 이면 변경행 0(동일 값 no-op, MySQL changed-rows 의미). 존재는 이미
         # 보장됐으므로 404 가 아니라 현재 엔티티를 반환한다.
         return updated if updated is not None else existing
 
-    async def delete_post(self, post_id: str) -> None:
+    async def delete_post(self, post_id: str, principal: Principal) -> None:
         """게시글을 삭제한다. 없으면 PostNotFoundException."""
         self.log.debug("게시글 삭제: id=%s", post_id)
+        existing = await self.get_post(post_id)  # 존재 보장(없으면 404)
+        self.ownership.ensure_can_modify(existing.author_id, principal)
         deleted = await self.repository.delete_by_id(post_id)
         if not deleted:
             raise PostNotFoundException(detail={"id": post_id})

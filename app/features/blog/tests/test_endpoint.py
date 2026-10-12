@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.session import Base
 from app.features.blog.models.models import Post  # noqa: F401  (register table)
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 
@@ -28,7 +29,7 @@ async def client():
 
     override_db_sessions(app, maker)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=bearer()) as c:
         yield c
     app.dependency_overrides.clear()
     await engine.dispose()
@@ -87,9 +88,10 @@ async def test_patch_with_explicit_null_on_required_field_is_422(client):
     resp = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"title": None})
     assert resp.status_code == 422, resp.text
 
-    cleared = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"author": None})
-    assert cleared.status_code == 200, cleared.text  # nullable 컬럼은 비울 수 있다
-    assert cleared.json()["author"] is None
+    # author 는 수정 스키마에 없다 — 보내도 무시되고 서버가 채운 작성자가 남는다(service-hardening ADR-018).
+    ignored = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"author": None})
+    assert ignored.status_code == 200, ignored.text
+    assert ignored.json()["author"] == "admin"
 
 
 async def test_delete_post(client):

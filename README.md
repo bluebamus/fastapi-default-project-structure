@@ -63,6 +63,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 - **비차단 로깅** — 큐 기반 핸들러 + listener 스레드, 출력은 stdout/stderr 뿐(파일 로그 없음).
 - **인증** — OAuth2 password flow + JWT access/refresh. Argon2id 해시(기존 bcrypt 는 로그인 때 재해시),
   refresh 회전·재사용 탐지·로그아웃(Redis), 로그인·가입 레이트 리밋(429 + `Retry-After`).
+- **인가** — 슈퍼유저/일반 2단계. 게시글·피드·댓글 쓰기는 로그인, 수정·삭제는 작성자 또는 슈퍼유저, 관리 경로
+  (상품 쓰기·리포트·접속 로그·사용자 관리)는 슈퍼유저. 첫 관리자는 `python -m scripts.create_superuser` 로 만든다.
 - **문서·관리 화면** — Scalar(`/docs`, `DEBUG=true` 에서만), SQLAdmin(`/admin`, **인증 없음**).
 - **결정적 검수** — `scripts/review_gate.py` 와 CI 가 계층 불변식·공개 API 불변·SKIP 0 을 기계로 확인합니다.
 
@@ -304,7 +306,7 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 | 태그 | 메서드·경로 | 비고 |
 |---|---|---|
 | Health | `GET /health` · `GET /ready` | liveness / readiness(503) |
-| Home | `GET /api/v1/home/access-logs` · `/recent` · `/by-ip/{ip_address}` · `/by-user/{user_id}` · `/stats` | 접속 로그 조회(전부 읽기 세션) |
+| Home | `GET /api/v1/home/access-logs` · `/recent` · `/by-ip/{ip_address}` · `/by-user/{user_id}` · `/stats` | 접속 로그 조회(전부 읽기 세션, 슈퍼유저 전용) |
 | Blog | `GET·POST /api/v1/blog/posts` · `GET·PATCH·DELETE /api/v1/blog/posts/{post_id}` | CRUD |
 | Reply | `GET·POST /api/v1/reply/replies` · `GET·PATCH·DELETE /api/v1/reply/replies/{reply_id}` | CRUD |
 | SNS | `GET·POST /api/v1/sns/posts` · `GET·PATCH·DELETE /api/v1/sns/posts/{post_id}` | CRUD |
@@ -319,8 +321,39 @@ DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은
 `Authorization: Bearer <access_token>` 으로 부릅니다. access 가 만료되면 `refresh` 에 refresh 토큰을 보내 **새 쌍**을 받습니다 —
 보낸 refresh 는 그 순간 못 쓰게 되고, 이미 쓴 refresh 가 다시 오면 탈취로 보고 그 계열(family) 전체를 폐기합니다(401).
 `logout` 은 그 계열을 폐기합니다. 로그인·회원가입이 한도를 넘으면 429 와 `Retry-After`(초)가 옵니다.
-기능 API 는 기본적으로 인증을 요구하지 않습니다(`auth/me` 제외) — 새 엔드포인트의 인증·권한은
-직접 명시합니다.
+access 토큰에는 사용자 ID(`sub`)·사용자명·슈퍼유저 여부(`su`)가 실려, 기능 API 는 DB 조회 없이 권한을 판정합니다.
+토큰이 없거나 만료·위조됐으면 401(`WWW-Authenticate: Bearer`), 권한이 없으면 403(`FORBIDDEN`)입니다.
+
+### 권한
+
+| 기능 | 조회 | 생성 | 수정 | 삭제 |
+|---|---|---|---|---|
+| Blog · SNS · Reply | 공개 | 로그인 — 작성자(`author`·`author_id`)는 서버가 토큰으로 채운다 | 작성자 또는 슈퍼유저 | 작성자 또는 슈퍼유저 |
+| Catalog | 공개 | 슈퍼유저 | 슈퍼유저 | 슈퍼유저 |
+| Reports | 슈퍼유저 | 슈퍼유저(스냅샷 적재) | — | — |
+| Home(접속 로그) | 슈퍼유저 | — | — | — |
+| User | 목록 슈퍼유저 · 단건 본인 또는 슈퍼유저 | 슈퍼유저(비밀번호 필수, `is_superuser` 지정 가능) | 본인 또는 슈퍼유저 — `is_active`·`is_superuser` 는 슈퍼유저만 | 슈퍼유저 |
+| Auth | `me` 는 로그인 | `register` 공개(레이트 리밋) | — | — |
+| Health | 공개 | — | — | — |
+
+- 인가 도입 전에 만든 게시글·피드·댓글은 작성자 ID 가 비어 있어 **슈퍼유저만** 고칠 수 있습니다.
+- 사용자를 비활성화(`is_active=false`)하거나 삭제하면 그 사용자의 refresh 토큰이 모두 폐기됩니다. 이미 발급된
+  access 토큰은 만료(기본 15분)까지 유효합니다 — 권한 회수도 같습니다.
+- `/admin`(SQLAdmin)은 이 표와 무관하게 **인증이 없습니다**(아래 체크리스트 1·3번).
+
+### 첫 관리자 만들기
+
+`POST /users` 는 슈퍼유저만 부를 수 있으므로 첫 슈퍼유저는 서버 밖 도구로 만듭니다(Django `createsuperuser` 와 같다).
+DB 접속은 `.env` 설정을 그대로 쓰고, 마이그레이션이 먼저 적용돼 있어야 합니다.
+
+```bash
+uv run python -m scripts.create_superuser --username admin --email admin@example.com   # 비밀번호를 두 번 묻는다
+# 자동화: 비밀번호를 표준 입력 한 줄로 (명령줄 인자로 넘기지 않는다 — 셸 기록·ps 에 남는다)
+printf '%s\n' "$ADMIN_PASSWORD" | uv run python -m scripts.create_superuser --username admin --email admin@example.com --password-stdin
+```
+
+이미 있는 사용자명이면 비밀번호·이메일은 그대로 두고 슈퍼유저로 **승격**합니다. 종료 코드는 0 성공, 1 입력 오류,
+2 인자 오류입니다. 새 엔드포인트를 보호하는 방법은 [DEVELOPMENT §3.1](./docs/guides/DEVELOPMENT.md#31-라우트-보호--principal-주입)를 봅니다.
 
 ---
 
@@ -339,13 +372,15 @@ DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은
 | 4-1 | `ENV=production`(또는 `staging`)을 **명시**했는가 | 기본값 `development` 로 뜨면 `DEBUG`·`LOG_LEVEL`·`ADMIN` 검사가 빠진다. `.env` 없이 환경 변수로 주입하는 배포는 `ENV` 가 없으면 기동 거부 |
 | 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출, worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
+| 6-1 | 첫 슈퍼유저를 `python -m scripts.create_superuser` 로 만들었는가 | 상품 쓰기·리포트·접속 로그·사용자 관리 API 를 아무도 부를 수 없다(403) |
 | 7 | `CORS_ALLOW_ORIGINS` 를 실제 출처로 좁혔는가 | 기본값 `["*"]` |
 | 8 | `LOG_SQL_ECHO_ENABLED=false` 인가 | SQL 바인딩 값(해시·토큰·검색어)이 로그 수집기로 나간다 |
 | 9 | Redis 가 준비됐고, 컨테이너 종료 유예 시간이 종료 예산보다 긴가 | Redis 없으면 기동 실패 / 유예가 짧으면 정리 도중 SIGKILL ([ARCHITECTURE §8.2](./docs/guides/ARCHITECTURE.md#82-시간-예산)) |
 | 10 | worker 수 × DB 풀 크기가 DB 최대 연결 수 안인가 | [ARCHITECTURE §4.1](./docs/guides/ARCHITECTURE.md#41-엔진과-커넥션-풀) |
 
 1과 2는 곱해집니다. 기본값이 각각 `true` 와 `0.0.0.0` 이라, 아무것도 설정하지 않은 배포가 정확히
-"인증 없는 관리 화면이 네트워크에 열린" 상태입니다. refresh 토큰은 Redis 에 회전 기록이 남아 로그아웃·재사용
+"인증 없는 관리 화면이 네트워크에 열린" 상태입니다 — **API 는 인증·인가가 걸려 있지만(위 [권한](#권한) 표) `/admin`
+은 그 밖에 있어**, 열려 있으면 API 의 권한 표를 통째로 우회합니다. refresh 토큰은 Redis 에 회전 기록이 남아 로그아웃·재사용
 탐지로 폐기되지만, access 토큰은 폐기 목록이 없어 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`, 기본 15분)까지 유효합니다.
 프록시 뒤에서 `TRUSTED_PROXY_HOPS` 를 설정하지 않으면 모든 요청이 프록시 IP 하나로 세어져 로그인 레이트 리밋이
 전체 사용자에게 함께 걸립니다.

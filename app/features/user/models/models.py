@@ -4,7 +4,7 @@ User 도메인 데이터베이스 모델
 사용자(User) 엔티티를 정의한다. 최소 CRUD 동작을 위한 기본 컬럼만 둔다.
 """
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.models.models_base import UUIDTimestampModel
@@ -18,6 +18,7 @@ class User(UUIDTimestampModel):
         username: 사용자명(고유)
         email: 이메일
         is_active: 활성 여부
+        is_superuser: 슈퍼유저 여부(관리 경로·타인 리소스 수정 허용 — service-hardening ADR-018)
         created_at: 생성 시각 (CreatedAtMixin)
         updated_at: 수정 시각 (UpdatedAtMixin)
     """
@@ -29,6 +30,11 @@ class User(UUIDTimestampModel):
     # 인증(auth 도메인)용 비밀번호 해시(Argon2id — 이전 버전의 bcrypt 는 로그인 때 재해시된다). 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 서버 기본값을 두는 이유: 이 컬럼을 추가하는 리비전이 기존 행을 False 로 채워야 하고,
+    # 모델과 리비전이 같은 정의를 가져야 ``alembic check`` 가 드리프트를 보고하지 않는다.
+    is_superuser: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username!r})>"

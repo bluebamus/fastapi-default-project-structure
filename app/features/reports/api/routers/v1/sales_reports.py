@@ -18,6 +18,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 
 from app.core.exception import ErrorResponse
+from app.core.security.dependencies import FORBIDDEN_RESPONSES, require_superuser
 from app.features.reports.dependencies.report_dependencies import (
     get_report_service,
     get_report_service_readonly,
@@ -33,7 +34,8 @@ from app.features.reports.schemas.report_schema import (
 )
 from app.features.reports.services.report_service import ReportService
 
-router = APIRouter()
+# 매출 집계는 운영 데이터다 — 이 라우터의 모든 경로는 슈퍼유저 전용(service-hardening ADR-018).
+router = APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDEN_RESPONSES)
 
 
 @router.get(
@@ -51,7 +53,7 @@ router = APIRouter()
     summary="일별 매출 리포트",
     description=(
         "지정한 기간의 주문 수와 총 매출을 **일별로 집계**합니다. "
-        "종료일은 조회 범위에 포함되며, 매출이 없는 날은 결과에 나타나지 않습니다."
+        "종료일은 조회 범위에 포함되며, 매출이 없는 날은 결과에 나타나지 않습니다(슈퍼유저 전용)."
     ),
     operation_id="getDailySalesReport",
 )
@@ -98,7 +100,7 @@ async def get_daily_sales_report(
     description=(
         "지정한 기간의 일별 매출 집계를 스냅샷 테이블에 **재적재**합니다. "
         "같은 기간을 여러 번 호출해도 결과가 같습니다(멱등). "
-        "주문 원장은 읽기만 하며 변경되지 않습니다."
+        "주문 원장은 읽기만 하며 변경되지 않습니다(슈퍼유저 전용)."
     ),
     operation_id="loadDailySalesSnapshots",
 )

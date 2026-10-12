@@ -1,7 +1,9 @@
 """JWT 발급·검증 — ``TokenService`` (service-hardening ADR-014·ADR-025).
 
-claims: ``sub, type, iat, nbf, exp, jti, iss, aud`` + access 는 ``username``, refresh 는 ``fam``
-(회전 family). 검증은 알고리즘을 설정 하나로 고정하고, ``iss``·``aud`` 일치와 필수 claim 존재를
+claims: ``sub, type, iat, nbf, exp, jti, iss, aud`` + access 는 ``username``·``su``(슈퍼유저 여부),
+refresh 는 ``fam``(회전 family). access 의 ``username``·``su`` 는 필수다 — ``Principal`` 을 DB 조회 없이
+토큰만으로 만들기 때문이다(service-hardening ADR-017·ADR-026). ``su`` 가 없는 토큰(F2 이전 발급분)은
+거부되고 다시 로그인하면 된다(access 유효 시간은 기본 15분). 검증은 알고리즘을 설정 하나로 고정하고, ``iss``·``aud`` 일치와 필수 claim 존재를
 요구하며, ``type`` 이 기대와 다르면 거부한다. access 와 refresh 는 서명 키도 다르다 — 종류를
 바꿔 끼우면 서명 단계에서 먼저 실패하고, ``type`` 검사가 두 번째 벽이다.
 
@@ -23,6 +25,8 @@ from config import JWTSettings
 
 # decode 가 존재를 요구하는 claim. 하나라도 없으면 위조·다른 발급자의 토큰으로 본다.
 REQUIRED_CLAIMS = ["exp", "iat", "nbf", "sub", "jti", "iss", "aud", "type"]
+# access 토큰에만 추가로 요구하는 claim — 인가가 이 값으로 결정된다.
+ACCESS_REQUIRED_CLAIMS = [*REQUIRED_CLAIMS, "username", "su"]
 
 
 class TokenType(StrEnum):
@@ -66,9 +70,9 @@ class TokenService:
         """refresh 토큰 유효 시간(초) — 회전 기록·폐기 표시가 같은 TTL 을 쓴다."""
         return self._ttls[TokenType.REFRESH]
 
-    def issue_access(self, sub: str, username: str) -> IssuedToken:
-        """access 토큰을 발급한다."""
-        return self._issue(TokenType.ACCESS, sub, {"username": username})
+    def issue_access(self, sub: str, username: str, is_superuser: bool) -> IssuedToken:
+        """access 토큰을 발급한다. ``su`` 는 발급 시점의 슈퍼유저 여부다."""
+        return self._issue(TokenType.ACCESS, sub, {"username": username, "su": is_superuser})
 
     def issue_refresh(self, sub: str, family: str) -> IssuedToken:
         """refresh 토큰을 발급한다. ``family`` 는 회전으로 이어지는 토큰 묶음의 ID 다."""
@@ -106,7 +110,13 @@ class TokenService:
                 audience=self._settings.JWT_AUDIENCE,
                 issuer=self._settings.JWT_ISSUER,
                 leeway=self._settings.JWT_LEEWAY_SECONDS,
-                options={"require": REQUIRED_CLAIMS},
+                options={
+                    "require": (
+                        ACCESS_REQUIRED_CLAIMS
+                        if expected_type is TokenType.ACCESS
+                        else REQUIRED_CLAIMS
+                    )
+                },
             )
         except jwt.InvalidTokenError as exc:
             raise InvalidTokenException() from exc

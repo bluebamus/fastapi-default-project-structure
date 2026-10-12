@@ -17,7 +17,9 @@ from app.core.middlewares.user_info_middleware import (
     UserInfoMiddleware,
     setup_user_info_middleware,
 )
+from app.core.security.dependencies import CurrentPrincipal
 from config import middleware_settings, session_settings
+from tests.auth_headers import ALICE, bearer
 
 
 class _RecordingSink:
@@ -38,6 +40,10 @@ def _app(resolver: ClientIPResolver | None = None) -> FastAPI:
     @app.get("/boom")
     async def boom() -> dict:
         raise RuntimeError("처리되지 않은 예외")
+
+    @app.get("/me")
+    async def me(principal: CurrentPrincipal) -> dict:
+        return {"id": principal.id}
 
     if resolver is None:
         setup_user_info_middleware(app)
@@ -126,3 +132,24 @@ async def test_injected_resolver_is_used(call, sink):
         headers={"X-Forwarded-For": "6.6.6.6, 203.0.113.7"},
     )
     assert sink.saved[0]["ip_address"] == "203.0.113.7"
+
+
+async def test_authenticated_request_records_user_id(call, sink):
+    """인증 의존성이 채운 ``request.state.user_id`` 가 접속 로그에 남는다(service-hardening ADR-017).
+
+    미들웨어가 요청 시작 시점에 읽으면 라우트 의존성이 아직 돌지 않아 항상 None 이다 — 응답 뒤에 읽는다.
+    """
+    response = await call("/me", headers=bearer(ALICE))
+
+    assert response.status_code == 200
+    assert [entry["user_id"] for entry in sink.saved] == [ALICE.id]
+
+
+async def test_anonymous_and_rejected_requests_record_no_user_id(call, sink):
+    await call("/ok")
+    await call("/me")  # 토큰 없음 → 401
+
+    assert [(entry["response_status"], entry["user_id"]) for entry in sink.saved] == [
+        (200, None),
+        (401, None),
+    ]

@@ -1,4 +1,4 @@
-"""Auth 의존성 — 협력 객체 조립(provider) · 레이트 리밋 · OAuth2 현재 사용자 해석.
+"""Auth 의존성 — 협력 객체 조립(provider) · 레이트 리밋 · 현재 사용자(DB 엔티티) 해석.
 
 모든 협력 객체는 여기 provider 함수가 만들어 생성자로 넘긴다(service-hardening C-1). 테스트는
 ``app.dependency_overrides`` 로 provider 를 바꿔 끼운다 — Redis 는 ``get_redis`` 하나만 바꾸면
@@ -6,10 +6,9 @@
 """
 
 from collections.abc import Awaitable, Callable
-from functools import lru_cache
 
 from fastapi import Depends, Request
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,38 +16,27 @@ from app.core.db.session import get_read_only_db_session, get_writer_db_session
 from app.core.exception import TooManyRequestsException
 from app.core.middlewares.client_ip import ClientIPResolver
 from app.core.redis import get_redis
+from app.core.security.authorization import Principal
+from app.core.security.dependencies import (
+    get_current_principal,
+    get_password_hasher,
+    get_refresh_token_store,
+    get_token_service,
+)
+from app.core.security.password_hasher import PasswordHasher
 from app.core.security.rate_limit import RateLimiter
 from app.core.security.refresh_store import RefreshTokenStore
-from app.core.security.tokens import InvalidTokenException, TokenService, TokenType
+from app.core.security.tokens import InvalidTokenException, TokenService
 from app.features.auth.services.auth_service import AuthService
-from app.features.auth.services.password_hasher import PasswordHasher
 from app.features.user.models.models import User
 from app.features.user.repositories.user_repository import UserRepository
 from config import jwt_settings, middleware_settings
 
-# 로그인 엔드포인트에서 access token 을 발급받는다.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-
 
 # =============================================================================
-# 협력 객체 provider
+# 협력 객체 provider — 해시·토큰·회전 저장소 provider 는 user 기능도 쓰므로 core
+# (``app/core/security/dependencies.py``)에 있다(service-hardening ADR-026).
 # =============================================================================
-@lru_cache
-def get_password_hasher() -> PasswordHasher:
-    """프로세스에 하나 — 생성 시 더미 Argon2 해시를 한 번 만든다."""
-    return PasswordHasher()
-
-
-def get_token_service() -> TokenService:
-    """설정으로 ``TokenService`` 를 만든다(상태 없음)."""
-    return TokenService(jwt_settings)
-
-
-def get_refresh_token_store(redis: Redis = Depends(get_redis)) -> RefreshTokenStore:
-    """lifespan 의 Redis 로 회전 저장소를 만든다."""
-    return RefreshTokenStore(redis, jwt_settings.refresh_token_ttl_seconds)
-
-
 def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
     """lifespan 의 Redis 로 레이트 리밋을 만든다."""
     return RateLimiter(redis)
@@ -130,15 +118,16 @@ async def register_rate_limit(
 # 현재 사용자
 # =============================================================================
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    token_service: TokenService = Depends(get_token_service),
+    principal: Principal = Depends(get_current_principal),
     db_session: AsyncSession = Depends(get_read_only_db_session),
 ) -> User:
-    """Bearer access token 을 검증해 현재 사용자를 반환한다(실패 시 401).
+    """Bearer access token 의 주체를 DB 에서 읽어 현재 사용자를 반환한다(실패 시 401).
 
-    토큰 검증은 ``TokenService`` 가, 사용자 조회는 읽기 세션의 ``UserRepository`` 가 한다.
-    회전 저장소(Redis)·해시기가 필요 없으므로 ``AuthService`` 를 조립하지 않는다 — 조회 하나를
-    위해 Redis 를 요청 경로에 끌어들이지 않는다. 커밋 주체도 생기지 않는다(검수 W2/REQ-009).
+    토큰 검증·``request.state.user_id`` 설정은 core 의 ``get_current_principal`` 이 한다. 이
+    의존성은 사용자 **엔티티**가 필요한 곳(``/me``)에서만 쓴다 — 삭제·비활성화된 사용자를 즉시
+    401 로 돌려보낸다. 인가만 필요한 라우트는 DB 를 보지 않는 ``CurrentPrincipal`` 을 쓴다
+    (service-hardening ADR-017). 회전 저장소(Redis)·해시기가 필요 없으므로 ``AuthService`` 를
+    조립하지 않는다 — 조회 하나를 위해 Redis 를 요청 경로에 끌어들이지 않는다.
 
     세션도 읽기 전용을 쓴다(P4-3). 커밋을 안 하는 것만으로는 조회가 여전히
     writer 로 가서, ``DB_ROUTER_ENABLED`` 를 켜도 인증 조회가 replica 로 분산되지
@@ -149,8 +138,7 @@ async def get_current_user(
     쓰기 세션에서 수정하려 들면 다른 세션의 인스턴스라 반영되지 않는다. 그런
     라우트를 만들 때는 쓰기 세션에서 다시 조회할 것.
     """
-    claims = token_service.decode(token, TokenType.ACCESS)
-    user = await UserRepository(db_session).get_by_id(claims["sub"])
+    user = await UserRepository(db_session).get_by_id(principal.id)
     if user is None or not user.is_active:
         raise InvalidTokenException()
     return user

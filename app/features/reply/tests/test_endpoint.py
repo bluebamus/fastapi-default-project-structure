@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.session import Base
 from app.features.reply.models.models import Reply  # noqa: F401  (register table)
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 
@@ -28,7 +29,7 @@ async def client():
 
     override_db_sessions(app, maker)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=bearer()) as c:
         yield c
     app.dependency_overrides.clear()
     await engine.dispose()

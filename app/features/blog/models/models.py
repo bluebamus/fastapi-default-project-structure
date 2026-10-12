@@ -17,7 +17,8 @@ class Post(UUIDTimestampModel):
         id: UUID 기본키 (UUIDPrimaryKeyMixin)
         title: 제목
         content: 본문
-        author: 작성자(선택)
+        author: 작성자 이름(서버가 인증 주체의 사용자명으로 채운다)
+        author_id: 작성자 사용자 ID(서버가 인증 주체로 채운다, 인가 도입 전 행은 NULL — service-hardening ADR-018)
         created_at: 생성 시각 (CreatedAtMixin)
         updated_at: 수정 시각 (UpdatedAtMixin)
     """
@@ -27,6 +28,8 @@ class Post(UUIDTimestampModel):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 소유권 판정 기준(OwnershipPolicy). FK 를 두지 않는다 — 기능끼리 모델을 참조하지 않는다(C-2).
+    author_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     def __repr__(self) -> str:
         return f"<Post(id={self.id}, title={self.title!r})>"

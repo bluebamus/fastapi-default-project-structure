@@ -3,7 +3,7 @@
 import bcrypt
 import pytest
 
-from app.features.auth.services.password_hasher import PasswordHasher
+from app.core.security.password_hasher import PasswordHasher
 
 
 @pytest.fixture(scope="module")

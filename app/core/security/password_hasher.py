@@ -1,4 +1,4 @@
-"""비밀번호 해시 — ``PasswordHasher`` (service-hardening ADR-013).
+"""비밀번호 해시 — ``PasswordHasher`` (service-hardening ADR-013·ADR-026).
 
 새 해시는 Argon2id(pwdlib). 이전 버전이 저장한 bcrypt 해시(``$2`` 접두사)는 그때 규칙
 그대로(UTF-8 72바이트 절단) 검증하고, 맞으면 새 Argon2 해시를 돌려준다 — 호출자가 저장하면
