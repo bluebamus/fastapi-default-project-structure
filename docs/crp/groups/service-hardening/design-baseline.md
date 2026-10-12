@@ -37,7 +37,7 @@
 |---|---|---|---|---|---|
 | REQ-001 | 2026-10-12 | "1,2,3,4,5,6,7,8 redis 필수, 9는 전통적인 방식과 fastapi에서 최신 사용하는 실무 코드를 기반으로, 일반적으로 개발되는 설계를 기반으로 작업 계획을 만들고 이를 기반으로 개발을 진행해줘. 각 단계는 단위 테스트가 반드시 진행되어야 한다. 모든 기능은 같은 목적의 기능이 하나의 모듈 클래스로 만들어져야 하고 필수 작업은 반드시 주입을 통해 조합, 데이터 전달, 인증 및 자동 작업 등이 진행되어야 하며…" | 단계 A~F2 를 순서대로 구현한다. 단계마다 단위 테스트(가능하면 fail-on-revert) + ruff·mypy·pytest(skip 0) 그린 후 커밋. 같은 목적의 기능은 한 클래스, 필수 협력 객체는 생성자 주입·provider 함수로 조립. 단계별 도출 요구는 아래 REQ-001-A~F2 | Active | ADR-001~020, C-1~C-10, charter §3, run-log Round 1~ |
 | REQ-001-A | 2026-10-12 | (REQ-001 의 단계 A — 제안 1·2·3) | A1 CI 의 `uv sync` 가 락 불일치에서 실패한다(`--locked`). 게이트의 파일 목록은 git 이 추적하는 파일만. A2 DSN 은 `URL.create` 로 만들어 특수문자 비밀번호·IPv6 가 깨지지 않는다. A3 ORM 잠금 읽기는 writer 고정·read-only 거부, 범용 목록은 결정적 정렬(`created_at DESC, id DESC`) | Active | ADR-003~005, ledger F-001~F-005 |
-| REQ-001-B | 2026-10-12 | (단계 B — 제안 4·5) | 신뢰 프록시 홉 수로만 클라이언트 IP 를 결정, 500 도 접속 로그에 기록, 쿼리스트링 민감 값 마스킹, 문자열은 모델 컬럼 길이로 절단, null PATCH 422, DB 오류 코드별 매핑, 리포트 날짜 범위 상한 | Active | ADR-006~008, ledger F-006~F-013 |
+| REQ-001-B | 2026-10-12 | (단계 B — 제안 4·5) | 신뢰 프록시 홉 수로만 클라이언트 IP 를 결정, 500 도 접속 로그에 기록, 쿼리스트링 민감 값 마스킹, 문자열은 모델 컬럼 길이로 절단, null PATCH 422, DB 오류 코드별 매핑, 리포트 날짜 범위 상한 | Active | ADR-006~008·021·022, ledger F-006~F-013·F-025 |
 | REQ-001-C | 2026-10-12 | (단계 C — 제안 6) | 엔드포인트 테스트 공용 세션 헬퍼(read-only 표시 포함), MySQL ORM 스모크 | Active | ADR-009, ledger F-014~F-015 |
 | REQ-001-D | 2026-10-12 | (단계 D — 제안 7) | DB 는 UTC·마이크로초 저장, 응답은 오프셋 포함 ISO 8601, 기존 데이터 변환 리비전, 리포트는 로컬 영업일 기준 유지 | Active | ADR-010, ledger F-016 |
 | REQ-001-E | 2026-10-12 | (단계 E — 제안 8, "redis 필수") | Redis 는 API 필수 자원으로 유지하고 주입 provider 로 노출, `/ready` 가 DB·Redis 를 모두 본다, Celery 태스크는 기능별로 두고 자동 발견 | Active | ADR-011~012, ledger F-017~F-018 |
@@ -68,6 +68,8 @@
 | ADR-018 | 2026-10-12 | 인가는 **슈퍼유저/일반 2단계**. `users.is_superuser`(기본 False) 와 blog·sns·reply 의 `author_id`(nullable, index)를 Alembic 리비전으로 추가. 소유권은 core security 의 한 클래스 `OwnershipPolicy.ensure_can_modify(owner_id, principal)` — 소유자 또는 슈퍼유저, 아니면 403. 서비스 메서드가 principal 을 인자로 받아 호출한다. 기존 행의 `author_id` 는 NULL(슈퍼유저만 수정). | 무인증 CRUD 로 남의 계정을 잠그거나 지울 수 있었다(검수 R-01), 접속 로그 API 가 PII 를 공개했다(R-02). RBAC 세분화는 비목표 — 2단계로 템플릿의 공백(인증 적용 예시 0건)을 메운다. | Accepted | — |
 | ADR-019 | 2026-10-12 | **SQLAdmin 정책은 바꾸지 않는다** — `orm-raw-repository` C-8(기본값 true·인증 백엔드 없음·배포 환경 확인 플래그)을 그대로 유지하고 이 그룹의 범위 밖으로 명시한다. | 사용자 결정으로 확정된 기존 정책이고(그 그룹 ADR-045), 관리자 인증 백엔드는 이번 요청에 없다. 위험은 residual-risk R-001 로 남긴다. | Accepted | — |
 | ADR-020 | 2026-10-12 | 운영 도구 `scripts/create_superuser.py`(Django `createsuperuser` 와 같은 역할): 인자/환경변수/getpass 로 입력, 서비스·리포지토리를 background 세션으로 조립(주입 경로 재사용), 이미 있으면 승격. `/users` POST 는 비밀번호 필수(로그인 불가 계정 금지). | 슈퍼유저가 생기면 첫 슈퍼유저를 만드는 경로가 필요하다. API 로 열면 부트스트랩 문제가 생기므로 서버 밖 도구로 둔다. | Accepted | — |
+| ADR-021 | 2026-10-12 | ADR-006 의 "오른쪽 N번째" 를 이렇게 확정한다: `X-Forwarded-For` 목록만 놓고 오른쪽에서 N번째(`hops[-N]`) — 직접 피어까지 이어 붙인 목록에서 피어를 **0번째**로 센 N번째와 같다. 빈 항목도 자리로 센다. 목록이 N개보다 짧으면 직접 피어. 설정 기본값 `TRUSTED_PROXY_HOPS=0` 은 이전 동작(맨 왼쪽 값을 무조건 신뢰)을 **바꾼다** — 프록시 뒤 배포는 홉 수를 설정해야 실제 클라이언트 IP 가 기록된다(`.env.example`·ARCHITECTURE 접속 로그 절). | 피어를 1번째로 세면 hops=1 에서 프록시 자신의 주소가 나와 설정이 무의미해진다 — uvicorn `--forwarded-allow-ips`·Werkzeug `ProxyFix(x_for=N)` 도 "프록시 N단이 덧붙인 값" 을 고른다. 빈 항목을 지우면 `"a, "` 같은 헤더에서 신뢰 경계가 클라이언트가 적은 값 쪽으로 한 칸 밀린다(테스트 `test_invalid_value_falls_back_to_peer[]` 가 잡았다). 짧은 목록은 토폴로지와 설정이 어긋난 것이라 왼쪽 끝을 믿지 않는다(Werkzeug 와 같다). | Accepted | — (ADR-006 해석) |
+| ADR-022 | 2026-10-12 | ① DB 오류 변환 표는 `app/core/repositories/db_errors.py` 의 `DatabaseErrorTranslator` 하나로 두고 ORM(`BaseRepository._translated_errors`)과 Raw(`RawRepositoryBase._observed`)가 함께 쓴다 — Raw 의 중복 INSERT 도 이제 409 다. 판정은 예외 클래스가 아니라 드라이버 코드(SQLite 는 메시지 대체). ② 기능 Repository 의 추가 쿼리는 `BaseRepository._execute(statement, operation)`(비공개 — 공개 메서드 8개 불변)로 실행해 같은 변환을 거친다. ③ 실패 로그는 예외 타입과 드라이버 코드만 남기고(4xx WARNING, 5xx ERROR), 엔진 3종은 `hide_parameters=True`. | ① 같은 DB 오류가 계층에 따라 409/500 으로 갈렸다. pymysql 은 1364 를 `OperationalError` 로 올려 클래스로는 갈리지 않는다. ② `list_active`·`count_active`·home 조회 7개·`get_by_username` 이 `self.db_session.execute` 를 직접 불러 드라이버 예외가 변환 없이 새어 나갔다 — DEBUG 의 500 detail(`str(exc)`)과 로그에 SQL 이 실렸다. 호출처마다 감싸는 대신 한 메서드로 모으고 직접 호출을 테스트로 막는다. ③ 검수 R-07: ORM 실패 로그가 `%s` 로 예외 전문(SQL·바인딩 값)을 찍었다(Raw 는 이미 타입만). `hide_parameters` 는 예외 문자열 자체에서 값을 빼 어느 경로로 흘러도 안전하다 — 대가로 `LOG_SQL_ECHO_ENABLED=true` 의 echo 로그에도 바인딩 값이 보이지 않는다(SQL 본문은 보인다). | Accepted | — |
 
 ## 4. 불가침 제약 (INVARIANT REQUIREMENTS — 추가 작업이 위반 금지)
 
@@ -85,6 +87,7 @@
 ## 5. 변경 이력
 
 - v0.1 (2026-10-12): 최초 작성. REQ-001(단계 A~F2 도출 요구 포함), ADR-001~020, C-1~C-10 등록. `orm-raw-repository` C-9 를 ADR-002 로 대체.
+- v0.2 (2026-10-12): 단계 B 진행 중 ADR-021(ADR-006 의 홉 계수 해석·기본값 0 의 동작 변경), ADR-022(오류 변환 단일 클래스·기능 쿼리 경유·로그/엔진 비노출) 추가. REQ-001-B 연결에 ADR-021·022 를 더한다.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

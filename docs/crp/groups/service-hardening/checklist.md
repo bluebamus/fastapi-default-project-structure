@@ -16,16 +16,17 @@
 - [x] 공통 게이트 그린(ruff·format·mypy·pytest skip 0) · 요구사항 회귀 0 — 669 passed · skipped 0
 - [x] run-log 갱신 · residual-risk 갱신(그룹 개설 시 R-001~R-009, 이번 라운드 추가 없음)
 
-## Round 2 — 단계 B (접속 로그 수집 · 오류 매핑)
-- [ ] (F-006) `ClientIPResolver` + `TRUSTED_PROXY_HOPS`
-- [ ] (F-007) 미들웨어 예외 시 500 기록 후 재전파
-- [ ] (F-008) 쿼리스트링 민감 값 마스킹
-- [ ] (F-009) 모델 컬럼 길이로 절단(home 기능)
-- [ ] (F-010) `PatchSchema` null 거부
-- [ ] (F-011) DB 오류 코드별 매핑
-- [ ] (F-012) 리포트 날짜 범위 상한
-- [ ] (F-013) 4xx 로그 WARNING
-- [ ] 공통 게이트 그린 · run-log 갱신
+## Round 2 — 2026-10-12 · 단계 B (접속 로그 수집 · 오류 매핑)
+- [x] (F-006) `ClientIPResolver` + `TRUSTED_PROXY_HOPS` — 홉 계수 해석은 ADR-021
+- [x] (F-007) 미들웨어 예외 시 500 기록 후 재전파
+- [x] (F-008) 쿼리스트링 민감 값 마스킹 + 세션 쿠키 이름을 설정에서
+- [x] (F-009) 모델 컬럼 길이로 절단(home 기능 `fit_to_columns`)
+- [x] (F-010) `PatchSchema` null 거부 — Update 스키마 5종 상속
+- [x] (F-011) DB 오류 코드별 매핑 — `DatabaseErrorTranslator`(ORM·Raw 공통), 기능 쿼리는 `_execute`
+- [x] (F-025) DB 실패 로그는 타입·코드만, 엔진 `hide_parameters=True` (검수 R-07, ADR-022)
+- [x] (F-012) 리포트 날짜 범위 상한
+- [x] (F-013) 4xx 로그 WARNING · 500 핸들러 `str(exc)` 는 DEBUG 전용(배포 환경은 DEBUG 거부) 확인
+- [x] 공통 게이트 그린 · run-log 갱신 — 742 passed · skipped 0
 
 ## Round 3 — 단계 C (테스트 하네스)
 - [ ] (F-014) 공용 세션 override 헬퍼 + 전 기능 전환 + read-only flush 거부 회귀
