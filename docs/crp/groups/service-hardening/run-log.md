@@ -173,6 +173,51 @@
 - **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
   수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
 
+### Round 6 — 2026-10-12 · 단계 F1 (base SHA: `902488f`, 커밋 `0c42665`)
+- **트리거:** 사용자 요청 REQ-001 (제안 9 전반 — 로그인 고도화)
+- **검수 범위:** 해시·검증 경로 전수(`app/utils/authenticator/auth.py` 의 bcrypt·PyJWT 함수와 소비처 3곳 — auth 서비스·의존성·라우터),
+  토큰 claim·검증 옵션, refresh 경로(회전 없음·폐기 없음이던 것), 로그인·가입 시도 제한(없음), 예외 → 응답 헤더 경로(없음),
+  쓰기 핸들러 커밋 규칙·DTO 선검증 규칙·라우트 인벤토리·설정 계약(`.env.example` 양방향)
+- **GATE 통과:** 0 ☑ 1 ☑ 2 ☑ 3 ☑ 4 ☑ 5 ☑ — `pytest -m "not mysql"` **836 passed · 16 deselected · skipped 0**,
+  ruff check·format 그린, mypy 196 파일 무결, `review_gate --fast` 의 구조 검사 전건 통과(ENV=test — mypy 단계만 `.venv` 의
+  컴파일 DLL 이 앱 제어 정책에 막혀 FAIL, 같은 버전 순수 Python 빌드로 따로 돌려 그린), `-m mysql` 16건 수집, `uv lock --check` 통과
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0 (기존 F-019~F-021 을 닫았다)
+- **신규 Fix(계약 위반):** F-019·F-020·F-021 Fixed
+- **결정:** ADR-025(레이트 리밋 설정 형태, `su` claim F2 이연, 저장소 TTL 생성자 주입, `MULTI` 고정 창, `InvalidTokenException` core 이동,
+  `AppException.headers`, 성공 시 카운터 초기화 경로, `get_current_user` 조립, 커밋 조건, authenticator 제거, OpenAPI 기준선 불변)
+- **의존성:** `pwdlib[argon2]`(Argon2id — FastAPI 공식 문서의 현행 권장, ADR-013), dev `fakeredis`(Redis 를 쓰는 실물 클래스를 그대로
+  시험 — 가짜 Protocol 을 만들지 않는다, C-1). `uv add` 로 락을 갱신했다. `bcrypt` 는 레거시 검증 전용으로 남는다
+- **fail-on-revert:** 대상 파일을 저장소 밖에 복사해 두고 변이를 넣은 뒤 복사본으로 복원했다(서로 다른 변이 22개 — 전부 해당 테스트가 실패. `audience=` 제거는 처음에 타 서비스 aud 테스트만 돌려 통과로 나왔다 — PyJWT 는 aud 를 기대하지 않을 때도 aud 가 있는 토큰을 거부하므로, 그 변이는 정상 토큰 테스트로 잡힌다).
+  - 회전 — `GETDEL` → `GET` 이면 `test_refresh_reuse_revokes_the_whole_family`·`test_registered_token_can_be_consumed_once`·
+    `test_concurrent_consumption_lets_exactly_one_win` 실패. 재사용 시 family 폐기를 빼면 재사용 테스트, 폐기 family 검사를 빼면
+    `test_logout_revokes_refresh_and_is_idempotent`, 회전 시 비활성 검사를 빼면 `test_refresh_for_deactivated_user_401`,
+    `revoke_user` 의 집합 삭제를 빼면 `test_revoke_user_revokes_every_family_of_that_user_only` 실패
+  - 레이트 리밋 — 성공 시 초기화를 빼면 `test_successful_login_resets_ip_username_counter`, IP 키를 빼면
+    `test_login_is_rate_limited_per_ip_across_usernames`, 사용자명 소문자화를 빼면 `test_login_rate_limit_ignores_username_case`,
+    가입 의존성을 빼면 `test_register_is_rate_limited_per_ip`, 전역 핸들러가 `headers` 를 안 실으면 `test_login_is_rate_limited_per_ip_and_username`,
+    매 hit 에 EXPIRE 를 걸면 `test_window_starts_at_the_first_hit_and_is_not_extended` 실패
+  - 토큰 — `require` 옵션을 빼면 `test_token_missing_a_required_claim_is_rejected`, `type` 검사를 빼면
+    `test_type_claim_is_checked_even_with_the_right_key`, `verify_aud`·`verify_iss` 를 끄면 `test_foreign_issuer_or_audience_is_rejected`,
+    `audience=` 를 빼면 정상 토큰까지 거부돼 `test_access_token_carries_standard_claims_and_username`, `nbf` 를 빼면 같은 테스트,
+    `JWT_ALGORITHM` 을 `str` 로 되돌리면 `test_only_hmac_algorithms_are_configurable` 실패
+  - 해시 — 레거시 72바이트 절단을 빼거나 재해시를 돌려주지 않으면 `test_legacy_bcrypt_hash_verifies_and_returns_argon2_rehash`,
+    로그인이 재해시를 커밋하지 않으면 `test_login_with_legacy_bcrypt_hash_persists_argon2_rehash` 실패
+  - 수정 전 코드(`902488f`)에 새 엔드포인트 테스트를 얹으면 23건 중 13건 실패(logout 404, 재사용 200, 429 없음, `expires_in` 없음,
+    bcrypt 저장, 회전 전후 refresh 동일 등). 통과한 10건은 기존 동작의 회귀 가드다(가입·401·`me`·비활성 사용자 refresh 거부·다른 family 유지)
+- **기존 테스트 영향:** `tests/utils/test_auth.py` 삭제(대상 모듈 제거 — 같은 검사를 `tests/core/test_token_service.py`·
+  `test_password_hasher.py` 가 더 촘촘히 한다). `test_endpoint.py`·`test_transaction_boundary.py`·`tests/test_write_dto_before_commit.py` 는
+  `get_redis` 를 fakeredis 로 바꿔 끼운다. `tests/test_read_path_no_commit.py` 의 allowlist 에서 `login` 을 빼고(이제 재해시 때 커밋한다)
+  `logout` 을 이유와 함께 더했다. `tests/test_route_inventory.py` 에 `/api/v1/auth/logout` 추가(README 표 24 경로 / 39 오퍼레이션).
+  OpenAPI 기준선(`orm-raw-repository/baseline/openapi.json`)은 바꾸지 않았다 — INV-11 은 제거·2xx 변경 0건으로 통과하고 `/logout` 은
+  추가 operation 으로만 보고된다(ADR-025 ⑪)
+- **문서 갱신:** README(인증 기능·기술 표·환경 변수 4줄·API 표와 인증 흐름·운영 체크리스트 아래 refresh 폐기 문장), ARCHITECTURE(구조도
+  `security/`·`utils/`, §6.2 `jwt_settings` 소비처, §11 전면 개정, §15 결정 3줄, §16 이력), DEVELOPMENT(§3 fakeredis, §10.1 해시),
+  HTML 안내서 2편(설정 표·Redis 소비자·근거 링크), `.env.example`(새 키 8개, access 15분), OpenAPI Auth 태그 설명
+- **수렴 판정:** `CONVERGED` (Open Fix 0 — 단계 F1 범위)
+- **잔여 위험 변화:** R-012(프록시 뒤 hops 0 이면 IP 한도 공유), R-013(로그인하지 않은 계정의 bcrypt 잔존) 추가
+- **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
+  수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -181,3 +226,4 @@
 | 3 | 0 | 0 | 2 | 0 | 2 | CONVERGED (단계 C) |
 | 4 | 0 | 0 | 0 | 0 | 1 (F-016) | CONVERGED (단계 D) |
 | 5 | 0 | 0 | 0 | 0 | 2 (F-017·F-018) | CONVERGED (단계 E) |
+| 6 | 0 | 0 | 0 | 0 | 3 (F-019~F-021) | CONVERGED (단계 F1) |
