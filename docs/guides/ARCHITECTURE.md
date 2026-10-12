@@ -8,6 +8,7 @@
 
 본문에 나오는 `ADR-0xx`·`REQ-0xx` 는 `docs/crp/groups/orm-raw-repository/design-baseline.md`,
 `AR-`·`TX-`·`NFR-` 등은 `docs/specs/orm-raw-repository/requirements.md` 의 ID 입니다.
+`service-hardening ADR-0xx` 처럼 그룹 이름이 붙은 번호는 `docs/crp/groups/service-hardening/design-baseline.md` 의 ID 입니다.
 
 ## 목차
 

@@ -149,7 +149,7 @@
 - **C-6**: shutdown 에서 DB table 을 drop 하지 않는다 (AR-006).
 - **C-7**: 3306 의 공유 `percona-mysql-8.4` 인스턴스를 변경하지 않는다 (REQ-002).
 - **C-8**: 기존 ADMIN 정책(선택 A — 기본값 true, 인증 백엔드 없음)을 변경하지 않는다. 별도 승인 사항. **상태: Active(축소, ADR-027 → ADR-045)** — 기본값 true·무인증은 그대로다. 앱이 막는 운영 조합은 예시 비밀 키·access==refresh(ADR-027)와, staging/production 에서 `ADMIN_ALLOW_UNAUTHENTICATED=true` 확인 없는 `ADMIN=true`(ADR-045 ③, 2026-10-07 사용자 승인)다. 확인이 있으면 배포 환경에서도 인증 없이 열린다. 그 밖의 조합(`SERVER_HOST` 등)은 그대로다.
-- **C-9**: JWT 인증 정책과 Redis API client 는 이번 범위 밖 (requirements §4.5/§4.6, §17).
+- **C-9**: JWT 인증 정책과 Redis API client 는 이번 범위 밖 (requirements §4.5/§4.6, §17). **상태: Superseded (2026-10-12, `service-hardening` 그룹 ADR-002)** — 2026-10-12 요청이 로그인 고도화와 Redis 필수를 명시해 두 주제를 그 그룹의 범위로 옮겼다. 이 그룹의 나머지 제약(C-1~C-8)은 그 그룹이 계승한다.
 
 ## 5. 변경 이력
 
@@ -212,6 +212,7 @@
 - v0.31 (2026-10-07): REQ-031 · ADR-043 등록 — 문서 전수 검수의 저장소 몫. 상세 안내서 2편을 포괄 문서·코드에 맞췄고, `ADR-019` 의 원 결정을 찾아 §3 에 옮겨 적은 뒤 게이트의 죽은 면제를 지웠다(R-007 의 1/3 해소). CI skip 판정을 로컬과 같은 `[1-9][0-9]*` 로 맞췄다.
 - v0.32 (2026-10-07): REQ-032 · ADR-044 등록 — CI 가 `review_gate --fast` 를 실행하게 하고(gate job checkout 전체 이력), 주 1회 schedule 을 더했다. 전체 검수 리포트 R-04 의 해소.
 - v0.33 (2026-10-07): REQ-033 · ADR-045 등록 — 설정 검사 확장(`.env` 출처, 개발 환경 예시 비밀값·짧은 키, 배포 환경 ADMIN 확인 플래그). C-8 상태 주석 갱신(ADR-045 ③).
+- v0.34 (2026-10-12): C-9 상태 주석 추가 — `service-hardening` 그룹(`docs/crp/groups/service-hardening/`)의 ADR-002 가 대체한다. 새 REQ/ADR 은 이 문서가 아니라 그 그룹 문서에 적는다.
 
 ---
 > **연동:** charter 의 계약/불변식은 이 문서의 Active 요구사항·불가침 제약과 **모순되면 안 된다**

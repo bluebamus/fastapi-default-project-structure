@@ -32,6 +32,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | [docs/specs/orm-raw-repository/development-plan.md](./docs/specs/orm-raw-repository/development-plan.md) | 고정 기준선 — 착수 시점 설계·Phase 0~7 계획 | 요구 명세의 Phase 추적표를 따라갈 때 |
 | [docs/specs/orm-raw-repository/workflow-guide.md](./docs/specs/orm-raw-repository/workflow-guide.md) | 고정 기준선 — 착수 시점 구현 지침·예시 코드 | 착수 당시의 지침과 현재를 비교할 때 |
 | [docs/crp/groups/orm-raw-repository/](./docs/crp/groups/orm-raw-repository/) | 검수 이력(append-only) — 요구·설계 결정(REQ/ADR)·결함 원장·검수 기록 | 결정의 근거와 이력을 볼 때 |
+| [docs/crp/groups/service-hardening/](./docs/crp/groups/service-hardening/) | 검수 이력(append-only) — 2026-10-12 서비스 하드닝(CI·DSN·접속 로그·UTC·Redis·인증/인가) 단계 A~F2 의 요구·결정·원장. REQ/ADR 번호는 그룹 안에서만 유효 | 하드닝 단계의 근거를 볼 때 |
 
 - `docs/specs/` 세 문서는 **고정 기준선**이라 내용을 고치지 않습니다(경로·이름 정정만). 현재 동작은
   `docs/guides/` 가, 이후의 확장·변경은 CRP 의 `design-baseline.md` 가 담습니다. `requirements.md` 는
