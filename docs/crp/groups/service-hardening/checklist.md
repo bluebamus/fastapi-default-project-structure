@@ -28,10 +28,11 @@
 - [x] (F-013) 4xx 로그 WARNING · 500 핸들러 `str(exc)` 는 DEBUG 전용(배포 환경은 DEBUG 거부) 확인
 - [x] 공통 게이트 그린 · run-log 갱신 — 742 passed · skipped 0
 
-## Round 3 — 단계 C (테스트 하네스)
-- [ ] (F-014) 공용 세션 override 헬퍼 + 전 기능 전환 + read-only flush 거부 회귀
-- [ ] (F-015) MySQL ORM 스모크(`mysql` 마커, 로컬은 `--collect-only` 로 수집만 확인)
-- [ ] 공통 게이트 그린 · run-log 갱신
+## Round 3 — 2026-10-12 · 단계 C (테스트 하네스)
+- [x] (F-014) 공용 세션 override 헬퍼 + 전 기능 전환(10개 파일) + read-only 쓰기 거부 회귀 + 손수 override 금지 계약
+- [x] (F-015) MySQL ORM 스모크(`mysql` 마커 5건, 로컬은 `--collect-only` 로 수집만 확인 — 13건 수집)
+- [x] (C3) 해당 없음 — 설정 reload·import 시점 객체 패치를 쓰는 테스트가 없다(`reload(` 0건)
+- [x] 공통 게이트 그린 · run-log 갱신 — 746 passed · skipped 0
 
 ## Round 4 — 단계 D (UTC 저장)
 - [ ] (F-016) `UTCDateTime` · `utc_now` · 리비전(`DATETIME(6)` + `CONVERT_TZ`) · 리포트 오프셋 · Celery `enable_utc`

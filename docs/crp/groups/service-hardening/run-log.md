@@ -66,8 +66,36 @@
 - **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 `PYTHONPATH` 로 앞세워
   실행(게이트도 같은 방식), uvicorn 수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
 
+### Round 3 — 2026-10-12 · 단계 C (base SHA: `243f7ae`, 커밋 `ba7bc19`~`ed618df`)
+- **트리거:** 사용자 요청 REQ-001 (제안 6)
+- **검수 범위:** `app.dependency_overrides` 로 세션 의존성을 바꾸는 테스트 전수(기능 8개 + `tests/` 1개 — 10개 파일),
+  MySQL 통합 하네스(`tests/integration/conftest.py`)와 CI `mysql` job, C2 대상 경로(catalog 서비스·`BaseRepository.list`·
+  `DatabaseErrorTranslator`·home `fit_to_columns`)
+- **GATE 통과:** 0 ☑ 1 ☑ 2 ☑ 3 ☑ 4 ☑ 5 ☑ — `pytest -m "not mysql"` **746 passed · 13 deselected · skipped 0**,
+  ruff check·format 그린, mypy 191 파일 무결(`tests/` 는 mypy 제외 설정), `review_gate --fast` 전건 통과(ENV=test),
+  `-m mysql` 13건 수집(기존 8 + 스모크 5)
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 2 · LOW 0 (F-014·F-015)
+- **신규 Fix(계약 위반):** F-014 · F-015, 전부 Fixed
+- **결정:** 헬퍼는 픽스처가 아니라 함수 `override_db_sessions(app, maker, on_session=None)` 다 — 기능마다 테스트 DB
+  (시드·엔진 수명)가 달라 maker 는 호출자가 만들고, commit 횟수 집계처럼 세션을 감싸는 일은 `on_session` 콜백으로
+  받는다. 두 의존성이 이제 **서로 다른 세션**을 받는다(운영과 같다) — 집계 테스트는 카운터를 공유하므로 의미가 그대로다.
+  C3(설정 reload 순서 의존)는 이 저장소에 해당 코드가 없어 하지 않았다
+- **fail-on-revert:** 대상 파일을 저장소 밖에 복사해 두고 되돌린 뒤 복사본으로 복원했다.
+  - C1 — 헬퍼에서 `mark_read_only` 를 빼면 `test_get_route_writing_through_read_only_override_is_rejected` 실패
+    (`DID NOT RAISE ReadOnlyRoutingError`). blog `test_endpoint.py` 를 옛 내용으로 되돌리면
+    `test_tests_do_not_hand_roll_session_overrides` 실패. `test_writer_override_session_can_write` 는 옛 방식에서도
+    통과한다(쓰기 경로 회귀 방지용)
+  - C2 — MySQL 이 로컬에 없어 실행하지 못했다(작성·수집만). CI `mysql` job 이 `--mysql-required` 로 돌리므로 skip 될 수 없다.
+    collation 테스트는 전제(`utf8mb4_unicode_ci`, compose.test.yaml 의 서버 설정)를 먼저 단언한다
+- **기존 테스트 영향:** 전환한 10개 파일의 기존 테스트가 표시된 세션에서도 모두 통과했다 — GET 경로의 숨은 쓰기는 없었다
+- **수렴 판정:** `CONVERGED` (Open Fix 0 — 단계 C 범위. C2 의 실제 실행 근거는 CI `mysql` job)
+- **잔여 위험 변화:** 없음
+- **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
+  수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
 | 1 | 0 | 0 | 3 | 2 | 5 | CONVERGED (단계 A) |
 | 2 | 0 | 1 | 5 | 3 | 9 | CONVERGED (단계 B) |
+| 3 | 0 | 0 | 2 | 0 | 2 | CONVERGED (단계 C) |
