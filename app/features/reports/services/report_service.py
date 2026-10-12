@@ -6,9 +6,12 @@ Raw 결과는 **여기서** Pydantic DTO 로 검증해 밖으로 내보낸다(RA
 
 읽기(``get_daily_sales``)와 쓰기(``refresh_daily_snapshots``)가 같은 규칙을 따른다 —
 기간 해석은 이 계층, SQL 은 Repository, 커밋은 View 본문.
+
+영업일은 **로컬 날짜**(설정 TIME_ZONE)다(service-hardening ADR-010). 저장 시각은 UTC 라서,
+로컬 날짜 범위를 aware 순간 구간으로 바꿔 넘긴다(``local_day_bounds``).
 """
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, tzinfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +39,23 @@ MIN_REPORT_DATE = date(1970, 1, 1)
 MAX_REPORT_DATE = date(9998, 12, 31)
 
 
+def local_day_bounds(start_date: date, end_date: date, tz: tzinfo) -> tuple[datetime, datetime]:
+    """종료일 포함 로컬 날짜 범위를 반열린 aware 구간 ``[start, end+1일)`` 로 바꾼다.
+
+    두 경계 모두 ``tz`` 의 자정이다. UTC 로는 Asia/Seoul 기준 전날 15:00 이 된다 — 저장 시각과의
+    비교는 ``UTCDateTime`` 바인드가 UTC 로 바꿔 한다. 종료일의 23:59:59 같은 값을 쓰면
+    마이크로초 단위 주문을 놓치므로 다음 날 자정을 "제외" 경계로 쓴다.
+    """
+    start_at = datetime.combine(start_date, time.min, tzinfo=tz)
+    end_at = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz)
+    return start_at, end_at
+
+
+def _utc_offset(moment: datetime) -> timedelta:
+    # aware 값이라 None 이 아니다 — 타입만 좁힌다.
+    return moment.utcoffset() or timedelta(0)
+
+
 class ReportService(BaseService):
     """매출 리포트 비즈니스 로직 (DB 세션 기반)."""
 
@@ -54,15 +74,14 @@ class ReportService(BaseService):
         """지정 기간(종료일 포함)의 일별 매출을 집계한다."""
         self._validate_range(start_date, end_date)
 
-        # "종료일 포함" 을 반열린 구간 [start, end+1일) 로 바꾼다. 종료일의 23:59:59
-        # 같은 값을 쓰면 마이크로초 단위 주문을 놓친다.
-        start_at = datetime.combine(start_date, time.min)
-        end_at = datetime.combine(end_date + timedelta(days=1), time.min)
+        # "종료일 포함" 을 로컬 자정 기준 반열린 구간 [start, end+1일) 로 바꾼다.
+        start_at, end_at = local_day_bounds(start_date, end_date, timezone_settings.tz)
 
         try:
             rows = await self.repository.daily_sales(
                 start_at=start_at,
                 end_at=end_at,
+                tz_offset=_utc_offset(start_at),
                 sort_by=sort_by,
                 sort_direction=sort_direction,
             )
@@ -99,9 +118,8 @@ class ReportService(BaseService):
         """
         self._validate_range(start_date, end_date)
 
-        start_at = datetime.combine(start_date, time.min)
-        end_at = datetime.combine(end_date + timedelta(days=1), time.min)
-        generated_at = timezone_settings.now()
+        start_at, end_at = local_day_bounds(start_date, end_date, timezone_settings.tz)
+        generated_at = timezone_settings.utc_now()
 
         # 순서가 중요하다 — 지우고 나서 넣는다. 반대로 하면 방금 넣은 것을 지운다.
         deleted = await self.repository.delete_daily_snapshots(
@@ -111,6 +129,7 @@ class ReportService(BaseService):
         inserted = await self.repository.insert_daily_snapshots(
             start_at=start_at,
             end_at=end_at,
+            tz_offset=_utc_offset(start_at),
             generated_at=generated_at,
         )
 

@@ -52,7 +52,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -64,7 +64,7 @@
       {
         "name": "updated_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -132,7 +132,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -144,7 +144,7 @@
       {
         "name": "updated_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -220,7 +220,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -232,7 +232,7 @@
       {
         "name": "updated_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -288,7 +288,7 @@
       {
         "name": "generated_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -352,7 +352,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -435,7 +435,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -447,7 +447,7 @@
       {
         "name": "updated_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -767,7 +767,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -904,7 +904,7 @@
       {
         "name": "created_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,
@@ -916,7 +916,7 @@
       {
         "name": "updated_at",
         "type": "DATETIME",
-        "timezone": true,
+        "timezone": false,
         "nullable": false,
         "primary_key": false,
         "unique": false,

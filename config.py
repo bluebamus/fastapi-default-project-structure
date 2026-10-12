@@ -17,7 +17,7 @@
 
 import os
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -60,6 +60,13 @@ class TimezoneSettings(BaseSettings):
     def now(self) -> datetime:
         """현재 시간을 설정된 타임존으로 반환"""
         return datetime.now(self.tz)
+
+    def utc_now(self) -> datetime:
+        """현재 UTC 시각(aware). DB 에 저장하는 시각은 모두 여기서 만든다(service-hardening ADR-010).
+
+        ``now()`` 는 로그·표시처럼 로컬 벽시계가 필요한 곳에만 쓴다.
+        """
+        return datetime.now(UTC)
 
     def localize(self, dt: datetime) -> datetime:
         """naive datetime을 설정된 타임존으로 변환"""

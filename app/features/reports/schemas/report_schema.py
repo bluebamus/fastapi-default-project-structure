@@ -59,7 +59,7 @@ class DailySnapshotLoadResponse(BaseModel):
                     "end_date": "2026-08-07",
                     "deleted": 3,
                     "inserted": 5,
-                    "generated_at": "2026-08-20T09:00:00+09:00",
+                    "generated_at": "2026-08-20T00:00:00Z",
                 }
             ]
         }
@@ -69,7 +69,7 @@ class DailySnapshotLoadResponse(BaseModel):
     end_date: date = Field(description="적재 대상 종료일(포함)")
     deleted: int = Field(ge=0, description="재적재를 위해 지운 기존 스냅샷 행 수")
     inserted: int = Field(ge=0, description="새로 적재한 행 수 (= 매출이 있었던 날의 수)")
-    generated_at: datetime = Field(description="적재 시각")
+    generated_at: datetime = Field(description="적재 시각(UTC)")
 
 
 class DailySnapshotLoadRequest(BaseModel):

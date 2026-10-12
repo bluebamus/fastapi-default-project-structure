@@ -8,7 +8,7 @@ MySQL 통합 테스트가 Raw SQL·migration 뿐이라, ORM 경로의 방언 차
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -71,8 +71,8 @@ async def test_same_created_at_is_ordered_by_id_and_pages_do_not_overlap(mysql_s
     MySQL 은 ORDER BY 가 정하지 않은 순서를 실행 계획에 맡긴다 — 동률 행의 순서가
     쿼리마다 달라지면 페이지가 겹치거나 행이 빠진다(ADR-005).
     """
-    tied = datetime(2026, 10, 1, 12, 0, 0)
-    newest = datetime(2026, 10, 1, 12, 0, 1)
+    tied = datetime(2026, 10, 1, 12, 0, 0, tzinfo=UTC)
+    newest = datetime(2026, 10, 1, 12, 0, 1, tzinfo=UTC)
     async with mysql_session_maker() as db_session:
         newest_product = Product(name="newest", price=Decimal("1.00"), created_at=newest)
         db_session.add(newest_product)

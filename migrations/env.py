@@ -23,6 +23,7 @@ if config.config_file_name is not None:
 # ---------------------------------------------------------------------------
 from app.core.db.models_registry import import_all_models  # noqa: E402
 from app.core.db.session import Base  # noqa: E402
+from app.core.models.types import compare_type, render_item  # noqa: E402
 from config import db_settings  # noqa: E402
 
 import_all_models()
@@ -63,6 +64,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=compare_type,
+        render_item=render_item,
     )
 
     with context.begin_transaction():
@@ -84,7 +87,12 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            # UTCDateTime 의 MySQL 소수 초 자릿수 비교와 앱 import 없는 렌더링
+            # (service-hardening ADR-010, app/core/models/types.py).
+            compare_type=compare_type,
+            render_item=render_item,
         )
 
         with context.begin_transaction():

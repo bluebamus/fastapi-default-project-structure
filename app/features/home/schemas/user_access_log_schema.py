@@ -85,7 +85,7 @@ class UserAccessLogResponse(BaseModel):
     user_id: str | None = Field(
         None, description="사용자 ID (request.state.user_id — 현재 설정하는 코드 없음, 항상 null)"
     )
-    created_at: datetime = Field(..., description="생성 시간")
+    created_at: datetime = Field(..., description="생성 시간(UTC)")
 
 
 class UserAccessLogListResponse(BaseModel):

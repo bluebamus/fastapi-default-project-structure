@@ -10,7 +10,7 @@ migration 은 현재 head 까지 올린 뒤 **downgrade → 재-upgrade** 까지
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -20,20 +20,25 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 
+from app.core.models.types import compare_type
 from app.features.reports.models.models import SalesOrder
 from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
 )
 from app.features.reports.services.report_service import ReportService
+from config import timezone_settings
 from tests.integration.conftest import SYNC_URL
 
 pytestmark = pytest.mark.mysql
 
+# 시드 시각은 로컬 영업일(설정 TIME_ZONE) 기준 — 저장은 UTC, 집계는 로컬 날짜다(ADR-010).
+LOCAL = timezone_settings.tz
+
 SEED = [
-    ("m1", "alice", "100.00", datetime(2026, 8, 1, 9, 0)),
-    ("m2", "bob", "50.50", datetime(2026, 8, 1, 23, 59, 59)),
-    ("m3", "alice", "200.25", datetime(2026, 8, 3, 0, 0, 0)),
-    ("m4", "carol", "999.00", datetime(2026, 9, 1, 12, 0)),
+    ("m1", "alice", "100.00", datetime(2026, 8, 1, 9, 0, tzinfo=LOCAL)),
+    ("m2", "bob", "50.50", datetime(2026, 8, 1, 23, 59, 59, tzinfo=LOCAL)),
+    ("m3", "alice", "200.25", datetime(2026, 8, 3, 0, 0, 0, tzinfo=LOCAL)),
+    ("m4", "carol", "999.00", datetime(2026, 9, 1, 12, 0, tzinfo=LOCAL)),
 ]
 
 
@@ -231,7 +236,9 @@ def test_migrated_mysql_schema_matches_models(monkeypatch, mysql_empty_schema):
     engine = sa.create_engine(SYNC_URL)
     try:
         with engine.connect() as connection:
-            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+            # env.py 와 같은 비교 훅 — 기본 비교는 DATETIME(fsp 0) 과 DATETIME(6) 을 같다고 본다.
+            context = MigrationContext.configure(connection, opts={"compare_type": compare_type})
+            diff = compare_metadata(context, Base.metadata)
     finally:
         engine.dispose()
 
@@ -242,3 +249,133 @@ def test_migrated_mysql_schema_matches_models(monkeypatch, mysql_empty_schema):
         if not (isinstance(entry, tuple) and entry and "comment" in str(entry[0]))
     ]
     assert structural == [], f"MySQL migration 결과와 모델이 다르다: {structural}"
+
+
+# =============================================================================
+# UTC 저장 (service-hardening ADR-010, F-016)
+# =============================================================================
+async def test_order_after_local_midnight_counts_for_the_next_local_day_on_mysql(
+    mysql_session_maker, monkeypatch
+):
+    """UTC 2026-01-01 15:30 = KST 1월 2일 00:30 → 리포트·스냅샷 모두 1월 2일(로컬)."""
+    monkeypatch.setattr(timezone_settings, "TIME_ZONE", "Asia/Seoul")
+    async with mysql_session_maker() as db_session:
+        db_session.add(
+            SalesOrder(
+                id="midnight",
+                customer="dave",
+                total_amount=Decimal("10.00"),
+                created_at=datetime(2026, 1, 1, 15, 30, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+    async with mysql_session_maker() as db_session:
+        service = ReportService(db_session)
+        jan_1 = await service.get_daily_sales(
+            start_date=date(2026, 1, 1), end_date=date(2026, 1, 1)
+        )
+        jan_2 = await service.get_daily_sales(
+            start_date=date(2026, 1, 2), end_date=date(2026, 1, 2)
+        )
+        await service.refresh_daily_snapshots(
+            start_date=date(2026, 1, 1), end_date=date(2026, 1, 2)
+        )
+        await db_session.commit()
+
+    assert jan_1 == []
+    assert [(item.sales_date, item.order_count) for item in jan_2] == [(date(2026, 1, 2), 1)]
+
+    async with mysql_session_maker() as db_session:
+        rows = (
+            await db_session.execute(
+                sa.text("SELECT sales_date, order_count FROM sales_daily_snapshots")
+            )
+        ).all()
+    assert [(r[0], r[1]) for r in rows] == [(date(2026, 1, 2), 1)]
+
+
+async def test_datetime6_roundtrip_keeps_microseconds_and_returns_utc_on_mysql(
+    mysql_session_maker,
+):
+    """``DATETIME(6)`` 은 마이크로초를 지키고, 읽은 값은 UTC aware 다. DB 에는 UTC 벽시계가 있다."""
+    kst_value = datetime(2026, 1, 2, 0, 30, 0, 123456, tzinfo=LOCAL)
+    async with mysql_session_maker() as db_session:
+        db_session.add(
+            SalesOrder(
+                id="micro", customer="erin", total_amount=Decimal("1.00"), created_at=kst_value
+            )
+        )
+        await db_session.commit()
+
+    async with mysql_session_maker() as db_session:
+        loaded = await db_session.get(SalesOrder, "micro")
+        stored = (
+            await db_session.execute(
+                sa.text("SELECT created_at FROM sales_orders WHERE id = 'micro'")
+            )
+        ).scalar_one()
+
+    assert loaded is not None
+    assert loaded.created_at == kst_value
+    assert loaded.created_at.tzinfo is UTC
+    assert loaded.created_at.microsecond == 123456
+    assert stored == kst_value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _column_precision(connection, table: str, column: str) -> int:
+    return connection.execute(
+        sa.text(
+            "SELECT DATETIME_PRECISION FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c"
+        ),
+        {"t": table, "c": column},
+    ).scalar_one()
+
+
+def test_utc_revision_converts_existing_kst_values(monkeypatch, mysql_empty_schema):
+    """이전 head 에서 KST 로 적힌 값이 리비전 후 UTC 가 되고, downgrade 가 되돌린다.
+
+    값은 Raw SQL 로 넣는다 — 이전 스키마 시점의 데이터를 그대로 흉내 내야 하므로 현재 모델
+    (UTCDateTime)을 거치면 안 된다.
+    """
+    config = _alembic_config(monkeypatch)
+    command.downgrade(config, "base")
+    command.upgrade(config, "e5f7a9b1c4d5")
+
+    engine = sa.create_engine(SYNC_URL)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                sa.text(
+                    "INSERT INTO sales_orders (id, customer, total_amount, created_at) "
+                    "VALUES ('legacy', 'kim', 1.00, '2026-01-02 00:30:00')"
+                )
+            )
+            assert _column_precision(connection, "sales_orders", "created_at") == 0
+
+        command.upgrade(config, "a7c9e1f3b5d6")
+        with engine.connect() as connection:
+            stored = connection.execute(
+                sa.text("SELECT created_at FROM sales_orders WHERE id = 'legacy'")
+            ).scalar_one()
+            assert stored == datetime(2026, 1, 1, 15, 30, 0)
+            assert _column_precision(connection, "sales_orders", "created_at") == 6
+            comment = connection.execute(
+                sa.text(
+                    "SELECT COLUMN_COMMENT FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sales_daily_snapshots' "
+                    "AND COLUMN_NAME = 'generated_at'"
+                )
+            ).scalar_one()
+            assert comment.startswith("적재 시각"), "MODIFY 가 comment 를 지웠다"
+
+        command.downgrade(config, "e5f7a9b1c4d5")
+        with engine.connect() as connection:
+            stored = connection.execute(
+                sa.text("SELECT created_at FROM sales_orders WHERE id = 'legacy'")
+            ).scalar_one()
+            assert stored == datetime(2026, 1, 2, 0, 30, 0)
+            assert _column_precision(connection, "sales_orders", "created_at") == 0
+    finally:
+        engine.dispose()

@@ -70,8 +70,8 @@ class ProductResponse(ProductBase):
 
     id: str = Field(description="상품 UUID", examples=["3f1c1b8a-0f0e-4a3a-9a1e-0b2f5a7c1d90"])
     is_active: bool = Field(description="판매 활성 여부")
-    created_at: datetime = Field(description="생성 시각")
-    updated_at: datetime = Field(description="수정 시각")
+    created_at: datetime = Field(description="생성 시각(UTC)")
+    updated_at: datetime = Field(description="수정 시각(UTC)")
 
 
 class ProductListResponse(BaseModel):

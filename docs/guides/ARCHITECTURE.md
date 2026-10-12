@@ -331,7 +331,7 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 | 클래스 | 컬럼 | 쓰는 곳 |
 |---|---|---|
 | `UUIDPrimaryKeyMixin` | `id: String(36)` — Python 기본값 `uuid4()` | |
-| `CreatedAtMixin` / `UpdatedAtMixin` | `created_at` / `updated_at` (`DateTime(timezone=True)`, `TIME_ZONE` 기준, `updated_at` 은 ORM UPDATE 시 `onupdate`) | |
+| `CreatedAtMixin` / `UpdatedAtMixin` | `created_at` / `updated_at` (`UTCDateTime` — UTC·마이크로초 저장, 기본값 `timezone_settings.utc_now()`, `updated_at` 은 ORM UPDATE 시 `onupdate`) | |
 | `UUIDTimestampModel` | id + created + updated | Post·Reply·SnsPost·User·Product |
 | `UUIDCreatedModel` | id + created (불변 기록) | UserAccessLog·SalesOrder |
 | `Base` 직접 상속 | 자연키 | SalesDailySnapshot(`sales_date` PK, ADR-012) |
@@ -820,7 +820,7 @@ main.py (ADMIN=true)
 ## 13. Celery
 
 - 앱: `app/celery/app.py` 의 `celery_app` — broker·backend 모두 `REDIS_URL`, `include=["app.celery.tasks"]`,
-  JSON 직렬화, `timezone=TIME_ZONE`, `enable_utc=False`, 빈 `beat_schedule`. 기능별 `worker/` 디렉터리는 없고
+  JSON 직렬화, `timezone=TIME_ZONE`, `enable_utc=True`(내부 시각은 UTC, crontab 은 TIME_ZONE 으로 해석), 빈 `beat_schedule`. 기능별 `worker/` 디렉터리는 없고
   모든 태스크를 `app/celery/tasks.py` 에 둡니다(예: `home.aggregate_access_stats`).
 - FastAPI 는 worker·beat 를 띄우지 않습니다. 실행 예:
   `uv run python -m celery -A app.celery.app:celery_app worker --loglevel=INFO` (Redis 필요, 이 문서
@@ -852,7 +852,11 @@ config.set_main_option(
   `%` 를 보간으로 읽으므로 `%%` 로 바꿔 넘깁니다(퍼센트 인코딩된 비밀번호 대비).
 - revision 체인(단일 head, CI 가 확인): `f4adf0ae24ea`(baseline — 기존 5개 테이블) → `b2f1a9c0d3e4`
   (`users.hashed_password`) → `c3d5e7f9a1b2`(`catalog_products`) → `d4e6f8a0b2c3`(`sales_orders`) →
-  `e5f7a9b1c4d5`(`sales_daily_snapshots`).
+  `e5f7a9b1c4d5`(`sales_daily_snapshots`) → `a7c9e1f3b5d6`(시각 컬럼 전부 MySQL `DATETIME(6)` + 기존 값
+  KST→UTC 변환, SQLite 는 no-op — service-hardening ADR-010).
+- `env.py` 는 `app/core/models/types.py` 의 `compare_type`(MySQL `UTCDateTime` 의 소수 초 자릿수 비교 — 기본 비교는
+  `DATETIME` 과 `DATETIME(6)` 을 같다고 본다)과 `render_item`(autogenerate 가 앱 import 없는
+  `sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")` 로 쓰게)을 넘깁니다.
 - Alembic 은 lifespan 에 들어가지 않으므로 Redis 확인을 하지 않습니다. 서버 기동은 upgrade 를 하지 않습니다.
 - `DEBUG=true` 의 `create_all` 은 migration 결함을 가립니다(예전 baseline 이 테이블 4개를 빠뜨렸는데 개발
   환경에서는 보이지 않았습니다). 그래서 빈 DB 에서 head 까지 올리고 모델과 비교하는 테스트가 있습니다:

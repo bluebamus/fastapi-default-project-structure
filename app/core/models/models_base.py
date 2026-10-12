@@ -30,9 +30,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from app.core.models.types import UTCDateTime
 from config import timezone_settings
 
 # 컬럼 정렬 기준값. 모델 자신의 컬럼은 기본값 0 이므로 그 사이에 놓인다.
@@ -55,8 +56,10 @@ class Base(DeclarativeBase):
         # 타입 체크를 위한 선언만 둔다(TYPE_CHECKING 가드로 런타임 매핑에 영향 없음).
         id: Mapped[str]
 
+    # 모든 ``Mapped[datetime]`` 은 UTC 로 저장된다(service-hardening ADR-010). 모델이 타입을
+    # 따로 적지 않아도 naive 값이 거부되고, 읽은 값은 UTC aware 다.
     type_annotation_map = {
-        datetime: DateTime(timezone=True),
+        datetime: UTCDateTime(),
     }
 
     def to_dict(self) -> dict[str, Any]:
@@ -80,11 +83,11 @@ class UUIDPrimaryKeyMixin:
 
 
 class CreatedAtMixin:
-    """생성 시각. 설정된 타임존(기본 Asia/Seoul)이 적용된다."""
+    """생성 시각(UTC). 표시용 로컬 변환은 읽는 쪽이 한다(ADR-010)."""
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: timezone_settings.now(),
+        UTCDateTime(),
+        default=lambda: timezone_settings.utc_now(),
         nullable=False,
         sort_order=_CREATED_AT_SORT_ORDER,
     )
@@ -99,9 +102,9 @@ class UpdatedAtMixin:
     """
 
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: timezone_settings.now(),
-        onupdate=lambda: timezone_settings.now(),
+        UTCDateTime(),
+        default=lambda: timezone_settings.utc_now(),
+        onupdate=lambda: timezone_settings.utc_now(),
         nullable=False,
         sort_order=_UPDATED_AT_SORT_ORDER,
     )
