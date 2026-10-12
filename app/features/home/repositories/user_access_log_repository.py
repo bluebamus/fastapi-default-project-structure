@@ -57,7 +57,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         stmt = (
             select(self.model)
             .where(self.model.ip_address == ip_address)
-            .order_by(self.model.created_at.desc())
+            .order_by(self.model.created_at.desc(), self.model.id.desc())
             .offset(skip)
             .limit(limit)
         )
@@ -89,7 +89,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         stmt = (
             select(self.model)
             .where(self.model.user_id == user_id)
-            .order_by(self.model.created_at.desc())
+            .order_by(self.model.created_at.desc(), self.model.id.desc())
             .offset(skip)
             .limit(limit)
         )
@@ -128,7 +128,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
                     self.model.created_at <= end_date,
                 )
             )
-            .order_by(self.model.created_at.desc())
+            .order_by(self.model.created_at.desc(), self.model.id.desc())
             .offset(skip)
             .limit(limit)
         )
@@ -202,7 +202,11 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
         """
         logger.debug(f"[get_recent_logs] 조회 시작: limit={limit}")
 
-        stmt = select(self.model).order_by(self.model.created_at.desc()).limit(limit)
+        stmt = (
+            select(self.model)
+            .order_by(self.model.created_at.desc(), self.model.id.desc())
+            .limit(limit)
+        )
         result = await self.db_session.execute(stmt)
         logs = result.scalars().all()
 

@@ -199,9 +199,20 @@ def _text_is_write(clause: Any) -> bool:
     return lead in _READABLE_LEAD and _LOCKING_READ.search(" ".join(words)) is not None
 
 
+def _is_locking_select(clause: Any) -> bool:
+    """ORM/Core 잠금 읽기(``select(...).with_for_update()``)인가.
+
+    text SQL 의 ``FOR UPDATE``·``FOR SHARE`` 는 문자열 스캔(`_LOCKING_READ`)이 잡지만, ORM 의
+    잠금은 문자열이 아니라 ``Select._for_update_arg`` 에 들어 있다. 이것을 보지 않으면 같은
+    개념이 경로에 따라 갈려 ORM 잠금 읽기만 replica 로 가고 read-only 가드를 통과한다
+    (service-hardening ADR-005). ``with_for_update(read=True)``(공유 잠금)도 같다.
+    """
+    return isinstance(clause, Select) and clause._for_update_arg is not None
+
+
 def _is_write(clause: Any, flushing: bool) -> bool:
-    """이 구문이 쓰기인지 판별한다 (ORM flush / Core DML / Raw text DML)."""
-    if flushing or isinstance(clause, UpdateBase):
+    """이 구문이 쓰기인지 판별한다 (ORM flush / Core DML / Raw text DML / 잠금 읽기)."""
+    if flushing or isinstance(clause, UpdateBase) or _is_locking_select(clause):
         return True
     return isinstance(clause, TextClause) and _text_is_write(clause)
 
@@ -421,7 +432,7 @@ def _statement_is_readable(clause: Any) -> bool:
     if isinstance(clause, UpdateBase):
         return False  # Insert / Update / Delete / DDL
     if isinstance(clause, Select):
-        return True
+        return not _is_locking_select(clause)  # 잠금 읽기는 text 와 똑같이 거부한다
     if isinstance(clause, TextClause):
         return _text_is_readable(str(clause))
     return False  # 판별 불가 — 거부

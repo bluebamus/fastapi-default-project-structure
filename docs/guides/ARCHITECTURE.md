@@ -282,7 +282,8 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 엔진을 고릅니다(`app/core/db/router.py`).
 
 1. ORM flush·Core DML·`text()` 의 쓰기 키워드(`INSERT`·`UPDATE`·`DELETE`·`CREATE`…), CTE 로 감싼 DML
-   (`WITH … UPDATE/DELETE`), 잠금 읽기(`FOR UPDATE`·`FOR SHARE`·`LOCK IN SHARE MODE`) → writer
+   (`WITH … UPDATE/DELETE`), 잠금 읽기(`FOR UPDATE`·`FOR SHARE`·`LOCK IN SHARE MODE`, ORM
+   `select(...).with_for_update()` 포함) → writer
 2. 그 밖의 SELECT → 세션당 하나의 replica(라운드로빈으로 고른 뒤 고정)
 3. 쓰기가 일어난 세션의 이후 SELECT → writer (`DB_READ_STICKY_AFTER_WRITE=true`, 기본)
 
@@ -310,6 +311,9 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
   적용해 `WHERE note = 'for share'` 같은 리터럴에 걸리지 않지만(ADR-038), 차단(`_text_is_readable`)은 주석만
   걷어낸 원본 문자열에 적용하므로 그런 리터럴도 거부합니다(fail-closed).
   스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.
+- ORM 잠금 읽기(`with_for_update()`, `read=True` 포함)는 문자열이 아니라 `Select._for_update_arg` 로
+  판정합니다(`_is_locking_select`). 라우팅은 writer, 읽기 세션은 거부 — text 의 `FOR UPDATE` 와 같습니다
+  (service-hardening ADR-005).
   sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
   (`MYSQL_REPLICA_USER`)을 함께 씁니다.
@@ -342,7 +346,7 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 |---|---|
 | `create(data)` | 입력 dict 를 바꾸지 않고 add → flush → refresh |
 | `get_by_id(pk)` / `get_by_id_or_raise(pk)` | 없으면 `None` / `NotFoundException` |
-| `list(skip, limit)` | 단순 페이지(정렬 없음 — 정렬이 필요하면 기능 Repository 에서) |
+| `list(skip, limit)` | 페이지. 기본 정렬 `created_at DESC, <PK> DESC`(created_at 이 없으면 PK 만) — 같은 시각도 순서가 정해지고 offset 페이지가 겹치지 않는다(service-hardening ADR-005). 다른 정렬은 기능 Repository 에서 |
 | `count(**filters)` / `exists(pk)` | 개수 / SQL `EXISTS` |
 | `update_by_id(pk, data)` / `delete_by_id(pk)` | 없으면 `None` / 삭제 여부 `bool` |
 

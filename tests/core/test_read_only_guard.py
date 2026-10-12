@@ -170,6 +170,17 @@ async def test_unknown_or_locking_statements_are_denied_by_default(read_only, sq
         await read_only.execute(text(sql))
 
 
+@pytest.mark.parametrize("shared", [False, True], ids=["for-update", "for-share"])
+async def test_orm_locking_select_is_denied(read_only, shared):
+    """ORM 잠금 읽기도 text 의 `FOR UPDATE` 와 똑같이 거부한다 — 라우터 on/off 모두.
+
+    전에는 `Select` 이면 무조건 통과시켜, 같은 잠금이 ORM 으로 쓰면 read-only 세션을
+    지나갔다(service-hardening ADR-005).
+    """
+    with pytest.raises(ReadOnlyRoutingError):
+        await read_only.execute(select(Widget).with_for_update(read=shared))
+
+
 # ---------------------------------------------------------------- 읽기 허용
 
 

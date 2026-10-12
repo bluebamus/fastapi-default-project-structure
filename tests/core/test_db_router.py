@@ -105,6 +105,28 @@ async def test_dml_statement_is_served_by_writer():
     await reader.dispose()
 
 
+@pytest.mark.parametrize("shared", [False, True], ids=["for-update", "for-share"])
+async def test_orm_locking_select_is_served_by_writer(shared):
+    """ORM 잠금 읽기(`with_for_update()`)는 writer 로 가고, 이후 SELECT 도 writer 에 고정된다.
+
+    replica 에서 잠가 봐야 의미가 없고, 잠근 행은 곧이어 쓰는 것이 보통이다. text SQL 의
+    `FOR UPDATE` 는 이미 writer 로 갔는데 ORM 경로만 replica 로 샜다(service-hardening ADR-005).
+    """
+    writer = await _make_engine("writer")
+    reader = await _make_engine("reader")
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+
+    async with maker() as session:
+        locked = await session.execute(
+            select(Probe.origin).with_for_update(read=shared).order_by(Probe.id)
+        )
+        assert list(locked.scalars().all()) == ["writer"]
+        assert await _origins(session) == ["writer"]
+
+    await writer.dispose()
+    await reader.dispose()
+
+
 async def test_read_after_write_sticks_to_writer():
     """쓰기가 발생한 세션의 이후 SELECT 는 writer 로 고정된다(복제 지연 회피)."""
     writer = await _make_engine("writer")

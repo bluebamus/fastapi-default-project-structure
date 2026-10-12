@@ -11,8 +11,8 @@
 - [x] (F-001) CI `uv sync --locked` + 주석 정정 + README 갱신 — `tests/test_ci_contract.py`
 - [x] (F-002) 게이트 파일 목록을 `git ls-files -z` 로 — 추적되지 않은 파일이 목록에 없다는 테스트
 - [x] (F-003) DSN `URL.create` · 마스킹 · Alembic `%` · Redis 비밀번호 인코딩 — 왕복 테스트, 기존 문자열 비교를 의미 비교로
-- [ ] (F-004) ORM 잠금 읽기 writer 고정·read-only 거부 — 라우터 on/off 테스트
-- [ ] (F-005) `list()` 기본 정렬 + `created_at desc` 보조 키 — 동률 결정성·offset 페이지 비중첩 테스트
+- [x] (F-004) ORM 잠금 읽기 writer 고정·read-only 거부 — 라우터 on/off 테스트
+- [x] (F-005) `list()` 기본 정렬 + `created_at desc` 보조 키 — 동률 결정성·offset 페이지 비중첩 테스트
 - [ ] 공통 게이트 그린(ruff·format·mypy·pytest skip 0) · 요구사항 회귀 0
 - [ ] run-log 갱신 · residual-risk 갱신
 

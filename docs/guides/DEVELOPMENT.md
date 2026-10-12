@@ -252,7 +252,8 @@ class ProductRepository(BaseRepository[Product, str]):
 
 - Base 의 8개(ARCHITECTURE §5.2)로 안 되는 조회만 명시적 메서드로 추가합니다. 같은 필터로 `count` 도
   함께 둡니다(`count_active`).
-- 목록은 고정 정렬(동률이면 PK)을 명시합니다 — Base 의 `list()` 에는 정렬이 없습니다.
+- 목록은 고정 정렬(동률이면 PK)을 명시합니다 — Base 의 `list()` 는 `created_at DESC, <PK> DESC` 로
+  정렬하고, 기능 쿼리도 `created_at.desc()` 뒤에 `id.desc()` 보조 키를 붙입니다(같은 시각의 행이 흔하다).
 - **N+1**: 응답이 관계를 읽는다면 Repository 가 미리 적재합니다. 현재 모델에는 relationship 이 없으므로
   아래는 관계를 추가했을 때의 형태입니다.
 
@@ -482,7 +483,8 @@ statement = text(f"SELECT … ORDER BY {column} DESC")
 4. 선두가 `SELECT`/`WITH` 이고 `_LOCKING_READ`(`FOR UPDATE` · `FOR SHARE` · `LOCK IN SHARE MODE`)에
    걸리면 잠금 읽기라 writer 로 보냅니다. §7.2 의 읽기 전용 가드와 **같은 정규식**이고(ADR-038), 원본
    문자열이 아니라 3단계에서 모은 깊이 0 단어 목록에 적용하므로 `WHERE note = 'for share'` 같은
-   리터럴에는 걸리지 않습니다.
+   리터럴에는 걸리지 않습니다. ORM 의 `select(...).with_for_update()` 는 문자열이 아니라
+   `Select._for_update_arg` 로 같은 판정(writer·읽기 세션 거부)을 받습니다.
 
 따옴표·역따옴표·주석 안의 단어는 스캐너가 건너뛰므로 `'please DELETE this row'` 나 `` `update` `` 는
 판정에 쓰이지 않습니다. `_TEXT_WRITE_KEYWORDS` 는 **선두** 단어만, `_TOP_LEVEL_WRITE` 는 CTE 뒤의
