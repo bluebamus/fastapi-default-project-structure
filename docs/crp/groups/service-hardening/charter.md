@@ -92,3 +92,4 @@
   `app/celery/tasks.py` 삭제), §3 E 닫음. Round 3 에서 빠진 §3 C 체크를 CI 근거와 함께 닫음.
 - v0.5 (2026-10-12): 단계 F1 인벤토리를 실제 경로로 확정(신규 `app/core/security/` 3파일·`password_hasher.py`, `app/utils/authenticator/` 삭제), §3 F1 닫음.
 - v0.6 (2026-10-12): 단계 F2 인벤토리를 실제 경로로 확정(신규 `authorization.py`·`dependencies.py`, `password_hasher.py` core 이동, 리비전 1개, OpenAPI 기준선 불변), §3 F2·공통 게이트·fail-on-revert 닫음 — 인수 기준 전부 닫힘, 그룹 종료.
+- v0.7 (2026-10-12): §2-2·§2-4 의 "SQLAdmin 무인증·SQLAdmin 인증 백엔드" 비목표는 `admin-login` 그룹이 해소했다(그 그룹 ADR-001·004) — 이 그룹 범위는 그대로.

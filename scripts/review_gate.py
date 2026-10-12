@@ -449,6 +449,8 @@ REQUIREMENT_SOURCES = (
     # 그룹마다 번호를 따로 매긴다 — 그룹 밖에서는 `service-hardening ADR-0xx` 처럼 이름을 붙여 인용한다.
     "docs/crp/groups/service-hardening/design-baseline.md",
     "docs/crp/groups/service-hardening/charter.md",
+    "docs/crp/groups/admin-login/design-baseline.md",
+    "docs/crp/groups/admin-login/charter.md",
 )
 REQUIREMENT_ID = re.compile(
     r"\b(?:SCN-(?:ORM|RAW)|ORM-REP|RAW-REP|TX|VIEW|AR|NFR|MIG|DOC|REQ|ADR)-\d{3}\b"
