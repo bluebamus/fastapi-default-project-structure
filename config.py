@@ -697,6 +697,29 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
+    # 앞단 신뢰 프록시 홉 수 (service-hardening ADR-006·ADR-021).
+    # 0 이면 X-Forwarded-For·X-Real-IP 를 보지 않고 직접 피어 주소만 쓴다 — 헤더는
+    # 클라이언트가 위조할 수 있다. 리버스 프록시 1단 뒤에서 돌리면 1 로 둔다.
+    TRUSTED_PROXY_HOPS: int = Field(
+        default=0,
+        ge=0,
+        description="X-Forwarded-For 를 덧붙이는 신뢰 프록시 수(0=헤더 무시)",
+    )
+
+    # 접속 로그에 값을 남기지 않을 쿼리스트링 키(대소문자 무시) — 값은 `***` 로 저장한다.
+    ACCESS_LOG_SENSITIVE_QUERY_KEYS: list[str] = Field(
+        default=[
+            "password",
+            "token",
+            "access_token",
+            "refresh_token",
+            "secret",
+            "api_key",
+            "code",
+        ],
+        description="접속 로그에서 값을 가릴 쿼리스트링 키",
+    )
+
 
 # =============================================================================
 # Redis 설정
@@ -825,6 +848,8 @@ class SessionSettings(BaseSettings):
         현재 인증은 JWT(Bearer) 기반이라 세션 쿠키를 사용하는 코드는 없다.
         쿠키 세션을 도입할 때 이 설정을 주입하면 된다. 설정 자체는 `.env` 에
         있으므로 config 가 로드해 둔다(설정의 단일 출처 유지).
+        ``SESSION_COOKIE_NAME`` 은 접속 로그 미들웨어가 ``session_id`` 로 기록할
+        쿠키 이름으로 읽는다.
     """
 
     model_config = SettingsConfigDict(

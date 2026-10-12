@@ -5,6 +5,7 @@
 """
 
 import time
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -13,10 +14,14 @@ from user_agents import parse as parse_user_agent
 
 from app.core.middlewares.access_log_sink import get_access_log_sink
 from app.core.middlewares.background_tasks import access_log_tasks
+from app.core.middlewares.client_ip import ClientIPResolver
 from app.utils.logs import get_logger
-from config import middleware_settings
+from config import middleware_settings, session_settings
 
 logger = get_logger("user_info_middleware")
+
+# 민감 쿼리 값 대신 저장하는 표식.
+MASKED_VALUE = "***"
 
 
 class UserInfoMiddleware(BaseHTTPMiddleware):
@@ -27,23 +32,30 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
     응답 완료 후 백그라운드에서 데이터베이스에 저장합니다.
 
     수집 정보:
-        - IP 주소 (X-Forwarded-For, X-Real-IP 포함)
+        - IP 주소 (신뢰 프록시 홉 수로만 헤더를 해석 — ClientIPResolver)
         - User-Agent 파싱 (OS, 브라우저, 장치 정보)
         - 요청 경로 및 메서드
         - 응답 상태 코드 및 시간
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, *, ip_resolver: ClientIPResolver) -> None:
         """
         미들웨어 초기화
 
         Args:
             app: 다음 ASGI 애플리케이션(add_middleware 가 주입)
+            ip_resolver: 클라이언트 IP 결정기. ``setup_user_info_middleware`` 가 설정에서
+                한 번 만들어 넘기고, 테스트는 다른 홉 수의 인스턴스를 넘긴다.
         """
         super().__init__(app)
+        self.ip_resolver = ip_resolver
         self.enabled = middleware_settings.ACCESS_LOG_ENABLED
         self.exclude_paths = set(middleware_settings.ACCESS_LOG_EXCLUDE_PATHS)
         self.exclude_extensions = set(middleware_settings.ACCESS_LOG_EXCLUDE_EXTENSIONS)
+        self.sensitive_query_keys = {
+            key.lower() for key in middleware_settings.ACCESS_LOG_SENSITIVE_QUERY_KEYS
+        }
+        self.session_cookie_name = session_settings.SESSION_COOKIE_NAME
 
     def _should_skip(self, path: str) -> bool:
         """
@@ -70,34 +82,19 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
 
         return False
 
-    def _get_client_ip(self, request: Request) -> str:
+    def _masked_query_string(self, request: Request) -> str | None:
+        """쿼리스트링을 민감 키의 값만 ``***`` 로 바꿔 다시 인코딩한다.
+
+        토큰·비밀번호를 쿼리로 보내는 클라이언트가 있다 — 그대로 저장하면 접속 로그가
+        비밀 저장소가 된다(service-hardening ADR-007). 키는 남겨 무엇이 왔는지는 보인다.
         """
-        클라이언트 IP 주소를 추출합니다.
-
-        프록시 환경을 고려하여 X-Forwarded-For, X-Real-IP 헤더를 확인합니다.
-
-        Args:
-            request: FastAPI Request 객체
-
-        Returns:
-            클라이언트 IP 주소
-        """
-        # X-Forwarded-For 헤더 확인 (프록시/로드밸런서 환경)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # 첫 번째 IP가 실제 클라이언트 IP
-            return forwarded_for.split(",")[0].strip()
-
-        # X-Real-IP 헤더 확인
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip
-
-        # 직접 연결된 클라이언트 IP
-        if request.client:
-            return request.client.host
-
-        return "unknown"
+        if not request.query_params:
+            return None
+        items = [
+            (key, MASKED_VALUE if key.lower() in self.sensitive_query_keys else value)
+            for key, value in request.query_params.multi_items()
+        ]
+        return urlencode(items, safe="*")
 
     def _parse_user_agent(self, user_agent_string: str | None) -> dict:
         """
@@ -158,12 +155,9 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         user_agent_string = request.headers.get("User-Agent")
         ua_info = self._parse_user_agent(user_agent_string)
 
-        # 쿼리 스트링
-        query_string = str(request.query_params) if request.query_params else None
-
         return {
-            # 네트워크 정보
-            "ip_address": self._get_client_ip(request),
+            # 네트워크 정보 — 원본 헤더는 감사용으로 그대로 남기고, 판정은 resolver 가 한다.
+            "ip_address": self.ip_resolver.resolve(request),
             "forwarded_for": request.headers.get("X-Forwarded-For"),
             "real_ip": request.headers.get("X-Real-IP"),
             # User-Agent 정보
@@ -172,13 +166,14 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             # 요청 정보
             "request_path": request.url.path,
             "request_method": request.method,
-            "query_string": query_string,
+            "query_string": self._masked_query_string(request),
             "referer": request.headers.get("Referer"),
             # 추가 헤더
             "accept_language": request.headers.get("Accept-Language"),
-            # 사용자 정보. session_id 는 쿠키 값이다. user_id 는 request.state.user_id 를
-            # 읽지만 현재 그 값을 설정하는 코드(인증 미들웨어 등)가 없어 항상 None 이다.
-            "session_id": request.cookies.get("session_id"),
+            # 사용자 정보. session_id 는 설정 SESSION_COOKIE_NAME 쿠키의 값이다. user_id 는
+            # request.state.user_id 를 읽지만 현재 그 값을 설정하는 코드(인증 의존성 등)가
+            # 없어 항상 None 이다.
+            "session_id": request.cookies.get(self.session_cookie_name),
             "user_id": getattr(request.state, "user_id", None),
         }
 
@@ -230,26 +225,31 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         # 요청 정보 수집
         request_info = self._collect_request_info(request)
 
-        # 요청 처리
-        response: Response = await call_next(request)
+        # 요청 처리. 처리되지 않은 예외는 바깥 ServerErrorMiddleware 가 500 으로 바꾸므로
+        # 여기서는 예외로 보인다 — 500 으로 기록한 뒤 그대로 다시 던진다(ADR-007).
+        try:
+            response: Response = await call_next(request)
+        except Exception:
+            self._record(request_info, 500, start_time)
+            raise
 
-        # 응답 시간 계산
+        self._record(request_info, response.status_code, start_time)
+        return response
+
+    def _record(self, request_info: dict, status_code: int, start_time: float) -> None:
+        """응답 정보를 붙여 백그라운드 저장을 예약한다."""
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
-
-        # 응답 정보 추가
-        request_info["response_status"] = response.status_code
+        request_info["response_status"] = status_code
         request_info["response_time_ms"] = response_time_ms
 
         logger.debug(
-            f"[요청 완료] {request.method} {path} "
-            f"- {response.status_code} ({response_time_ms}ms)"
+            f"[요청 완료] {request_info['request_method']} {request_info['request_path']} "
+            f"- {status_code} ({response_time_ms}ms)"
         )
 
         # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음).
         # 상한 초과 시 드롭·집계되고, 앱 종료 시 lifespan 이 drain 한다(W1).
         access_log_tasks.spawn(self._save_access_log(request_info))
-
-        return response
 
 
 def setup_user_info_middleware(app: FastAPI) -> None:
@@ -259,5 +259,7 @@ def setup_user_info_middleware(app: FastAPI) -> None:
     Args:
         app: FastAPI 애플리케이션 인스턴스
     """
-    app.add_middleware(UserInfoMiddleware)
+    # 결정기는 설정에서 한 번만 만든다 — 요청마다 설정을 다시 읽지 않는다.
+    ip_resolver = ClientIPResolver(middleware_settings.TRUSTED_PROXY_HOPS)
+    app.add_middleware(UserInfoMiddleware, ip_resolver=ip_resolver)
     logger.info("UserInfoMiddleware 등록 완료")
