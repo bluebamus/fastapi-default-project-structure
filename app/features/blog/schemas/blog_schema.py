@@ -12,24 +12,20 @@ class PostBase(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=200, description="제목")
     content: str = Field(..., min_length=1, description="본문")
-    author: str | None = Field(None, max_length=100, description="작성자(선택)")
 
 
 class PostCreate(PostBase):
-    """게시글 생성 요청."""
+    """게시글 생성 요청. 작성자(``author``·``author_id``)는 받지 않는다 — 서버가 인증 주체로 채운다."""
 
 
 class PostUpdate(PatchSchema):
     """게시글 수정 요청 — 전달된 필드만 부분 수정한다.
 
-    명시적 ``null`` 은 ``author`` 만 허용한다(nullable 컬럼). 나머지는 422.
+    작성자는 수정할 수 없다(소유권이 바뀌지 않는다). 모든 필드가 NOT NULL 이라 명시적 ``null`` 은 422.
     """
-
-    nullable_fields = frozenset({"author"})
 
     title: str | None = Field(None, min_length=1, max_length=200, description="제목")
     content: str | None = Field(None, min_length=1, description="본문")
-    author: str | None = Field(None, max_length=100, description="작성자")
 
 
 class PostResponse(PostBase):
@@ -38,6 +34,13 @@ class PostResponse(PostBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(..., description="게시글 ID(UUID)")
+    author: str | None = Field(
+        None, max_length=100, description="작성자 이름 — 서버가 작성 시점의 사용자명으로 채운다"
+    )
+    author_id: str | None = Field(
+        None,
+        description="작성자 사용자 ID — 소유권 판정 기준. 인가 도입 전 행은 null(슈퍼유저만 수정)",
+    )
     created_at: datetime = Field(..., description="생성 시각(UTC)")
     updated_at: datetime = Field(..., description="마지막 수정 시각(UTC)")
 

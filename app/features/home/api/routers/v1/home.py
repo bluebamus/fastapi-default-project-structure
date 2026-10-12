@@ -4,6 +4,7 @@ Home v1 API 엔드포인트 — 접속 로그 조회/통계.
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
 이 파일의 엔드포인트는 전부 조회라 읽기 세션을 쓰고 커밋하지 않는다(UnitOfWork 없음).
+접속 로그는 IP·User-Agent·경로 같은 개인정보라 전부 슈퍼유저 전용이다(service-hardening ADR-018).
 """
 
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.core.exception import ErrorResponse
+from app.core.security.dependencies import FORBIDDEN_RESPONSES, require_superuser
 from app.features.home.dependencies.access_log_dependencies import get_access_log_service
 from app.features.home.schemas.user_access_log_schema import (
     AccessLogStats,
@@ -19,7 +21,7 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 from app.features.home.services.user_access_log_service import UserAccessLogService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDEN_RESPONSES)
 
 _ERR: dict[int | str, dict[str, Any]] = {
     500: {"model": ErrorResponse, "description": "서버 내부 오류"}
@@ -31,7 +33,7 @@ _ERR: dict[int | str, dict[str, Any]] = {
     response_model=UserAccessLogListResponse,
     responses=_ERR,
     summary="접속 로그 목록 조회",
-    description="접속 로그 목록을 페이지네이션하여 조회합니다.",
+    description="접속 로그 목록을 페이지네이션하여 조회합니다(슈퍼유저 전용).",
     operation_id="getAccessLogs",
 )
 async def get_access_logs(
@@ -53,7 +55,7 @@ async def get_access_logs(
     response_model=list[UserAccessLogResponse],
     responses=_ERR,
     summary="최근 접속 로그 조회",
-    description="최근 접속 로그를 시간 역순으로 조회합니다.",
+    description="최근 접속 로그를 시간 역순으로 조회합니다(슈퍼유저 전용).",
     operation_id="getRecentAccessLogs",
 )
 async def get_recent_access_logs(
@@ -69,7 +71,7 @@ async def get_recent_access_logs(
     response_model=list[UserAccessLogResponse],
     responses=_ERR,
     summary="IP별 접속 로그 조회",
-    description="특정 IP 주소의 접속 로그를 조회합니다.",
+    description="특정 IP 주소의 접속 로그를 조회합니다(슈퍼유저 전용).",
     operation_id="getAccessLogsByIp",
 )
 async def get_access_logs_by_ip(
@@ -88,8 +90,8 @@ async def get_access_logs_by_ip(
     responses=_ERR,
     summary="사용자별 접속 로그 조회",
     description=(
-        "특정 사용자의 접속 로그를 조회합니다. 현재 접속 로그의 user_id 를 채우는 코드가 "
-        "없어(request.state.user_id 미설정) 기본 구성에서는 빈 목록입니다."
+        "특정 사용자의 접속 로그를 조회합니다. user_id 는 Bearer 토큰으로 인증된 요청에만 "
+        "기록됩니다(인증 의존성이 request.state.user_id 를 채운다)."
     ),
     operation_id="getAccessLogsByUser",
 )
@@ -108,7 +110,7 @@ async def get_access_logs_by_user(
     response_model=AccessLogStats,
     responses=_ERR,
     summary="접속 로그 통계",
-    description="장치 유형/OS/브라우저별 접속 로그 통계를 조회합니다.",
+    description="장치 유형/OS/브라우저별 접속 로그 통계를 조회합니다(슈퍼유저 전용).",
     operation_id="getAccessLogStats",
 )
 async def get_access_log_stats(

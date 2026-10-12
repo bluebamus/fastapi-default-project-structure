@@ -12,6 +12,7 @@ from typing import NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security.password_hasher import PasswordHasher
 from app.core.security.refresh_store import RefreshTokenStore
 from app.core.security.tokens import InvalidTokenException, TokenService, TokenType
 from app.core.services.services_base import BaseService
@@ -20,7 +21,6 @@ from app.features.auth.exceptions import (
     UsernameAlreadyExistsException,
 )
 from app.features.auth.schemas.auth_schema import RegisterRequest
-from app.features.auth.services.password_hasher import PasswordHasher
 from app.features.user.models.models import User
 from app.features.user.repositories.user_repository import UserRepository
 
@@ -121,7 +121,7 @@ class AuthService(BaseService):
         await self.refresh_store.revoke_family(family)
 
     async def _issue_pair(self, user: User, family: str) -> TokenPair:
-        access = self.tokens.issue_access(user.id, user.username)
+        access = self.tokens.issue_access(user.id, user.username, user.is_superuser)
         refresh = self.tokens.issue_refresh(user.id, family)
         await self.refresh_store.register(refresh.jti, user.id, family)
         return TokenPair(access.token, refresh.token, access.ttl_seconds)

@@ -379,3 +379,57 @@ def test_utc_revision_converts_existing_kst_values(monkeypatch, mysql_empty_sche
             assert _column_precision(connection, "sales_orders", "created_at") == 0
     finally:
         engine.dispose()
+
+
+def _columns(connection, table: str) -> set[str]:
+    return {column["name"] for column in sa.inspect(connection).get_columns(table)}
+
+
+def test_authz_revision_adds_and_removes_ownership_columns(monkeypatch, mysql_empty_schema):
+    """``c9e1a3b5d7f0`` 이 ``users.is_superuser``·``author_id`` 를 더하고 downgrade 가 지운다(service-hardening ADR-018).
+
+    기존 사용자는 서버 기본값으로 일반 사용자(0)가 되고, 기존 게시글의 ``author_id`` 는 NULL 이다.
+    """
+    config = _alembic_config(monkeypatch)
+    command.downgrade(config, "base")
+    command.upgrade(config, "a7c9e1f3b5d6")
+
+    engine = sa.create_engine(SYNC_URL)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                sa.text(
+                    "INSERT INTO users (id, username, email, is_active, created_at, updated_at) "
+                    "VALUES ('u-old', 'old', 'old@example.com', 1, "
+                    "'2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+                )
+            )
+            connection.execute(
+                sa.text(
+                    "INSERT INTO blog_posts (id, title, content, created_at, updated_at) "
+                    "VALUES ('p-old', 't', 'c', '2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+                )
+            )
+
+        command.upgrade(config, "c9e1a3b5d7f0")
+        with engine.connect() as connection:
+            assert "is_superuser" in _columns(connection, "users")
+            for table in ("blog_posts", "sns_posts", "replies"):
+                assert "author_id" in _columns(connection, table)
+                indexes = {index["name"] for index in sa.inspect(connection).get_indexes(table)}
+                assert f"ix_{table}_author_id" in indexes
+            flag = connection.execute(
+                sa.text("SELECT is_superuser FROM users WHERE id = 'u-old'")
+            ).scalar_one()
+            owner = connection.execute(
+                sa.text("SELECT author_id FROM blog_posts WHERE id = 'p-old'")
+            ).scalar_one()
+            assert (flag, owner) == (0, None)
+
+        command.downgrade(config, "a7c9e1f3b5d6")
+        with engine.connect() as connection:
+            assert "is_superuser" not in _columns(connection, "users")
+            for table in ("blog_posts", "sns_posts", "replies"):
+                assert "author_id" not in _columns(connection, table)
+    finally:
+        engine.dispose()

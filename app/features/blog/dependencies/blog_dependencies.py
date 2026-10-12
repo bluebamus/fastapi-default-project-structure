@@ -9,11 +9,14 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session, get_writer_db_session
+from app.core.security.authorization import OwnershipPolicy
+from app.core.security.dependencies import get_ownership_policy
 from app.features.blog.services.blog_service import BlogService
 
 
 async def get_blog_service(
     db_session: AsyncSession = Depends(get_writer_db_session),
+    ownership: OwnershipPolicy = Depends(get_ownership_policy),
 ) -> BlogService:
     """BlogService 를 구성해 view 에 제공한다(쓰기용 — 커밋은 핸들러가 한다).
 
@@ -21,11 +24,12 @@ async def get_blog_service(
     종료 코드가 **응답 전송 후에** 실행되도록 바뀌어 커밋 실패가 201 로 둔갑했다.
     커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다.
     """
-    return BlogService(db_session)
+    return BlogService(db_session, ownership)
 
 
 async def get_blog_service_readonly(
     db_session: AsyncSession = Depends(get_read_only_db_session),
+    ownership: OwnershipPolicy = Depends(get_ownership_policy),
 ) -> BlogService:
     """조회 엔드포인트용 — 커밋하지 않는다.
 
@@ -33,4 +37,4 @@ async def get_blog_service_readonly(
     인증 등 다른 의존성과 함께 쓸 때 한 세션에 커밋 주체가 둘이 되는 위험이 있다
     (auth 의 get_current_user 가 같은 이유로 분리되어 있다).
     """
-    return BlogService(db_session)
+    return BlogService(db_session, ownership)

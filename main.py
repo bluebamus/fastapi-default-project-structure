@@ -137,6 +137,8 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 message=str(exc.detail) if exc.detail else "HTTP 오류가 발생했습니다.",
                 detail=None,
             ).model_dump(mode="json"),
+            # 401 의 ``WWW-Authenticate: Bearer``(OAuth2PasswordBearer)처럼 예외가 실은 헤더를 보존한다.
+            headers=exc.headers,
         )
 
     @app.exception_handler(Exception)

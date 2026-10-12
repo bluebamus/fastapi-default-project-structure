@@ -171,10 +171,8 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
             # 추가 헤더
             "accept_language": request.headers.get("Accept-Language"),
             # 사용자 정보. session_id 는 설정 SESSION_COOKIE_NAME 쿠키의 값이다. user_id 는
-            # request.state.user_id 를 읽지만 현재 그 값을 설정하는 코드(인증 의존성 등)가
-            # 없어 항상 None 이다.
+            # 인증 의존성이 요청 처리 중에 채우므로 응답 뒤에 읽는다(_record).
             "session_id": request.cookies.get(self.session_cookie_name),
-            "user_id": getattr(request.state, "user_id", None),
         }
 
     async def _save_access_log(self, data: dict) -> None:
@@ -230,14 +228,22 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         try:
             response: Response = await call_next(request)
         except Exception:
-            self._record(request_info, 500, start_time)
+            self._record(request, request_info, 500, start_time)
             raise
 
-        self._record(request_info, response.status_code, start_time)
+        self._record(request, request_info, response.status_code, start_time)
         return response
 
-    def _record(self, request_info: dict, status_code: int, start_time: float) -> None:
-        """응답 정보를 붙여 백그라운드 저장을 예약한다."""
+    def _record(
+        self, request: Request, request_info: dict, status_code: int, start_time: float
+    ) -> None:
+        """응답 정보를 붙여 백그라운드 저장을 예약한다.
+
+        ``user_id`` 는 여기서 읽는다 — 인증 의존성(``get_current_principal``)이 라우트 처리 중에
+        ``request.state.user_id`` 를 채우므로, 요청 시작 시점에 읽으면 항상 비어 있다.
+        ``request.state`` 는 scope 의 ``state`` 를 공유해 하위 앱이 채운 값이 여기서 보인다.
+        """
+        request_info["user_id"] = getattr(request.state, "user_id", None)
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
         request_info["response_status"] = status_code
         request_info["response_time_ms"] = response_time_ms

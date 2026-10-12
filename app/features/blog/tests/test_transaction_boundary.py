@@ -35,6 +35,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.session import Base
 from app.features.blog.models.models import Post  # noqa: F401  (register table)
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 _NEW_POST = {"title": "경계 검증", "content": "본문", "author": "kim"}
@@ -80,7 +81,7 @@ async def tx_client():
     # raise_app_exceptions=False: 서버 예외를 그대로 던지지 않고 실제 응답으로 받아야
     # "클라이언트가 무엇을 보는가"를 검증할 수 있다.
     transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=bearer()) as c:
         yield c, calls
     app.dependency_overrides.clear()
     await engine.dispose()

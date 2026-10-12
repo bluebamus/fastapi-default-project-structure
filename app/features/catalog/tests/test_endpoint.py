@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.session import Base
 from app.features.catalog.models.models import Product  # noqa: F401  (테이블 등록)
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 BASE = "/api/v1/catalog/products"
@@ -48,7 +49,9 @@ async def client():
 
     override_db_sessions(app, maker, _wrap_session)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as http_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers=bearer()
+    ) as http_client:
         yield http_client, counter
     app.dependency_overrides.clear()
     await engine.dispose()

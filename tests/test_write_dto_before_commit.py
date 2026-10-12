@@ -33,6 +33,7 @@ from app.core.db.models_registry import import_all_models
 from app.core.db.session import Base
 from app.core.redis import get_redis
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 import_all_models()
@@ -94,7 +95,7 @@ _BASE: list[Case] = [
         "UserResponse",
         "users",
         "/api/v1/user/users",
-        {"username": "alice", "email": "alice@example.com"},
+        {"username": "alice", "email": "alice@example.com", "password": "password123"},
         "/api/v1/user/users/{id}",
         {"is_active": False},
     ),
@@ -169,7 +170,7 @@ async def env():
     redis = FakeAsyncRedis()
     app.dependency_overrides[get_redis] = lambda: redis
     transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=bearer()) as client:
         yield client, calls, snapshot
     app.dependency_overrides.clear()
     await redis.aclose()

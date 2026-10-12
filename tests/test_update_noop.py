@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.exception import NotFoundException
+from app.core.security.authorization import OwnershipPolicy
 from app.features.blog.schemas.blog_schema import PostUpdate
 from app.features.blog.services.blog_service import BlogService
 from app.features.reply.schemas.reply_schema import ReplyUpdate
@@ -19,13 +20,17 @@ from app.features.sns.schemas.sns_schema import SnsPostUpdate
 from app.features.sns.services.sns_service import SnsService
 from app.features.user.schemas.user_schema import UserUpdate
 from app.features.user.services.user_service import UserService
+from tests.auth_headers import SUPERUSER
 
-# (서비스 클래스, update 메서드명, 부분수정 스키마 인스턴스)
+_POLICY = OwnershipPolicy()
+
+# (서비스 생성 함수, update 메서드명, 부분수정 스키마 인스턴스). DB 없이 구성한다(트랜잭션 경계 불필요).
+# user 의 해시기·회전 저장소는 이 경로(활성 유지)에서 쓰이지 않는다.
 _CASES = [
-    (BlogService, "update_post", PostUpdate(title="unchanged")),
-    (UserService, "update_user", UserUpdate(is_active=True)),
-    (ReplyService, "update_reply", ReplyUpdate(content="unchanged")),
-    (SnsService, "update_post", SnsPostUpdate(content="unchanged")),
+    (lambda: BlogService(None, _POLICY), "update_post", PostUpdate(title="unchanged")),
+    (lambda: UserService(None, _POLICY, None, None), "update_user", UserUpdate(is_active=True)),
+    (lambda: ReplyService(None, _POLICY), "update_reply", ReplyUpdate(content="unchanged")),
+    (lambda: SnsService(None, _POLICY), "update_post", SnsPostUpdate(content="unchanged")),
 ]
 
 
@@ -52,24 +57,24 @@ class _MissingRepo:
         return None
 
 
-def _build(service_cls, repo):
-    service = service_cls(db_session=None)  # DB 없이 구성(트랜잭션 경계 불필요)
+def _build(make_service, repo):
+    service = make_service()
     service.repository = repo
     return service
 
 
-@pytest.mark.parametrize("service_cls,method,payload", _CASES)
-async def test_noop_update_returns_existing_not_404(service_cls, method, payload):
+@pytest.mark.parametrize("make_service,method,payload", _CASES)
+async def test_noop_update_returns_existing_not_404(make_service, method, payload):
     """update 가 None(no-op)이어도 존재하는 엔티티는 404 없이 그대로 반환된다."""
-    sentinel = SimpleNamespace(id="x1")
-    service = _build(service_cls, _StubRepo(sentinel))
-    result = await getattr(service, method)("x1", payload)
+    sentinel = SimpleNamespace(id="x1", author_id=None)
+    service = _build(make_service, _StubRepo(sentinel))
+    result = await getattr(service, method)("x1", payload, SUPERUSER)
     assert result is sentinel
 
 
-@pytest.mark.parametrize("service_cls,method,payload", _CASES)
-async def test_missing_entity_still_raises(service_cls, method, payload):
+@pytest.mark.parametrize("make_service,method,payload", _CASES)
+async def test_missing_entity_still_raises(make_service, method, payload):
     """실제로 존재하지 않는 엔티티는 여전히 NotFound 예외가 발생한다."""
-    service = _build(service_cls, _MissingRepo())
+    service = _build(make_service, _MissingRepo())
     with pytest.raises(NotFoundException):  # 각 도메인의 *NotFoundException 은 이를 상속
-        await getattr(service, method)("missing", payload)
+        await getattr(service, method)("missing", payload, SUPERUSER)

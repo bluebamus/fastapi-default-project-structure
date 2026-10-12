@@ -36,6 +36,7 @@ from app.features.reports.repositories.sales_report_repository import (
 from app.features.reports.services.report_service import local_day_bounds
 from config import timezone_settings
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 BASE = "/api/v1/reports/sales/daily"
@@ -96,7 +97,9 @@ async def client(sales_engine):
 
     override_db_sessions(app, maker, _wrap_session)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as http_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers=bearer()
+    ) as http_client:
         yield http_client, counter
     app.dependency_overrides.clear()
 

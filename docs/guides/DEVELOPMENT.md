@@ -13,7 +13,7 @@
 
 1. [계층 원칙](#1-계층-원칙)
 2. [새 기능·테이블 추가 절차](#2-새-기능테이블-추가-절차)
-3. [세션과 의존성 선택](#3-세션과-의존성-선택)
+3. [세션과 의존성 선택](#3-세션과-의존성-선택) · [3.1 라우트 보호](#31-라우트-보호--principal-주입)
 4. [트랜잭션 규칙](#4-트랜잭션-규칙)
 5. [ORM 워크플로 — catalog](#5-orm-워크플로--catalog)
 6. [Raw SQL 워크플로 — reports](#6-raw-sql-워크플로--reports)
@@ -151,6 +151,54 @@ async def get_catalog_service_readonly(
   `get_redis` 가 그 의존성입니다 — `redis: Redis = Depends(get_redis)` 로 받고, 테스트는
   `app.dependency_overrides[get_redis]` 로 fakeredis(`fakeredis.FakeAsyncRedis()`, dev 의존성)를 넣습니다 — Redis 를 쓰는
   클래스(예: `app/core/security/` 의 `RefreshTokenStore`·`RateLimiter`)는 가짜 인터페이스 없이 실물 그대로 시험됩니다. 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
+
+### 3.1 라우트 보호 — Principal 주입
+
+인증·인가는 의존성으로만 겁니다(핸들러 본문이 토큰을 파싱하지 않는다). 부품은 전부
+`app/core/security/dependencies.py` 에 있어 어느 기능이든 core 하나만 import 합니다(기능끼리 import 금지).
+
+| 요구 | 쓰는 것 | 실패 |
+|---|---|---|
+| 로그인한 사용자 | 핸들러 인자 `principal: CurrentPrincipal` | 토큰 없음·만료·위조 401 |
+| 슈퍼유저만 | 데코레이터 `dependencies=[Depends(require_superuser)]` (주체가 필요하면 `principal: SuperuserPrincipal`) | 401 / 403 |
+| 기능 전체를 슈퍼유저로 | `APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDEN_RESPONSES)` | 401 / 403 |
+| 소유자 또는 슈퍼유저 | Service 가 생성자로 `OwnershipPolicy` 를 받고 메서드가 `principal` 을 받아 `ensure_can_modify(owner_id, principal)` | 403 |
+| DB 의 사용자 엔티티 | auth 의 `get_current_user`(`/me` 전용 — 비활성·삭제 사용자 401) | 401 |
+
+`Principal(id, username, is_superuser)` 은 access 토큰의 `sub`·`username`·`su` 로만 만듭니다 — DB 를 보지
+않습니다. 인증에 성공하면 `request.state.user_id` 가 채워져 접속 로그에 사용자 ID 가 남습니다.
+
+```python
+# dependencies — 정책은 provider 로 받아 생성자로 넘긴다
+async def get_inventory_service(
+    db_session: AsyncSession = Depends(get_writer_db_session),
+    ownership: OwnershipPolicy = Depends(get_ownership_policy),
+) -> InventoryService:
+    return InventoryService(db_session, ownership)
+
+# service — 작성자는 요청 본문이 아니라 주체에서, 수정은 정책 확인 뒤에
+async def create_item(self, data: ItemCreate, principal: Principal) -> Item:
+    return await self.repository.create({**data.model_dump(), "author_id": principal.id})
+
+async def update_item(self, item_id: str, data: ItemUpdate, principal: Principal) -> Item:
+    existing = await self.get_item(item_id)          # 없으면 404 가 먼저
+    self.ownership.ensure_can_modify(existing.author_id, principal)
+    ...
+
+# view
+@router.patch("/items/{item_id}", responses={**_NOT_FOUND, **FORBIDDEN_RESPONSES}, ...)
+async def update_item(
+    payload: ItemUpdate,
+    principal: CurrentPrincipal,
+    item_id: str = Path(...),
+    service: InventoryService = Depends(get_inventory_service),
+) -> ItemResponse: ...
+```
+
+- 작성자·소유자 필드(`author_id` 등)는 Create·Update 스키마에 두지 않습니다 — 응답 스키마에만 둡니다.
+- 문서용 `UNAUTHORIZED_RESPONSES`(401)·`FORBIDDEN_RESPONSES`(401+403)를 `responses=` 에 펼쳐 OpenAPI 에 싣습니다.
+- 테스트는 의존성을 바꾸지 않고 `tests/auth_headers.py` 의 `bearer(principal)` 로 진짜 토큰을 싣습니다.
+  기존 CRUD 테스트는 클라이언트 기본 헤더로 `bearer()`(슈퍼유저)를 씁니다.
 
 ## 4. 트랜잭션 규칙
 

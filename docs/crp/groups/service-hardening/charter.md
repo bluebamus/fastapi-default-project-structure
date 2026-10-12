@@ -1,4 +1,4 @@
-# Charter — service-hardening  (Charter v0.1 / 2026-10-12)
+# Charter — service-hardening  (Charter v0.6 / 2026-10-12)
 
 > 검수의 **닫힌 정의**. 여기 적힌 것이 범위와 합격 기준의 전부다.
 > **상위 기준:** `design-baseline.md` 의 Active 요구사항·불가침 제약과 모순될 수 없다.
@@ -22,7 +22,7 @@
 | D | `app/core/models/types.py`(신규), `app/core/models/models_base.py`, `config.py`, `migrations/env.py`, `migrations/versions/a7c9e1f3b5d6_store_datetimes_as_utc_microseconds.py`(신규), `app/features/reports/`, `app/celery/app.py` | 소스 | UTC 저장 |
 | E | `app/core/redis.py`(신규 `get_redis`), `main.py`(`/ready`), `app/core/db/models_registry.py`(`iter_task_modules`), `app/celery/app.py`, `app/celery/tasks.py`(삭제), `app/features/home/tasks.py`(신규)·`dependencies/access_log_dependencies.py`, `compose.test.yaml`(기존 `redis-test` 확인만) | 소스+설정 | Redis provider·`/ready`·태스크 발견 |
 | F1 | `app/core/security/`(신규 `tokens.py`·`refresh_store.py`·`rate_limit.py`), `app/core/exception.py`(`headers`·429), `main.py`(헤더 전달), `app/features/auth/`(신규 `services/password_hasher.py`·`tests/conftest.py`), `app/utils/authenticator/`(삭제), `config.py`, `pyproject.toml`, `uv.lock`, `tests/core/`(신규 테스트 3) | 소스+설정 | 해시·토큰·회전 저장소·레이트 리밋 |
-| F2 | `app/core/security/`, `app/features/{user,blog,sns,reply,catalog,reports,home}/`, `migrations/versions/`(신규 리비전 2), `scripts/create_superuser.py`(신규), `docs/crp/groups/orm-raw-repository/baseline/openapi.json` | 소스+문서 | Principal·소유권·인가·운영 도구 |
+| F2 | `app/core/security/`(신규 `authorization.py`·`dependencies.py`, `password_hasher.py` 이동), `app/core/middlewares/user_info_middleware.py`, `main.py`(HTTP 예외 헤더), `app/features/{auth,user,blog,sns,reply,catalog,reports,home}/`, `migrations/versions/c9e1a3b5d7f0_add_superuser_and_author_ownership.py`(신규 리비전 1), `scripts/create_superuser.py`(신규), `tests/`(신규 `auth_headers.py`·`test_authorization.py`·`core/test_authorization_policy.py`·`core/test_layering.py`·`scripts/test_create_superuser.py`) — OpenAPI 기준선은 바꾸지 않았다(ADR-026 ⑩) | 소스+문서 | Principal·소유권·인가·운영 도구 |
 | 공통 | `README.md`, `docs/guides/ARCHITECTURE.md`, `docs/guides/DEVELOPMENT.md`, `.env.example` | 문서 | 각 단계가 바꾼 사실만 갱신 |
 
 기준선 실측 (2026-10-12, 커밋 `eb70fbf`):
@@ -69,8 +69,8 @@
 
 ## 3. 인수 기준 (Acceptance Criteria) — 단계마다 전부 그린
 
-- [ ] **공통 게이트** — `uv run ruff check .` · `uv run ruff format --check .` · `uv run python -m mypy .` ·
-      `pytest -m "not mysql"`(CI 마커식) skipped·xfailed 0 · `scripts/review_gate.py --fast` 의 구조 검사
+- [x] **공통 게이트** — `uv run ruff check .` · `uv run ruff format --check .` · `uv run python -m mypy .` ·
+      `pytest -m "not mysql"`(CI 마커식) skipped·xfailed 0 · `scripts/review_gate.py --fast` 의 구조 검사 — 단계마다 run-log Round 1~7 에 수치
 - [x] **A** — `tests/test_ci_contract.py`(ci.yml 에 `--frozen` 없음·`uv sync --locked` 있음), 게이트 파일 목록이
       추적 파일만 담는 테스트, DSN 특수문자·IPv6·Alembic `%`·Redis URL 왕복, 잠금 읽기 라우터 on/off, 목록 정렬 결정성·offset 페이지 비중첩
 - [x] **B** — IP 결정(hops 0/N·위조·잘못된 값), 500 기록, 쿼리 마스킹, 컬럼 길이 절단, null PATCH 422, 오류 코드별 상태, 날짜 상한 422
@@ -80,8 +80,8 @@
 - [x] **D** — TypeDecorator bind/result/naive 거부, SQLite 마이크로초 보존, 응답 오프셋, MySQL 왕복·자정 경계(`mysql` 마커)
 - [x] **E** — `/ready` Redis 실패 503, `get_redis` provider, 태스크 자동 발견 목록, 기능 제거 시 include 무사
 - [x] **F1** — 해시·레거시 bcrypt 이전, 토큰 claim·만료·aud/iss·필수 claim·type 혼동, 회전·재사용 탐지·logout, 429+Retry-After·창 만료·성공 시 초기화, 엔드포인트 흐름 — ledger F-019~F-021 Fixed(`0c42665`), run-log Round 6
-- [ ] **F2** — 401(없음/만료/위조), 403(타인·일반 사용자의 관리 경로), 소유자 수정, 슈퍼유저 우회, 비활성화 시 refresh 실패, 접속 로그 user_id, create_superuser
-- [ ] 새 테스트마다 fail-on-revert 결과를 run-log 에 적는다(수정 전 코드에서 실패하는지)
+- [x] **F2** — 401(없음/만료/위조), 403(타인·일반 사용자의 관리 경로), 소유자 수정, 슈퍼유저 우회, 비활성화 시 refresh 실패, 접속 로그 user_id, create_superuser — ledger F-022~F-024 Fixed(`89530a8`), run-log Round 7
+- [x] 새 테스트마다 fail-on-revert 결과를 run-log 에 적는다(수정 전 코드에서 실패하는지) — Round 1~7 각 절
 
 ## 4. 변경 이력
 
@@ -91,3 +91,4 @@
 - v0.4 (2026-10-12): 단계 E 인벤토리를 실제 경로로 확정(신규 `app/core/redis.py`·`app/features/home/tasks.py`, 중앙
   `app/celery/tasks.py` 삭제), §3 E 닫음. Round 3 에서 빠진 §3 C 체크를 CI 근거와 함께 닫음.
 - v0.5 (2026-10-12): 단계 F1 인벤토리를 실제 경로로 확정(신규 `app/core/security/` 3파일·`password_hasher.py`, `app/utils/authenticator/` 삭제), §3 F1 닫음.
+- v0.6 (2026-10-12): 단계 F2 인벤토리를 실제 경로로 확정(신규 `authorization.py`·`dependencies.py`, `password_hasher.py` core 이동, 리비전 1개, OpenAPI 기준선 불변), §3 F2·공통 게이트·fail-on-revert 닫음 — 인수 기준 전부 닫힘, 그룹 종료.

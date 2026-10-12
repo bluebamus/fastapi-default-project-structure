@@ -70,11 +70,15 @@ def test_nullable_allowlist_names_real_fields():
         assert schema.nullable_fields <= set(schema.model_fields), schema.__name__
 
 
-def test_author_is_the_only_nullable_patch_field():
-    """nullable 컬럼(author)만 null 로 비울 수 있다 — 모델과 맞춘 목록."""
+def test_no_patch_field_is_nullable():
+    """null 로 비울 수 있는 PATCH 필드가 없다 — 모델과 맞춘 목록.
+
+    nullable 컬럼이던 ``author`` 는 서버가 인증 주체로 채우는 값이 되어 수정 스키마에서 빠졌다
+    (service-hardening ADR-018).
+    """
     allowed = {schema.__name__: schema.nullable_fields for schema in UPDATE_SCHEMAS}
-    assert allowed["PostUpdate"] == {"author"}
-    assert allowed["ReplyUpdate"] == {"author"}
-    assert allowed["SnsPostUpdate"] == {"author"}
+    assert allowed["PostUpdate"] == frozenset()
+    assert allowed["ReplyUpdate"] == frozenset()
+    assert allowed["SnsPostUpdate"] == frozenset()
     assert allowed["UserUpdate"] == frozenset()
     assert allowed["ProductUpdate"] == frozenset()

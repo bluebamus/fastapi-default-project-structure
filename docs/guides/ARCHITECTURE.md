@@ -66,7 +66,7 @@
 │   ├── core/                        # 프레임워크 인프라
 │   │   ├── resources.py             # 프로세스 수명 자원의 생성·해제 단일 지점
 │   │   ├── redis.py                 # get_redis — lifespan Redis client 주입 provider
-│   │   ├── security/                # TokenService(JWT)·RefreshTokenStore(회전)·RateLimiter(고정 창) — §11
+│   │   ├── security/                # 토큰·회전 저장소·레이트 리밋·PasswordHasher·Principal·OwnershipPolicy + provider — §11
 │   │   ├── exception.py             # AppException 계층 + ErrorResponse
 │   │   ├── schemas.py               # PatchSchema(모든 Update 스키마의 기반 — null PATCH 거부)
 │   │   ├── tags_metadata.py         # OpenAPI 태그 설명
@@ -442,7 +442,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED` |
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
-| `jwt_settings` | `app/features/auth/dependencies/auth_dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성, 레이트 리밋 한도) |
+| `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도 |
 | `api_settings`·`session_settings`·`smtp_settings`·`upload_settings` | **소비 코드 없음** — 설정만 준비돼 있다(쿠키 세션·메일 발송·업로드 구현 없음) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 도 필드만 있고 코드가
@@ -737,8 +737,9 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
   `user_agent` 와 파싱 결과(`os_name`·`os_version`·`browser_name`·`browser_version`·`device_type`
   (`mobile`/`tablet`/`desktop`/`other`)·`device_brand`·`device_model`·`is_bot`), `request_path`,
   `request_method`, `query_string`(민감 키 값은 `***`), `referer`, `accept_language`,
-  `session_id`(설정 `SESSION_COOKIE_NAME` 쿠키의 값), `user_id`(`request.state.user_id` — 현재 이를 채우는
-  코드는 없다), `response_status`, `response_time_ms`.
+  `session_id`(설정 `SESSION_COOKIE_NAME` 쿠키의 값), `user_id`(`request.state.user_id` — 인증 의존성
+  `get_current_principal` 이 라우트 처리 중에 채우므로 미들웨어가 **응답 뒤에** 읽는다. 익명·401 요청은 NULL, §11.1),
+  `response_status`, `response_time_ms`.
 - **IP 결정** — `app/core/middlewares/client_ip.py` 의 `ClientIPResolver` 가 정하고, 미들웨어는 생성자로
   받습니다(`setup_user_info_middleware` 가 설정에서 한 번 만든다, service-hardening ADR-006·ADR-021).
   `TRUSTED_PROXY_HOPS=0`(기본)이면 직접 피어 주소만 씁니다. `N` 이면 `X-Forwarded-For` 의 **오른쪽에서
@@ -763,9 +764,9 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
 
 ## 11. 인증 (JWT)
 
-OAuth2 password flow + JWT access/refresh 토큰(service-hardening ADR-013~016·ADR-025). 자격증명은 `user` 기능의
-`User.hashed_password` 에 두고, `auth` 기능(`app/features/auth/`)이 해시(`PasswordHasher`)와 흐름(`AuthService`)을,
-`app/core/security/` 가 다른 기능도 쓰는 부품(토큰·회전 저장소·레이트 리밋)을 맡습니다.
+OAuth2 password flow + JWT access/refresh 토큰(service-hardening ADR-013~018·ADR-025·ADR-026). 자격증명은 `user` 기능의
+`User.hashed_password` 에 두고, `auth` 기능(`app/features/auth/`)이 흐름(`AuthService`)을, `app/core/security/` 가
+여러 기능이 쓰는 부품(해시·토큰·회전 저장소·레이트 리밋·인증 주체·소유권 정책과 그 provider)을 맡습니다.
 
 | 메서드·경로 | 인증 | 요청 | 성공 | 실패 |
 |---|---|---|---|---|
@@ -787,27 +788,34 @@ curl -X POST localhost:8000/api/v1/auth/logout -H 'Content-Type: application/jso
   -d '{"refresh_token":"<refresh_token>"}'          # 204
 ```
 
-**조립(주입)** — 협력 객체는 모두 생성자로 받고 `auth_dependencies.py` 의 provider 가 만듭니다(service-hardening C-1).
+**조립(주입)** — 협력 객체는 모두 생성자로 받고 provider 가 만듭니다(service-hardening C-1). 여러 기능이 쓰는 provider 는
+core 의 `app/core/security/dependencies.py`, auth 전용은 `auth_dependencies.py` 에 있습니다.
 
 ```text
-get_auth_service(session=get_writer_db_session,
-                 hasher=get_password_hasher,          # 프로세스 단일(lru_cache)
-                 tokens=get_token_service,            # TokenService(jwt_settings)
-                 store=get_refresh_token_store)       # RefreshTokenStore(get_redis, refresh TTL)
+# core (app/core/security/dependencies.py)
+get_password_hasher()                                # 프로세스 단일(lru_cache) — auth·user
+get_token_service()                                  # TokenService(jwt_settings) — 발급(auth)·검증(principal)
+get_refresh_token_store(redis=get_redis)             # RefreshTokenStore(refresh TTL) — auth 회전·user 폐기
+get_ownership_policy()                               # OwnershipPolicy — blog·sns·reply·user
+get_current_principal(request, token=oauth2_scheme, tokens=get_token_service) -> Principal   # DB 조회 없음
+require_superuser(principal=get_current_principal)   # 403
+# auth
+get_auth_service(session=get_writer_db_session, hasher, tokens, store)
 login_rate_limit / register_rate_limit               # RateLimiter(get_redis) + ClientIPResolver
-get_current_user(token=oauth2_scheme, tokens=get_token_service, session=get_read_only_db_session)
+get_current_user(principal=get_current_principal, session=get_read_only_db_session)   # /me — 엔티티 필요
 ```
 
 테스트는 `dependency_overrides[get_redis]` 에 fakeredis 를 넣으면 회전 저장소·레이트 리밋이 함께 바뀝니다.
 
-**비밀번호 — `PasswordHasher`** (`app/features/auth/services/password_hasher.py`)
+**비밀번호 — `PasswordHasher`** (`app/core/security/password_hasher.py` — auth 의 가입·로그인과 user 의 관리자 생성이 함께 쓴다, ADR-026)
 - 새 해시는 Argon2id(`pwdlib`). 이전 버전의 bcrypt 해시(`$2` 접두사)는 그때 규칙(UTF-8 72바이트 절단)으로 검증하고,
   맞으면 Argon2 로 다시 해시해 **로그인 핸들러가 커밋**합니다(점진 이전 — 그 밖의 로그인은 커밋하지 않습니다).
 - **상수 시간 인증**: 사용자가 없거나 비밀번호가 없어도 더미 Argon2 해시로 같은 비용을 치릅니다.
   **논블로킹 해싱**: 해시·검증은 `asyncio.to_thread` 에서 돕니다.
 
 **토큰 — `TokenService`** (`app/core/security/tokens.py`)
-- claims `sub, type, iat, nbf, exp, jti(uuid4 hex), iss, aud` + access 는 `username`, refresh 는 `fam`(회전 family).
+- claims `sub, type, iat, nbf, exp, jti(uuid4 hex), iss, aud` + access 는 `username`·`su`(슈퍼유저 여부), refresh 는 `fam`(회전 family).
+  access 의 `username`·`su` 는 필수입니다 — `su` 가 없는 토큰(인가 도입 전 발급분)은 401 이고 다시 로그인하면 됩니다.
 - 검증: 알고리즘은 설정 하나(`algorithms=[JWT_ALGORITHM]`), `iss`·`aud` 일치, 위 claim 전부 필수, `leeway`, `type` 일치.
   access·refresh 는 서명 키도 다릅니다. 실패는 사유와 관계없이 `InvalidTokenException`(401, `AUTH_INVALID_TOKEN`).
 
@@ -840,9 +848,36 @@ get_current_user(token=oauth2_scheme, tokens=get_token_service, session=get_read
 | `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` |
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` |
 
-- 비활성 사용자(`is_active=false`)는 로그인·회전·`me` 에서 막힙니다.
-- `get_current_user` 는 `TokenService` 로 검증하고 읽기 세션의 `UserRepository` 로 조회합니다 — Redis 를 쓰지 않습니다.
-  다른 기능의 엔드포인트에는 인증이 자동으로 붙지 않으므로 필요하면 `Depends(get_current_user)` 와 소유권·역할 검사를 직접 둡니다.
+- 비활성 사용자(`is_active=false`)는 로그인·회전·`me` 에서 막힙니다. 비활성화·삭제는 `revoke_user` 로 refresh 를 모두 폐기합니다.
+- `get_current_user` 는 `get_current_principal` 위에서 읽기 세션의 `UserRepository` 로 조회합니다 — Redis 를 쓰지 않습니다.
+
+### 11.1 인가 — Principal · 슈퍼유저 · 소유권
+
+인가는 **슈퍼유저/일반 2단계**입니다(service-hardening ADR-017·018). RBAC 세분화는 비목표입니다.
+
+- **`Principal(id, username, is_superuser)`** (`app/core/security/authorization.py`, frozen dataclass) — access 토큰의
+  `sub`·`username`·`su` 로만 만듭니다. 요청마다 DB·Redis 왕복이 없고, 기능은 사용자 모델 대신 이 값 하나에 기댑니다.
+  `get_current_principal` 이 만들고 `request.state.user_id` 를 채웁니다 — 접속 로그 미들웨어가 **응답 뒤에** 읽어
+  `user_access_logs.user_id` 에 남깁니다(§10).
+- **별칭** — `CurrentPrincipal`(로그인), `SuperuserPrincipal`(슈퍼유저), 라우트·라우터 의존성 `require_superuser`.
+  토큰 문제는 401(`WWW-Authenticate: Bearer`), 권한 부족은 403 `FORBIDDEN`.
+- **`OwnershipPolicy.ensure_can_modify(owner_id, principal)`** — 소유자 본인 또는 슈퍼유저만 통과. `owner_id` 가 `None`
+  (인가 도입 전 행)이면 슈퍼유저만. blog·sns·reply·user 서비스가 생성자로 받고 수정·삭제(user 는 단건 조회 포함) 메서드가
+  `principal` 을 받아 부릅니다. 존재 확인(404)이 먼저이고 user 만 반대로 권한이 먼저입니다(남의 ID 로 계정 존재를 캐지 못하게).
+- **스키마** — `users.is_superuser`(기본 false), blog·sns·reply 의 `author_id`(String(36), NULL, 인덱스, FK 없음 — 기능 모델끼리
+  참조하지 않는다). 리비전 `c9e1a3b5d7f0`. 작성자(`author`·`author_id`)는 생성 시 서버가 주체로 채우고 수정 스키마에 없습니다.
+
+| 기능 | 조회 | 생성 | 수정·삭제 |
+|---|---|---|---|
+| blog·sns·reply | 공개 | `CurrentPrincipal` | `OwnershipPolicy` |
+| catalog | 공개 | `require_superuser` | `require_superuser` |
+| reports·home(접속 로그) | 라우터 단위 `require_superuser` | 〃 | — |
+| user | 목록 `require_superuser` · 단건 `OwnershipPolicy` | `require_superuser`(비밀번호 필수) | 수정 `OwnershipPolicy` + `is_active`·`is_superuser` 는 슈퍼유저 · 삭제 `require_superuser` |
+
+- **첫 슈퍼유저** — `python -m scripts.create_superuser`(`scripts/create_superuser.py`). `background_db_session` + core 의
+  `get_password_hasher` + `UserRepository` 로 조립해 만들거나 승격하고 한 번 커밋합니다. 비밀번호는 `getpass` 또는
+  `--password-stdin` 으로만 받습니다(환경 변수를 읽지 않는다 — 설정 계약).
+- **SQLAdmin 은 이 인가 밖**입니다(ADR-019, §12) — `/admin` 은 여전히 인증이 없습니다.
 
 ## 12. SQLAdmin
 
@@ -943,6 +978,8 @@ config.set_main_option(
 | 비밀번호는 Argon2id(pwdlib), 기존 bcrypt 는 로그인 시 재해시 | FastAPI 공식 문서의 현행 권장. 평문이 없어 일괄 이전은 불가능하다(service-hardening ADR-013) |
 | refresh 는 회전 + 재사용 탐지(Redis `GETDEL`), access 는 짧은 만료 | 탈취된 refresh 로 만료까지 재발급되던 구멍을 닫는다. access 즉시 폐기는 비목표 — 15분 만료로 대신한다(service-hardening ADR-014·015) |
 | 로그인·가입 레이트 리밋은 Redis 고정 창 + 라우트 의존성 | 명령 세 개로 끝나는 가장 단순한 방식. 창 경계 버스트는 수용(service-hardening ADR-016) |
+| 인가는 토큰만으로 만드는 `Principal` + 슈퍼유저/일반 2단계 + `OwnershipPolicy` 한 클래스 | 기능끼리 import 하지 않고(core 하나만 의존) 요청마다 DB 왕복이 없다. 권한 회수는 access 만료(15분)까지 늦다(service-hardening ADR-017·018) |
+| 여러 기능이 쓰는 인증 provider·`PasswordHasher` 는 core | user 가 auth 를 import 하는 지름길 대신 core 로 올린다(service-hardening ADR-026) |
 
 ## 16. 변경 이력
 
@@ -962,6 +999,7 @@ config.set_main_option(
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
+| 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
 | 2026-10-07 | 설정 검사 확장(ADR-045): `.env` 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 `ADMIN=true` 는 `ADMIN_ALLOW_UNAUTHENTICATED` 확인 필요. CI 가 `review_gate --fast` 실행(ADR-044) |
 | 2026-09-17 | 배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 `config` import 실패. `.env.example` 비밀 키 예시를 서로 다른 `change-this-...` 로 |
 

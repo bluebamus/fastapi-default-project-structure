@@ -57,12 +57,14 @@
 - [x] `app/utils/authenticator/` 제거(대체됨) · 문서(README·ARCHITECTURE §11·DEVELOPMENT·HTML·`.env.example`) — 세부는 ADR-025
 - [x] 공통 게이트 그린 · run-log 갱신 — 836 passed · skipped 0
 
-## Round 7 — 단계 F2 (인가 · 소유권 · 운영 도구)
-- [ ] `Principal` · `get_current_principal` · `require_superuser` · `OwnershipPolicy`
-- [ ] (F-022) blog·sns·reply·user·catalog·reports 라우트 정책
-- [ ] (F-023) 접속 로그 조회 슈퍼유저 전용
-- [ ] (F-024) `/users` POST 비밀번호 필수 · `scripts/create_superuser.py`
-- [ ] OpenAPI 기준선 갱신 + 이유 기록(C-10) · README·ARCHITECTURE·`.env.example` 갱신
-- [ ] 공통 게이트 그린 · run-log 갱신
+## Round 7 — 2026-10-12 · 단계 F2 (인가 · 소유권 · 운영 도구)
+- [x] `Principal` · `get_current_principal` · `require_superuser` · `OwnershipPolicy` (`app/core/security/authorization.py`·`dependencies.py`), access `su` 필수
+- [x] 리비전 `c9e1a3b5d7f0`(`users.is_superuser`·`author_id`) + 스키마 스냅샷 갱신 · `alembic check` 드리프트 없음
+- [x] (F-022) blog·sns·reply·user·catalog·reports 라우트 정책 — 작성자 서버 지정, 소유권, 슈퍼유저 전용 경로
+- [x] (F-023) 접속 로그 조회 슈퍼유저 전용 + 인증 요청의 `user_id` 기록(미들웨어가 응답 뒤에 읽는다)
+- [x] (F-024) `/users` POST 비밀번호 필수(Argon2) · 비활성화·삭제 시 refresh 폐기 · `scripts/create_superuser.py`
+- [x] `PasswordHasher`·공용 provider core 이동(ADR-026) + 계층 규칙 테스트(`tests/core/test_layering.py`)
+- [x] OpenAPI 기준선 — 갱신하지 않음, 이유 기록(ADR-026 ⑩: 제거·2xx 변경 0건) · README·ARCHITECTURE·DEVELOPMENT·HTML 갱신(`.env.example` 은 새 설정이 없어 불변)
+- [x] 공통 게이트 그린 · run-log 갱신 — 930 passed · skipped 0 · 그룹 종료(전 라운드 CONVERGED)
 
 > 미닫힘(`[ ]`) 항목이 1개라도 있으면 그 라운드는 GATE 5 Done 이 아니다.

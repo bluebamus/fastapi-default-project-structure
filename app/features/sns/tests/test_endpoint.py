@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.session import Base
 from app.features.sns.models.models import SnsPost  # noqa: F401  (register table)
 from main import app
+from tests.auth_headers import bearer
 from tests.session_overrides import override_db_sessions
 
 
@@ -28,7 +29,7 @@ async def client():
 
     override_db_sessions(app, maker)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", headers=bearer()) as c:
         yield c
     app.dependency_overrides.clear()
     await engine.dispose()
@@ -55,7 +56,9 @@ async def test_create_and_get_post(client):
 
     got = await client.get(f"/api/v1/sns/posts/{post_id}")
     assert got.status_code == 200
-    assert got.json()["author"] == "park"
+    assert (
+        got.json()["author"] == "admin"
+    )  # 요청의 author 가 아니라 인증 주체(service-hardening ADR-018)
 
 
 async def test_list_posts(client):

@@ -11,24 +11,20 @@ class ReplyBase(BaseModel):
     """댓글 공통 필드."""
 
     content: str = Field(..., min_length=1, description="댓글 본문")
-    author: str | None = Field(None, max_length=100, description="작성자(선택)")
     post_id: str | None = Field(None, max_length=36, description="대상 게시글 ID(선택)")
 
 
 class ReplyCreate(ReplyBase):
-    """댓글 생성 요청."""
+    """댓글 생성 요청. 작성자(``author``·``author_id``)는 받지 않는다 — 서버가 인증 주체로 채운다."""
 
 
 class ReplyUpdate(PatchSchema):
     """댓글 수정 요청 — 전달된 필드만 부분 수정한다.
 
-    명시적 ``null`` 은 ``author`` 만 허용한다(nullable 컬럼). 나머지는 422.
+    작성자는 수정할 수 없다(소유권이 바뀌지 않는다). 명시적 ``null`` 은 422.
     """
 
-    nullable_fields = frozenset({"author"})
-
     content: str | None = Field(None, min_length=1, description="댓글 본문")
-    author: str | None = Field(None, max_length=100, description="작성자")
 
 
 class ReplyResponse(ReplyBase):
@@ -37,6 +33,13 @@ class ReplyResponse(ReplyBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(..., description="댓글 ID(UUID)")
+    author: str | None = Field(
+        None, max_length=100, description="작성자 이름 — 서버가 작성 시점의 사용자명으로 채운다"
+    )
+    author_id: str | None = Field(
+        None,
+        description="작성자 사용자 ID — 소유권 판정 기준. 인가 도입 전 행은 null(슈퍼유저만 수정)",
+    )
     created_at: datetime = Field(..., description="생성 시각(UTC)")
     updated_at: datetime = Field(..., description="마지막 수정 시각(UTC)")
 

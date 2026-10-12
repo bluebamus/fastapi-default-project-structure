@@ -30,12 +30,12 @@ def test_register_rejects_invalid_email(bad_email):
 def test_user_create_rejects_invalid_email(bad_email):
     """사용자 생성도 동일 규칙으로 잘못된 이메일을 거부한다."""
     with pytest.raises(ValidationError):
-        UserCreate(username="alice", email=bad_email)
+        UserCreate(username="alice", email=bad_email, password="password123")
 
 
 def test_valid_email_is_accepted():
     """정상 이메일은 두 스키마 모두 통과한다."""
     reg = RegisterRequest(username="alice", email="alice@example.com", password="password123")
     assert reg.email == "alice@example.com"
-    user = UserCreate(username="bob", email="bob@example.co.kr")
+    user = UserCreate(username="bob", email="bob@example.co.kr", password="password123")
     assert user.email == "bob@example.co.kr"

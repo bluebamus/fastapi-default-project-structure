@@ -2,11 +2,15 @@
 
 View 의 책임은 HTTP 계약, Service 호출, 응답 변환, 쓰기 성공 시 커밋뿐이다.
 SQL 도 도메인 분기도 여기 두지 않는다.
+
+인가(service-hardening ADR-018): 조회는 공개, 생성·수정·삭제는 슈퍼유저 전용 — 라우트 의존성
+``require_superuser`` 로 건다(핸들러 본문은 인증을 모른다).
 """
 
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
+from app.core.security.dependencies import FORBIDDEN_RESPONSES, require_superuser
 from app.features.catalog.dependencies.catalog_dependencies import (
     get_catalog_service,
     get_catalog_service_readonly,
@@ -33,10 +37,11 @@ _CONFLICT: dict = {
     "/products",
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
-    responses=_CONFLICT,
+    responses={**_CONFLICT, **FORBIDDEN_RESPONSES},
     summary="상품 생성",
-    description="판매할 상품을 생성합니다. 생성 직후의 상품 정보를 반환합니다.",
+    description="판매할 상품을 생성합니다(슈퍼유저 전용). 생성 직후의 상품 정보를 반환합니다.",
     operation_id="createProduct",
+    dependencies=[Depends(require_superuser)],
 )
 async def create_product(
     payload: ProductCreate,
@@ -94,10 +99,11 @@ async def get_product(
 @router.patch(
     "/products/{product_id}",
     response_model=ProductResponse,
-    responses={**_NOT_FOUND, **_CONFLICT},
+    responses={**_NOT_FOUND, **_CONFLICT, **FORBIDDEN_RESPONSES},
     summary="상품 수정",
-    description="상품을 부분 수정합니다(전달한 필드만).",
+    description="상품을 부분 수정합니다(전달한 필드만, 슈퍼유저 전용).",
     operation_id="updateProduct",
+    dependencies=[Depends(require_superuser)],
 )
 async def update_product(
     payload: ProductUpdate,
@@ -114,10 +120,11 @@ async def update_product(
 @router.delete(
     "/products/{product_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=_NOT_FOUND,
+    responses={**_NOT_FOUND, **FORBIDDEN_RESPONSES},
     summary="상품 삭제",
-    description="상품을 삭제합니다.",
+    description="상품을 삭제합니다(슈퍼유저 전용).",
     operation_id="deleteProduct",
+    dependencies=[Depends(require_superuser)],
 )
 async def delete_product(
     product_id: str = Path(..., description="상품 ID(UUID)"),
