@@ -25,7 +25,7 @@
 | F-013 | LOW | ADR-008 ④ — 4xx 는 WARNING | Fix | Fixed | 단계 B7 `b5dfade` · `tests/test_exception_logging.py` | 출처: 검수 설계 Low("4xx 를 ERROR 레벨로 로깅") |
 | F-014 | MED | ADR-009 — read-only override 는 read-only 로 표시된다 | Fix | Fixed | 단계 C1 `ba7bc19` · `tests/session_overrides.py` + `test_get_route_writing_through_read_only_override_is_rejected` · `test_tests_do_not_hand_roll_session_overrides` | 출처: R-15. 10개 파일이 두 세션 의존성을 표시 없는 같은 세션으로 바꿔 끼웠다 |
 | F-015 | MED | ADR-009 — ORM 경로도 MySQL 에서 검증한다 | Fix | Fixed | 단계 C2 `ed618df` · `tests/integration/test_mysql_orm_smoke.py`(`mysql` 마커 5건, CI `-m mysql --mysql-required` 가 실행) | 출처: R-16 |
-| F-016 | HIGH | INV-5 — UTC·마이크로초 저장 | Fix | Open | 단계 D | 출처: R-05 |
+| F-016 | HIGH | INV-5 — UTC·마이크로초 저장 | Fix | Fixed | 단계 D `af55c67` · `app/core/models/types.py`(`UTCDateTime`) + `tests/core/test_utc_datetime.py` · `test_timestamp_columns_are_stored_as_utc` · `test_timestamps_are_rendered_with_utc_offset` · `test_order_after_local_midnight_counts_for_the_next_local_day`(SQLite·MySQL) · `test_utc_revision_converts_existing_kst_values`(MySQL) · `test_alembic_check_reports_no_drift_through_env` | 출처: R-05. KST 벽시계가 오프셋 없이 `DATETIME`(fsp 0)에 저장돼 "(UTC)" 설명과 어긋났고, Raw 바인드는 aware 값의 오프셋을 드라이버가 버렸다 |
 | F-017 | MED | ADR-011 — Redis 는 필수이며 `/ready` 가 본다 | Fix | Open | 단계 E1 | 출처: R-13. 사용자 결정 "redis 필수" 로 지적의 전제(API 가 Redis 를 안 씀)를 해소한다 |
 | F-018 | LOW | ADR-012 — 중앙 파일이 기능을 import 하지 않는다 | Fix | Open | 단계 E2 | 출처: 제안 8. `app/celery/tasks.py` 가 기능 태스크를 중앙 집중 |
 | F-019 | MED | INV-6 — refresh 회전·재사용 탐지 | Fix | Open | 단계 F1 | 출처: R-11 |
