@@ -279,8 +279,8 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 
 | job | 내용 |
 |---|---|
-| `gate` | `uv sync --frozen` → ruff(lint·format) → mypy(콜드 캐시) → bandit(MEDIUM 이상, `app`·`main.py`·`config.py`) → `review_gate --fast`(위 표의 구조 검사·의존성 감사) → compose 의 `redis-test` 기동 → `pytest -m "not mysql" -rsxX` → **skipped/xfailed/xpassed 가 있으면 실패** → `alembic heads` 단일 head 확인 |
-| `mysql` | compose 의 `mysql-test` 기동 → `pytest -m mysql --mysql-required` → skip 또는 0건이면 실패 |
+| `gate` | `uv sync --locked`(락이 `pyproject.toml` 과 어긋나면 실패) → ruff(lint·format) → mypy(콜드 캐시) → bandit(MEDIUM 이상, `app`·`main.py`·`config.py`) → `review_gate --fast`(위 표의 구조 검사·의존성 감사) → compose 의 `redis-test` 기동 → `pytest -m "not mysql" -rsxX` → **skipped/xfailed/xpassed 가 있으면 실패** → `alembic heads` 단일 head 확인 |
+| `mysql` | `uv sync --locked` → compose 의 `mysql-test` 기동 → `pytest -m mysql --mysql-required` → skip 또는 0건이면 실패 |
 
 두 job 은 테스트 집합이 정확히 상보입니다. push 외에 매주 월요일 09:00(KST)에도 실행해, 코드 변경이 없는 주에 새로 공개된
 의존성 권고를 잡습니다. 배포·이미지 빌드는 이 저장소 범위 밖입니다.

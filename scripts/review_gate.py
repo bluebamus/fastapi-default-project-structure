@@ -133,15 +133,43 @@ def run_tool(
     report(name, proc.returncode == 0 and not bad, detail)
 
 
+def _tracked_files(root: Path) -> list[Path] | None:
+    """git 이 추적하는 파일 목록. git 을 쓸 수 없으면(저장소 아님·git 없음) ``None``.
+
+    ``-z`` 는 경로를 NUL 로 끊고 따옴표·이스케이프를 하지 않는다 — 한글 경로가 그대로 온다.
+    """
+    try:
+        completed = subprocess.run(  # noqa: S603
+            ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [root / name for name in completed.stdout.decode("utf-8").split("\0") if name]
+
+
+def repo_files(rel: str, suffix: str, *, root: Path = REPO_ROOT) -> list[Path]:
+    """``root/rel`` 아래에서 ``suffix`` 로 끝나는 파일 — **git 이 추적하는 것만** 본다.
+
+    작업 트리를 rglob 으로 훑으면 추적되지 않는 로컬 파일(다른 도구의 보고서·임시 스크립트)이
+    판정에 섞여 로컬과 CI 의 결과가 달라진다(service-hardening ADR-003). git 을 쓸 수 없을 때만
+    rglob 으로 대신한다. 인덱스에는 있지만 지운 파일은 뺀다.
+    """
+    base = root / rel
+    tracked = _tracked_files(root)
+    if tracked is None:
+        candidates = list(base.rglob(f"*{suffix}")) if base.exists() else []
+    else:
+        candidates = [path for path in tracked if path.is_relative_to(base)]
+    return sorted(
+        path
+        for path in candidates
+        if path.suffix == suffix and path.is_file() and not SKIP_PARTS & set(path.parts)
+    )
+
+
 def iter_source_files(*relative: str):
     for rel in relative:
-        base = REPO_ROOT / rel
-        if not base.exists():
-            continue
-        for path in base.rglob("*.py"):
-            if SKIP_PARTS & set(path.parts):
-                continue
-            yield path
+        yield from repo_files(rel, ".py")
 
 
 # =============================================================================
@@ -397,7 +425,7 @@ def check_cited_commits_reachable() -> None:
         return
 
     cited: set[str] = set()
-    for doc in sorted((REPO_ROOT / "docs/crp/groups").rglob("*.md")):
+    for doc in repo_files("docs/crp/groups", ".md"):
         cited.update(re.findall(r"`([0-9a-f]{7,40})`", doc.read_text(encoding="utf-8")))
 
     # 커밋이 아닌 토큰(Alembic revision id 등)은 대상이 아니다.
@@ -490,7 +518,7 @@ def check_cited_requirement_ids_exist() -> None:
 
     sites = list(iter_source_files("app", "tests", "migrations", "scripts"))
     sites += [REPO_ROOT / "README.md"]
-    sites += sorted((REPO_ROOT / "docs").rglob("*.md"))
+    sites += repo_files("docs", ".md")
 
     source_names = {Path(rel).name for rel in REQUIREMENT_SOURCES}
     dangling: dict[str, str] = {}
