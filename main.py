@@ -25,7 +25,7 @@ from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, catalog, home, reply, reports, sns, user
 from app.utils.logs import get_logger
-from config import DEPLOYED_ENVS, app_settings
+from config import app_settings
 
 logger = get_logger("main")
 
@@ -320,22 +320,16 @@ logger.info("라우터 include 완료")
 # 헬스체크 + Scalar 문서
 _add_health_and_docs(app)
 
-# SQLAdmin 관리자 페이지 (ADMIN 설정에 따라 활성화)
-if app_settings.ADMIN:
+# SQLAdmin 관리 화면 (ADMIN_DISABLED=true 면 끈다 — admin-login ADR-005).
+# 끈 경우 sqladmin·인증 백엔드·세션 미들웨어를 import 하지도 만들지도 않고, 로그에도 경로를 싣지 않는다.
+if not app_settings.ADMIN_DISABLED:
     from app.features.admin import register_admin
 
+    # 슈퍼유저 로그인이 필요하다(admin-login ADR-001) — 계정은 scripts/create_superuser.py.
     admin = register_admin(app, engine)
-    if app_settings.ENV in DEPLOYED_ENVS:
-        # 여기 왔다면 ADMIN_ALLOW_UNAUTHENTICATED=true 다(없으면 config 가 기동을 멈춘다).
-        # 운영 로그를 보는 사람이 이 상태를 놓치지 않도록 매 기동 경고한다(ADR-045 ③).
-        logger.warning(
-            "SQLAdmin 이 인증 없이 열려 있습니다 (ENV=%s, ADMIN_ALLOW_UNAUTHENTICATED=true): /admin",
-            app_settings.ENV,
-        )
-    else:
-        logger.info("SQLAdmin 관리자 페이지 활성화 (ADMIN=True): /admin")
+    logger.info("SQLAdmin 관리 화면 활성화 (슈퍼유저 로그인 필요): /admin")
 else:
-    logger.info("SQLAdmin 관리자 페이지 비활성화 (ADMIN=False): /admin 접근 차단")
+    logger.info("관리 화면 비활성화 (ADMIN_DISABLED=true)")
 
 
 def run_server(target: str = "main:app") -> None:

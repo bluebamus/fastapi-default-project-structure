@@ -109,6 +109,26 @@ def test_removing_a_feature_removes_its_tasks_from_include(fake_features):
     assert models_registry.iter_task_modules() == ["app.features.zz_fake_b.tasks"]
 
 
+def test_every_include_module_imports_and_registers_its_tasks():
+    """include 의 모든 ``tasks.py`` 를 워커처럼 실제로 import 하고, 각 모듈이 태스크를 등록하는지 본다.
+
+    탐색(``find_spec``)은 존재만 확인하고 import 하지 않는다(ADR-024 ③). 그래서 ``tasks.py`` 의 import
+    오류·오타는 워커 기동 때에야 드러난다 — 여기서 같은 import 를 해 CI 에서 먼저 터지게 한다(admin-login).
+    """
+    from app.celery.app import celery_app
+
+    include = list(celery_app.conf.include)
+    assert include, "include 가 비면 이 검사가 헛통과한다"
+    for module in include:
+        importlib.import_module(module)
+    registered = {
+        task.__module__ for name, task in celery_app.tasks.items() if not name.startswith("celery.")
+    }
+    assert (
+        set(include) <= registered
+    ), f"태스크를 등록하지 않은 include 모듈: {set(include) - registered}"
+
+
 def test_celery_uses_utc_internally():
     """Celery 내부 시각은 UTC 다 — DB 저장 시각과 같은 기준(service-hardening ADR-010)."""
     from app.celery.app import celery_app

@@ -1,5 +1,10 @@
 """store datetimes as UTC DATETIME(6)
 
+⚠️ 배포 전 확인 — 이 리비전은 기존 MySQL 시각 값이 모두 **+09:00(Asia/Seoul)** 으로 저장됐다고
+가정하고 UTC 로 옮긴다. 다른 시간대로 운영하던 DB 라면 **적용 전에** 아래 ``_LEGACY_OFFSET`` 을 그
+지역의 오프셋으로 바꾼다. 값을 고쳐 쓰는 리비전이므로 적용 전에 반드시 백업한다
+(README 「운영 배포 체크리스트」, service-hardening residual-risk R-011).
+
 시각 정책 변경(service-hardening ADR-010): DB 의 모든 시각 컬럼은 **UTC 벽시계**를
 **마이크로초**까지 담는다. 이전에는 Asia/Seoul 벽시계가 오프셋 없이 ``DATETIME``(fsp 0)에
 들어가 소수 초가 반올림됐다(자정 직전 값이 다음 날로 넘어간다).

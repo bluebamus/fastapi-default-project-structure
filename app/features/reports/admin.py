@@ -29,7 +29,8 @@ class SalesOrderAdmin(ModelView, model=SalesOrder):
     page_size_options = [25, 50, 100, 200]
 
     column_searchable_list = [SalesOrder.customer]
-    column_filters = [SalesOrder.created_at]
+    # 필터 없음 — 유일한 후보였던 생성 시각은 sqladmin 연산 필터가 UTCDateTime 을 날짜 형으로 보지 못해
+    # 500 이 된다(admin-login F-005). 시각은 목록 정렬로 본다.
 
     column_details_list = [
         SalesOrder.id,

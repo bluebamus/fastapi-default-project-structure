@@ -24,6 +24,7 @@ from typing import Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from dotenv import dotenv_values
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
@@ -114,8 +115,9 @@ View(Router) → Dependency → Service → Repository → AsyncSession
 |------|------|
 | `DEBUG=true` | 개발 모드 (DEBUG 로그, 없는 테이블 생성, `/docs` 공개) |
 | `DEBUG=false` | 운영 모드 (INFO 로그, 스키마는 Alembic, `/docs` 비공개) |
-| `ADMIN=true` | `/admin`(SQLAdmin) 마운트 — **인증 없음** |
 """
+# 관리 화면 설정은 여기(Scalar·/openapi.json 에 실리는 설명)에 적지 않는다 — ADMIN_DISABLED=true 일 때
+# 앱이 내보내는 어떤 응답에도 관리 화면 경로가 나오지 않아야 한다(admin-login ADR-005).
 
 
 # =============================================================================
@@ -161,32 +163,23 @@ class AppSettings(BaseSettings):
         description="디버그 모드 활성화",
     )
 
-    # 관리자 페이지 활성화 (DEBUG와 독립적으로 동작)
-    # True: /admin 마운트  /  False: /admin 자체가 없음(404)
+    # 관리 화면(SQLAdmin) 끄기 (DEBUG 와 독립적으로 동작) — admin-login ADR-005.
+    # False(기본): /admin 마운트, **활성 슈퍼유저 로그인 필요**
+    # True: 관리 화면을 완전히 끈다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두
+    #       없고(/admin 이하 404), 앱의 어떤 응답·기동 로그에도 관리 화면 경로가 나오지 않는다.
+    #       쓰지 않는 배포는 true 로 둔다(공격 표면 자체를 없앤다).
     #
-    # 기본값이 True 인 것은 의도다 — 이 저장소는 개발을 우선 고려한 레퍼런스 구조라,
-    # 받자마자 /admin 으로 DB 를 들여다볼 수 있어야 한다. "보안 기본값"으로 보고
-    # False 로 되돌리지 말 것(결정: 2026-08-12).
+    # 기본값이 "켜짐" 인 것은 의도다 — 개발을 우선 고려한 레퍼런스 구조라 받자마자 관리 화면으로
+    # DB 를 들여다볼 수 있어야 한다(결정: 2026-08-12). 로그인 계정은 `scripts/create_superuser.py`
+    # 로 만들고, 세션 쿠키(`admin_session`)는 아래 SESSION_SECRET_KEY 로 서명한다. 로그인하면
+    # 게시글·댓글·사용자·접속로그의 조회·수정·삭제와 CSV 내보내기가 가능하다(비밀번호 해시만
+    # SQLAdmin 설정으로 제외된다).
     #
-    # 다만 대가를 알고 켜야 한다: 이 프로젝트는 SQLAdmin 에 인증 백엔드를 붙이지
-    # 않기로 확정했다(영구 비목표). 즉 ADMIN=True 이면 /admin 이 **자격증명 없이**
-    # 열리고, 게시글·댓글·사용자·접속로그의 조회·수정·삭제와 CSV 내보내기가 가능하다
-    # (비밀번호 해시만 SQLAdmin 설정으로 제외된다).
-    # → 운영·스테이징(ENV=staging/production)에서 ADMIN=true 로 기동하려면 아래
-    #   ADMIN_ALLOW_UNAUTHENTICATED=true 를 **함께** 줘야 한다. 없으면 배포 안전 검사가
-    #   기동을 멈춘다(ADR-045). 기본값 true 를 그대로 들고 배포한 실수와, 인증 없는
-    #   /admin 을 알고 켠 경우를 구분하기 위해서다.
-    ADMIN: bool = Field(
-        default=True,
-        description="관리자 페이지 활성화 (인증 없음 — 배포 환경은 ADMIN_ALLOW_UNAUTHENTICATED 필요)",
-    )
-
-    # 배포 환경에서 인증 없는 /admin 을 **의도적으로** 연다는 확인. ADMIN=true 일 때만 의미가
-    # 있고 development/test 에서는 보지 않는다. 켜고 기동하면 main.py 가 매 기동 WARNING 을
-    # 남긴다. 로그인 고도화로 SQLAdmin 에 인증이 붙으면 이 플래그는 필요 없어진다.
-    ADMIN_ALLOW_UNAUTHENTICATED: bool = Field(
+    # 예전 이름 `ADMIN`(true=켬)은 없앴다. 환경 변수·`.env` 에 남아 있으면 조용히 무시하지 않고
+    # 기동을 멈춘다(아래 `validate_no_legacy_admin`) — ADMIN=false 였다면 ADMIN_DISABLED=true.
+    ADMIN_DISABLED: bool = Field(
         default=False,
-        description="staging/production 에서 인증 없는 /admin 허용 확인 (ADMIN=true 와 함께)",
+        description="관리 화면 끄기 (true=마운트 없음·404). 기본 false=켬, 슈퍼유저 로그인 필요",
     )
 
     # 실행 환경 — 로그 출력 구성(시각 표기, staging/production 의 stderr 추가)에 쓴다.
@@ -704,13 +697,19 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
-    # 앞단 신뢰 프록시 홉 수 (service-hardening ADR-006·ADR-021).
+    # 앞단 신뢰 프록시 홉 수 (service-hardening ADR-006·ADR-021). **배포 전에 정한다.**
     # 0 이면 X-Forwarded-For·X-Real-IP 를 보지 않고 직접 피어 주소만 쓴다 — 헤더는
-    # 클라이언트가 위조할 수 있다. 리버스 프록시 1단 뒤에서 돌리면 1 로 둔다.
+    # 클라이언트가 위조할 수 있다. 프록시 뒤 배포면 앞단 프록시 단 수로 설정한다:
+    # 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋
+    # (API·/admin)이 전체 사용자를 한 사람으로 취급하고, 실제보다 크게 잡으면 클라이언트가
+    # 적은 헤더 값을 믿게 돼 IP 위조가 가능하다.
     TRUSTED_PROXY_HOPS: int = Field(
         default=0,
         ge=0,
-        description="X-Forwarded-For 를 덧붙이는 신뢰 프록시 수(0=헤더 무시)",
+        description=(
+            "X-Forwarded-For 를 덧붙이는 신뢰 프록시 수(0=헤더 무시). 프록시 뒤 배포는 "
+            "앞단 프록시 단 수로 — 0 이면 전원이 프록시 IP 하나, 크면 IP 위조"
+        ),
     )
 
     # 접속 로그에 값을 남기지 않을 쿼리스트링 키(대소문자 무시) — 값은 `***` 로 저장한다.
@@ -915,9 +914,10 @@ class SessionSettings(BaseSettings):
     """세션 쿠키 설정.
 
     Note:
-        현재 인증은 JWT(Bearer) 기반이라 세션 쿠키를 사용하는 코드는 없다.
-        쿠키 세션을 도입할 때 이 설정을 주입하면 된다. 설정 자체는 `.env` 에
-        있으므로 config 가 로드해 둔다(설정의 단일 출처 유지).
+        API 인증은 JWT(Bearer) 기반이다. 쿠키 세션은 ``/admin`` 로그인만 쓴다 —
+        ``SESSION_SECRET_KEY`` 가 그 쿠키(``admin_session``, 이름·수명은
+        ``app/features/auth/admin_backend.py`` 고정)를 서명한다(admin-login ADR-002).
+        ``SESSION_COOKIE_NAME``·``SESSION_EXPIRE_SECONDS`` 는 관리 화면 쿠키에 쓰지 않는다.
         ``SESSION_COOKIE_NAME`` 은 접속 로그 미들웨어가 ``session_id`` 로 기록할
         쿠키 이름으로 읽는다.
     """
@@ -934,10 +934,11 @@ class SessionSettings(BaseSettings):
         description="세션 쿠키 이름",
     )
 
-    # 세션 암호화 키 (운영 환경에서 반드시 교체)
+    # 세션 서명 키 (운영 환경에서 반드시 교체) — /admin 로그인 쿠키(admin_session)를 서명한다.
+    # 바꾸면 기존 관리자 세션이 모두 무효가 된다(다시 로그인).
     SESSION_SECRET_KEY: str = Field(
         default="change-this-session-secret-key",
-        description="세션 암호화 키",
+        description="세션 서명 키 (/admin 로그인 쿠키)",
     )
 
     # 세션 만료 시간 (초, 기본값 24시간)
@@ -1227,6 +1228,37 @@ def validate_env_source(
         )
 
 
+LEGACY_ADMIN_SETTING = "ADMIN"
+
+
+def validate_no_legacy_admin(
+    env: str,
+    env_file: Path = Path(".env"),
+    environ: Mapping[str, str] = os.environ,
+) -> None:
+    """예전 설정 `ADMIN` 이 환경 변수나 `.env` 에 남아 있으면 기동을 멈춘다 (admin-login ADR-005).
+
+    `ADMIN`(true=켬)은 `ADMIN_DISABLED`(true=끔)로 바뀌었다. 뜻이 뒤집힌 이름이라 조용히 무시하면
+    `ADMIN=false` 로 꺼 두었던 배포가 관리 화면이 **켜진 채** 뜬다. Settings 처럼 대소문자를 가리지
+    않는다. test 는 검사하지 않는다(`validate_env_source` 와 같은 기준).
+    """
+    if env == "test":
+        return
+    sources = [name for name in environ if name.upper() == LEGACY_ADMIN_SETTING]
+    if env_file.is_file():
+        sources += [
+            name
+            for name in dotenv_values(env_file, encoding="utf-8")
+            if name.upper() == LEGACY_ADMIN_SETTING
+        ]
+    if sources:
+        raise RuntimeError(
+            "설정 ADMIN 은 ADMIN_DISABLED 로 바뀌었습니다(뜻이 반대 — true 면 관리 화면을 끈다). "
+            "환경 변수와 `.env` 에서 ADMIN 을 지우고, ADMIN=false 였다면 ADMIN_DISABLED=true 를, "
+            "ADMIN=true 였다면 아무것도 넣지 않습니다(기본값이 켜짐)."
+        )
+
+
 def is_placeholder_secret(value: str) -> bool:
     """`.env.example` 류의 예시 값(교체하지 않은 비밀 키)인가."""
     v = value.strip().lower()
@@ -1246,7 +1278,8 @@ def validate_deployment_safety(
 
     - test 를 뺀 **모든 ENV**: 예시 비밀 키·비밀번호, 짧은 키, access==refresh (ADR-045 ②).
       기본값·예시 값 그대로는 개발 환경에서도 오류다 — `.env` 를 채우라는 신호다.
-    - staging/production 만: DEBUG, LOG_LEVEL=DEBUG(ADR-028), 확인 없는 ADMIN=true(ADR-045 ③).
+    - staging/production 만: DEBUG, LOG_LEVEL=DEBUG(ADR-028). 켜진 관리 화면은 더 이상 막지 않는다 —
+      ADR-045 ③ 의 확인 플래그는 관리 화면 로그인이 붙어 없앴다(admin-login ADR-004).
 
     메시지에는 설정 **이름**만 담는다(값 금지).
     """
@@ -1293,14 +1326,7 @@ def validate_deployment_safety(
             violations.append("DEBUG 가 켜져 있습니다")
         if (log.LOG_LEVEL or "").strip().upper() == "DEBUG":
             violations.append("LOG_LEVEL 이 디버그 레벨입니다")
-        # 인증 없는 /admin 은 배포 환경에서도 쓸 수 있다 — 단, 알고 켰다는 확인이 있어야
-        # 한다. 기본값 ADMIN=true 를 그대로 들고 온 배포가 여기서 걸린다(ADR-045 ③).
-        if app.ADMIN and not app.ADMIN_ALLOW_UNAUTHENTICATED:
-            violations.append(
-                "ADMIN 이 켜져 있습니다 — /admin 은 인증 없이 열립니다. 쓰지 않으면 "
-                "ADMIN=false 로, 인증 없이 쓰는 것이 의도라면 "
-                "ADMIN_ALLOW_UNAUTHENTICATED=true 를 함께 설정하세요"
-            )
+        # 관리 화면을 켜 둔 배포는 막지 않는다 — 슈퍼유저 로그인이 필요하다(admin-login ADR-004).
     if violations:
         raise RuntimeError(
             f"ENV={app.ENV} 설정 검사 실패 — " + "; ".join(violations) + ". "
@@ -1311,4 +1337,5 @@ def validate_deployment_safety(
 
 
 validate_env_source(app_settings.ENV)
+validate_no_legacy_admin(app_settings.ENV)
 validate_deployment_safety()
