@@ -23,7 +23,7 @@ from app.core.db.router import (
     create_routing_sessionmaker,
     mark_read_only,
 )
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
+from app.core.db.session import Base
 from app.features.reports.models.models import (  # noqa: F401  (테이블 등록)
     SalesDailySnapshot,
     SalesOrder,
@@ -32,6 +32,7 @@ from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
 )
 from main import app
+from tests.session_overrides import override_db_sessions
 
 BASE = "/api/v1/reports/sales/daily"
 
@@ -76,19 +77,16 @@ async def client(sales_engine):
     _, maker = sales_engine
     counter = {"commits": 0}
 
-    async def _override_session():
-        async with maker() as db_session:
-            original_commit = db_session.commit
+    def _wrap_session(db_session):
+        original_commit = db_session.commit
 
-            async def _counting_commit(*args, **kwargs):
-                counter["commits"] += 1
-                return await original_commit(*args, **kwargs)
+        async def _counting_commit(*args, **kwargs):
+            counter["commits"] += 1
+            return await original_commit(*args, **kwargs)
 
-            db_session.commit = _counting_commit  # type: ignore[method-assign]
-            yield db_session
+        db_session.commit = _counting_commit  # type: ignore[method-assign]
 
-    app.dependency_overrides[get_read_only_db_session] = _override_session
-    app.dependency_overrides[get_writer_db_session] = _override_session
+    override_db_sessions(app, maker, _wrap_session)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client, counter

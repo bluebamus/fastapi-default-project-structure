@@ -5,9 +5,10 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.db.session import Base, get_read_only_db_session, get_writer_db_session
+from app.core.db.session import Base
 from app.features.user.models.models import User  # noqa: F401  (register table)
 from main import app
+from tests.session_overrides import override_db_sessions
 
 
 @pytest_asyncio.fixture
@@ -21,14 +22,7 @@ async def client():
         await conn.run_sync(Base.metadata.create_all)
     maker = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def _override_get_session():
-        async with maker() as session:
-            yield session
-
-    # get_current_user 는 get_read_only_db_session 을 쓴다 — 함께 오버라이드하지 않으면
-    # 인증 경로가 실제 MySQL 로 새어나간다.
-    app.dependency_overrides[get_writer_db_session] = _override_get_session
-    app.dependency_overrides[get_read_only_db_session] = _override_get_session
+    override_db_sessions(app, maker)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
