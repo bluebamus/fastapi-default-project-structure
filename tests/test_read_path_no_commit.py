@@ -55,8 +55,9 @@ _WRITER_SESSION_BY_DESIGN: dict[str, str] = {}
 
 # 쓰기 메서드지만 실제로 DB에 쓰지 않는 라우트. 커밋할 것이 없다.
 _WRITE_METHOD_BUT_READ_ONLY: dict[str, str] = {
-    "login": "자격 검증 후 토큰만 발급한다 — DB 변경 없음",
-    "refresh": "refresh 토큰 검증 후 재발급만 한다 — DB 변경 없음",
+    # login 은 여기 없다 — 레거시 해시 재해시를 저장할 때 커밋한다(service-hardening ADR-013).
+    "refresh": "refresh 회전 기록은 Redis 에만 남는다 — DB 변경 없음",
+    "logout": "refresh family 폐기는 Redis 에만 남는다 — DB 변경 없음",
 }
 
 

@@ -57,6 +57,7 @@ class AppException(Exception):
         error_code: 애플리케이션 에러 코드
         message: 사용자에게 표시할 에러 메시지
         detail: 추가 에러 상세 정보
+        headers: 응답에 함께 실을 HTTP 헤더(예: 429 의 ``Retry-After``) — 전역 핸들러가 내보낸다
     """
 
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -69,9 +70,11 @@ class AppException(Exception):
         detail: Any | None = None,
         status_code: int | None = None,
         error_code: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.__class__.message
         self.detail = detail
+        self.headers = headers
         if status_code is not None:
             self.status_code = status_code
         if error_code is not None:
@@ -173,6 +176,22 @@ class DuplicateException(ConflictException):
 
     error_code = "DUPLICATE"
     message = "이미 존재하는 데이터입니다."
+
+
+class TooManyRequestsException(AppException):
+    """
+    요청 횟수 초과 예외 (429)
+
+    레이트 리밋 창 안의 허용 횟수를 넘긴 경우 발생합니다. ``Retry-After`` 헤더(초)로
+    다음 시도 가능 시점을 알린다(RFC 9110 §10.2.3).
+    """
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    error_code = "TOO_MANY_REQUESTS"
+    message = "요청이 너무 많습니다. 잠시 후 다시 시도하세요."
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(headers={"Retry-After": str(retry_after)})
 
 
 # =============================================================================
@@ -280,6 +299,7 @@ __all__ = [
     "NotFoundException",
     "ConflictException",
     "DuplicateException",
+    "TooManyRequestsException",
     # 서버 에러 (5xx)
     "InternalServerException",
     "DatabaseException",

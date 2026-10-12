@@ -66,6 +66,7 @@
 │   ├── core/                        # 프레임워크 인프라
 │   │   ├── resources.py             # 프로세스 수명 자원의 생성·해제 단일 지점
 │   │   ├── redis.py                 # get_redis — lifespan Redis client 주입 provider
+│   │   ├── security/                # TokenService(JWT)·RefreshTokenStore(회전)·RateLimiter(고정 창) — §11
 │   │   ├── exception.py             # AppException 계층 + ErrorResponse
 │   │   ├── schemas.py               # PatchSchema(모든 Update 스키마의 기반 — null PATCH 거부)
 │   │   ├── tags_metadata.py         # OpenAPI 태그 설명
@@ -77,7 +78,7 @@
 │   │   ├── services/services_base.py
 │   │   └── middlewares/             # cors_middleware·user_info_middleware·client_ip·background_tasks·access_log_sink
 │   ├── celery/                      # app.py(중앙 앱, include 는 기능 tasks.py 자동 발견)·task.py(run_async)·lifecycle.py
-│   └── utils/                       # logs/ · authenticator/ · pagination/ · validators.py
+│   └── utils/                       # logs/ · pagination/ · validators.py
 ├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
 ├── docs/                   # guides/ · specs/ · crp/  (색인은 README)
 └── media/ static/ poc/ logs/   # 예약 디렉터리 (추적하지 않음, 파일 로그는 쓰지 않는다)
@@ -441,7 +442,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED` |
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
-| `jwt_settings` | `app/utils/authenticator/auth.py` |
+| `jwt_settings` | `app/features/auth/dependencies/auth_dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성, 레이트 리밋 한도) |
 | `api_settings`·`session_settings`·`smtp_settings`·`upload_settings` | **소비 코드 없음** — 설정만 준비돼 있다(쿠키 세션·메일 발송·업로드 구현 없음) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 도 필드만 있고 코드가
@@ -762,40 +763,86 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
 
 ## 11. 인증 (JWT)
 
-OAuth2 password flow + JWT access/refresh 토큰. 자격증명은 `user` 기능의 `User.hashed_password`(bcrypt)에
-두고, `auth` 기능(`app/features/auth/`)은 인증 로직만, `app/utils/authenticator/auth.py` 는 해시·토큰
-유틸을 맡습니다.
+OAuth2 password flow + JWT access/refresh 토큰(service-hardening ADR-013~016·ADR-025). 자격증명은 `user` 기능의
+`User.hashed_password` 에 두고, `auth` 기능(`app/features/auth/`)이 해시(`PasswordHasher`)와 흐름(`AuthService`)을,
+`app/core/security/` 가 다른 기능도 쓰는 부품(토큰·회전 저장소·레이트 리밋)을 맡습니다.
 
 | 메서드·경로 | 인증 | 요청 | 성공 | 실패 |
 |---|---|---|---|---|
-| `POST /api/v1/auth/register` | — | JSON (`username`·`email`·`password` 8~128자) | 201 | 409 중복 · 422 |
-| `POST /api/v1/auth/login` | — | **form** (`username`·`password`) | 200 | 401 · 422 |
+| `POST /api/v1/auth/register` | — | JSON (`username`·`email`·`password` 8~128자) | 201 | 409 중복 · 422 · 429 |
+| `POST /api/v1/auth/login` | — | **form** (`username`·`password`) | 200 | 401 · 422 · 429 |
 | `POST /api/v1/auth/refresh` | — | JSON (`refresh_token`) | 200 | 401 · 422 |
+| `POST /api/v1/auth/logout` | — | JSON (`refresh_token`) | 204 | 401 · 422 |
 | `GET /api/v1/auth/me` | Bearer | — | 200 | 401 |
 
 ```bash
 curl -X POST localhost:8000/api/v1/auth/register -H 'Content-Type: application/json' \
   -d '{"username":"alice","email":"alice@example.com","password":"secret-pw-1234"}'
 curl -X POST localhost:8000/api/v1/auth/login -d 'username=alice&password=secret-pw-1234'
-# → {"access_token":"eyJ...","refresh_token":"eyJ...","token_type":"bearer"}
+# → {"access_token":"eyJ...","refresh_token":"eyJ...","token_type":"bearer","expires_in":900}
 curl localhost:8000/api/v1/auth/me -H 'Authorization: Bearer <access_token>'
 curl -X POST localhost:8000/api/v1/auth/refresh -H 'Content-Type: application/json' \
-  -d '{"refresh_token":"<refresh_token>"}'
+  -d '{"refresh_token":"<refresh_token>"}'          # 새 쌍. 보낸 refresh 는 이제 못 쓴다
+curl -X POST localhost:8000/api/v1/auth/logout -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"<refresh_token>"}'          # 204
 ```
+
+**조립(주입)** — 협력 객체는 모두 생성자로 받고 `auth_dependencies.py` 의 provider 가 만듭니다(service-hardening C-1).
+
+```text
+get_auth_service(session=get_writer_db_session,
+                 hasher=get_password_hasher,          # 프로세스 단일(lru_cache)
+                 tokens=get_token_service,            # TokenService(jwt_settings)
+                 store=get_refresh_token_store)       # RefreshTokenStore(get_redis, refresh TTL)
+login_rate_limit / register_rate_limit               # RateLimiter(get_redis) + ClientIPResolver
+get_current_user(token=oauth2_scheme, tokens=get_token_service, session=get_read_only_db_session)
+```
+
+테스트는 `dependency_overrides[get_redis]` 에 fakeredis 를 넣으면 회전 저장소·레이트 리밋이 함께 바뀝니다.
+
+**비밀번호 — `PasswordHasher`** (`app/features/auth/services/password_hasher.py`)
+- 새 해시는 Argon2id(`pwdlib`). 이전 버전의 bcrypt 해시(`$2` 접두사)는 그때 규칙(UTF-8 72바이트 절단)으로 검증하고,
+  맞으면 Argon2 로 다시 해시해 **로그인 핸들러가 커밋**합니다(점진 이전 — 그 밖의 로그인은 커밋하지 않습니다).
+- **상수 시간 인증**: 사용자가 없거나 비밀번호가 없어도 더미 Argon2 해시로 같은 비용을 치릅니다.
+  **논블로킹 해싱**: 해시·검증은 `asyncio.to_thread` 에서 돕니다.
+
+**토큰 — `TokenService`** (`app/core/security/tokens.py`)
+- claims `sub, type, iat, nbf, exp, jti(uuid4 hex), iss, aud` + access 는 `username`, refresh 는 `fam`(회전 family).
+- 검증: 알고리즘은 설정 하나(`algorithms=[JWT_ALGORITHM]`), `iss`·`aud` 일치, 위 claim 전부 필수, `leeway`, `type` 일치.
+  access·refresh 는 서명 키도 다릅니다. 실패는 사유와 관계없이 `InvalidTokenException`(401, `AUTH_INVALID_TOKEN`).
+
+**회전·폐기 — `RefreshTokenStore`** (`app/core/security/refresh_store.py`, Redis)
+
+| 키 | 값 · TTL | 쓰임 |
+|---|---|---|
+| `auth:rt:{jti}` | `{"sub","fam"}` · refresh 만료 | 아직 안 쓴 refresh. 회전 시 `GETDEL` 로 소비 |
+| `auth:user:{sub}:fams` | family 집합 · refresh 만료 | 사용자 단위 폐기(`revoke_user`) |
+| `auth:fam:{fam}:revoked` | `1` · refresh 만료 | 폐기된 family |
+
+- `refresh`: 서명 검증 → family 폐기 여부 → `GETDEL` 로 jti 소비. 값이 없으면 **재사용**(이미 쓴 토큰)이라 family 를
+  폐기하고 401 — 그 사이 발급된 새 refresh 도 함께 막힙니다. 사용자가 없거나 비활성이어도 family 폐기 후 401.
+  `GETDEL` 하나가 원자적이라 같은 토큰으로 동시에 회전해도 한쪽만 성공합니다.
+- `logout`: family 폐기, 204. 이미 폐기됐어도 204(멱등). access 토큰은 폐기하지 않습니다 — 만료(기본 15분)까지 유효합니다.
+
+**레이트 리밋 — `RateLimiter`** (`app/core/security/rate_limit.py`, Redis 고정 창)
+- `MULTI` 안에서 `SET key 0 EX window NX` → `INCR` → `TTL`. 창은 첫 hit 에 시작하고 이후 hit 이 늘리지 않습니다.
+- 로그인: `auth:rl:login:{ip}:{username 소문자}`(기본 5회/60초)와 `auth:rl:login:{ip}`(20회/60초). 성공하면 앞의 키만 지웁니다.
+  회원가입: `auth:rl:register:{ip}`(5회/3600초). IP 는 접속 로그와 같은 `ClientIPResolver`(`TRUSTED_PROXY_HOPS`, §10).
+- 초과는 `TooManyRequestsException` — 429 + `Retry-After`(창이 끝날 때까지 초). `AppException.headers` 를 전역 핸들러가 싣습니다.
 
 | 설정 | 기본값 |
 |---|---|
-| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | 30 / 7 |
-| `JWT_ALGORITHM` | `HS256` |
-| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` — 교체 필수, 서로 달라야 함(staging/production 은 어기면 기동 거부, §6.1) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | 15 / 7 |
+| `JWT_ALGORITHM` | `HS256` (`HS256`·`HS384`·`HS512` 만 허용) |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | `fastapi-default-project-structure` / `fastapi-default-project-structure-api` |
+| `JWT_LEEWAY_SECONDS` | `10` |
+| `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` | `change-this-...` — 교체 필수, 서로 달라야 함(test 외 기동 거부, §6.1) |
+| `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` |
+| `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` |
 
-- `refresh` 는 access·refresh 를 **둘 다** 새로 발급합니다(회전). 토큰에 종류가 들어 있어 access 를 refresh
-  자리에 쓰면 거부됩니다. 비활성 사용자(`is_active=false`)는 로그인·재발급·`me` 에서 막힙니다.
-- 서버 측 폐기 목록(logout·revoke)은 없습니다 — 유출된 refresh 토큰은 만료까지 유효합니다.
-- **상수 시간 인증**: 사용자가 없어도 더미 해시로 bcrypt 검증을 수행해 응답 시간으로 사용자명 존재를
-  알아낼 수 없게 합니다. **논블로킹 해싱**: bcrypt 는 `asyncio.to_thread` 로 돌립니다.
-- `get_current_user` 는 읽기 세션을 씁니다. 다른 기능의 엔드포인트에는 인증이 자동으로 붙지 않으므로
-  필요하면 `Depends(get_current_user)` 와 소유권·역할 검사를 직접 둡니다.
+- 비활성 사용자(`is_active=false`)는 로그인·회전·`me` 에서 막힙니다.
+- `get_current_user` 는 `TokenService` 로 검증하고 읽기 세션의 `UserRepository` 로 조회합니다 — Redis 를 쓰지 않습니다.
+  다른 기능의 엔드포인트에는 인증이 자동으로 붙지 않으므로 필요하면 `Depends(get_current_user)` 와 소유권·역할 검사를 직접 둡니다.
 
 ## 12. SQLAdmin
 
@@ -893,6 +940,9 @@ config.set_main_option(
 | 응답 직렬화는 FastAPI 기본(Pydantic) | `ORJSONResponse` 는 이득이 없고 0.141 에서 deprecated. 제거 전후 응답 바이트 동일 확인 |
 | 템플릿 프로필 분리(minimal/api-db/production) 보류 | 세 벌을 유지하는 비용이 크다. "무겁다" 는 피드백이 반복되면 선택 기능을 걷어내는 스크립트 쪽으로 재검토 |
 | 라우트 검사는 `app.openapi()` 기준 | FastAPI 0.141 부터 `app.routes` 가 하위 라우터를 평탄화하지 않는다(`_IncludedRouter`) |
+| 비밀번호는 Argon2id(pwdlib), 기존 bcrypt 는 로그인 시 재해시 | FastAPI 공식 문서의 현행 권장. 평문이 없어 일괄 이전은 불가능하다(service-hardening ADR-013) |
+| refresh 는 회전 + 재사용 탐지(Redis `GETDEL`), access 는 짧은 만료 | 탈취된 refresh 로 만료까지 재발급되던 구멍을 닫는다. access 즉시 폐기는 비목표 — 15분 만료로 대신한다(service-hardening ADR-014·015) |
+| 로그인·가입 레이트 리밋은 Redis 고정 창 + 라우트 의존성 | 명령 세 개로 끝나는 가장 단순한 방식. 창 경계 버스트는 수용(service-hardening ADR-016) |
 
 ## 16. 변경 이력
 
@@ -911,6 +961,7 @@ config.set_main_option(
 | 2026-09-17 | Redis startup 검증과 종료 순서 확장(`_redis`), 가이드를 `docs/guides/` 로 이동, 착수 명세를 `docs/specs/` 로 추적, CI 에 Redis·MySQL job(ADR-024) |
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
+| 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
 | 2026-10-07 | 설정 검사 확장(ADR-045): `.env` 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 `ADMIN=true` 는 `ADMIN_ALLOW_UNAUTHENTICATED` 확인 필요. CI 가 `review_gate --fast` 실행(ADR-044) |
 | 2026-09-17 | 배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 `config` import 실패. `.env.example` 비밀 키 예시를 서로 다른 `change-this-...` 로 |
 

@@ -48,13 +48,14 @@
 - [x] charter §3 C 체크 누락 정정(CI run `38208514130` 근거)
 - [x] 공통 게이트 그린 · run-log 갱신 — 783 passed · skipped 0
 
-## Round 6 — 단계 F1 (인증 코어)
-- [ ] 의존성 추가(`pwdlib[argon2]`, dev `fakeredis`) — 이유는 ADR-013
-- [ ] (F-021) `PasswordHasher` + 레거시 bcrypt 점진 이전
-- [ ] `TokenService` claim·검증 설정
-- [ ] (F-019) `RefreshTokenStore` 회전·재사용 탐지·logout
-- [ ] (F-020) `RateLimiter` + 라우트 의존성 + 429 `Retry-After`
-- [ ] 공통 게이트 그린 · run-log 갱신
+## Round 6 — 2026-10-12 · 단계 F1 (인증 코어)
+- [x] 의존성 추가(`pwdlib[argon2]`, dev `fakeredis`) — 이유는 ADR-013
+- [x] (F-021) `PasswordHasher` + 레거시 bcrypt 점진 이전(로그인이 재해시를 커밋)
+- [x] `TokenService` claim·검증 설정(`JWT_ISSUER`·`JWT_AUDIENCE`·`JWT_LEEWAY_SECONDS`, `JWT_ALGORITHM` Literal, access 15분)
+- [x] (F-019) `RefreshTokenStore` 회전·재사용 탐지·logout(`POST /auth/logout` 204)
+- [x] (F-020) `RateLimiter` + 라우트 의존성 + 429 `Retry-After`(`AppException.headers`)
+- [x] `app/utils/authenticator/` 제거(대체됨) · 문서(README·ARCHITECTURE §11·DEVELOPMENT·HTML·`.env.example`) — 세부는 ADR-025
+- [x] 공통 게이트 그린 · run-log 갱신 — 836 passed · skipped 0
 
 ## Round 7 — 단계 F2 (인가 · 소유권 · 운영 도구)
 - [ ] `Principal` · `get_current_principal` · `require_superuser` · `OwnershipPolicy`

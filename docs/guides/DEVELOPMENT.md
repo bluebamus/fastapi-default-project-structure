@@ -149,7 +149,8 @@ async def get_catalog_service_readonly(
 - 장기 자원(예: Redis client)이 필요하면 모듈 전역을 새로 만들지 말고 `app/core/resources.py` 에 자원
   컨텍스트를 추가하고 `app.state` 에서 꺼내는 작은 의존성을 둡니다. Redis 는 `app/core/redis.py` 의
   `get_redis` 가 그 의존성입니다 — `redis: Redis = Depends(get_redis)` 로 받고, 테스트는
-  `app.dependency_overrides[get_redis]` 로 가짜를 넣습니다. 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
+  `app.dependency_overrides[get_redis]` 로 fakeredis(`fakeredis.FakeAsyncRedis()`, dev 의존성)를 넣습니다 — Redis 를 쓰는
+  클래스(예: `app/core/security/` 의 `RefreshTokenStore`·`RateLimiter`)는 가짜 인터페이스 없이 실물 그대로 시험됩니다. 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
 
 ## 4. 트랜잭션 규칙
 
@@ -615,7 +616,7 @@ Scalar 문서의 계약은 ORM 모델이 아니라 View 와 Pydantic DTO 입니�
 |---|---|
 | DB·HTTP I/O | async client + `await` |
 | 로그 출력 | 큐 핸들러가 listener 스레드로 위임(직접 파일 쓰기 금지) |
-| bcrypt 같은 비싼 CPU | `asyncio.to_thread()` 또는 worker |
+| Argon2·bcrypt 해시 같은 비싼 CPU | `asyncio.to_thread()` 또는 worker (`PasswordHasher` 가 그렇게 한다) |
 | 짧은 JWT·Pydantic·User-Agent 처리 | 이벤트 루프에서 동기 실행 허용 |
 | SQLAlchemy metadata DDL | `AsyncConnection.run_sync()` 허용 |
 | Celery 태스크 진입점 | 동기 유지, 안에서 `run_async()` |

@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from fakeredis import FakeAsyncRedis
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -30,6 +31,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.db.models_registry import import_all_models
 from app.core.db.session import Base
+from app.core.redis import get_redis
 from main import app
 from tests.session_overrides import override_db_sessions
 
@@ -163,10 +165,14 @@ async def env():
             return [tuple(row) for row in rows]
 
     override_db_sessions(app, maker, _wrap_session)
+    # auth 회원가입의 레이트 리밋이 Redis 를 쓴다.
+    redis = FakeAsyncRedis()
+    app.dependency_overrides[get_redis] = lambda: redis
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client, calls, snapshot
     app.dependency_overrides.clear()
+    await redis.aclose()
     await engine.dispose()
 
 

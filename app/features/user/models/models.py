@@ -26,7 +26,7 @@ class User(UUIDTimestampModel):
 
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 인증(auth 도메인)용 bcrypt 해시. 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
+    # 인증(auth 도메인)용 비밀번호 해시(Argon2id — 이전 버전의 bcrypt 는 로그인 때 재해시된다). 비밀번호 없이 생성된 기존 사용자를 위해 nullable.
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

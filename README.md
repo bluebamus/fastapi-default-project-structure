@@ -61,7 +61,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   DB 풀 → 로그 큐 flush 순입니다. 정상 종료·startup 실패·취소·`SIGTERM` 모두에서 끝까지 시도하며,
   실제 uvicorn 프로세스를 띄우는 통합 테스트가 이 순서를 고정합니다.
 - **비차단 로깅** — 큐 기반 핸들러 + listener 스레드, 출력은 stdout/stderr 뿐(파일 로그 없음).
-- **인증** — OAuth2 password flow + JWT access/refresh, bcrypt 해시.
+- **인증** — OAuth2 password flow + JWT access/refresh. Argon2id 해시(기존 bcrypt 는 로그인 때 재해시),
+  refresh 회전·재사용 탐지·로그아웃(Redis), 로그인·가입 레이트 리밋(429 + `Retry-After`).
 - **문서·관리 화면** — Scalar(`/docs`, `DEBUG=true` 에서만), SQLAdmin(`/admin`, **인증 없음**).
 - **결정적 검수** — `scripts/review_gate.py` 와 CI 가 계층 불변식·공개 API 불변·SKIP 0 을 기계로 확인합니다.
 
@@ -73,9 +74,9 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | Web | FastAPI 0.141, Uvicorn 0.54 |
 | DB | SQLAlchemy 2.0 async + aiomysql(MySQL), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
-| Redis | 필수 — startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis` + Celery broker/backend (redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
+| Redis | 필수 — startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) + Celery broker/backend (redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
 | 작업 큐 | Celery 5 (앱 `app/celery/`, 태스크는 기능별 `app/features/<name>/tasks.py` 자동 발견) |
-| 인증 | PyJWT, bcrypt |
+| 인증 | PyJWT, pwdlib[argon2](Argon2id), bcrypt(이전 해시 검증 전용) — 테스트는 fakeredis |
 | 관리·문서 | SQLAdmin, Scalar |
 | 도구 | uv, pytest(+asyncio·env), ruff, mypy, bandit, pre-commit |
 
@@ -219,8 +220,12 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | `python main.py` 전용 바인딩 |
 | `MYSQL_HOST`·`MYSQL_PORT`·`MYSQL_USER`·`MYSQL_PASSWORD`·`MYSQL_DATABASE` | `localhost`·`3306`·`root`·`""`·`fastapi_db` | primary(writer) |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
-| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·`/ready` 대상 + Celery broker/backend |
+| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·`/ready` 대상 + refresh 회전 기록·레이트 리밋 + Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | 서명·세션 키 — staging/production 은 예시 값이거나 access==refresh 면 **기동 거부** |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access 는 서버에서 폐기할 수 없으므로 짧게. refresh 는 회전·폐기된다 |
+| `JWT_ALGORITHM` / `JWT_ISSUER` / `JWT_AUDIENCE` / `JWT_LEEWAY_SECONDS` | `HS256` / 프로젝트 이름 / 프로젝트 이름`-api` / `10` | 알고리즘은 `HS256`·`HS384`·`HS512` 만. `iss`·`aud` 는 검증 시 일치 필수 |
+| `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` | 로그인 시도 한도(IP+사용자명 / IP, 창 초). 초과 시 429 + `Retry-After` |
+| `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 시도 한도(IP) |
 | `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | 없으면 `DEBUG` 에 따라 DEBUG/INFO |
 | `LOG_SQL_ECHO_ENABLED` | `false` | SQL 과 **바인딩 값** 로깅. 운영에서 켜지 않음 |
 | `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
@@ -292,7 +297,7 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 
 ## API
 
-`app.openapi()` 로 확인한 전량 — **23 경로 / 38 오퍼레이션**. 모든 기능 API 는 `/api/v1/<기능명>/…`
+`app.openapi()` 로 확인한 전량 — **24 경로 / 39 오퍼레이션**. 모든 기능 API 는 `/api/v1/<기능명>/…`
 형태이며, `tests/test_route_inventory.py` 가 경로·메서드를 고정합니다(새 라우트를 추가하면 그 테스트와
 이 표를 함께 갱신). 요청·응답 형식은 `DEBUG=true` 의 `/docs` 에서 봅니다.
 
@@ -304,11 +309,16 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 | Reply | `GET·POST /api/v1/reply/replies` · `GET·PATCH·DELETE /api/v1/reply/replies/{reply_id}` | CRUD |
 | SNS | `GET·POST /api/v1/sns/posts` · `GET·PATCH·DELETE /api/v1/sns/posts/{post_id}` | CRUD |
 | User | `GET·POST /api/v1/user/users` · `GET·PATCH·DELETE /api/v1/user/users/{user_id}` | CRUD |
-| Auth | `POST /api/v1/auth/register` · `POST /api/v1/auth/login`(form) · `POST /api/v1/auth/refresh` · `GET /api/v1/auth/me`(Bearer) | [ARCHITECTURE §11](./docs/guides/ARCHITECTURE.md#11-인증-jwt) |
+| Auth | `POST /api/v1/auth/register` · `POST /api/v1/auth/login`(form) · `POST /api/v1/auth/refresh` · `POST /api/v1/auth/logout` · `GET /api/v1/auth/me`(Bearer) | 인증 흐름은 아래, 상세는 [ARCHITECTURE §11](./docs/guides/ARCHITECTURE.md#11-인증-jwt) |
 | Catalog | `GET·POST /api/v1/catalog/products` · `GET·PATCH·DELETE /api/v1/catalog/products/{product_id}` | ORM 참조 예제 |
 | Reports | `GET /api/v1/reports/sales/daily` · `POST /api/v1/reports/sales/daily/snapshots` | Raw SQL 참조 예제(조회·적재) |
 
-DELETE 는 204(본문 없음)입니다. 오류 응답은 `{"error_code", "message", "detail"}` 형식입니다.
+DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은 `{"error_code", "message", "detail"}` 형식입니다.
+
+인증 흐름 — `register` → `login`(form) 으로 `{access_token, refresh_token, token_type, expires_in}` 를 받고, API 는
+`Authorization: Bearer <access_token>` 으로 부릅니다. access 가 만료되면 `refresh` 에 refresh 토큰을 보내 **새 쌍**을 받습니다 —
+보낸 refresh 는 그 순간 못 쓰게 되고, 이미 쓴 refresh 가 다시 오면 탈취로 보고 그 계열(family) 전체를 폐기합니다(401).
+`logout` 은 그 계열을 폐기합니다. 로그인·회원가입이 한도를 넘으면 429 와 `Retry-After`(초)가 옵니다.
 기능 API 는 기본적으로 인증을 요구하지 않습니다(`auth/me` 제외) — 새 엔드포인트의 인증·권한은
 직접 명시합니다.
 
@@ -335,8 +345,10 @@ DELETE 는 204(본문 없음)입니다. 오류 응답은 `{"error_code", "messag
 | 10 | worker 수 × DB 풀 크기가 DB 최대 연결 수 안인가 | [ARCHITECTURE §4.1](./docs/guides/ARCHITECTURE.md#41-엔진과-커넥션-풀) |
 
 1과 2는 곱해집니다. 기본값이 각각 `true` 와 `0.0.0.0` 이라, 아무것도 설정하지 않은 배포가 정확히
-"인증 없는 관리 화면이 네트워크에 열린" 상태입니다. 서버 측 토큰 폐기 목록은 없으므로 유출된 refresh
-토큰은 만료(`REFRESH_TOKEN_EXPIRE_DAYS`, 기본 7일)까지 유효합니다.
+"인증 없는 관리 화면이 네트워크에 열린" 상태입니다. refresh 토큰은 Redis 에 회전 기록이 남아 로그아웃·재사용
+탐지로 폐기되지만, access 토큰은 폐기 목록이 없어 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`, 기본 15분)까지 유효합니다.
+프록시 뒤에서 `TRUSTED_PROXY_HOPS` 를 설정하지 않으면 모든 요청이 프록시 IP 하나로 세어져 로그인 레이트 리밋이
+전체 사용자에게 함께 걸립니다.
 
 ---
 
