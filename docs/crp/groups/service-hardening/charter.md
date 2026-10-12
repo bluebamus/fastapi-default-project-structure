@@ -71,7 +71,7 @@
 
 - [ ] **공통 게이트** — `uv run ruff check .` · `uv run ruff format --check .` · `uv run python -m mypy .` ·
       `pytest -m "not mysql"`(CI 마커식) skipped·xfailed 0 · `scripts/review_gate.py --fast` 의 구조 검사
-- [ ] **A** — `tests/test_ci_contract.py`(ci.yml 에 `--frozen` 없음·`uv sync --locked` 있음), 게이트 파일 목록이
+- [x] **A** — `tests/test_ci_contract.py`(ci.yml 에 `--frozen` 없음·`uv sync --locked` 있음), 게이트 파일 목록이
       추적 파일만 담는 테스트, DSN 특수문자·IPv6·Alembic `%`·Redis URL 왕복, 잠금 읽기 라우터 on/off, 목록 정렬 결정성·offset 페이지 비중첩
 - [ ] **B** — IP 결정(hops 0/N·위조·잘못된 값), 500 기록, 쿼리 마스킹, 컬럼 길이 절단, null PATCH 422, 오류 코드별 상태, 날짜 상한 422
 - [ ] **C** — 헬퍼의 read-only 세션에서 flush 거부, MySQL ORM 스모크(`mysql` 마커, CI 실행)

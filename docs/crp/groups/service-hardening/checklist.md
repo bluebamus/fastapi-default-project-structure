@@ -13,8 +13,8 @@
 - [x] (F-003) DSN `URL.create` · 마스킹 · Alembic `%` · Redis 비밀번호 인코딩 — 왕복 테스트, 기존 문자열 비교를 의미 비교로
 - [x] (F-004) ORM 잠금 읽기 writer 고정·read-only 거부 — 라우터 on/off 테스트
 - [x] (F-005) `list()` 기본 정렬 + `created_at desc` 보조 키 — 동률 결정성·offset 페이지 비중첩 테스트
-- [ ] 공통 게이트 그린(ruff·format·mypy·pytest skip 0) · 요구사항 회귀 0
-- [ ] run-log 갱신 · residual-risk 갱신
+- [x] 공통 게이트 그린(ruff·format·mypy·pytest skip 0) · 요구사항 회귀 0 — 669 passed · skipped 0
+- [x] run-log 갱신 · residual-risk 갱신(그룹 개설 시 R-001~R-009, 이번 라운드 추가 없음)
 
 ## Round 2 — 단계 B (접속 로그 수집 · 오류 매핑)
 - [ ] (F-006) `ClientIPResolver` + `TRUSTED_PROXY_HOPS`
