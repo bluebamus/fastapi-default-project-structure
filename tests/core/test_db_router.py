@@ -7,6 +7,7 @@
 
 import pytest
 from sqlalchemy import String, insert, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
@@ -99,6 +100,28 @@ async def test_dml_statement_is_served_by_writer():
 
     async with reader.begin() as conn:
         assert (await conn.execute(select(Probe.origin))).scalars().all() == ["reader"]
+
+    await writer.dispose()
+    await reader.dispose()
+
+
+@pytest.mark.parametrize("shared", [False, True], ids=["for-update", "for-share"])
+async def test_orm_locking_select_is_served_by_writer(shared):
+    """ORM 잠금 읽기(`with_for_update()`)는 writer 로 가고, 이후 SELECT 도 writer 에 고정된다.
+
+    replica 에서 잠가 봐야 의미가 없고, 잠근 행은 곧이어 쓰는 것이 보통이다. text SQL 의
+    `FOR UPDATE` 는 이미 writer 로 갔는데 ORM 경로만 replica 로 샜다(service-hardening ADR-005).
+    """
+    writer = await _make_engine("writer")
+    reader = await _make_engine("reader")
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+
+    async with maker() as session:
+        locked = await session.execute(
+            select(Probe.origin).with_for_update(read=shared).order_by(Probe.id)
+        )
+        assert list(locked.scalars().all()) == ["writer"]
+        assert await _origins(session) == ["writer"]
 
     await writer.dispose()
     await reader.dispose()
@@ -249,8 +272,8 @@ def test_replication_mode_builds_replica_urls():
     assert settings.routing_mode == "router-replicated"
     assert settings.replication_active is True
     assert settings.MYSQL_REPLICA_URLS == [
-        "mysql+aiomysql://root:@replica-a:3306/fastapi_db",
-        "mysql+aiomysql://root:@replica-b:3307/fastapi_db",
+        make_url("mysql+aiomysql://root:@replica-a:3306/fastapi_db"),
+        make_url("mysql+aiomysql://root:@replica-b:3307/fastapi_db"),
     ]
 
 
@@ -262,8 +285,8 @@ def test_replica_hosts_accept_ip_and_domain():
         MYSQL_REPLICA_HOSTS=["10.0.0.11", "db-replica.example.com:3307"],
     )
     assert settings.MYSQL_REPLICA_URLS == [
-        "mysql+aiomysql://root:@10.0.0.11:3306/fastapi_db",
-        "mysql+aiomysql://root:@db-replica.example.com:3307/fastapi_db",
+        make_url("mysql+aiomysql://root:@10.0.0.11:3306/fastapi_db"),
+        make_url("mysql+aiomysql://root:@db-replica.example.com:3307/fastapi_db"),
     ]
 
 
@@ -275,8 +298,8 @@ def test_ipv6_replica_host_must_be_bracketed():
         MYSQL_REPLICA_HOSTS=["[2001:db8::10]:3307", "[::1]"],
     )
     assert settings.MYSQL_REPLICA_URLS == [
-        "mysql+aiomysql://root:@[2001:db8::10]:3307/fastapi_db",
-        "mysql+aiomysql://root:@[::1]:3306/fastapi_db",
+        make_url("mysql+aiomysql://root:@[2001:db8::10]:3307/fastapi_db"),
+        make_url("mysql+aiomysql://root:@[::1]:3306/fastapi_db"),
     ]
 
 
@@ -300,19 +323,21 @@ def test_empty_replica_host_is_rejected():
 
 
 def test_primary_host_accepts_ip_and_domain():
-    assert _settings(MYSQL_HOST="10.0.0.10").MYSQL_URL.endswith("@10.0.0.10:3306/fastapi_db")
-    assert _settings(MYSQL_HOST="db.example.com").MYSQL_URL.endswith(
-        "@db.example.com:3306/fastapi_db"
-    )
+    assert _settings(MYSQL_HOST="10.0.0.10").MYSQL_URL.host == "10.0.0.10"
+    assert _settings(MYSQL_HOST="db.example.com").MYSQL_URL.host == "db.example.com"
 
 
 def test_primary_ipv6_host_is_bracketed_in_url():
-    """IPv6 primary 도 대괄호로 감싸야 포트와 구분된다 (`@::1:3306` 은 깨진 DSN)."""
-    assert _settings(MYSQL_HOST="::1").MYSQL_URL == "mysql+aiomysql://root:@[::1]:3306/fastapi_db"
-    assert (
-        _settings(MYSQL_HOST="[2001:db8::10]").MYSQL_URL
-        == "mysql+aiomysql://root:@[2001:db8::10]:3306/fastapi_db"
-    )
+    """IPv6 primary 도 대괄호로 감싸야 포트와 구분된다 (`@::1:3306` 은 깨진 DSN).
+
+    대괄호 없이(`::1`) 적든 대괄호로(`[2001:db8::10]`) 적든 같은 URL 이 되고, 문자열로
+    펼쳐도 다시 같은 호스트·포트로 읽힌다.
+    """
+    for configured, host in [("::1", "::1"), ("[2001:db8::10]", "2001:db8::10")]:
+        url = _settings(MYSQL_HOST=configured).MYSQL_URL
+        assert url == make_url(f"mysql+aiomysql://root:@[{host}]:3306/fastapi_db")
+        reparsed = make_url(url.render_as_string(hide_password=False))
+        assert (reparsed.host, reparsed.port) == (host, 3306)
 
 
 def test_replica_credentials_fall_back_to_primary():
@@ -325,7 +350,7 @@ def test_replica_credentials_fall_back_to_primary():
         MYSQL_DATABASE="shop",
         MYSQL_REPLICA_HOSTS=["replica-a"],
     )
-    assert settings.MYSQL_REPLICA_URLS == ["mysql+aiomysql://app:pw@replica-a:3306/shop"]
+    assert settings.MYSQL_REPLICA_URLS == [make_url("mysql+aiomysql://app:pw@replica-a:3306/shop")]
 
 
 def test_replica_credentials_can_be_overridden():
@@ -338,7 +363,9 @@ def test_replica_credentials_can_be_overridden():
         MYSQL_REPLICA_USER="ro",
         MYSQL_REPLICA_PASSWORD="ro-pw",  # noqa: S106 - 테스트 픽스처 값
     )
-    assert settings.MYSQL_REPLICA_URLS == ["mysql+aiomysql://ro:ro-pw@replica-a:3306/fastapi_db"]
+    assert settings.MYSQL_REPLICA_URLS == [
+        make_url("mysql+aiomysql://ro:ro-pw@replica-a:3306/fastapi_db")
+    ]
 
 
 def test_replication_without_router_is_rejected():

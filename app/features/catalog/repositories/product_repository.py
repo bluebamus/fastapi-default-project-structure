@@ -27,7 +27,7 @@ class ProductRepository(BaseRepository[Product, str]):
         statement = (
             select(Product)
             .where(Product.is_active.is_(True))
-            .order_by(Product.created_at.desc())
+            .order_by(Product.created_at.desc(), Product.id.desc())  # 동률은 PK 로 고정
             .offset(skip)
             .limit(limit)
         )

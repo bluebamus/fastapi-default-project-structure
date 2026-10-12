@@ -33,9 +33,16 @@ target_metadata = Base.metadata
 # Resolve the database URL.
 # 환경변수를 직접 읽지 않는다 — 설정은 config.py 가 단독으로 로드한다.
 # db_settings.ALEMBIC_URL 이 ALEMBIC_DATABASE_URL 오버라이드(로컬/CI 의 SQLite 등)와
-# primary DSN 의 동기 드라이버 치환(aiomysql → pymysql)을 모두 처리한다.
+# primary URL 의 동기 드라이버 치환(aiomysql → pymysql)을 모두 처리한다.
+#
+# 비밀번호까지 펼친 문자열을 넘긴다(가린 값으로는 접속할 수 없다). `%` 는 `%%` 로 바꾼다 —
+# Alembic Config 는 ConfigParser 라 `%` 를 보간 문법으로 읽는다. 퍼센트 인코딩된 비밀번호
+# (`p%40ss`)나 경로의 `%` 가 그대로 들어가면 여기서 터진다(service-hardening ADR-004).
 # ---------------------------------------------------------------------------
-config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
+config.set_main_option(
+    "sqlalchemy.url",
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace("%", "%%"),
+)
 
 
 def run_migrations_offline() -> None:

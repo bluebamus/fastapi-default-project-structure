@@ -38,6 +38,7 @@ from contextlib import contextmanager
 from typing import Any, Generic, TypeVar, cast
 
 from sqlalchemy import CursorResult, delete, exists, func, select, update
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.exception import DatabaseException, DuplicateException, NotFoundException
@@ -141,15 +142,27 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
         return instance
 
     async def list(self, skip: int = 0, limit: int = 100) -> Sequence[ModelType]:
-        """페이지 단위로 조회한다.
+        """페이지 단위로 조회한다. 정렬은 최신순 — ``created_at DESC, <PK> DESC``.
 
         ``limit`` 기본값이 있는 이유는 무제한 조회를 막기 위해서다(NFR-002).
         상한은 호출하는 View 의 Query 제약이 강제한다.
+
+        ORDER BY 없는 offset 페이지는 순서를 DB 가 정한다 — MySQL 에서는 실행 계획에 따라
+        페이지가 겹치거나 행이 빠진다. ``created_at`` 만으로는 같은 시각의 행끼리 순서가
+        정해지지 않으므로 PK 를 보조 키로 붙인다(service-hardening ADR-005).
         """
         with self._translated_errors("list"):
-            statement = select(self.model).offset(skip).limit(limit)
+            statement = (
+                select(self.model).order_by(*self._default_order()).offset(skip).limit(limit)
+            )
             result = await self.db_session.execute(statement)
             return result.scalars().all()
+
+    def _default_order(self) -> tuple[Any, ...]:
+        """``list()`` 의 정렬 키 — ``created_at`` 이 없는 모델은 PK 만으로 정렬한다."""
+        mapper = sa_inspect(self.model)
+        keys = [mapper.columns["created_at"]] if "created_at" in mapper.columns else []
+        return tuple(column.desc() for column in [*keys, *mapper.primary_key])
 
     async def count(self, **filters: Any) -> int:
         """조건에 맞는 레코드 수."""

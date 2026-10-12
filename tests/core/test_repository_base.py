@@ -6,12 +6,12 @@ in-memory SQLite 로 실제 CRUD 를 돌린다. Base 의 계약은 "SQL 이 정�
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import DateTime, String, event
+from sqlalchemy import DateTime, String, event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
@@ -41,6 +41,16 @@ class Widget(_TestBase, UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin):
 
 class WidgetRepository(BaseRepository[Widget]):  # type: ignore[type-var]
     model = Widget
+
+
+class Gizmo(_TestBase, UUIDPrimaryKeyMixin):
+    """created_at 이 없는 모델 — 기본 정렬이 PK 로 물러서는지 본다."""
+
+    __tablename__ = "repo_base_gizmos"
+
+
+class GizmoRepository(BaseRepository[Gizmo]):  # type: ignore[type-var]
+    model = Gizmo
 
 
 @pytest_asyncio.fixture
@@ -116,6 +126,43 @@ async def test_list_paginates(repository):
     assert len(first_page) == 2
     assert len(second_page) == 2
     assert {w.id for w in first_page}.isdisjoint({w.id for w in second_page})
+
+
+# 동률(같은 created_at)을 일부러 만든다. 삽입 순서(m, z, a, q)는 기대 순서와 다르게 둔다 —
+# ORDER BY 가 없으면 SQLite 는 삽입 순서로 돌려주므로, 정렬이 빠지면 바로 드러난다.
+_T0 = datetime(2026, 1, 1, tzinfo=UTC)
+_T1 = datetime(2026, 1, 2, tzinfo=UTC)
+_ROWS = [("m", _T0), ("z", _T0), ("a", _T1), ("q", _T0)]
+
+
+async def _seed_ties(repository) -> None:
+    for pk, created_at in _ROWS:
+        await repository.create({"id": pk, "name": f"item-{pk}", "created_at": created_at})
+
+
+async def test_list_orders_newest_first_and_breaks_ties_by_pk(repository):
+    """기본 정렬은 ``created_at DESC, id DESC`` — 같은 시각의 행도 순서가 정해진다
+    (service-hardening ADR-005)."""
+    await _seed_ties(repository)
+
+    assert [w.id for w in await repository.list()] == ["a", "z", "q", "m"]
+
+
+async def test_offset_pages_do_not_overlap_and_cover_every_row(repository):
+    """offset 페이지를 이어 붙이면 전체 목록과 같다 — 겹치거나 빠지는 행이 없다."""
+    await _seed_ties(repository)
+
+    pages = [await repository.list(skip=skip, limit=2) for skip in (0, 2)]
+
+    assert [w.id for page in pages for w in page] == [w.id for w in await repository.list()]
+
+
+def test_default_order_falls_back_to_primary_key():
+    """created_at 이 없는 모델은 PK 만으로 정렬한다."""
+    order = GizmoRepository(None)._default_order()  # type: ignore[arg-type]
+
+    sql = str(select(Gizmo).order_by(*order))
+    assert sql.endswith("ORDER BY repo_base_gizmos.id DESC")
 
 
 async def test_count_with_and_without_filters(repository):

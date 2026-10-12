@@ -8,6 +8,7 @@
 
 본문에 나오는 `ADR-0xx`·`REQ-0xx` 는 `docs/crp/groups/orm-raw-repository/design-baseline.md`,
 `AR-`·`TX-`·`NFR-` 등은 `docs/specs/orm-raw-repository/requirements.md` 의 ID 입니다.
+`service-hardening ADR-0xx` 처럼 그룹 이름이 붙은 번호는 `docs/crp/groups/service-hardening/design-baseline.md` 의 ID 입니다.
 
 ## 목차
 
@@ -281,7 +282,8 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 엔진을 고릅니다(`app/core/db/router.py`).
 
 1. ORM flush·Core DML·`text()` 의 쓰기 키워드(`INSERT`·`UPDATE`·`DELETE`·`CREATE`…), CTE 로 감싼 DML
-   (`WITH … UPDATE/DELETE`), 잠금 읽기(`FOR UPDATE`·`FOR SHARE`·`LOCK IN SHARE MODE`) → writer
+   (`WITH … UPDATE/DELETE`), 잠금 읽기(`FOR UPDATE`·`FOR SHARE`·`LOCK IN SHARE MODE`, ORM
+   `select(...).with_for_update()` 포함) → writer
 2. 그 밖의 SELECT → 세션당 하나의 replica(라운드로빈으로 고른 뒤 고정)
 3. 쓰기가 일어난 세션의 이후 SELECT → writer (`DB_READ_STICKY_AFTER_WRITE=true`, 기본)
 
@@ -298,7 +300,10 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
-- 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다.
+- 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다(`URL.render_as_string(hide_password=True)`).
+- DSN 은 문자열로 조립하지 않고 `config.mysql_url()` → `sqlalchemy.engine.URL.create()` 로 만듭니다.
+  `MYSQL_URL`·`MYSQL_WRITER_URL`·`MYSQL_REPLICA_URLS`·`ALEMBIC_URL` 은 `URL` 객체이고, 비밀번호의
+  `@ : / # % ?` 와 IPv6 호스트가 그대로 왕복합니다(`tests/core/test_dsn.py`, service-hardening ADR-004).
 - **라우팅** 판별(`_text_is_write`)과 읽기 세션의 **차단** 판별(`_text_is_readable`)은 방향이 반대인
   별개지만 같은 괄호 깊이 0 스캐너(`_depth0_words`)를 씁니다. 둘 다 `WITH … UPDATE/DELETE` 를
   잡습니다(ADR-036). 잠금 읽기도 같은 `_LOCKING_READ` 정규식 하나로 판정합니다 — `FOR UPDATE`·`FOR SHARE`·
@@ -306,6 +311,9 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
   적용해 `WHERE note = 'for share'` 같은 리터럴에 걸리지 않지만(ADR-038), 차단(`_text_is_readable`)은 주석만
   걷어낸 원본 문자열에 적용하므로 그런 리터럴도 거부합니다(fail-closed).
   스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.
+- ORM 잠금 읽기(`with_for_update()`, `read=True` 포함)는 문자열이 아니라 `Select._for_update_arg` 로
+  판정합니다(`_is_locking_select`). 라우팅은 writer, 읽기 세션은 거부 — text 의 `FOR UPDATE` 와 같습니다
+  (service-hardening ADR-005).
   sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
   읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
   (`MYSQL_REPLICA_USER`)을 함께 씁니다.
@@ -338,7 +346,7 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 |---|---|
 | `create(data)` | 입력 dict 를 바꾸지 않고 add → flush → refresh |
 | `get_by_id(pk)` / `get_by_id_or_raise(pk)` | 없으면 `None` / `NotFoundException` |
-| `list(skip, limit)` | 단순 페이지(정렬 없음 — 정렬이 필요하면 기능 Repository 에서) |
+| `list(skip, limit)` | 페이지. 기본 정렬 `created_at DESC, <PK> DESC`(created_at 이 없으면 PK 만) — 같은 시각도 순서가 정해지고 offset 페이지가 겹치지 않는다(service-hardening ADR-005). 다른 정렬은 기능 Repository 에서 |
 | `count(**filters)` / `exists(pk)` | 개수 / SQL `EXISTS` |
 | `update_by_id(pk, data)` / `delete_by_id(pk)` | 없으면 `None` / 삭제 여부 `bool` |
 
@@ -803,11 +811,15 @@ main.py (ADMIN=true)
 fileConfig(config.config_file_name, disable_existing_loggers=False)   # 앱 로거를 끄지 않는다
 import_all_models()
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
+config.set_main_option(
+    "sqlalchemy.url",
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace("%", "%%"),
+)
 ```
 
-- URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값, 없으면 primary DSN 의 `+aiomysql` 을 `+pymysql` 로 바꾼 값.
-  마이그레이션은 항상 primary 에서 실행합니다.
+- URL: `ALEMBIC_DATABASE_URL` 이 있으면 그 값을 `make_url` 로 읽은 것, 없으면 primary URL 의 드라이버만
+  `mysql+pymysql` 로 바꾼 것. 마이그레이션은 항상 primary 에서 실행합니다. Alembic Config 는 ConfigParser 라
+  `%` 를 보간으로 읽으므로 `%%` 로 바꿔 넘깁니다(퍼센트 인코딩된 비밀번호 대비).
 - revision 체인(단일 head, CI 가 확인): `f4adf0ae24ea`(baseline — 기존 5개 테이블) → `b2f1a9c0d3e4`
   (`users.hashed_password`) → `c3d5e7f9a1b2`(`catalog_products`) → `d4e6f8a0b2c3`(`sales_orders`) →
   `e5f7a9b1c4d5`(`sales_daily_snapshots`).
@@ -908,7 +920,7 @@ config.set_main_option("sqlalchemy.url", db_settings.ALEMBIC_URL)
 **MiddlewareSettings** — §10 표
 
 **RedisSettings** — `REDIS_HOST`=`localhost`, `REDIS_PORT`=`6379`, `REDIS_DB`=`0`, `REDIS_PASSWORD`=없음
-(`REDIS_URL` = `redis://[:비밀번호@]호스트:포트/DB`)
+(`REDIS_URL` = `redis://[:비밀번호@]호스트:포트/DB`, 비밀번호는 퍼센트 인코딩)
 
 **JWTSettings** — §11 표
 
