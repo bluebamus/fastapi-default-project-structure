@@ -147,8 +147,9 @@ async def get_catalog_service_readonly(
   쓰기는 처음부터 writer 의존성으로 고정하고, 운영에서는 DB 권한(읽기 전용 계정)을 함께 씁니다 —
   `session.info` 표시는 보안 경계가 아닙니다.
 - 장기 자원(예: Redis client)이 필요하면 모듈 전역을 새로 만들지 말고 `app/core/resources.py` 에 자원
-  컨텍스트를 추가하고 `app.state` 에서 꺼내는 작은 의존성을 둡니다(현재 `app.state.redis` 를 주입하는
-  공용 의존성은 없습니다). 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
+  컨텍스트를 추가하고 `app.state` 에서 꺼내는 작은 의존성을 둡니다. Redis 는 `app/core/redis.py` 의
+  `get_redis` 가 그 의존성입니다 — `redis: Redis = Depends(get_redis)` 로 받고, 테스트는
+  `app.dependency_overrides[get_redis]` 로 가짜를 넣습니다. 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
 
 ## 4. 트랜잭션 규칙
 
@@ -653,18 +654,22 @@ async with background_db_session() as db_session:     # 별도 풀, 예외 시 r
 ### 10.3 Celery 태스크
 
 ```python
-# app/celery/tasks.py
+# app/features/home/tasks.py
 @celery_app.task(name="home.aggregate_access_stats")
 def aggregate_access_stats() -> dict[str, Any]:
     async def _run() -> dict[str, Any]:
         async with background_db_session() as db_session:
-            stats = await UserAccessLogService(db_session).get_stats()
+            stats = await build_user_access_log_service(db_session).get_stats()
             return {"total": stats.total_count}
 
     return run_async(_run())
 ```
 
-태스크는 이 파일에 모으고 이름은 `<기능>.<동작>` 으로 붙입니다. worker 수명은 ARCHITECTURE §13.
+태스크는 그 기능의 `tasks.py` 에 두고 이름은 `<기능>.<동작>` 으로 붙입니다. 파일을 만들면 worker 의 include 에
+자동으로 들어갑니다(`models_registry.iter_task_modules()`) — 중앙 목록에 적을 곳이 없고, 기능을 지우면 태스크도
+함께 빠집니다. 서비스는 직접 생성하지 말고 그 기능 dependencies 의 조립 함수(세션을 인자로 받는 일반 함수)를
+부릅니다 — HTTP provider 도 같은 함수를 써서 조립 규칙이 한 곳에 있습니다. `app/celery` 에서 기능을 import 하지
+않습니다(계약 테스트가 막는다). worker 수명은 ARCHITECTURE §13.
 
 ## 11. 로깅 사용법
 

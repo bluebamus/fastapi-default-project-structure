@@ -9,18 +9,25 @@ Alembic autogenerate 와 DEBUG 모드 테이블 생성은 둘 다 `Base.metadata
 그래서 목록 대신 **디렉터리 구조를 진실의 원천**으로 삼는다. `app/features/<name>/
 models/models.py` 가 있으면 등록 대상이고, 없으면(예: 모델이 없는 `auth`) 건너뛴다.
 새 기능을 추가할 때 모델 등록 때문에 손댈 곳이 없다.
+
+Celery 태스크도 같은 규칙으로 찾는다(service-hardening ADR-012). `app/features/<name>/tasks.py` 가
+있으면 워커의 include 에 들어가고, 기능 디렉터리를 지우면 그 태스크도 함께 빠진다 — 중앙 목록이
+기능을 import 하지 않으므로 기능 제거가 워커를 깨뜨리지 않는다.
 """
 
 import importlib
 import importlib.util
 
 _MODELS_SUFFIX = "models.models"
+_TASKS_SUFFIX = "tasks"
 
 
-def iter_model_modules() -> list[str]:
-    """models/models.py 를 가진 기능의 모듈 경로를 정렬해 돌려준다.
+def _iter_feature_modules(suffix: str) -> list[str]:
+    """`app.features.<name>.<suffix>` 가 존재하는 기능의 모듈 경로를 정렬해 돌려준다.
 
-    import 는 하지 않는다 — 목록만 필요한 검사(테스트 등)가 부작용 없이 쓰도록.
+    대상 모듈은 import 하지 않는다(`find_spec` 은 부모 패키지만 import 한다) — 목록만 필요한
+    검사가 부작용 없이 쓰고, 태스크 모듈처럼 import 하면 `celery_app` 을 되부르는 모듈을
+    Celery 앱 생성 중에 순환 import 없이 찾기 위해서다.
     """
     import pkgutil
 
@@ -30,15 +37,28 @@ def iter_model_modules() -> list[str]:
     for info in pkgutil.iter_modules(app.features.__path__):
         if not info.ispkg:
             continue
-        dotted = f"app.features.{info.name}.{_MODELS_SUFFIX}"
+        dotted = f"app.features.{info.name}.{suffix}"
         try:
             exists = importlib.util.find_spec(dotted) is not None
         except ModuleNotFoundError:
-            # models 패키지 자체가 없는 기능 — 정상이다(auth 처럼 모델이 없는 경우).
+            # 중간 패키지 자체가 없는 기능 — 정상이다(auth 처럼 모델이 없는 경우).
             exists = False
         if exists:
             modules.append(dotted)
     return sorted(modules)
+
+
+def iter_model_modules() -> list[str]:
+    """models/models.py 를 가진 기능의 모듈 경로를 정렬해 돌려준다(import 하지 않는다)."""
+    return _iter_feature_modules(_MODELS_SUFFIX)
+
+
+def iter_task_modules() -> list[str]:
+    """tasks.py 를 가진 기능의 모듈 경로를 정렬해 돌려준다(import 하지 않는다).
+
+    Celery 앱의 ``include`` 가 이 목록이다 — 워커가 기동할 때 Celery 가 import 한다.
+    """
+    return _iter_feature_modules(_TASKS_SUFFIX)
 
 
 def import_all_models() -> list[str]:

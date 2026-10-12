@@ -73,8 +73,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | Web | FastAPI 0.141, Uvicorn 0.54 |
 | DB | SQLAlchemy 2.0 async + aiomysql(MySQL), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
-| Redis | startup 연결 검증 + Celery broker/backend (redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
-| 작업 큐 | Celery 5 (중앙 `app/celery/`) |
+| Redis | 필수 — startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis` + Celery broker/backend (redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
+| 작업 큐 | Celery 5 (앱 `app/celery/`, 태스크는 기능별 `app/features/<name>/tasks.py` 자동 발견) |
 | 인증 | PyJWT, bcrypt |
 | 관리·문서 | SQLAdmin, Scalar |
 | 도구 | uv, pytest(+asyncio·env), ruff, mypy, bandit, pre-commit |
@@ -166,7 +166,7 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 | 주소 | 조건 |
 |---|---|
 | <http://127.0.0.1:8000/health> | 항상 — 프로세스 생존(liveness) |
-| <http://127.0.0.1:8000/ready> | 항상 — writer DB `SELECT 1`(2초), 실패 시 503 (readiness) |
+| <http://127.0.0.1:8000/ready> | 항상 — writer DB `SELECT 1` 과 Redis `PING`(각 2초, 동시에), 하나라도 실패 시 503 (readiness) |
 | <http://127.0.0.1:8000/docs>, `/openapi.json` | `DEBUG=true` |
 | <http://127.0.0.1:8000/admin> | `ADMIN=true`(기본값) — **인증 없음** |
 
@@ -219,7 +219,7 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | `python main.py` 전용 바인딩 |
 | `MYSQL_HOST`·`MYSQL_PORT`·`MYSQL_USER`·`MYSQL_PASSWORD`·`MYSQL_DATABASE` | `localhost`·`3306`·`root`·`""`·`fastapi_db` | primary(writer) |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
-| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping 대상 + Celery broker/backend |
+| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·`/ready` 대상 + Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | 서명·세션 키 — staging/production 은 예시 값이거나 access==refresh 면 **기동 거부** |
 | `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | 없으면 `DEBUG` 에 따라 DEBUG/INFO |
 | `LOG_SQL_ECHO_ENABLED` | `false` | SQL 과 **바인딩 값** 로깅. 운영에서 켜지 않음 |
