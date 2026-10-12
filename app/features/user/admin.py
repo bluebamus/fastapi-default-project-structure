@@ -7,7 +7,7 @@ SQLAdmin 을 사용한 User 모델의 관리자 인터페이스를 정의한다.
     ``User`` 는 auth 기능이 쓰는 자격증명(``hashed_password``)을 보유한다.
     sqladmin 은 ``column_details_list`` / ``form_columns`` 를 지정하지 않으면 상세
     페이지와 수정 폼에 **모델의 모든 컬럼**을 넣는다. 따라서 아무 설정도 하지 않으면
-    bcrypt 해시가 관리 화면에 그대로 노출되고, 폼에서 임의 문자열로 덮어쓸 수도 있다.
+    비밀번호 해시가 관리 화면에 그대로 노출되고, 폼에서 임의 문자열로 덮어쓸 수도 있다.
     아래 두 줄이 그 노출 경로를 차단한다 — 지우지 말 것.
 
         column_details_exclude_list = [User.hashed_password]

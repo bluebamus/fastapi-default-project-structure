@@ -51,7 +51,7 @@ Note:
     ``User`` 는 자격증명(``hashed_password``)을 보유한다. sqladmin 은
     ``column_details_list`` / ``form_columns`` 를 지정하지 않으면 상세·수정 폼에
     **모델의 모든 컬럼**을 넣으므로, ``app/features/user/admin.py`` 의 제외 설정을
-    지우면 bcrypt 해시가 관리 화면·내보내기에 노출된다 — 지우지 말 것.
+    지우면 비밀번호 해시가 관리 화면·내보내기에 노출된다 — 지우지 말 것.
     구조 증거: ``tests/core/test_admin_views.py``.
 """
 

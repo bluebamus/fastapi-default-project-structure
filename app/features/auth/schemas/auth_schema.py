@@ -35,9 +35,10 @@ class TokenResponse(BaseModel):
     access_token: str = Field(..., description="API 호출에 사용하는 Access Token")
     refresh_token: str = Field(..., description="Access Token 재발급에 사용하는 Refresh Token")
     token_type: str = Field(default="bearer", description="토큰 타입 — 항상 `bearer`")
+    expires_in: int = Field(..., description="Access Token 유효 시간(초)")
 
 
 class RefreshRequest(BaseModel):
-    """토큰 재발급 요청."""
+    """토큰 회전·로그아웃 요청."""
 
     refresh_token: str = Field(..., description="유효한 Refresh Token")

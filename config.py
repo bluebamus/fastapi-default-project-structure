@@ -786,9 +786,9 @@ class RedisSettings(BaseSettings):
 # JWT 인증 설정
 # =============================================================================
 class JWTSettings(BaseSettings):
-    """JWT 토큰(access/refresh) 설정.
+    """JWT 토큰(access/refresh)·인증 레이트 리밋 설정.
 
-    OAuth2 password flow 기반 인증에 사용됩니다.
+    OAuth2 password flow 기반 인증에 사용됩니다(``app/core/security/``, ``app/features/auth/``).
     비밀 키는 운영 환경에서 반드시 안전한 값으로 교체하세요.
     """
 
@@ -808,21 +808,84 @@ class JWTSettings(BaseSettings):
         default="change-this-refresh-token-secret-key",
         description="Refresh Token 서명 키",
     )
-    # Access Token 만료 (분)
+    # Access Token 만료 (분). access 는 서버에서 폐기할 수 없으므로 짧게 둔다 — 즉시 폐기의
+    # 대안이 짧은 만료 + refresh 폐기다(service-hardening ADR-014).
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
-        default=30,
+        default=15,
+        gt=0,
         description="Access Token 만료 시간(분)",
     )
     # Refresh Token 만료 (일)
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
         default=7,
+        gt=0,
         description="Refresh Token 만료 시간(일)",
     )
-    # JWT 서명 알고리즘
-    JWT_ALGORITHM: str = Field(
+    # JWT 서명 알고리즘 — 대칭키(HMAC) 계열만 허용한다. 비밀 키 하나로 서명·검증하는 구성이라
+    # 비대칭 알고리즘 이름이 들어오면 검증 경로가 어긋난다. `none` 은 물론 금지.
+    JWT_ALGORITHM: Literal["HS256", "HS384", "HS512"] = Field(
         default="HS256",
         description="JWT 서명 알고리즘",
     )
+    # 발급자(iss)·대상(aud). 검증 시 일치를 요구한다 — 같은 키를 쓰는 다른 서비스의 토큰이
+    # 여기서 통과하지 않게 한다.
+    JWT_ISSUER: str = Field(
+        default="fastapi-default-project-structure",
+        min_length=1,
+        description="JWT 발급자(iss) — 검증 시 일치 필수",
+    )
+    JWT_AUDIENCE: str = Field(
+        default="fastapi-default-project-structure-api",
+        min_length=1,
+        description="JWT 대상(aud) — 검증 시 일치 필수",
+    )
+    # exp·nbf·iat 검증에 허용하는 시계 오차(초). 서버 간 시계가 조금 어긋나도 막 발급한 토큰이
+    # 거부되지 않게 한다.
+    JWT_LEEWAY_SECONDS: int = Field(
+        default=10,
+        ge=0,
+        description="JWT 시각 검증 허용 오차(초)",
+    )
+
+    # 레이트 리밋 (Redis 고정 창, service-hardening ADR-016·ADR-025)
+    # 로그인: 같은 IP + 사용자명(소문자) 조합의 시도 수. 성공하면 이 카운터는 지운다.
+    AUTH_LOGIN_MAX_ATTEMPTS: int = Field(
+        default=5,
+        gt=0,
+        description="로그인 시도 허용 횟수(IP+사용자명, 창마다)",
+    )
+    AUTH_LOGIN_WINDOW_SECONDS: int = Field(
+        default=60,
+        gt=0,
+        description="로그인 레이트 리밋 창(초) — IP+사용자명·IP 공통",
+    )
+    # 로그인: 같은 IP 의 전체 시도 수(사용자명을 바꿔 가며 시도하는 스터핑 대비).
+    AUTH_LOGIN_IP_MAX_ATTEMPTS: int = Field(
+        default=20,
+        gt=0,
+        description="로그인 시도 허용 횟수(IP, 창마다)",
+    )
+    # 회원가입: 같은 IP 의 시도 수.
+    AUTH_REGISTER_MAX_ATTEMPTS: int = Field(
+        default=5,
+        gt=0,
+        description="회원가입 시도 허용 횟수(IP, 창마다)",
+    )
+    AUTH_REGISTER_WINDOW_SECONDS: int = Field(
+        default=3600,
+        gt=0,
+        description="회원가입 레이트 리밋 창(초)",
+    )
+
+    @property
+    def access_token_ttl_seconds(self) -> int:
+        """Access Token 유효 시간(초) — 응답의 ``expires_in``."""
+        return self.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+    @property
+    def refresh_token_ttl_seconds(self) -> int:
+        """Refresh Token 유효 시간(초) — Redis 회전 기록·폐기 표시의 TTL."""
+        return self.REFRESH_TOKEN_EXPIRE_DAYS * 86400
 
 
 # =============================================================================

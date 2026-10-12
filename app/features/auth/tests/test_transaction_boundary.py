@@ -12,13 +12,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.db.session import Base
+from app.core.redis import get_redis
 from app.features.user.models.models import User  # noqa: F401  (register table)
 from main import app
 from tests.session_overrides import override_db_sessions
 
 
 @pytest_asyncio.fixture
-async def counting_client():
+async def counting_client(fake_redis):
     """세션 commit 횟수를 세는 클라이언트. `counter["on"]` 구간의 커밋만 집계."""
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -42,6 +43,7 @@ async def counting_client():
         session.commit = _counting_commit  # type: ignore[method-assign]
 
     override_db_sessions(app, maker, _wrap_session)
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c, counter
@@ -69,3 +71,21 @@ async def test_me_read_only_path_does_not_commit(counting_client):
 
     assert me.status_code == 200
     assert counter["count"] == 0, f"읽기 전용 인증이 {counter['count']}회 커밋함"
+
+
+async def test_login_without_rehash_does_not_commit(counting_client):
+    """Argon2 로 저장된 사용자의 로그인은 DB 를 바꾸지 않는다 — 커밋도 없다(재해시일 때만 1회)."""
+    client, counter = counting_client
+    await client.post(
+        "/api/v1/auth/register",
+        json={"username": "bob", "email": "bob@ex.com", "password": "password123"},
+    )
+
+    counter["on"] = True
+    login = await client.post(
+        "/api/v1/auth/login", data={"username": "bob", "password": "password123"}
+    )
+    counter["on"] = False
+
+    assert login.status_code == 200
+    assert counter["count"] == 0

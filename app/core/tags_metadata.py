@@ -49,16 +49,18 @@ tags_metadata = [
         "description": """
 **인증 API**
 
-회원가입과 JWT 기반 토큰 발급·재발급을 제공합니다.
+회원가입과 JWT 기반 토큰 발급·회전·폐기를 제공합니다.
 
 ### 제공 기능
-- 회원가입 (`POST /register`)
-- 로그인 — OAuth2 password form 으로 access·refresh 토큰 발급 (`POST /login`)
-- 토큰 재발급 (`POST /refresh`)
+- 회원가입 (`POST /register`) — IP 단위 레이트 리밋
+- 로그인 — OAuth2 password form 으로 access·refresh 토큰 발급 (`POST /login`) — IP+사용자명·IP 레이트 리밋
+- 토큰 회전 (`POST /refresh`) — refresh 토큰은 한 번만 쓸 수 있고, 재사용하면 그 계열 전체가 폐기됩니다
+- 로그아웃 (`POST /logout`) — refresh 토큰 계열 폐기
 - 현재 사용자 조회 — Bearer 토큰 필요 (`GET /me`)
 
 ### 참고
-로그인·재발급은 HTTP 메서드가 POST 지만 DB 를 변경하지 않습니다(자격 검증 후 토큰만 발급).
+한도를 넘기면 429 와 `Retry-After`(초) 헤더를 돌려줍니다.
+로그인은 이전 형식(bcrypt)으로 저장된 비밀번호를 Argon2 로 다시 해시해 저장할 수 있습니다.
 응답 스키마에는 비밀번호 해시가 포함되지 않습니다.
         """,
     },
