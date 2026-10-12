@@ -9,6 +9,8 @@
 본문에 나오는 `ADR-0xx`·`REQ-0xx` 는 `docs/crp/groups/orm-raw-repository/design-baseline.md`,
 `AR-`·`TX-`·`NFR-` 등은 `docs/specs/orm-raw-repository/requirements.md` 의 ID 입니다.
 `service-hardening ADR-0xx` 처럼 그룹 이름이 붙은 번호는 `docs/crp/groups/service-hardening/design-baseline.md` 의 ID 입니다.
+`admin-login ADR-0xx` 는 `docs/crp/groups/admin-login/design-baseline.md` 의 ID 입니다. 관리 화면 인증의 흐름도·운영은
+[관리 화면 인증 안내서](./admin-auth-guide.html)가 원본입니다.
 
 ## 목차
 
@@ -48,8 +50,8 @@
 ├── .github/workflows/ci.yml
 ├── app/
 │   ├── features/                    # 기능 단위 vertical slice
-│   │   ├── admin.py                 # SQLAdmin 취합 — ADMIN_VIEWS + register_admin()
-│   │   ├── auth/                    # OAuth2 password + JWT (자체 모델 없음, user 모델 사용)
+│   │   ├── admin.py                 # SQLAdmin 취합 — ADMIN_VIEWS + 인증 백엔드 조립 + register_admin()
+│   │   ├── auth/                    # OAuth2 password + JWT (자체 모델 없음, user 모델 사용) + admin_backend.py(/admin 로그인)
 │   │   ├── blog/ reply/ sns/ user/  # CRUD 기능
 │   │   ├── home/                    # 접속 로그 조회 + access-log sink
 │   │   ├── catalog/                 # ORM 참조 예제 (상품 CRUD)
@@ -78,6 +80,7 @@
 │   │   ├── services/services_base.py
 │   │   └── middlewares/             # cors_middleware·user_info_middleware·client_ip·background_tasks·access_log_sink
 │   ├── celery/                      # app.py(중앙 앱, include 는 기능 tasks.py 자동 발견)·task.py(run_async)·lifecycle.py
+│   ├── templates/admin/sqladmin/login.html  # /admin Bootstrap 로그인 화면(SQLAdmin 기본 화면 덮어쓰기) — §12
 │   └── utils/                       # logs/ · pagination/ · validators.py
 ├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
 ├── docs/                   # guides/ · specs/ · crp/  (색인은 README)
@@ -100,7 +103,7 @@ features → core → utils        (config 는 누구나 import)
 
 | 파일 | 역할 |
 |---|---|
-| `main.py` | `FastAPI(...)` 생성(lifespan·태그·문서 URL), `CustomCORSMiddleware`·`UserInfoMiddleware` 등록, 예외 핸들러 4종, 기능 라우터 8개 `include_router(prefix="/api")`, `/health`·`/ready`·Scalar `/docs`, `ADMIN=true` 면 `register_admin(app, engine)` |
+| `main.py` | `FastAPI(...)` 생성(lifespan·태그·문서 URL), `CustomCORSMiddleware`·`UserInfoMiddleware` 등록, 예외 핸들러 4종, 기능 라우터 8개 `include_router(prefix="/api")`, `/health`·`/ready`·Scalar `/docs`, `ADMIN_DISABLED` 가 아니면 `register_admin(app, engine)` |
 | `app/core/resources.py` | `manage_application_resources()` — Redis 확인, 개발용 테이블 생성, 역순 정리 (§7·§8) |
 | `app/core/db/session.py` | 엔진 3종, 세션 의존성 5종, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` (§4) |
 | `app/utils/logs/` | 큐 기반 로깅과 listener 수명 (§9). **손대기 전에 §9 를 읽는다** |
@@ -418,17 +421,20 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 - 타입 오류·validator 위반은 `config` import 자체를 실패시켜 lifespan 전에 기동을 막습니다.
   validator: 복제 설정 모순·replica 주소 형식(`DatabaseSettings`), `CORS_ALLOW_ORIGINS=["*"]` +
   `CORS_ALLOW_CREDENTIALS=true`(`CORSSettings`), `SMTP_TLS` + `SMTP_SSL`(`SMTPSettings`).
-- 전역 객체를 만든 뒤 파일 끝에서 설정 검사 두 개가 차례로 돕니다. 둘 다 `RuntimeError` 로 `config` import 를
-  실패시키고, 메시지에는 설정 이름만 나옵니다. `ENV=test` 는 둘 다 건너뜁니다(pytest 가 지정).
+- 전역 객체를 만든 뒤 파일 끝에서 설정 검사 세 개가 차례로 돕니다. 모두 `RuntimeError` 로 `config` import 를
+  실패시키고, 메시지에는 설정 이름만 나옵니다. `ENV=test` 는 모두 건너뜁니다(pytest 가 지정).
   1. `validate_env_source()` — **출처**(ADR-045 ①). `.env` 가 없으면 `ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE`
      (`REQUIRED_WITHOUT_ENV_FILE`)가 환경 변수로 모두 있어야 합니다. 컨테이너 주입은 통과하고, 아무것도 없으면 멈춥니다.
-  2. `validate_deployment_safety()` — **내용**. 위반을 모두 모아 한 번에 알립니다.
+  2. `validate_no_legacy_admin()` — **예전 이름**(admin-login ADR-005). `ADMIN`(true=켬)은 뜻이 뒤집힌 `ADMIN_DISABLED`(true=끔)로
+     바뀌었으므로, 환경 변수나 `.env` 에 `ADMIN` 이 남아 있으면(대소문자 무시) 조용히 무시하지 않고 멈춥니다.
+  3. `validate_deployment_safety()` — **내용**. 위반을 모두 모아 한 번에 알립니다.
      - test 외 모든 ENV(ADR-027·030·045 ②): `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD`
        가 예시 값(`change-this` 포함·`your-` 시작·빈 값), 비밀 키 3종이 32자 미만, access 와 refresh 가 같음.
-       `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 예시 값인지 봅니다 — 인증 없는 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다.
-     - staging/production 만(ADR-028·045 ③): `DEBUG=true`, `LOG_LEVEL=DEBUG`, `ADMIN_ALLOW_UNAUTHENTICATED=true` 없는 `ADMIN=true`.
+       `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 예시 값인지 봅니다 — 비밀번호 없는 사설망 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다.
+     - staging/production 만(ADR-028): `DEBUG=true`, `LOG_LEVEL=DEBUG`. 관리 화면을 켠 배포는 막지 않습니다 — 슈퍼유저
+       로그인이 붙어 ADR-045 ③ 의 확인 플래그를 없앴습니다(admin-login ADR-004).
   예시 값 판정은 `is_placeholder_secret()` 하나가 맡습니다(`tests/core/test_deployment_safety.py`). `SERVER_HOST` 등
-  그 밖의 운영 조합은 막지 않습니다(C-8). 확인 플래그로 연 배포 환경의 `/admin` 은 `main.py` 가 매 기동 WARNING 을 남깁니다.
+  그 밖의 운영 조합은 막지 않습니다(C-8).
 - 환경 변수를 직접 읽는 곳은 `config.py` 뿐입니다(`tests/core/test_settings_contract.py`).
 
 ### 6.2 설정 클래스와 소비 지점
@@ -436,14 +442,15 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | 전역 객체 | 소비 지점 |
 |---|---|
 | `timezone_settings` | 로그 시각(`TzFormatter`), 모델 시간 기본값, Celery `timezone`, 스냅샷 `generated_at` |
-| `app_settings` | FastAPI 메타데이터, `DEBUG`(문서·DDL·로그 레벨 기본값·500 detail·reload), `ADMIN`, `ENV`(로그 구성), `SERVER_HOST/PORT` |
+| `app_settings` | FastAPI 메타데이터, `DEBUG`(문서·DDL·로그 레벨 기본값·500 detail·reload), `ADMIN_DISABLED`(관리 화면 마운트 여부), `ENV`(로그 구성·관리 세션 쿠키 `Secure`), `SERVER_HOST/PORT` |
 | `db_settings` | DSN·라우팅·replica(`session.py`), `ALEMBIC_URL`(`migrations/env.py`) |
 | `cors_settings` | `CustomCORSMiddleware.configure_cors()` |
 | `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED` |
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
 | `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도 |
-| `api_settings`·`session_settings`·`smtp_settings`·`upload_settings` | **소비 코드 없음** — 설정만 준비돼 있다(쿠키 세션·메일 발송·업로드 구현 없음) |
+| `session_settings` | `SESSION_SECRET_KEY` — 관리 화면 세션 쿠키 서명(`build_admin_auth_backend`, §12). `SESSION_COOKIE_NAME` — 접속 로그의 `session_id` 기록(§10, 인증에 쓰지 않음). `SESSION_EXPIRE_SECONDS` 는 읽는 코드 없음 |
+| `api_settings`·`smtp_settings`·`upload_settings` | **소비 코드 없음** — 설정만 준비돼 있다(메일 발송·업로드 구현 없음) |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 도 필드만 있고 코드가
 읽지 않습니다 — false 로 줘도 콘솔이 꺼지지 않고, 포맷은 §9.2 의 고정값입니다.
@@ -459,7 +466,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 2. `get_logger()` 첫 호출 → `configure_logging()` — dictConfig 적용, listener 시작, `atexit`·신호 훅 등록(§9.5)
 3. `app/core/db/session.py` — 엔진·세션 팩토리 생성, 라우팅 구성 로그
 4. `app.features` 각 패키지 — 라우터·모델 import, `home` 의 sink 등록
-5. `FastAPI(...)` → 미들웨어 → 예외 핸들러 → `include_router` × 8 → health/ready/`/docs` → `ADMIN` 이면 SQLAdmin 마운트
+5. `FastAPI(...)` → 미들웨어 → 예외 핸들러 → `include_router` × 8 → health/ready/`/docs` → `ADMIN_DISABLED` 가 아니면 SQLAdmin 마운트(인증 백엔드·세션 미들웨어 포함)
 
 reload·다중 worker 는 새 프로세스마다 이 과정을 반복하므로 Redis client·DB 풀·listener 는 프로세스마다
 따로 있습니다.
@@ -499,7 +506,7 @@ client 가 없으면 `ServiceUnavailableException`(503). 라우트·의존성이
 
 | 실패 지점 | 결과 |
 |---|---|
-| 설정 타입·validator·설정 검사(`.env` 출처, 예시 비밀값, 배포 환경 debug·ADMIN) | `config` import 실패 — lifespan 전 |
+| 설정 타입·validator·설정 검사(`.env` 출처, 예전 `ADMIN` 잔존, 예시 비밀값, 배포 환경 debug) | `config` import 실패 — lifespan 전 |
 | Redis ping (연결·인증·timeout) | `[startup] Redis 연결 실패: <오류 타입>` ERROR 후 재전파. background 컨텍스트에는 아직 들어가지 않았으므로 drain 없이 **Redis `aclose()` → DB dispose(“자원 해제 완료” 로그) → 로그 flush** 만 실행. `app.state.redis`·`app.state.resources` 는 `None` (`tests/core/test_resources.py::test_redis_connection_failure_stops_startup_and_cleans_up`) |
 | 개발용 DDL (MySQL 없음 등) | 네 컨텍스트가 모두 역순으로 정리된 뒤 예외 전파 |
 | 공통 | uvicorn 이 `Application startup failed. Exiting.` 과 traceback 을 남기고 종료. listener 가 프로세스 소유라 이 로그가 유실되지 않는다(§9.5) |
@@ -731,7 +738,7 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
 | `ACCESS_LOG_EXCLUDE_PATHS` | `["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]` (정확히 일치) |
 | `ACCESS_LOG_EXCLUDE_EXTENSIONS` | `[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]` (접미사) |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]` (대소문자 무시, 값을 `***` 로 저장) |
-| `TRUSTED_PROXY_HOPS` | `0` (앞단 신뢰 프록시 수 — 0 이면 전달 헤더를 보지 않는다) |
+| `TRUSTED_PROXY_HOPS` | `0` (앞단 신뢰 프록시 수 — 0 이면 전달 헤더를 보지 않는다. **프록시 뒤 배포는 단 수만큼** — 0 이면 전원이 프록시 IP 하나로 보여 접속 로그·로그인 레이트 리밋이 한 사람으로 취급하고, 크게 잡으면 IP 위조) |
 
 - 수집: `ip_address`(아래 IP 결정 규칙), `forwarded_for`·`real_ip`(원본 헤더 — 감사용),
   `user_agent` 와 파싱 결과(`os_name`·`os_version`·`browser_name`·`browser_version`·`device_type`
@@ -836,6 +843,9 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
 - `MULTI` 안에서 `SET key 0 EX window NX` → `INCR` → `TTL`. 창은 첫 hit 에 시작하고 이후 hit 이 늘리지 않습니다.
 - 로그인: `auth:rl:login:{ip}:{username 소문자}`(기본 5회/60초)와 `auth:rl:login:{ip}`(20회/60초). 성공하면 앞의 키만 지웁니다.
   회원가입: `auth:rl:register:{ip}`(5회/3600초). IP 는 접속 로그와 같은 `ClientIPResolver`(`TRUSTED_PROXY_HOPS`, §10).
+  관리 화면 로그인은 같은 한도를 `admin:rl:login:{ip}:{username}`·`admin:rl:login:{ip}` 로 따로 셉니다(§12).
+  **프록시 뒤 배포는 `TRUSTED_PROXY_HOPS` 를 앞단 프록시 단 수로 설정합니다** — 0 이면 모든 클라이언트가 프록시 IP 하나로
+  보여 IP 한도가 전체 사용자에게 함께 걸리고, 실제보다 크게 잡으면 IP 를 위조할 수 있습니다.
 - 초과는 `TooManyRequestsException` — 429 + `Retry-After`(창이 끝날 때까지 초). `AppException.headers` 를 전역 핸들러가 싣습니다.
 
 | 설정 | 기본값 |
@@ -877,27 +887,46 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
 - **첫 슈퍼유저** — `python -m scripts.create_superuser`(`scripts/create_superuser.py`). `background_db_session` + core 의
   `get_password_hasher` + `UserRepository` 로 조립해 만들거나 승격하고 한 번 커밋합니다. 비밀번호는 `getpass` 또는
   `--password-stdin` 으로만 받습니다(환경 변수를 읽지 않는다 — 설정 계약).
-- **SQLAdmin 은 이 인가 밖**입니다(ADR-019, §12) — `/admin` 은 여전히 인증이 없습니다.
+  이 계정이 관리 화면(`/admin`) 로그인 계정이기도 합니다.
+- **SQLAdmin 은 이 인가 밖**입니다(§12) — `/admin` 은 JWT 가 아니라 **활성 슈퍼유저의 서명 세션 쿠키**로 들어가고,
+  그 세션은 API 를 인증하지 않습니다.
 
 ## 12. SQLAdmin
 
 ```text
-main.py (ADMIN=true)
+main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하지도 않는다)
   └─ register_admin(app, engine)          app/features/admin.py — main 이 아는 유일한 이름
-       ├─ create_admin_interface(...)     Admin(app, engine, title=...) 생성 = /admin 마운트
+       ├─ create_admin_interface(...)     Admin(app, engine, title, authentication_backend, templates_dir) = /admin 마운트
+       │    └─ build_admin_auth_backend(app)   AdminAuthBackend 를 기존 provider 로 조립
        └─ register_admin_views(admin)     ADMIN_VIEWS 를 선언 순서대로 add_view
 ```
 
-- 세 함수는 SQLAdmin 공식 API 가 아니라 이 프로젝트의 조립 함수입니다. 생성 쪽은 앱·엔진(과 향후 인증
-  백엔드 — `Admin` 생성 인자라 여기에만 넣을 수 있다)을, 등록 쪽은 뷰 목록만 압니다. 회귀 가드:
-  `tests/test_admin_wiring.py`.
+- 세 함수(와 백엔드 조립 함수)는 SQLAdmin 공식 API 가 아니라 이 프로젝트의 조립 함수입니다. 생성 쪽은
+  앱·엔진·인증 백엔드·템플릿 위치(모두 `Admin` 생성 인자라 여기에만 넣을 수 있다)를, 등록 쪽은 뷰 목록만
+  압니다. 회귀 가드: `tests/test_admin_wiring.py`.
+- **로그인**(admin-login ADR-001~003): `/admin` 은 **활성 슈퍼유저**만 들어갑니다. `AdminAuthBackend`
+  (`app/features/auth/admin_backend.py`)가 SQLAdmin `AuthenticationBackend` 를 구현합니다 — `login` 은 레이트 리밋
+  (`admin:rl:login:` 키, `AUTH_LOGIN_*` 한도) → API 로그인과 같은 `AuthService.authenticate`(bcrypt→Argon2 재해시 포함)
+  → `is_superuser` 확인 → `session.clear()` 후 `user_id` 만 저장. 실패 사유는 구분하지 않고(400), 한도 초과는 로그인 화면을
+  429 + `Retry-After` 로 다시 그립니다. `authenticate` 는 **요청마다 DB** 에서 활성·슈퍼유저를 확인해 강등·비활성화를 즉시
+  반영하고, `logout` 은 세션을 비웁니다.
+- **세션 쿠키** `admin_session` — `SESSION_SECRET_KEY` 로 서명(starlette `SessionMiddleware` + itsdangerous), `Path=/admin`,
+  `SameSite=Strict`, HttpOnly, 8시간, `ENV` 가 staging/production 이면 `Secure`. 세션 미들웨어는 SQLAdmin **하위 앱에만**
+  있어 API 인증과 섞이지 않습니다(`tests/test_admin_session_scope.py`).
+- **로그인 화면** — `app/templates/admin/sqladmin/login.html`(Bootstrap 5.3.8 CSS, jsDelivr + SRI, JS 없음)이 SQLAdmin 기본
+  화면을 덮어씁니다. `templates_dir` 의 FileSystemLoader 가 패키지 템플릿보다 먼저 찾아지기 때문입니다.
+- **끄기** — `ADMIN_DISABLED=true` 면 sqladmin·백엔드·세션 미들웨어를 만들지 않고 `/admin` 이하가 404 이며, 앱 응답·기동
+  로그에 경로가 나오지 않습니다(`tests/test_admin_disabled.py`). 예전 `ADMIN` 설정이 남아 있으면 기동을 거부합니다(§6.1).
+- 흐름도·쿠키 구조·위협 모델·운영 문제 해결은 [관리 화면 인증 안내서](./admin-auth-guide.html)가 원본입니다.
 - ModelView 는 기능이 소유합니다(`app/features/<name>/admin.py` 의 `admin_views`). 취합은 **명시 import**
   입니다 — 예전의 `getattr(module, "admin_views", [])` 수집은 빈 `admin.py` 를 조용히 건너뛰었습니다.
   `ADMIN_VIEWS` 는 기능명 사전순이며 테스트가 순서까지 대조합니다. 모델이 있는 기능은 `admin.py` 를 가져야 합니다.
 - 기능 `__init__.py` 로 `admin_views` 를 재노출하지 않습니다 — 재노출하면 라우터 import 만으로 sqladmin 이
-  로드되어 `ADMIN=false` 가 "라우트만 안 붙임" 이 됩니다(`ADMIN=false` 미로드 검사).
-- **`/admin` 에는 인증이 없습니다**(확정 정책, 로그인 화면 없음 — `/admin/login` 은 503). 운영 차단은
-  [README 운영 배포 체크리스트](../../README.md#운영-배포-체크리스트)의 책임입니다.
+  로드되어 `ADMIN_DISABLED=true` 가 "라우트만 안 붙임" 이 됩니다(`ADMIN_DISABLED=true` 미로드 검사).
+- `column_filters` 에는 `sqladmin.filters` 객체(`BooleanFilter`·`OperationColumnFilter`)를 넣습니다 — 모델 컬럼을 그대로
+  넣으면 sqladmin 0.32 의 목록 화면이 500 입니다. 생성 시각(`UTCDateTime`)에는 연산 필터를 걸지 않습니다(날짜 형으로 인식되지 않아
+  문자열이 바인딩된다). 모든 뷰의 목록·필터·상세 화면은 `tests/test_admin_views_render.py` 가 로그인 상태로 확인합니다(admin-login F-005).
+- 배포 전 확인은 [README 운영 배포 체크리스트](../../README.md#운영-배포-체크리스트)에 있습니다.
 - `User` 뷰는 `hashed_password` 를 목록·상세·폼·내보내기에서 제외하고 `can_create = False` 입니다
   (비밀번호 없이 만든 계정은 로그인할 수 없습니다). 이 제외 설정을 지우면 해시가 노출됩니다
   (`tests/core/test_admin_views.py`).
@@ -946,7 +975,8 @@ config.set_main_option(
 - revision 체인(단일 head, CI 가 확인): `f4adf0ae24ea`(baseline — 기존 5개 테이블) → `b2f1a9c0d3e4`
   (`users.hashed_password`) → `c3d5e7f9a1b2`(`catalog_products`) → `d4e6f8a0b2c3`(`sales_orders`) →
   `e5f7a9b1c4d5`(`sales_daily_snapshots`) → `a7c9e1f3b5d6`(시각 컬럼 전부 MySQL `DATETIME(6)` + 기존 값
-  KST→UTC 변환, SQLite 는 no-op — service-hardening ADR-010).
+  KST→UTC 변환, SQLite 는 no-op — service-hardening ADR-010). **배포 전:** 이 리비전은 기존 MySQL 값을 모두 +09:00 으로
+  가정합니다 — 다른 시간대였다면 적용 전에 리비전의 `_LEGACY_OFFSET` 을 바꾸고, 값을 고쳐 쓰므로 적용 전에 백업합니다.
 - `env.py` 는 `app/core/models/types.py` 의 `compare_type`(MySQL `UTCDateTime` 의 소수 초 자릿수 비교 — 기본 비교는
   `DATETIME` 과 `DATETIME(6)` 을 같다고 본다)과 `render_item`(autogenerate 가 앱 import 없는
   `sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")` 로 쓰게)을 넘깁니다.
@@ -969,7 +999,7 @@ config.set_main_option(
 | 로그는 큐 + stdout/stderr, 파일 없음, 앱별 로거 없음 | event loop 비차단(NFR-009), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
 | Redis 는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011) |
-| `/admin` 무인증 + `ADMIN=true` 기본값 | 개발 우선 템플릿. 배포 환경에서도 쓸 수 있으나 `ADMIN_ALLOW_UNAUTHENTICATED=true` 로 알고 켰다는 확인이 있어야 뜬다 — 기본값을 그대로 들고 온 배포와 의도한 배포를 가른다(ADR-045 ③, C-8 축소). 인증은 로그인 고도화에서 붙인다 |
+| 관리 화면은 기본 켜짐 + 활성 슈퍼유저 로그인, `ADMIN_DISABLED=true` 로 흔적 없이 끈다 | 개발 우선 템플릿이라 받자마자 DB 를 볼 수 있어야 하고, 배포에서는 로그인이 지킨다. 쓰지 않는 배포는 공격 표면 자체를 없앤다. 세션은 `/admin` 하위 앱 전용이라 API 의 Bearer 계약과 섞이지 않는다(admin-login ADR-001~006 — ADR-045 ③ 의 확인 플래그를 대체) |
 | 예시·빈 비밀값, 짧은 키, access==refresh 는 test 외 **모든 ENV** 에서 기동 거부. staging/production 은 `DEBUG=true`·`LOG_LEVEL=DEBUG` 도 거부 | 예시 키로 뜨면 누구나 토큰을 위조하고, debug 는 SQL 과 바인딩 값을 로그로 내보낸다. 잘못된 설정은 개발 단계부터 오류로 드러나야 `.env` 를 고친다(ADR-027·028·030·045) |
 | `.env` 가 없으면 필수 값이 환경 변수로 와야 한다 | 코드 기본값은 유지하되 기본값만으로는 뜨지 않게 한다. 파일 없이 주입하는 컨테이너 배포는 통과(ADR-045 ①) |
 | 응답 직렬화는 FastAPI 기본(Pydantic) | `ORJSONResponse` 는 이득이 없고 0.141 에서 deprecated. 제거 전후 응답 바이트 동일 확인 |
@@ -999,6 +1029,7 @@ config.set_main_option(
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
+| 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./admin-auth-guide.html) 신설 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
 | 2026-10-07 | 설정 검사 확장(ADR-045): `.env` 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 `ADMIN=true` 는 `ADMIN_ALLOW_UNAUTHENTICATED` 확인 필요. CI 가 `review_gate --fast` 실행(ADR-044) |
 | 2026-09-17 | 배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 `config` import 실패. `.env.example` 비밀 키 예시를 서로 다른 `change-this-...` 로 |
@@ -1020,8 +1051,7 @@ config.set_main_option(
 | `VERSION` | str | `0.1.0` |
 | `DESCRIPTION` | str | `config.API_DESCRIPTION` |
 | `DEBUG` | bool | `true` |
-| `ADMIN` | bool | `true` |
-| `ADMIN_ALLOW_UNAUTHENTICATED` | bool | `false` |
+| `ADMIN_DISABLED` | bool | `false` |
 | `ENV` | `development`/`staging`/`production`/`test` | `development` |
 | `SERVER_HOST` / `SERVER_PORT` | str / int | `0.0.0.0` / `8000` |
 
@@ -1060,7 +1090,7 @@ config.set_main_option(
 
 **ApiSettings** — `API_VERSION`=`v1` (소비 코드 없음)
 
-**SessionSettings** — `SESSION_COOKIE_NAME`=`session`(접속 로그의 `session_id` 쿠키 이름으로만 읽힌다), `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1), `SESSION_EXPIRE_SECONDS`=`86400` (세션 소비 코드 없음)
+**SessionSettings** — `SESSION_COOKIE_NAME`=`session`(접속 로그의 `session_id` 쿠키 이름으로만 읽힌다), `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1. 관리 화면 세션 쿠키 서명 키, §12), `SESSION_EXPIRE_SECONDS`=`86400` (읽는 코드 없음 — 관리 세션 수명은 8시간 고정)
 
 **SMTPSettings** — `SMTP_SERVER`=`localhost`, `SMTP_PORT`=`25`, `SMTP_USERNAME`=빈 값, `SMTP_PASSWORD`=빈 값,
 `SMTP_FROM_EMAIL`·`SMTP_FROM_NAME`=없음, `SMTP_TLS`·`SMTP_SSL`=`false`(동시 true 거부) (소비 코드 없음)

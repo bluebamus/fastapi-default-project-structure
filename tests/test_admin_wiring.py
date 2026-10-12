@@ -4,7 +4,7 @@
 ``app/features/admin.py`` 가 명시 import 로 ``ADMIN_VIEWS`` 에 취합한다. ``main.py`` 는
 ``register_admin(app, engine)`` 만 호출한다. 여기서는 (1) 취합 목록이 기대 모델을 모두
 포함하는지, (2) 모델을 가진 기능이 빠짐없이 자기 ``admin.py`` 를 갖는지, (3) 부팅된 앱의
-SQLAdmin 에 그대로 등록됐는지, (4) /admin 이 마운트됐는지, (5) ADMIN=false 일 때
+SQLAdmin 에 그대로 등록됐는지, (4) /admin 이 마운트됐는지, (5) ADMIN_DISABLED=true 일 때
 관리 계층이 **로드조차 되지 않는지**를 확인한다.
 
 (2)가 핵심이다. 과거 기능별 ``admin.py`` 가 0바이트 빈 파일이었을 때 관용적 수집
@@ -181,11 +181,11 @@ def test_feature_with_model_owns_admin_module(feature: str) -> None:
 
 
 def test_admin_layer_is_not_loaded_when_disabled() -> None:
-    """ADMIN=false 면 sqladmin 을 아예 로드하지 않는다.
+    """ADMIN_DISABLED=true 면 sqladmin 을 아예 로드하지 않는다.
 
     기능 패키지 ``__init__.py`` 가 ``admin_views`` 를 재노출하면, ``main.py`` 가 라우터를
     얻으려고 패키지를 import 하는 것만으로 sqladmin 과 ModelView 가 전부 올라온다. 그러면
-    ADMIN=false 는 "라우트만 안 붙임" 이 되어 설정의 의미가 실제와 어긋나고, sqladmin 을
+    ADMIN_DISABLED=true 는 "라우트만 안 붙임" 이 되어 설정의 의미가 실제와 어긋나고, sqladmin 을
     선택적 의존성으로 분리할 수도 없다(ADMIN-2).
 
     별도 프로세스로 확인한다 — 이 테스트 세션은 다른 테스트가 이미 ``main`` 을 import 해
@@ -196,7 +196,7 @@ def test_admin_layer_is_not_loaded_when_disabled() -> None:
             sys.executable,
             "-c",
             "import os, sys;"
-            " os.environ['ADMIN'] = 'false'; os.environ['DEBUG'] = 'false';"
+            " os.environ['ADMIN_DISABLED'] = 'true'; os.environ['DEBUG'] = 'false';"
             " import main;"
             " print('SQLADMIN_LOADED=' + str('sqladmin' in sys.modules))",
         ],
@@ -210,9 +210,9 @@ def test_admin_layer_is_not_loaded_when_disabled() -> None:
     )
     assert (
         "SQLADMIN_LOADED=" in result.stdout
-    ), f"ADMIN=false 로 앱을 띄우지 못했습니다.\nstderr:\n{result.stderr[-2000:]}"
+    ), f"ADMIN_DISABLED=true 로 앱을 띄우지 못했습니다.\nstderr:\n{result.stderr[-2000:]}"
     assert "SQLADMIN_LOADED=False" in result.stdout, (
-        "ADMIN=false 인데 sqladmin 이 로드됐습니다. 기능 패키지 __init__.py 가 "
+        "ADMIN_DISABLED=true 인데 sqladmin 이 로드됐습니다. 기능 패키지 __init__.py 가 "
         "admin 모듈을 import(재노출)하고 있지 않은지 확인하세요."
     )
 

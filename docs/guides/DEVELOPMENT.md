@@ -44,7 +44,7 @@ ORM 과 Raw SQL 은 **Repository 구현에서만** 갈라집니다. 나머지(�
 | Composition root | `dependencies/` — 세션 선택 + `Service(db_session)` 반환 | 유스케이스 실행, 커밋, `yield` 후 커밋 |
 | Service | `services/` — `BaseService` 상속, 업무 규칙·오케스트레이션 | HTTP 객체, SQL 문자열, 임의 커밋 |
 | Repository | `repositories/` — `BaseRepository` 또는 `RawRepositoryBase` 상속 | 커밋, HTTP, 업무 규칙 |
-| 관리 UI | `admin.py` — SQLAdmin ModelView | API 권한 계약과 공유되는 보안 장치 아님 |
+| 관리 UI | `admin.py` — SQLAdmin ModelView. 인증은 관리 화면 전체에 이미 걸려 있다(활성 슈퍼유저 로그인 — [관리 화면 인증 안내서](./admin-auth-guide.html)) | API 권한 계약과 공유되는 보안 장치 아님 — 관리 세션은 API 를 인증하지 않는다 |
 
 "뷰" 는 이 저장소에서 path operation 함수를 뜻합니다(SQLAdmin ModelView·DB 의 SQL VIEW 와 다릅니다).
 Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입으로 쓸 수 있는 것이 계층을 나누는
@@ -69,7 +69,7 @@ Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입
 | `api/routers/router.py` | `<name>_router` 가 v1 파일들을 `prefix="/v1/<name>"`, `tags=[...]` 로 취합 |
 | `__init__.py` | `router` 공개 + `models` import. `admin_views` 는 재노출하지 않는다 |
 | `exceptions.py` | 기능 예외(`NotFoundException` 등 `app/core/exception.py` 하위) |
-| `admin.py` | 모델이 있으면 ModelView + `admin_views` |
+| `admin.py` | 모델이 있으면 ModelView + `admin_views`. `column_filters` 는 `sqladmin.filters` 객체로(컬럼을 그대로 넣으면 목록 화면 500 — `tests/test_admin_views_render.py`) |
 | `tests/` | §12 |
 
 ```python
@@ -783,7 +783,7 @@ except Exception:
 - [ ] 모든 외부 응답이 Pydantic DTO 를 거친다(민감 필드 제외)
 - [ ] 라우터가 v1 → 기능 `router.py` → `__init__.py` → `main.py` 로 명시 취합되고 기능명 = URL 세그먼트
 - [ ] 목록 API 에 limit 상한과 고정 정렬이 있다
-- [ ] 새 엔드포인트의 인증·권한을 명시했다(기본은 인증 없음)
+- [ ] 새 엔드포인트의 인증·권한을 명시했다(의존성을 달지 않으면 공개 경로다 — §3.1). 세션 쿠키 인증을 API 에 섞지 않았다
 - [ ] path operation 이 `async def` 이고 요청 경로에 동기 I/O 가 없다
 - [ ] migration 을 추가·검토했고 head 가 하나다
 - [ ] OpenAPI 메타데이터·tag·예시가 실제 구현과 맞다

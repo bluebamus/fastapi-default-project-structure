@@ -4,7 +4,9 @@
   실패한다. 오류 메시지는 설정 **이름**만 담고 값은 담지 않는다.
 - ADR-045 ①: `.env` 가 없고 필수 값이 환경 변수로도 없으면 실패한다(컨테이너 주입은 통과).
 - ADR-045 ②: 위 비밀값 검사는 test 를 뺀 **모든 ENV** 에 적용된다(개발 환경 포함).
-- ADR-045 ③: staging/production 의 ADMIN=true 는 ADMIN_ALLOW_UNAUTHENTICATED=true 가 있어야 뜬다.
+- admin-login ADR-004: ADR-045 ③(배포 환경의 켜진 관리 화면에 확인 플래그 요구)은 관리 화면 로그인이
+  붙어 없앴다 — staging/production 에서 관리 화면을 켜도 통과하고, 예전 플래그가 남아 있어도 무시된다.
+- admin-login ADR-005: 예전 설정 `ADMIN` 이 환경 변수·`.env` 에 남아 있으면 기동을 멈춘다(`ADMIN_DISABLED` 로 교체).
 """
 
 import os
@@ -47,8 +49,7 @@ def _check(
     mysql_password: str = "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
     redis_password: str | None = None,
     smtp_password: str = "",
-    admin: bool = False,
-    admin_ack: bool = False,
+    admin_disabled: bool = True,
 ) -> None:
     """.env·프로세스 환경과 무관하게 주어진 값만으로 검사를 실행한다."""
     config.validate_deployment_safety(
@@ -56,8 +57,7 @@ def _check(
             _env_file=None,
             ENV=env,
             DEBUG=debug,
-            ADMIN=admin,
-            ADMIN_ALLOW_UNAUTHENTICATED=admin_ack,
+            ADMIN_DISABLED=admin_disabled,
         ),
         jwt=config.JWTSettings(
             _env_file=None,
@@ -165,13 +165,12 @@ def test_short_secret_key_is_rejected(env):
 def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     # DEBUG·LOG_LEVEL·비밀번호 3종은 배포 안전 검사 대상이다. 개발자 `.env` 값에
     # 좌우되지 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
-    # ADMIN 기본값 true 는 배포 환경에서 확인 플래그 없이는 위반이다(ADR-045 ③) — 끈 채로 둔다.
     # MYSQL_HOST·USER·DATABASE 는 `.env` 가 없는 환경(CI)에서 출처 검사(ADR-045 ①)를 통과시킨다.
     env = {
         **os.environ,
         "DEBUG": "false",
         "LOG_LEVEL": "INFO",
-        "ADMIN": "false",
+        "ADMIN_DISABLED": "true",
         "MYSQL_HOST": "127.0.0.1",
         "MYSQL_USER": "app",
         "MYSQL_DATABASE": "app",
@@ -362,48 +361,81 @@ def test_import_fails_in_production_with_example_passwords():
 
 
 # ---------------------------------------------------------------------------
-# ADR-045 ③ — 배포 환경의 ADMIN=true 는 "알고 켰다" 는 확인이 있어야 뜬다.
-# 기본값 ADMIN=true 를 그대로 들고 온 배포와, 인증 없는 /admin 을 의도한 배포를 가른다.
+# admin-login ADR-004 — 관리 화면은 슈퍼유저 로그인이 필요하므로 배포 환경에서 켜 두어도 막지 않는다.
+# 예전 확인 플래그(ADR-045 ③)는 설정·검사·기동 WARNING 에서 모두 빠졌다.
+# admin-login ADR-005 — 예전 설정 `ADMIN` 이 남아 있으면 조용히 무시하지 않고 기동을 멈춘다.
 # ---------------------------------------------------------------------------
 
+LEGACY_ADMIN_FLAG = "ADMIN_ALLOW_UNAUTHENTICATED"
 
-@pytest.mark.parametrize("env", ["staging", "production"])
-def test_admin_without_ack_is_rejected_in_deployed_envs(env):
+
+@pytest.mark.parametrize("env", ["development", "staging", "production", "test"])
+def test_admin_enabled_passes_in_every_env(env):
+    _check(env, STRONG, admin_disabled=False)
+
+
+@pytest.mark.parametrize("name", ["ADMIN", "admin"])
+@pytest.mark.parametrize("env", ["development", "staging", "production"])
+def test_legacy_admin_env_var_stops_startup(tmp_path, env, name):
     with pytest.raises(RuntimeError) as exc_info:
-        _check(env, STRONG, admin=True)
-    message = str(exc_info.value)
-    assert "ADMIN" in message
-    assert "ADMIN_ALLOW_UNAUTHENTICATED" in message  # 해결 방법을 함께 알려 준다
+        config.validate_no_legacy_admin(env, tmp_path / ".env", {name: "false"})
+    assert "ADMIN_DISABLED" in str(exc_info.value)
 
 
-@pytest.mark.parametrize("env", ["staging", "production"])
-def test_admin_with_ack_passes_in_deployed_envs(env):
-    _check(env, STRONG, admin=True, admin_ack=True)
+def test_legacy_admin_in_env_file_stops_startup(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("DEBUG=false\nADMIN=false\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="ADMIN_DISABLED"):
+        config.validate_no_legacy_admin("production", env_file, {})
 
 
-@pytest.mark.parametrize("env", ["development", "test"])
-def test_admin_needs_no_ack_outside_deployed_envs(env):
-    """개발용 /admin 은 지금처럼 확인 없이 뜬다."""
-    _check(env, STRONG, admin=True)
+def test_new_admin_setting_does_not_trip_legacy_check(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("ADMIN_DISABLED=true\nADMIN_VIEWS=x\n", encoding="utf-8")
+    config.validate_no_legacy_admin("production", env_file, {"ADMIN_DISABLED": "true"})
 
 
-def test_import_fails_in_production_with_admin_default():
-    """기본값 ADMIN=true 로 배포하면 import 에서 멈춘다."""
-    result = _import_config({"ENV": "production", **STRONG, "ADMIN": "true"})
+def test_legacy_admin_is_not_checked_under_test_env(tmp_path):
+    config.validate_no_legacy_admin("test", tmp_path / ".env", {"ADMIN": "false"})
+
+
+def test_import_fails_when_legacy_admin_is_set():
+    """검사는 config import 시점에 실제로 돈다."""
+    result = _import_config({"ENV": "production", **STRONG, "ADMIN": "false"})
     assert result.returncode != 0
-    assert "ADMIN_ALLOW_UNAUTHENTICATED" in result.stderr
+    assert "ADMIN_DISABLED" in result.stderr
 
 
-def test_deployed_admin_with_ack_logs_warning_on_startup():
-    """확인 플래그로 연 /admin 은 기동마다 WARNING 을 남긴다 — 운영 로그에서 놓치지 않게."""
+def test_legacy_admin_flag_is_gone_from_settings_and_code():
+    assert LEGACY_ADMIN_FLAG not in config.AppSettings.model_fields
+    for path in (
+        PROJECT_ROOT / "config.py",
+        PROJECT_ROOT / "main.py",
+        PROJECT_ROOT / ".env.example",
+        *(PROJECT_ROOT / "app").rglob("*.py"),
+        *(PROJECT_ROOT / "scripts").rglob("*.py"),
+    ):
+        assert LEGACY_ADMIN_FLAG not in path.read_text(encoding="utf-8"), path
+
+
+def test_leftover_legacy_admin_flag_in_env_file_is_ignored(tmp_path):
+    """운영자의 `.env` 에 예전 줄이 남아 있어도 설정 로드가 깨지지 않는다(extra="ignore")."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"{LEGACY_ADMIN_FLAG}=true\n", encoding="utf-8")
+    settings = config.AppSettings(_env_file=env_file)
+    assert settings.ADMIN_DISABLED is False
+
+
+def test_deployed_admin_starts_without_flag_and_without_unauthenticated_warning():
+    """production 에서 관리 화면을 켠 채(기본값) 앱이 뜬다. 예전 플래그가 환경에 남아 있어도 무시된다."""
     env = {
         **os.environ,
         "ENV": "production",
         **STRONG,
         "DEBUG": "false",
         "LOG_LEVEL": "INFO",
-        "ADMIN": "true",
-        "ADMIN_ALLOW_UNAUTHENTICATED": "true",
+        "ADMIN_DISABLED": "false",
+        LEGACY_ADMIN_FLAG: "true",
         "MYSQL_HOST": "127.0.0.1",
         "MYSQL_USER": "app",
         "MYSQL_DATABASE": "app",
@@ -424,8 +456,8 @@ def test_deployed_admin_with_ack_logs_warning_on_startup():
     )
     assert result.returncode == 0, result.stderr[-2000:]
     output = result.stdout + result.stderr
-    assert "WARNING" in output
-    assert "SQLAdmin 이 인증 없이 열려 있습니다" in output
+    assert "슈퍼유저 로그인 필요" in output
+    assert "인증 없이" not in output
 
 
 # ---------------------------------------------------------------------------

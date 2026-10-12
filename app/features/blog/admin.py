@@ -4,12 +4,13 @@ Blog 기능 SQLAdmin 설정
 SQLAdmin 을 사용한 Post 모델의 관리자 인터페이스를 정의한다.
 
 Note:
-    SQLAdmin 은 ADMIN 설정으로 제어된다 (DEBUG 와 독립적).
-    ADMIN=True: /admin 접근 가능, ADMIN=False: /admin 접근 차단
-    운영 환경에서는 보안상 ADMIN=False 설정을 권장한다.
+    SQLAdmin 은 ADMIN_DISABLED 설정으로 끈다 (DEBUG 와 독립적).
+    기본(false): /admin 마운트·슈퍼유저 로그인 필요, true: 마운트 자체가 없다(404).
+    관리 화면을 쓰지 않는 배포는 ADMIN_DISABLED=true 를 권장한다.
 """
 
 from sqladmin import ModelView
+from sqladmin.filters import OperationColumnFilter
 
 from app.features.blog.models.models import Post
 
@@ -56,10 +57,10 @@ class PostAdmin(ModelView, model=Post):
         Post.author,
     ]
 
-    column_filters = [
-        Post.author,
-        Post.created_at,
-    ]
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다(admin-login F-005).
+    # 생성 시각은 필터하지 않는다: 연산 필터가 UTCDateTime(TypeDecorator)을 날짜 형으로 보지 못해 입력 문자열을
+    # 그대로 바인딩한다(500). 시각은 목록 정렬로 본다.
+    column_filters = [OperationColumnFilter(Post.author)]
 
     # =========================================================================
     # 상세 페이지 설정
@@ -106,5 +107,5 @@ class PostAdmin(ModelView, model=Post):
 
 # 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.
 # 패키지 __init__.py 로 재노출하지 않는다 — 그러면 라우터만 필요한 import 에도
-# sqladmin 이 딸려 와 ADMIN=false 가 무의미해진다(가드: tests/test_admin_wiring.py).
+# sqladmin 이 딸려 와 ADMIN_DISABLED=true 가 무의미해진다(가드: tests/test_admin_wiring.py).
 admin_views: list[type] = [PostAdmin]

@@ -1,7 +1,7 @@
 """라우트 인벤토리 골든 스냅샷 (리팩토링 회귀 방지 안전망).
 
 Django식 AppRegistry 자동발견 → 표준 FastAPI include_router 배선으로 재구조화하는 동안
-공개 API 경로/메서드가 바뀌지 않았음을 보장한다. DEBUG/ADMIN 설정에 따라 달라지는
+공개 API 경로/메서드가 바뀌지 않았음을 보장한다. DEBUG/ADMIN_DISABLED 설정에 따라 달라지는
 /docs·/openapi.json·/admin 은 제외하고, 항상 존재하는 도메인 API + /health 만 고정한다.
 
 경로 수집에는 `app.openapi()` 를 쓴다. `app.routes` 직접 순회는 FastAPI 버전에 따라

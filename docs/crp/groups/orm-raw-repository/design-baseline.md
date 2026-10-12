@@ -148,7 +148,7 @@
 - **C-5**: 기존 세션·Repository 호환 이름은 전체 호출부 전환·사용처 0건 확인 전에 삭제하지 않는다 (MIG-002, ORM-REP-007).
 - **C-6**: shutdown 에서 DB table 을 drop 하지 않는다 (AR-006).
 - **C-7**: 3306 의 공유 `percona-mysql-8.4` 인스턴스를 변경하지 않는다 (REQ-002).
-- **C-8**: 기존 ADMIN 정책(선택 A — 기본값 true, 인증 백엔드 없음)을 변경하지 않는다. 별도 승인 사항. **상태: Active(축소, ADR-027 → ADR-045)** — 기본값 true·무인증은 그대로다. 앱이 막는 운영 조합은 예시 비밀 키·access==refresh(ADR-027)와, staging/production 에서 `ADMIN_ALLOW_UNAUTHENTICATED=true` 확인 없는 `ADMIN=true`(ADR-045 ③, 2026-10-07 사용자 승인)다. 확인이 있으면 배포 환경에서도 인증 없이 열린다. 그 밖의 조합(`SERVER_HOST` 등)은 그대로다.
+- **C-8**: 기존 ADMIN 정책(선택 A — 기본값 true, 인증 백엔드 없음)을 변경하지 않는다. 별도 승인 사항. **상태: Active(축소, ADR-027 → ADR-045)** — 기본값 true·무인증은 그대로다. 앱이 막는 운영 조합은 예시 비밀 키·access==refresh(ADR-027)와, staging/production 에서 `ADMIN_ALLOW_UNAUTHENTICATED=true` 확인 없는 `ADMIN=true`(ADR-045 ③, 2026-10-07 사용자 승인)다. 확인이 있으면 배포 환경에서도 인증 없이 열린다. 그 밖의 조합(`SERVER_HOST` 등)은 그대로다. **상태(2026-10-12): "인증 백엔드 없음" 부분과 ADR-045 ③ 의 확인 플래그는 `admin-login` ADR-004 가 대체 — 관리 화면은 슈퍼유저 로그인, 설정은 `ADMIN_DISABLED`(admin-login ADR-005).**
 - **C-9**: JWT 인증 정책과 Redis API client 는 이번 범위 밖 (requirements §4.5/§4.6, §17). **상태: Superseded (2026-10-12, `service-hardening` 그룹 ADR-002)** — 2026-10-12 요청이 로그인 고도화와 Redis 필수를 명시해 두 주제를 그 그룹의 범위로 옮겼다. 이 그룹의 나머지 제약(C-1~C-8)은 그 그룹이 계승한다.
 
 ## 5. 변경 이력

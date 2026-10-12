@@ -2,10 +2,11 @@
 
 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.
 패키지 ``__init__.py`` 로 재노출하지 않는다 — 그러면 라우터만 필요한 import 에도
-sqladmin 이 딸려 와 ADMIN=false 가 무의미해진다.
+sqladmin 이 딸려 와 ADMIN_DISABLED=true 가 무의미해진다.
 """
 
 from sqladmin import ModelView
+from sqladmin.filters import BooleanFilter
 
 from app.features.catalog.models.models import Product
 
@@ -30,7 +31,10 @@ class ProductAdmin(ModelView, model=Product):
     page_size_options = [25, 50, 100, 200]
 
     column_searchable_list = [Product.name]
-    column_filters = [Product.is_active, Product.created_at]
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다(admin-login F-005).
+    # 생성 시각은 필터하지 않는다: 연산 필터가 UTCDateTime(TypeDecorator)을 날짜 형으로 보지 못해 입력 문자열을
+    # 그대로 바인딩한다(500). 시각은 목록 정렬로 본다.
+    column_filters = [BooleanFilter(Product.is_active)]
 
     column_details_list = [
         Product.id,
