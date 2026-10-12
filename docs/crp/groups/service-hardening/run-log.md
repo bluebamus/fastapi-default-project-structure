@@ -137,6 +137,42 @@
   수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다. `review_gate` 의 네트워크 단계(pip-audit)는
   `--fast` 에서 돌지 않는다
 
+### Round 5 — 2026-10-12 · 단계 E (base SHA: `6e19cd1`, 커밋 `a902f89`)
+- **트리거:** 사용자 요청 REQ-001 (제안 8, "redis 필수")
+- **검수 범위:** Redis client 소유·소비 경로(`resources._redis` → `app.state.redis`, 소비처 0건이던 것), `/ready` 판정·로그,
+  Celery 앱 include·모델 등록·태스크 모듈 전수(중앙 `app/celery/tasks.py` 1건), 기능 패키지 탐색(`models_registry`),
+  home 조립 경로(HTTP provider·태스크), `compose.test.yaml` 의 `redis-test`(이미 있음 — 확인만)
+- **GATE 통과:** 0 ☑ 1 ☑ 2 ☑ 3 ☑ 4 ☑ 5 ☑ — `pytest -m "not mysql"` **783 passed · 16 deselected · skipped 0**,
+  ruff check·format 그린, mypy 193 파일 무결, `review_gate --fast` 의 구조 검사 전건 통과(ENV=test — mypy 단계만 `.venv` 의
+  컴파일 DLL 이 앱 제어 정책에 막혀 FAIL, 같은 버전 순수 Python 빌드로 따로 돌려 그린), `-m mysql` 16건 수집
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0 (기존 F-017·F-018 을 닫았다)
+- **신규 Fix(계약 위반):** F-017·F-018 Fixed
+- **결정:** ADR-024(`get_redis` 위치·503, `/ready` 동시 판정·로그 범위, `find_spec` 기반 태스크 발견, 공용 조립 함수)
+- **fail-on-revert:** 대상 파일을 저장소 밖에 복사해 두고 되돌리거나 변이를 넣은 뒤 복사본으로 복원했다.
+  - E1 — `main.py` 를 `main` 내용으로 되돌리면 6건 실패(Redis ping 확인·ping 실패·timeout·동시성·client 없음·로그).
+    `get_redis` 가 raise 대신 `None` 을 돌려주면 `test_get_redis_without_client_is_503` 2건 실패. `gather` 를 순차 await 로
+    바꾸면 `test_ready_checks_database_and_redis_concurrently` 실패. 로그 인자를 `str(exc)` 로 바꾸면
+    `test_ready_logs_only_target_and_exception_type` 실패. `test_get_redis_returns_the_lifespan_client` 는 새 provider
+    자체를 시험한다(되돌리면 import 실패)
+  - E2 — `app/celery/app.py`·`app/celery/tasks.py` 를 `main` 내용으로 되돌리면 4건 실패(include 계약 2·AST·태스크 provider).
+    태스크 본문이 `UserAccessLogService` 를 직접 만들면 `test_task_builds_service_through_home_provider` 실패. 탐색이
+    `find_spec` 대신 `import_module` 을 쓰면 4건 실패(태스크 모듈을 import 해 터진다). `test_discovery_lists_home_tasks`·
+    `test_aggregate_task_registered_through_discovery` 는 새 함수·새 위치를 시험한다(되돌리면 import 실패)
+- **기존 테스트 영향:** `tests/core/test_celery_app.py` 의 `"app.celery.tasks" in include` 단언을 "include == 탐색 결과,
+  전부 `app.features.*`" 로 바꿨다(중앙 모듈이 사라졌으므로). `app/features/home/tests/test_home_tasks.py` 는 중앙 모듈 import
+  대신 Celery 의 include import(`loader.import_default_modules()`)로 등록을 확인한다. `tests/test_health_ready.py` 의 기존
+  DB 실패·timeout·원문 비노출 테스트는 그대로 두고, client fixture 가 `get_redis` 를 가짜로 바꿔 끼운다
+  (`test_ready_returns_200_when_database_answers` → `..._and_redis_answer` 로 이름과 단언을 넓혔다)
+- **문서 갱신:** README(기술 표·`/ready`·Redis 환경 변수), ARCHITECTURE(§1 구조·의존 규칙, §3.4 `/ready`, §7.2 `get_redis`,
+  §13 Celery 발견·기능 제거 시 동작·provider 재사용, 설계 결정 표), DEVELOPMENT(§3 Redis 의존성, §10.3 기능별 태스크)
+- **charter §3 C 정정:** Round 3 에서 단계 C 를 끝내고도 인수 기준 체크를 빠뜨렸다. F-014·F-015 Fixed 와 CI run
+  `38208514130`(`2cd4def`, 단계 C 병합 — `MySQL 8.4 통합` job `pytest -m mysql --mysql-required` 13 passed, `GATE 3` job
+  746 passed·skip 0)을 근거로 닫았다
+- **수렴 판정:** `CONVERGED` (Open Fix 0 — 단계 E 범위)
+- **잔여 위험 변화:** 없음(R-005 fail-closed 는 그대로 — 이제 `/ready` 도 Redis 장애에 503 을 낸다는 것이 그 내용이다)
+- **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
+  수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
@@ -144,3 +180,4 @@
 | 2 | 0 | 1 | 5 | 3 | 9 | CONVERGED (단계 B) |
 | 3 | 0 | 0 | 2 | 0 | 2 | CONVERGED (단계 C) |
 | 4 | 0 | 0 | 0 | 0 | 1 (F-016) | CONVERGED (단계 D) |
+| 5 | 0 | 0 | 0 | 0 | 2 (F-017·F-018) | CONVERGED (단계 E) |
