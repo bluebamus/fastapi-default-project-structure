@@ -103,16 +103,26 @@ def test_every_table_has_a_primary_key():
     assert not missing, f"기본키가 없는 테이블: {missing}"
 
 
-def test_timestamp_columns_are_timezone_aware():
-    """시각 컬럼은 timezone-aware 여야 한다 (naive 저장은 TZ 사고의 근원)."""
-    fingerprint = build_schema_fingerprint()
+def test_timestamp_columns_are_stored_as_utc():
+    """시각 컬럼은 모두 ``UTCDateTime`` 이다 (naive 저장은 TZ 사고의 근원).
+
+    service-hardening ADR-010 이전에는 ``DateTime(timezone=True)`` 여부를 봤다. 그 플래그는
+    MySQL·SQLite 에서 아무 일도 하지 않아 KST 벽시계가 오프셋 없이 저장됐다(검수 R-05).
+    이제 기준은 타입이다 — naive 거부·UTC 변환·UTC 부착을 이 타입이 강제한다. 스냅샷의
+    ``timezone`` 이 false 인 것은 impl 이 ``DateTime()`` 이기 때문이다(시간대는 타입이 처리한다).
+    """
+    from app.core.db.models_registry import import_all_models
+    from app.core.db.session import Base
+    from app.core.models.types import UTCDateTime
+
+    import_all_models()
     offenders = [
-        f"{table}.{column['name']}"
-        for table, spec in fingerprint.items()
-        for column in spec["columns"]
-        if column["name"].endswith("_at") and column["timezone"] is not True
+        f"{table.name}.{column.name}"
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+        if column.name.endswith("_at") and not isinstance(column.type, UTCDateTime)
     ]
-    assert not offenders, f"timezone 정보가 없는 시각 컬럼: {offenders}"
+    assert not offenders, f"UTCDateTime 이 아닌 시각 컬럼: {offenders}"
 
 
 if __name__ == "__main__":  # pragma: no cover - 스냅샷 갱신 도구

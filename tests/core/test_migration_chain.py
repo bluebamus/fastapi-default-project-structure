@@ -98,3 +98,31 @@ def test_percent_in_url_survives_alembic_config(tmp_path, monkeypatch):
         assert "users" in sa.inspect(engine).get_table_names()
     finally:
         engine.dispose()
+
+
+def test_alembic_check_reports_no_drift_through_env(tmp_path, monkeypatch):
+    """``alembic check`` 가 ``migrations/env.py``(비교·렌더 훅 포함)를 거쳐 드리프트 없음을 낸다.
+
+    ``compare_metadata`` 직접 호출은 env.py 를 지나지 않는다. SQLite 에서는 훅이 없어도 드리프트가
+    없으므로, env.py 가 훅을 실제로 넘기는지도 ``configure`` 호출 인자로 확인한다 — MySQL 에서
+    ``DATETIME``(fsp 0) 을 드리프트로 잡는 것은 그 훅이다(service-hardening ADR-010).
+    """
+    from alembic.runtime.environment import EnvironmentContext
+
+    from app.core.models.types import compare_type, render_item
+
+    engine = _upgrade_to_head(tmp_path, monkeypatch)
+    engine.dispose()
+
+    seen: dict = {}
+    original = EnvironmentContext.configure
+
+    def _spy(self, *args, **kwargs):
+        seen.update(kwargs)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(EnvironmentContext, "configure", _spy)
+    command.check(Config("alembic.ini"))
+
+    assert seen.get("compare_type") is compare_type
+    assert seen.get("render_item") is render_item

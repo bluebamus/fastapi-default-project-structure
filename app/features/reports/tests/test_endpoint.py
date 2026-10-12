@@ -7,8 +7,9 @@ Raw 집계 SQL 이 실제로 도는지, 결과가 Pydantic DTO 로 검증돼 나
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
@@ -30,18 +31,25 @@ from app.features.reports.models.models import (  # noqa: F401  (테이블 등�
 )
 from app.features.reports.repositories.sales_report_repository import (
     SalesReportRawRepository,
+    _offset_param,
 )
+from app.features.reports.services.report_service import local_day_bounds
+from config import timezone_settings
 from main import app
 from tests.session_overrides import override_db_sessions
 
 BASE = "/api/v1/reports/sales/daily"
 
+# 시드 시각은 **로컬 영업일**(설정 TIME_ZONE) 기준으로 적는다 — 저장은 UTC 로 되고(ADR-010),
+# 리포트는 로컬 날짜로 묶는다. naive 값은 저장 경로에서 거부된다.
+LOCAL = timezone_settings.tz
+
 # 같은 날 2건 + 다른 날 1건 + 범위 밖 1건
 SEED_ORDERS = [
-    ("o1", "alice", "100.00", datetime(2026, 8, 1, 9, 0)),
-    ("o2", "bob", "50.50", datetime(2026, 8, 1, 18, 30)),
-    ("o3", "alice", "200.00", datetime(2026, 8, 3, 12, 0)),
-    ("o4", "carol", "999.00", datetime(2026, 9, 1, 12, 0)),
+    ("o1", "alice", "100.00", datetime(2026, 8, 1, 9, 0, tzinfo=LOCAL)),
+    ("o2", "bob", "50.50", datetime(2026, 8, 1, 18, 30, tzinfo=LOCAL)),
+    ("o3", "alice", "200.00", datetime(2026, 8, 3, 12, 0, tzinfo=LOCAL)),
+    ("o4", "carol", "999.00", datetime(2026, 9, 1, 12, 0, tzinfo=LOCAL)),
 ]
 
 
@@ -266,8 +274,9 @@ async def test_repository_allowlist_holds_without_the_view(sales_engine):
 
         with pytest.raises(ValueError):
             await repository.daily_sales(
-                start_at=datetime(2026, 8, 1),
-                end_at=datetime(2026, 8, 8),
+                start_at=datetime(2026, 8, 1, tzinfo=LOCAL),
+                end_at=datetime(2026, 8, 8, tzinfo=LOCAL),
+                tz_offset=timedelta(hours=9),
                 sort_by="customer",
             )
 
@@ -366,9 +375,10 @@ async def test_snapshot_load_rolls_back_when_insert_fails(sales_engine):
     async with maker() as db_session:
         repository = SalesReportRawRepository(db_session)
         await repository.insert_daily_snapshots(
-            start_at=datetime(2026, 8, 1),
-            end_at=datetime(2026, 8, 8),
-            generated_at=datetime(2026, 8, 20, 9, 0),
+            start_at=datetime(2026, 8, 1, tzinfo=LOCAL),
+            end_at=datetime(2026, 8, 8, tzinfo=LOCAL),
+            tz_offset=LOCAL.utcoffset(datetime(2026, 8, 1)) or timedelta(0),
+            generated_at=datetime(2026, 8, 20, 9, 0, tzinfo=LOCAL),
         )
         await db_session.commit()
 
@@ -555,3 +565,94 @@ async def test_boundary_dates_are_accepted(client):
 
     assert upper.status_code == 200, upper.text
     assert lower.status_code == 200, lower.text
+
+
+# =============================================================================
+# 로컬 영업일 · UTC 저장 (service-hardening ADR-010, F-016)
+# =============================================================================
+def test_local_day_bounds_are_local_midnights_as_utc_instants():
+    """로컬 날짜 범위(종료일 포함)는 로컬 자정 두 개의 반열린 구간이다 — UTC 로는 전날 15:00."""
+    start_at, end_at = local_day_bounds(date(2026, 1, 2), date(2026, 1, 2), ZoneInfo("Asia/Seoul"))
+
+    assert start_at.astimezone(UTC) == datetime(2026, 1, 1, 15, 0, tzinfo=UTC)
+    assert end_at.astimezone(UTC) == datetime(2026, 1, 2, 15, 0, tzinfo=UTC)
+    assert start_at.utcoffset() == timedelta(hours=9)
+
+
+@pytest.mark.parametrize(
+    ("dialect_name", "offset", "expected"),
+    [
+        ("mysql", timedelta(hours=9), "+09:00"),
+        ("mysql", timedelta(hours=-5, minutes=-30), "-05:30"),
+        ("mysql", timedelta(0), "+00:00"),
+        ("sqlite", timedelta(hours=9), "+540 minutes"),
+        ("sqlite", timedelta(hours=-5, minutes=-30), "-330 minutes"),
+    ],
+)
+def test_offset_param_matches_each_dialect(dialect_name, offset, expected):
+    assert _offset_param(dialect_name, offset) == expected
+
+
+async def test_order_after_local_midnight_counts_for_the_next_local_day(
+    client, sales_engine, monkeypatch
+):
+    """UTC 2026-01-01 15:30 은 KST 1월 2일 00:30 이다 — 리포트·스냅샷 모두 1월 2일에 묶는다.
+
+    UTC 날짜로 묶으면 1월 1일이 되고, 로컬 자정 경계로 자르지 않으면 범위에서 빠진다.
+    """
+    from config import timezone_settings as tz_settings
+
+    monkeypatch.setattr(tz_settings, "TIME_ZONE", "Asia/Seoul")
+    http_client, _ = client
+    _, maker = sales_engine
+    async with maker() as db_session:
+        db_session.add(
+            SalesOrder(
+                id="midnight",
+                customer="dave",
+                total_amount=Decimal("10.00"),
+                created_at=datetime(2026, 1, 1, 15, 30, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+    jan_1 = await http_client.get(
+        BASE, params={"start_date": "2026-01-01", "end_date": "2026-01-01"}
+    )
+    jan_2 = await http_client.get(
+        BASE, params={"start_date": "2026-01-02", "end_date": "2026-01-02"}
+    )
+    load = await http_client.post(
+        SNAPSHOTS, json={"start_date": "2026-01-01", "end_date": "2026-01-02"}
+    )
+
+    assert jan_1.json()["items"] == []
+    assert [(item["sales_date"], item["order_count"]) for item in jan_2.json()["items"]] == [
+        ("2026-01-02", 1)
+    ]
+    assert load.status_code == 200, load.text
+    assert await _snapshot_rows(maker) == [("2026-01-02", 1, Decimal("10.00"))]
+
+
+async def test_snapshot_generated_at_is_rendered_as_utc(client):
+    """적재 응답의 ``generated_at`` 은 UTC 오프셋을 가진다(설명 "적재 시각(UTC)")."""
+    http_client, _ = client
+
+    response = await http_client.post(SNAPSHOTS, json=LOAD_RANGE)
+
+    generated_at = response.json()["generated_at"]
+    assert generated_at.endswith(("Z", "+00:00")), generated_at
+
+
+async def test_raw_repository_rejects_naive_bounds(sales_engine):
+    """Raw 경로도 naive 시각을 받지 않는다 — 드라이버가 오프셋 없이 벽시계만 보내지 않게."""
+    from app.core.exception import AppException
+
+    _, maker = sales_engine
+    async with maker() as db_session:
+        with pytest.raises(AppException):
+            await SalesReportRawRepository(db_session).daily_sales(
+                start_at=datetime(2026, 8, 1),
+                end_at=datetime(2026, 8, 8),
+                tz_offset=timedelta(hours=9),
+            )

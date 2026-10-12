@@ -34,9 +34,11 @@
 - [x] (C3) 해당 없음 — 설정 reload·import 시점 객체 패치를 쓰는 테스트가 없다(`reload(` 0건)
 - [x] 공통 게이트 그린 · run-log 갱신 — 746 passed · skipped 0
 
-## Round 4 — 단계 D (UTC 저장)
-- [ ] (F-016) `UTCDateTime` · `utc_now` · 리비전(`DATETIME(6)` + `CONVERT_TZ`) · 리포트 오프셋 · Celery `enable_utc`
-- [ ] 공통 게이트 그린 · run-log 갱신
+## Round 4 — 2026-10-12 · 단계 D (UTC 저장)
+- [x] (F-016) `UTCDateTime` · `utc_now` · 리비전(`DATETIME(6)` + `CONVERT_TZ`) · 리포트 오프셋 · Celery `enable_utc`
+- [x] Alembic 비교·렌더 훅(`compare_type`·`render_item`) + env.py 연결 — ADR-023
+- [x] MySQL 테스트(`mysql` 마커 3건 추가: 왕복·자정 경계·리비전 변환, 기존 시드 aware 로) — 로컬은 수집만(16건)
+- [x] 공통 게이트 그린 · run-log 갱신 — 769 passed · skipped 0
 
 ## Round 5 — 단계 E (Redis 필수 · /ready · Celery 발견)
 - [ ] (F-017) `get_redis` provider + `/ready` DB·Redis 판정

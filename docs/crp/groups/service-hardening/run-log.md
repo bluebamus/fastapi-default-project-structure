@@ -93,9 +93,54 @@
 - **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
   수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다
 
+### Round 4 — 2026-10-12 · 단계 D (base SHA: `2cd4def`, 커밋 `af55c67`)
+- **트리거:** 사용자 요청 REQ-001 (제안 7)
+- **검수 범위:** 시각 컬럼 전수(metadata 13개 — `type_annotation_map`·두 Mixin·`generated_at`), 시각 생성 지점
+  (`timezone_settings.now()` 호출처 3곳 → `utc_now()`), Raw 시각 바인드(리포트 조회·적재), Alembic 비교·렌더 경로
+  (`migrations/env.py` online·offline), Celery 설정, 응답 스키마의 시각 설명(blog·reply·sns·user·catalog·home·reports)
+- **GATE 통과:** 0 ☑ 1 ☑ 2 ☑ 3 ☑ 4 ☑ 5 ☑ — `pytest -m "not mysql"` **769 passed · 16 deselected · skipped 0**,
+  ruff check·format 그린, mypy 192 파일 무결, `review_gate --fast` 전건 통과(ENV=test), `-m mysql` 16건 수집,
+  `alembic heads` 단일 head(`a7c9e1f3b5d6`), 임시 SQLite 파일에 `upgrade head` → `alembic check`("No new upgrade
+  operations detected") → `downgrade e5f7a9b1c4d5` 성공, MySQL 리비전 SQL 은 `--sql`(offline)로 렌더해 검토
+- **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 0 · LOW 0 (기존 F-016 을 닫았다)
+- **신규 Fix(계약 위반):** F-016 Fixed
+- **결정:** ADR-023(Alembic 훅·방언별 로컬 일자 식·Raw 시각 바인드 타입·리비전 방언 판정·"(UTC)" 설명 확장)
+- **fail-on-revert:** 대상 파일을 저장소 밖에 복사해 두고 되돌리거나 변이를 넣은 뒤 복사본으로 복원했다.
+  - D1 — `models_base.py` 를 `main` 내용으로 되돌리면 9건 실패(`test_model_default_is_aware_utc`·스냅샷 2건·catalog
+    오프셋·리포트 5건 — naive 시드가 UTC 로 해석되며 날짜가 밀린다). `UTCDateTime` 이 naive 를 받게 바꾸면
+    `test_bind_rejects_naive`·`test_raw_repository_rejects_naive_bounds` 실패. 비교 훅의 fsp 판정을 빼면
+    `test_compare_type_flags_mysql_datetime_without_microseconds` 실패. `env.py` 를 되돌리면
+    `test_alembic_check_reports_no_drift_through_env` 실패(훅이 `configure` 에 넘어가지 않는다)
+  - D3 — 리포트 일자 식을 UTC 날짜(`DATE(o.created_at)`)로, 경계를 UTC 자정으로, Raw 바인드에서 타입을 빼는 변이
+    각각에서 `test_order_after_local_midnight_counts_for_the_next_local_day` 실패(타입 제거는 naive 거부 테스트도 실패).
+    `generated_at` 을 `now()` 로 되돌리면 `test_snapshot_generated_at_is_rendered_as_utc` 실패(`+09:00`)
+  - D4 — `app/celery/app.py` 를 되돌리면 `test_celery_uses_utc_internally` 실패
+  - `test_local_day_bounds_*`·`test_offset_param_*` 는 새 함수 자체를 시험한다(되돌리면 import 실패). MySQL 3건
+    (`test_datetime6_roundtrip_*`·`test_order_after_local_midnight_*_on_mysql`·`test_utc_revision_converts_existing_kst_values`)은
+    로컬에 MySQL 이 없어 작성·수집만 했다 — CI `mysql` job 이 `--mysql-required` 로 실행한다
+- **기존 테스트 영향(골든 갱신 · 이유):**
+  - `tests/core/schema_snapshot.json` — 시각 컬럼 13개의 `timezone` 이 `true → false`. impl 이 `DateTime()` 이라서다 —
+    `timezone=True` 플래그는 MySQL·SQLite 에서 아무 일도 하지 않았고(검수 R-05), 시간대 처리는 이제 타입이 한다.
+    그 밖의 지문(이름·순서·nullable·default·index·comment)은 그대로다
+  - `test_timestamp_columns_are_timezone_aware` → `test_timestamp_columns_are_stored_as_utc` — 기준을 무의미해진 플래그에서
+    `UTCDateTime` 타입으로 바꿨다(약화가 아니라 강화 — 모든 `_at` 컬럼이 naive 거부·UTC 변환을 강제받는지 본다)
+  - 리포트 SQLite·MySQL 시드와 Repository 직접 호출, MySQL ORM 스모크의 동률 시각을 aware 로 바꿨다(naive 는 이제
+    저장 경로에서 거부된다). 시드 값은 로컬(TIME_ZONE) 벽시계 그대로라 기대 결과는 바뀌지 않았다
+  - `tests/test_response_serialization.py` 의 바이트 고정은 바꾸지 않았다 — aware UTC 는 원래 `Z` 로 고정돼 있고, 모델
+    값이 그 경로를 타게 됐을 뿐이다. 응답 오프셋은 catalog·reports 엔드포인트 테스트가 따로 본다
+  - MySQL 스키마 비교(`test_migrated_mysql_schema_matches_models`)에 env.py 와 같은 `compare_type` 훅을 넘긴다 —
+    기본 비교로는 `DATETIME(6)` 누락을 못 잡는다
+- **수렴 판정:** `CONVERGED` (Open Fix 0 — 단계 D 범위. MySQL 실행 근거는 CI `mysql` job)
+- **잔여 위험 변화:** R-011 추가(리비전의 +09:00 가정, SQLite 기존 값 미변환). R-003(고정 오프셋)은 코드에 `ponytail:`
+  주석으로 위치를 남겼다
+- **실행 환경 주석:** Round 1 과 같다 — mypy 는 같은 버전(1.20.2) 순수 Python 빌드를 격리 환경에서 실행했고, uvicorn
+  수명주기 3건은 저장소 밖 fakeredis TCP 서버(127.0.0.1:6379)로 돌리고 종료했다. `review_gate` 의 네트워크 단계(pip-audit)는
+  `--fast` 에서 돌지 않는다
+
 ## 심각도 추세 (수렴이 보이게)
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
 | 1 | 0 | 0 | 3 | 2 | 5 | CONVERGED (단계 A) |
 | 2 | 0 | 1 | 5 | 3 | 9 | CONVERGED (단계 B) |
 | 3 | 0 | 0 | 2 | 0 | 2 | CONVERGED (단계 C) |
+| 4 | 0 | 0 | 0 | 0 | 1 (F-016) | CONVERGED (단계 D) |

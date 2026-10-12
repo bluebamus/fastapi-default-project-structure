@@ -362,25 +362,30 @@ DTO 필드명이 같아야 합니다. `Decimal`·날짜 타입은 대상 DB 에�
 QUERY_DAILY_SALES = "sales_report.daily_sales"          # 로그의 안정 식별자 — 바꾸면 대시보드가 끊긴다
 SORTABLE_COLUMNS = {"sales_date": "sales_date", "order_count": "order_count", "gross_amount": "gross_amount"}
 
+_LOCAL_DATE_SQL = {   # UTC 저장값을 로컬 영업일로 묶는 식(방언별) — ponytail: 고정 오프셋
+    "mysql": "DATE(CONVERT_TZ(o.created_at, '+00:00', :tz_offset))",
+    "sqlite": "DATE(o.created_at, :tz_offset)",
+}
 _DAILY_SALES_SQL_TEMPLATE = """
-    SELECT DATE(o.created_at) AS sales_date,
+    SELECT {local_date} AS sales_date,
            COUNT(*)           AS order_count,
            COALESCE(SUM(o.total_amount), 0) AS gross_amount
       FROM sales_orders AS o
      WHERE o.created_at >= :start_at
        AND o.created_at <  :end_at
-     GROUP BY DATE(o.created_at)
+     GROUP BY {local_date}
      ORDER BY {order_by} {direction}
 """
 
 
 class SalesReportRawRepository(RawRepositoryBase):
-    async def daily_sales(self, *, start_at, end_at, sort_by="sales_date", sort_direction="ASC"):
+    async def daily_sales(self, *, start_at, end_at, tz_offset, sort_by="sales_date", sort_direction="ASC"):
         order_by = resolve_identifier(sort_by, SORTABLE_COLUMNS)   # 요청값은 키로만
         direction = resolve_sort_direction(sort_direction)
+        dialect_name = self._dialect_name()
         return await self.fetch_all(
-            text(_DAILY_SALES_SQL_TEMPLATE.format(order_by=order_by, direction=direction)),
-            {"start_at": start_at, "end_at": end_at},
+            _daily_sales_statement(order_by, direction, dialect_name),   # 시각 바인드는 UTCDateTime 타입
+            {"start_at": start_at, "end_at": end_at, "tz_offset": _offset_param(dialect_name, tz_offset)},
             query_name=QUERY_DAILY_SALES,
         )
 ```
@@ -389,8 +394,12 @@ class SalesReportRawRepository(RawRepositoryBase):
   SQL 에 없고 규칙이 SQL 에 숨지 않습니다.
 - allowlist 는 Repository 가 소유합니다(ADR-013) — View 의 enum 은 UX 일 뿐이고, Celery·스크립트가 Repository
   를 직접 불러도 같은 제약이 걸려야 합니다. 허용 밖이면 `ValueError` 를 던지고 Service 가 422 로 바꿉니다.
-- 표준 SQL 만 써서 SQLite 단위 테스트와 MySQL 통합 테스트가 같은 문장을 검증합니다. 그래도 방언 승인은
-  MySQL 통합 테스트(`-m mysql`)가 합니다.
+- 표준 SQL 만 써서 SQLite 단위 테스트와 MySQL 통합 테스트가 같은 문장을 검증합니다. 예외는 로컬 영업일 식
+  하나입니다 — `created_at` 이 UTC 로 저장되므로(service-hardening ADR-010) 일자를 로컬 날짜로 바꾸는 방언 함수가
+  필요하고, 그 식만 `_LOCAL_DATE_SQL` 에서 방언별로 고릅니다. 오프셋은 구간 시작 시점의 TIME_ZONE 오프셋
+  하나로 고정합니다(DST 지역의 한계는 residual-risk R-003). 방언 승인은 MySQL 통합 테스트(`-m mysql`)가 합니다.
+- Raw `text()` 는 컬럼 타입을 모르므로 시각 바인드에 `bindparam(..., type_=UTCDateTime())` 을 붙입니다. 붙이지
+  않으면 드라이버가 aware 값의 오프셋을 버리고 벽시계만 보냅니다.
 
 ### 6.5 Service — 기간 규칙은 여기
 
@@ -400,10 +409,10 @@ MAX_REPORT_DAYS = 366
 
 async def get_daily_sales(self, *, start_date, end_date, sort_by=..., sort_direction=...):
     self._validate_range(start_date, end_date)          # 1970-01-01..9998-12-31 밖, 종료일 < 시작일, 366일 초과 → InvalidDateRangeException(422)
-    start_at = datetime.combine(start_date, time.min)
-    end_at = datetime.combine(end_date + timedelta(days=1), time.min)   # "종료일 포함" → 다음날 00:00 미만
+    # "종료일 포함" → 로컬(TIME_ZONE) 다음날 00:00 미만. aware 값이라 바인드가 UTC 로 바꾼다.
+    start_at, end_at = local_day_bounds(start_date, end_date, timezone_settings.tz)
     try:
-        rows = await self.repository.daily_sales(start_at=start_at, end_at=end_at, sort_by=sort_by, sort_direction=sort_direction)
+        rows = await self.repository.daily_sales(start_at=start_at, end_at=end_at, tz_offset=_utc_offset(start_at), sort_by=sort_by, sort_direction=sort_direction)
     except ValueError as error:
         raise InvalidSortException(detail={...}) from error
     return [DailySalesItem.model_validate(dict(row)) for row in rows]
@@ -441,7 +450,7 @@ async def get_daily_sales_report(
 - 두 문장은 한 트랜잭션이어야 합니다 — DELETE 만 커밋되면 그 기간 리포트가 사라집니다.
 - 표준 SQL `DELETE` + `INSERT … SELECT` 로 멱등을 만들고 방언 UPSERT 를 쓰지 않습니다.
 - `generated_at` 은 바인드 파라미터로 넣습니다 — Raw DML 은 Mixin 의 Python 기본값을 우회해 NULL 이 됩니다.
-  시각을 Python(`timezone_settings.now()`)이 정하면 테스트가 DB 시계에 묶이지 않습니다.
+  시각을 Python(`timezone_settings.utc_now()` — DB 저장 시각은 UTC, ADR-010)이 정하면 테스트가 DB 시계에 묶이지 않습니다.
 - `execute` 는 영향 행 수만 돌려줍니다. 원장(`sales_orders`)은 읽기만 합니다.
 - 동시 실행의 직렬화는 보장하지 않습니다. 같은 기간을 동시에 적재할 수 있는 운영이라면 잠금·중복 실행
   정책을 따로 정합니다.
