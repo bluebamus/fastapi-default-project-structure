@@ -180,7 +180,9 @@ async def create_item(payload: ItemCreate, service: InventoryService = Depends(g
   유일 제약을 요구사항으로 정합니다. 상태 전환·재고 차감은 조회 후 UPDATE 만으로 안전하지 않으니 조건부
   UPDATE·잠금·제약을 설계합니다.
 - PATCH: `model_dump(exclude_unset=True)` 는 **보내지 않은** 필드만 빼고 명시적 `null` 은 남깁니다.
-  non-nullable 컬럼에 null 을 허용할지 거부할지 정하고 테스트합니다. 바뀔 값이 없으면 UPDATE 를 보내지
+  그래서 모든 Update 스키마는 `app/core/schemas.py` 의 `PatchSchema` 를 상속합니다 — 보낸 필드 중 값이
+  `null` 이고 `nullable_fields`(ClassVar)에 없는 필드는 422 입니다(service-hardening ADR-008 ①). 컬럼이
+  nullable 인 필드만 `nullable_fields = frozenset({"author"})` 처럼 적습니다. 바뀔 값이 없으면 UPDATE 를 보내지
   않고(불필요한 `updated_at` 갱신 방지), `update_by_id` 가 `None` 을 돌려줘도 존재는 이미 확인했다면 404 가
   아닙니다(`CatalogService.update_product` 참고).
 
@@ -397,7 +399,7 @@ class SalesReportRawRepository(RawRepositoryBase):
 MAX_REPORT_DAYS = 366
 
 async def get_daily_sales(self, *, start_date, end_date, sort_by=..., sort_direction=...):
-    self._validate_range(start_date, end_date)          # 종료일 < 시작일, 366일 초과 → InvalidDateRangeException(422)
+    self._validate_range(start_date, end_date)          # 1970-01-01..9998-12-31 밖, 종료일 < 시작일, 366일 초과 → InvalidDateRangeException(422)
     start_at = datetime.combine(start_date, time.min)
     end_at = datetime.combine(end_date + timedelta(days=1), time.min)   # "종료일 포함" → 다음날 00:00 미만
     try:
@@ -408,6 +410,8 @@ async def get_daily_sales(self, *, start_date, end_date, sort_by=..., sort_direc
 ```
 
 "종료일 포함"·최대 기간은 비즈니스 규칙이라 Service 가 해석하고, SQL 과 alias 는 Repository 가 가집니다.
+날짜 상한이 `date.max` 보다 하루 앞(9998-12-31)인 이유는 `end_date + 1일` 이 overflow 로 500 을 내지 않게 하기
+위해서입니다(service-hardening ADR-008 ③).
 `23:59:59` 를 끝으로 쓰면 마이크로초 단위 주문을 놓칩니다.
 
 ### 6.6 Dependency 와 View

@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -32,7 +33,7 @@ from sqlalchemy import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.elements import TextClause
 
-from app.core.exception import DatabaseException
+from app.core.repositories.db_errors import DatabaseErrorTranslator
 from app.core.repositories.raw_crud_base import RawCRUDBase
 from app.utils.logs import get_logger
 
@@ -91,17 +92,17 @@ class RawRepositoryBase(RawCRUDBase):
             yield
         except SQLAlchemyError as error:
             elapsed = (time.perf_counter() - started) * 1000
-            # 원문은 서버 로그에만 남긴다.
-            logger.error(
+            # 변환 표는 ORM 과 같다(service-hardening ADR-022). 로그에는 예외 타입과
+            # 드라이버 코드만 — SQL·바인딩 값은 남기지 않는다.
+            translated = DatabaseErrorTranslator.translate(error, detail={"query": query_name})
+            logger.log(
+                logging.WARNING if translated.status_code < 500 else logging.ERROR,
                 "[raw] %s 실패 (%.1fms): %s",
                 query_name,
                 elapsed,
-                type(error).__name__,
+                DatabaseErrorTranslator.describe(error),
             )
-            raise DatabaseException(
-                message="데이터베이스 처리 중 오류가 발생했습니다.",
-                detail={"query": query_name},
-            ) from error
+            raise translated from error
         else:
             elapsed = (time.perf_counter() - started) * 1000
             logger.debug("[raw] %s 완료 (%.1fms)", query_name, elapsed)

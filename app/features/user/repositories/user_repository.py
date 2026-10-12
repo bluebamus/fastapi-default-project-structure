@@ -21,5 +21,5 @@ class UserRepository(BaseRepository[User]):
         컬럼 이름이 바뀌면 실행 전에 드러난다(ORM-REP-005).
         """
         statement = select(User).where(User.username == username)
-        result = await self.db_session.execute(statement)
+        result = await self._execute(statement, "get_by_username")
         return result.scalars().first()

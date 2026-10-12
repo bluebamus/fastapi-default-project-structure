@@ -96,6 +96,9 @@ engine = create_async_engine(
     pool_recycle=280,  # MySQL 기본 wait_timeout(28800s), 클라우드는 보통 300s
     pool_pre_ping=True,
     pool_reset_on_return="rollback",  # 반환 시 롤백으로 세션 초기화
+    # 드라이버 예외의 str() 과 echo 로그에서 바인딩 값을 빼낸다 — 예외 문자열이 로그·DEBUG
+    # 응답으로 흘러도 비밀번호 해시·토큰이 실리지 않는다(service-hardening ADR-022).
+    hide_parameters=True,
     connect_args={
         "connect_timeout": 10,  # DB 연결 타임아웃 (초)
         "charset": "utf8mb4",  # 이모지 등 4바이트 UTF-8 지원
@@ -125,6 +128,7 @@ def _create_read_engine(url: URL) -> AsyncEngine:
         pool_recycle=280,
         pool_pre_ping=True,
         pool_reset_on_return="rollback",
+        hide_parameters=True,
         connect_args={
             "connect_timeout": 10,
             "charset": "utf8mb4",
@@ -184,6 +188,7 @@ background_engine = create_async_engine(
     pool_recycle=280,
     pool_pre_ping=True,
     pool_reset_on_return="rollback",
+    hide_parameters=True,
     connect_args={
         "connect_timeout": 10,
         "charset": "utf8mb4",

@@ -91,3 +91,54 @@ async def test_same_created_at_is_ordered_by_id(session, query):
         )
 
     assert [log.id for log in await query(repository)] == ["z", "m", "a"]
+
+
+# =============================================================================
+# 길이 초과 값 절단 — service-hardening ADR-007 (F-009)
+# =============================================================================
+def _string_columns() -> dict[str, int]:
+    return {
+        column.name: column.type.length
+        for column in UserAccessLog.__table__.c
+        if getattr(column.type, "length", None) is not None
+    }
+
+
+def test_fit_to_columns_cuts_every_bounded_string_to_its_column_length():
+    """길이는 모델 컬럼에서 읽는다 — 컬럼 길이를 바꾸면 절단도 따라간다."""
+    from app.features.home.services.user_access_log_service import fit_to_columns
+
+    lengths = _string_columns()
+    assert lengths["ip_address"] == 45 and lengths["request_path"] == 2048  # 표본
+
+    data = {name: "x" * (length + 10) for name, length in lengths.items()}
+    data["user_agent"] = "u" * 5000  # Text — 길이 제한 없음
+    data["response_status"] = 500  # 문자열이 아님
+
+    fitted = fit_to_columns(data)
+
+    for name, length in lengths.items():
+        assert len(fitted[name]) == length, f"{name} 이 {length} 로 잘리지 않았다"
+    assert len(fitted["user_agent"]) == 5000
+    assert fitted["response_status"] == 500
+    assert len(data["ip_address"]) == 55, "호출자 dict 를 바꾸면 안 된다"
+
+
+async def test_long_values_are_stored_cut_to_column_length(session):
+    """MySQL strict 모드에서 길이 초과 INSERT 는 실패하고 조용히 버려졌다(R-08)."""
+    service = UserAccessLogService(session)
+    created = await service.create_access_log(
+        {
+            "ip_address": "1.2.3.4",
+            "request_path": "/" + "p" * 5000,
+            "request_method": "GET",
+            "forwarded_for": "6.6.6.6, " * 100,
+            "query_string": "q=" + "v" * 300,
+            "session_id": "s" * 500,
+        }
+    )
+    await session.commit()
+
+    assert len(created.request_path) == 2048
+    assert len(created.forwarded_for) == 255
+    assert len(created.session_id) == 100

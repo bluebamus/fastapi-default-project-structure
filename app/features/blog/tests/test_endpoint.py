@@ -85,6 +85,19 @@ async def test_update_post(client):
     assert resp.json()["content"] == "c"  # 미전달 필드는 유지
 
 
+async def test_patch_with_explicit_null_on_required_field_is_422(client):
+    """보낸 null 이 NOT NULL 컬럼으로 내려가 500 이 났다(service-hardening ADR-008 ①)."""
+    created = await client.post("/api/v1/blog/posts", json={"title": "t", "content": "c"})
+    post_id = created.json()["id"]
+
+    resp = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"title": None})
+    assert resp.status_code == 422, resp.text
+
+    cleared = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"author": None})
+    assert cleared.status_code == 200, cleared.text  # nullable 컬럼은 비울 수 있다
+    assert cleared.json()["author"] is None
+
+
 async def test_delete_post(client):
     created = await client.post("/api/v1/blog/posts", json={"title": "t", "content": "c"})
     post_id = created.json()["id"]

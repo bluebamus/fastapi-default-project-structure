@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
+
 
 class ReplyBase(BaseModel):
     """댓글 공통 필드."""
@@ -17,8 +19,13 @@ class ReplyCreate(ReplyBase):
     """댓글 생성 요청."""
 
 
-class ReplyUpdate(BaseModel):
-    """댓글 수정 요청 — 전달된 필드만 부분 수정한다."""
+class ReplyUpdate(PatchSchema):
+    """댓글 수정 요청 — 전달된 필드만 부분 수정한다.
+
+    명시적 ``null`` 은 ``author`` 만 허용한다(nullable 컬럼). 나머지는 422.
+    """
+
+    nullable_fields = frozenset({"author"})
 
     content: str | None = Field(None, min_length=1, description="댓글 본문")
     author: str | None = Field(None, max_length=100, description="작성자")

@@ -65,14 +65,15 @@
 │   ├── core/                        # 프레임워크 인프라
 │   │   ├── resources.py             # 프로세스 수명 자원의 생성·해제 단일 지점
 │   │   ├── exception.py             # AppException 계층 + ErrorResponse
+│   │   ├── schemas.py               # PatchSchema(모든 Update 스키마의 기반 — null PATCH 거부)
 │   │   ├── tags_metadata.py         # OpenAPI 태그 설명
 │   │   ├── db/session.py            # 엔진·세션 팩토리·세션 의존성·create_db_tables·ping·dispose
 │   │   ├── db/router.py             # 읽기/쓰기 라우팅(RoutingSession)
 │   │   ├── db/models_registry.py    # 모델 모듈 탐색·import 단일 지점
 │   │   ├── models/models_base.py    # Base + UUID/Created/Updated Mixin
-│   │   ├── repositories/            # crud_base·repository_base(ORM) / raw_crud_base·raw_repository_base(Raw)
+│   │   ├── repositories/            # crud_base·repository_base(ORM) / raw_crud_base·raw_repository_base(Raw) / db_errors(DB 오류 변환 표)
 │   │   ├── services/services_base.py
-│   │   └── middlewares/             # cors_middleware·user_info_middleware·background_tasks·access_log_sink
+│   │   └── middlewares/             # cors_middleware·user_info_middleware·client_ip·background_tasks·access_log_sink
 │   ├── celery/                      # app.py(중앙 앱)·tasks.py(중앙 태스크)·task.py(run_async)·lifecycle.py
 │   └── utils/                       # logs/ · authenticator/ · pagination/ · validators.py
 ├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
@@ -216,7 +217,7 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 
 | 예외 | 응답 |
 |---|---|
-| `AppException` 과 하위(`NotFoundException`·`DuplicateException`·`DatabaseException`…) | 예외가 가진 상태 코드·`error_code` |
+| `AppException` 과 하위(`NotFoundException`·`DuplicateException`·`DatabaseException`…) | 예외가 가진 상태 코드·`error_code`. 로그는 4xx 면 WARNING(detail 없음), 5xx 면 ERROR(detail 포함) — service-hardening ADR-008 ④ |
 | `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록 |
 | Starlette `HTTPException` | 해당 코드, `error_code=HTTP_<코드>` |
 | 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 |
@@ -350,9 +351,23 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 | `count(**filters)` / `exists(pk)` | 개수 / SQL `EXISTS` |
 | `update_by_id(pk, data)` / `delete_by_id(pk)` | 없으면 `None` / 삭제 여부 `bool` |
 
-- 모든 경로가 같은 예외 변환을 거칩니다: `IntegrityError` → `DuplicateException`, 그 밖의
-  `SQLAlchemyError` → `DatabaseException`. 원본은 chaining 으로 보존하고 **응답 `detail` 에는
-  모델·연산 이름만** 싣습니다(무결성 위반 메시지에는 중복된 값 자체가 들어 있습니다).
+- 모든 경로가 같은 예외 변환을 거칩니다 — 표는 `app/core/repositories/db_errors.py` 의
+  `DatabaseErrorTranslator` 하나이고 Raw 계층도 같은 표를 씁니다(service-hardening ADR-008 ②·ADR-022).
+  드라이버 오류 코드로 판정합니다(SQLite 는 메시지로 대체):
+
+  | MySQL 코드 / SQLite | 예외 | 응답 |
+  |---|---|---|
+  | 1062 / `UNIQUE` | `DuplicateException` | 409 `DUPLICATE` |
+  | 1048·1364 / `NOT NULL` | `ValidationException` | 422 (필수 값 누락) |
+  | 1452 / `FOREIGN KEY` | `ValidationException` | 422 (참조 대상 없음) |
+  | 1451 | `ConflictException` | 409 `CONFLICT` (다른 행이 참조 중) |
+  | 그 밖 | `DatabaseException` | 500 |
+
+  원본은 chaining 으로 보존하고 **응답 `detail` 에는 모델·연산 이름만** 싣습니다(무결성 위반 메시지에는
+  중복된 값 자체가 들어 있습니다). 로그도 예외 타입과 드라이버 코드만 남기고(4xx 는 WARNING, 5xx 는 ERROR),
+  엔진은 `hide_parameters=True` 라 예외 문자열 자체에 바인딩 값이 없습니다.
+- 기능 Repository 의 추가 쿼리는 `self.db_session.execute()` 대신 `self._execute(statement, "<연산 이름>")`
+  로 실행해 같은 변환을 거칩니다(`tests/core/test_db_errors.py` 가 직접 호출을 막습니다).
 - eager loading·join·문자열 컬럼명 필터 같은 범용 API 는 두지 않습니다 — 기능 Repository 가
   SQLAlchemy 속성으로 명시적 메서드를 소유합니다(ORM-REP-005).
 - 커밋은 하지 않습니다(`flush` 까지). `CRUDBase` 는 `_get`·`_add`·`_delete`·`_flush`·`_refresh`
@@ -371,8 +386,8 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 - 바인딩할 수 없는 식별자(컬럼명·정렬 방향)는 `resolve_identifier()`·`resolve_sort_direction()` 으로
   코드가 가진 허용 목록에서만 고릅니다(RAW-REP-004). 허용 밖이면 `ValueError`.
 - `query_name`(예: `sales_report.daily_sales`)은 필수 키워드입니다. 로그에는 이름·소요 시간·성공/실패만
-  남기고 **SQL 본문과 파라미터는 남기지 않습니다**(NFR-004). `SQLAlchemyError` 는
-  `DatabaseException(detail={"query": query_name})` 으로 바뀝니다.
+  남기고 **SQL 본문과 파라미터는 남기지 않습니다**(NFR-004). `SQLAlchemyError` 는 ORM 과 같은 표(§5.2)로
+  바뀌고 `detail` 은 `{"query": query_name}` 입니다 — 중복 INSERT 는 409, 그 밖의 실패는 500.
 - 결과 `RowMapping` 은 Service 가 `dict(row)` 로 바꿔 Pydantic DTO 로 검증합니다(RAW-REP-005).
 
 ### 5.4 두 방식의 비교
@@ -711,19 +726,34 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
 | `ACCESS_LOG_ENABLED` | `true` |
 | `ACCESS_LOG_EXCLUDE_PATHS` | `["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]` (정확히 일치) |
 | `ACCESS_LOG_EXCLUDE_EXTENSIONS` | `[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]` (접미사) |
+| `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]` (대소문자 무시, 값을 `***` 로 저장) |
+| `TRUSTED_PROXY_HOPS` | `0` (앞단 신뢰 프록시 수 — 0 이면 전달 헤더를 보지 않는다) |
 
-- 수집: `ip_address`(`X-Forwarded-For` 첫 값 → `X-Real-IP` → 소켓 주소), `forwarded_for`, `real_ip`,
+- 수집: `ip_address`(아래 IP 결정 규칙), `forwarded_for`·`real_ip`(원본 헤더 — 감사용),
   `user_agent` 와 파싱 결과(`os_name`·`os_version`·`browser_name`·`browser_version`·`device_type`
   (`mobile`/`tablet`/`desktop`/`other`)·`device_brand`·`device_model`·`is_bot`), `request_path`,
-  `request_method`, `query_string`, `referer`, `accept_language`, `session_id`(쿠키 `session_id`),
-  `user_id`(`request.state.user_id` — 현재 이를 채우는 코드는 없다), `response_status`, `response_time_ms`.
+  `request_method`, `query_string`(민감 키 값은 `***`), `referer`, `accept_language`,
+  `session_id`(설정 `SESSION_COOKIE_NAME` 쿠키의 값), `user_id`(`request.state.user_id` — 현재 이를 채우는
+  코드는 없다), `response_status`, `response_time_ms`.
+- **IP 결정** — `app/core/middlewares/client_ip.py` 의 `ClientIPResolver` 가 정하고, 미들웨어는 생성자로
+  받습니다(`setup_user_info_middleware` 가 설정에서 한 번 만든다, service-hardening ADR-006·ADR-021).
+  `TRUSTED_PROXY_HOPS=0`(기본)이면 직접 피어 주소만 씁니다. `N` 이면 `X-Forwarded-For` 의 **오른쪽에서
+  N번째** 값(신뢰 프록시 N단이 덧붙인 값)이고, 목록이 N개보다 짧거나 값이 IP 가 아니면 직접 피어로
+  물러납니다. `X-Real-IP` 는 hops>0 이고 `X-Forwarded-For` 가 없을 때만 봅니다. uvicorn
+  `--forwarded-allow-ips` 와 같은 모델이며, 실제 프록시 단수보다 크게 잡으면 다시 위조할 수 있게 됩니다.
+- **길이** — 문자열은 저장 직전 home 기능(`fit_to_columns`)이 `UserAccessLog` 컬럼 길이로 자릅니다. 길이는
+  모델 컬럼에서 읽습니다(숫자를 두 번 적지 않는다). MySQL strict 모드에서 길이 초과 INSERT 가 실패해 기록이
+  조용히 버려지던 경로를 막습니다.
 - `user_access_logs` 테이블의 `country`·`country_code`·`city` 컬럼은 채우는 코드가 없습니다.
   인덱스: `created_at`·`ip_address`·`os_name`·`browser_name`·`device_type`·`country`·`session_id`·`user_id`.
-- `X-Forwarded-For` 는 클라이언트가 위조할 수 있으므로 신뢰할 프록시 뒤에서만 의미가 있습니다.
+- `X-Forwarded-For` 는 클라이언트가 위조할 수 있으므로 신뢰 프록시 홉 수(`TRUSTED_PROXY_HOPS`) 밖의 값은
+  믿지 않습니다. 이전에는 맨 왼쪽 값을 무조건 믿었습니다 — 기본값 0 은 이 동작을 바꾼 것이니 프록시 뒤 배포는
+  홉 수를 설정해야 실제 클라이언트 IP 가 기록됩니다.
 - `BackgroundTaskRunner` 는 동시 256개가 상한이고 넘치면 **버리고** `dropped` 를 올립니다. 비핵심 로그용이라
   결제·발송 같은 업무 저장을 이 러너에 넣지 않습니다. 종료 시 drain 합니다(§8).
 - 저장 실패는 요청에 영향을 주지 않고 ERROR 로그만 남깁니다. 제출 시점은 `call_next` 가 응답 객체를 돌려준
-  뒤이며, 클라이언트가 본문을 다 받았다는 보장은 아닙니다. `call_next` 가 예외로 끝난 요청은 기록되지 않습니다.
+  뒤이며, 클라이언트가 본문을 다 받았다는 보장은 아닙니다. `call_next` 가 예외로 끝난 요청은 status 500 으로
+  기록한 뒤 예외를 그대로 다시 던집니다(바깥 500 처리는 그대로 — service-hardening ADR-007).
 - 조회 API 는 `/api/v1/home/access-logs` 계열 5개(전부 읽기 세션)이고, 예시 Celery 태스크
   `home.aggregate_access_stats` 가 통계를 집계합니다.
 
@@ -926,7 +956,7 @@ config.set_main_option(
 
 **ApiSettings** — `API_VERSION`=`v1` (소비 코드 없음)
 
-**SessionSettings** — `SESSION_COOKIE_NAME`=`session`, `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1), `SESSION_EXPIRE_SECONDS`=`86400` (소비 코드 없음)
+**SessionSettings** — `SESSION_COOKIE_NAME`=`session`(접속 로그의 `session_id` 쿠키 이름으로만 읽힌다), `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1), `SESSION_EXPIRE_SECONDS`=`86400` (세션 소비 코드 없음)
 
 **SMTPSettings** — `SMTP_SERVER`=`localhost`, `SMTP_PORT`=`25`, `SMTP_USERNAME`=빈 값, `SMTP_PASSWORD`=빈 값,
 `SMTP_FROM_EMAIL`·`SMTP_FROM_NAME`=없음, `SMTP_TLS`·`SMTP_SSL`=`false`(동시 true 거부) (소비 코드 없음)

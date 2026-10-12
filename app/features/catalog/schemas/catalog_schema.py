@@ -9,6 +9,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.schemas import PatchSchema
+
 
 class ProductBase(BaseModel):
     """상품 공통 필드."""
@@ -42,8 +44,11 @@ class ProductCreate(ProductBase):
     is_active: bool = Field(True, description="판매 활성 여부")
 
 
-class ProductUpdate(BaseModel):
-    """상품 수정 요청 — 전달된 필드만 부분 수정한다."""
+class ProductUpdate(PatchSchema):
+    """상품 수정 요청 — 전달된 필드만 부분 수정한다.
+
+    모든 컬럼이 NOT NULL 이라 명시적 ``null`` 은 422 다(``PatchSchema``).
+    """
 
     model_config = ConfigDict(json_schema_extra={"examples": [{"price": "119.00"}]})
 

@@ -31,11 +31,11 @@ class ProductRepository(BaseRepository[Product, str]):
             .offset(skip)
             .limit(limit)
         )
-        result = await self.db_session.execute(statement)
+        result = await self._execute(statement, "list_active")
         return result.scalars().all()
 
     async def count_active(self) -> int:
         """판매 중인 상품 수."""
         statement = select(func.count()).select_from(Product).where(Product.is_active.is_(True))
-        result = await self.db_session.execute(statement)
+        result = await self._execute(statement, "count_active")
         return result.scalar_one()

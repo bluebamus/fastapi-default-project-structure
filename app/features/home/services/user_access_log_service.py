@@ -24,6 +24,25 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 
 
+def fit_to_columns(data: dict[str, Any]) -> dict[str, Any]:
+    """문자열 값을 ``UserAccessLog`` 컬럼 길이로 자른 사본을 돌려준다.
+
+    헤더·경로·쿼리는 클라이언트가 길이를 정한다. MySQL strict 모드에서 길이 초과
+    INSERT 는 실패하고, 접속 로그는 백그라운드라 그 실패가 조용히 버려진다 — 긴 헤더
+    하나로 감사 기록을 피할 수 있었다(service-hardening ADR-007). 길이는 모델 컬럼에서
+    읽는다(숫자를 두 번 적지 않는다). ``Text`` 처럼 길이가 없는 컬럼은 그대로 둔다.
+    """
+    columns = UserAccessLog.__table__.c
+    fitted = dict(data)
+    for name, value in data.items():
+        if not isinstance(value, str) or name not in columns:
+            continue
+        length = getattr(columns[name].type, "length", None)
+        if length is not None and len(value) > length:
+            fitted[name] = value[:length]
+    return fitted
+
+
 class UserAccessLogService(BaseService):
     """접속 로그 비즈니스 로직 (세션 기반)."""
 
@@ -38,7 +57,7 @@ class UserAccessLogService(BaseService):
         """접속 로그를 생성한다(커밋은 호출자가 수행)."""
         data_dict = data.model_dump() if isinstance(data, UserAccessLogCreate) else data
         self.log.debug("접속 로그 생성: path=%s", data_dict.get("request_path"))
-        return await self.repository.create(data_dict)
+        return await self.repository.create(fit_to_columns(data_dict))
 
     async def get_access_logs(
         self,

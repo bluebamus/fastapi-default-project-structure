@@ -29,6 +29,12 @@ from config import timezone_settings
 # 한 번에 집계할 수 있는 최대 일수. 무제한 범위는 실행 계획이 급격히 나빠진다(NFR-002).
 MAX_REPORT_DAYS = 366
 
+# 받을 수 있는 날짜 범위(service-hardening ADR-008 ③). 상한은 ``date.max``(9999-12-31) 보다
+# 하루 앞이다 — "종료일 포함" 을 ``end_date + 1일`` 로 바꾸는 계산이 overflow 로 500 을 냈다.
+# 하한은 이 서비스의 데이터가 있을 수 없는 과거를 잘라 의미 없는 스캔을 막는다.
+MIN_REPORT_DATE = date(1970, 1, 1)
+MAX_REPORT_DATE = date(9998, 12, 31)
+
 
 class ReportService(BaseService):
     """매출 리포트 비즈니스 로직 (DB 세션 기반)."""
@@ -125,6 +131,21 @@ class ReportService(BaseService):
 
     @staticmethod
     def _validate_range(start_date: date, end_date: date) -> None:
+        for value in (start_date, end_date):
+            if not MIN_REPORT_DATE <= value <= MAX_REPORT_DATE:
+                raise InvalidDateRangeException(
+                    message=(
+                        f"날짜는 {MIN_REPORT_DATE.isoformat()} ~ "
+                        f"{MAX_REPORT_DATE.isoformat()} 사이여야 합니다."
+                    ),
+                    detail={
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat(),
+                        "min_date": MIN_REPORT_DATE.isoformat(),
+                        "max_date": MAX_REPORT_DATE.isoformat(),
+                    },
+                )
+
         if end_date < start_date:
             raise InvalidDateRangeException(
                 message="종료일은 시작일보다 앞설 수 없습니다.",

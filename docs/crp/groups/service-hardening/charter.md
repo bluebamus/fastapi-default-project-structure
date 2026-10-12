@@ -17,7 +17,7 @@
 | A3 | `app/core/db/router.py` | 소스 | ORM 잠금 읽기 판정 |
 | A3 | `app/core/repositories/repository_base.py`, `app/features/catalog/repositories/product_repository.py`, `app/features/home/repositories/user_access_log_repository.py` | 소스 | 기본 정렬·보조 키 |
 | A3 | `tests/core/test_db_router.py`, `tests/core/test_read_only_guard.py`, `tests/core/test_repository_base.py` | 테스트 | 라우터 on/off·정렬 결정성 |
-| B | `app/core/middlewares/` (신규 `client_ip.py`), `app/features/home/`, `app/core/repositories/repository_base.py`, `app/core/exception.py`, `app/features/*/schemas/`, `app/features/reports/`, `main.py`, `config.py` | 소스+테스트 | IP 결정·접속 로그·길이 절단·null PATCH·오류 매핑·날짜 상한 |
+| B | `app/core/middlewares/client_ip.py`(신규)·`user_info_middleware.py`, `app/features/home/services/user_access_log_service.py`, `app/core/schemas.py`(신규), `app/core/repositories/db_errors.py`(신규)·`repository_base.py`·`raw_repository_base.py`, `app/core/db/session.py`, `app/features/{catalog,home,user}/repositories/`, `app/features/*/schemas/`, `app/features/reports/services/`, `main.py`, `config.py` | 소스+테스트 | IP 결정·접속 로그·길이 절단·null PATCH·오류 매핑·로그 비노출·날짜 상한 |
 | C | `tests/` 공용 헬퍼(신규), `app/features/*/tests/`, `tests/integration/` | 테스트 | 세션 헬퍼·MySQL ORM 스모크 |
 | D | `app/core/models/models_base.py`, `config.py`, `migrations/versions/`(신규 리비전), `app/features/reports/`, `app/celery/app.py` | 소스 | UTC 저장 |
 | E | `app/core/resources.py`, `main.py`, `app/core/` (신규 Redis provider), `app/celery/`, `app/features/*/tasks.py`(신규), `compose.test.yaml` | 소스+설정 | Redis provider·`/ready`·태스크 발견 |
@@ -73,7 +73,7 @@
       `pytest -m "not mysql"`(CI 마커식) skipped·xfailed 0 · `scripts/review_gate.py --fast` 의 구조 검사
 - [x] **A** — `tests/test_ci_contract.py`(ci.yml 에 `--frozen` 없음·`uv sync --locked` 있음), 게이트 파일 목록이
       추적 파일만 담는 테스트, DSN 특수문자·IPv6·Alembic `%`·Redis URL 왕복, 잠금 읽기 라우터 on/off, 목록 정렬 결정성·offset 페이지 비중첩
-- [ ] **B** — IP 결정(hops 0/N·위조·잘못된 값), 500 기록, 쿼리 마스킹, 컬럼 길이 절단, null PATCH 422, 오류 코드별 상태, 날짜 상한 422
+- [x] **B** — IP 결정(hops 0/N·위조·잘못된 값), 500 기록, 쿼리 마스킹, 컬럼 길이 절단, null PATCH 422, 오류 코드별 상태, 날짜 상한 422
 - [ ] **C** — 헬퍼의 read-only 세션에서 flush 거부, MySQL ORM 스모크(`mysql` 마커, CI 실행)
 - [ ] **D** — TypeDecorator bind/result/naive 거부, SQLite 마이크로초 보존, 응답 오프셋, MySQL 왕복·자정 경계(`mysql` 마커)
 - [ ] **E** — `/ready` Redis 실패 503, `get_redis` provider, 태스크 자동 발견 목록, 기능 제거 시 include 무사
@@ -84,3 +84,4 @@
 ## 4. 변경 이력
 
 - v0.1 (2026-10-12): 최초 작성.
+- v0.2 (2026-10-12): 단계 B 인벤토리를 실제 경로로 확정(신규 `client_ip.py`·`schemas.py`·`db_errors.py`), §3 B 닫음.
