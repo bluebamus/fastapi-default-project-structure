@@ -4,13 +4,14 @@ View 의 책임은 HTTP 계약, Service 호출, 응답 변환, 쓰기 성공 시
 SQL 도 도메인 분기도 여기 두지 않는다.
 
 인가(service-hardening ADR-018): 조회는 공개, 생성·수정·삭제는 슈퍼유저 전용 — 라우트 의존성
-``require_superuser`` 로 건다(핸들러 본문은 인증을 모른다).
+``SuperuserRequired`` 로 선언한다(핸들러 본문은 인증을 모른다).
 """
 
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.core.security.dependencies import FORBIDDEN_RESPONSES, require_superuser
+from app.core.security.access import Public, SuperuserRequired
+from app.core.security.dependencies import FORBIDDEN_RESPONSES
 from app.features.catalog.dependencies.catalog_dependencies import (
     get_catalog_service,
     get_catalog_service_readonly,
@@ -41,7 +42,7 @@ _CONFLICT: dict = {
     summary="상품 생성",
     description="판매할 상품을 생성합니다(슈퍼유저 전용). 생성 직후의 상품 정보를 반환합니다.",
     operation_id="createProduct",
-    dependencies=[Depends(require_superuser)],
+    dependencies=[SuperuserRequired],
 )
 async def create_product(
     payload: ProductCreate,
@@ -60,6 +61,7 @@ async def create_product(
     summary="상품 목록 조회",
     description="상품을 페이지 단위로 조회합니다. `active_only=true` 면 판매 중인 상품만 반환합니다.",
     operation_id="listProducts",
+    dependencies=[Public],
 )
 async def list_products(
     skip: int = Query(0, ge=0, description="건너뛸 상품 수(offset)", examples=[0]),
@@ -83,6 +85,7 @@ async def list_products(
     summary="상품 단건 조회",
     description="ID로 상품을 조회합니다.",
     operation_id="getProduct",
+    dependencies=[Public],
 )
 async def get_product(
     product_id: str = Path(
@@ -103,7 +106,7 @@ async def get_product(
     summary="상품 수정",
     description="상품을 부분 수정합니다(전달한 필드만, 슈퍼유저 전용).",
     operation_id="updateProduct",
-    dependencies=[Depends(require_superuser)],
+    dependencies=[SuperuserRequired],
 )
 async def update_product(
     payload: ProductUpdate,
@@ -124,7 +127,7 @@ async def update_product(
     summary="상품 삭제",
     description="상품을 삭제합니다(슈퍼유저 전용).",
     operation_id="deleteProduct",
-    dependencies=[Depends(require_superuser)],
+    dependencies=[SuperuserRequired],
 )
 async def delete_product(
     product_id: str = Path(..., description="상품 ID(UUID)"),

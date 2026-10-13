@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
+from app.core.security.access import Public
 from app.core.security.dependencies import (
     FORBIDDEN_RESPONSES,
     UNAUTHORIZED_RESPONSES,
@@ -63,6 +64,7 @@ async def create_post(
     summary="게시글 목록 조회",
     description="게시글 목록을 페이지네이션하여 조회합니다.",
     operation_id="listPosts",
+    dependencies=[Public],
 )
 async def list_posts(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
@@ -85,6 +87,7 @@ async def list_posts(
     summary="게시글 단건 조회",
     description="ID로 게시글을 조회합니다.",
     operation_id="getPost",
+    dependencies=[Public],
 )
 async def get_post(
     post_id: str = Path(..., description="게시글 ID(UUID)"),

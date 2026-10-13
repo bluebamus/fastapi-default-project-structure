@@ -65,7 +65,7 @@ Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입
 | `repositories/<x>_repository.py` | `BaseRepository[Model, str]` 또는 `RawRepositoryBase` 상속 |
 | `services/<x>_service.py` | `BaseService` 상속, 같은 세션으로 Repository 조립 |
 | `dependencies/<x>_dependencies.py` | `get_<x>_service`(writer) / `get_<x>_service_readonly`(read-only) |
-| `api/routers/v1/<view>.py` | `router = APIRouter()` + path operation. 업무 단위로 파일을 나눠도 된다 |
+| `api/routers/v1/<view>.py` | `router = APIRouter()` + path operation. 업무 단위로 파일을 나눠도 된다. 뷰마다 접근 수준을 선언한다(§3.1 — 없으면 기동 거부) |
 | `api/routers/router.py` | `<name>_router` 가 v1 파일들을 `prefix="/v1/<name>"`, `tags=[...]` 로 취합 |
 | `__init__.py` | `router` 공개 + `models` import. `admin_views` 는 재노출하지 않는다 |
 | `exceptions.py` | 기능 예외(`NotFoundException` 등 `app/core/exception.py` 하위) |
@@ -88,6 +88,7 @@ __all__ = ["router"]
 | `app/features/admin.py` | `from app.features.inventory.admin import admin_views as inventory_admin_views` + `ADMIN_VIEWS` 에 사전순으로 한 줄 | `/admin` 에서 조용히 빠진다. `tests/test_admin_wiring.py` 가 잡는다 |
 | `app/core/tags_metadata.py` | 라우터 tag 와 같은 이름의 설명 | `tests/test_openapi_contract.py` 가 잡는다 |
 | `tests/test_route_inventory.py` | 새 경로·메서드를 골든 목록에 추가 | 인벤토리 테스트 실패 |
+| `tests/test_authorization.py` | `EXPECTED_ACCESS` 에 새 라우트의 기대 접근 수준 추가 | 정책 표 대조 테스트 실패 |
 | `tests/test_admin_wiring.py` | 관리 대상 모델 고정 목록에 추가 | 같은 파일의 검사 실패 |
 | `migrations/versions/` | revision 추가 (§8) | 운영 DB 에 테이블이 없다 |
 | README API 표 | 경로 추가 | 문서 드리프트 |
@@ -105,7 +106,7 @@ __all__ = ["router"]
 ### 2.3 작업 순서 요약
 
 1. HTTP 계약·데이터 소유·권한·세션 의도·동시성·실패 응답을 정한다.
-2. Model → Schema → Repository → Service → Dependency → View 를 기존 예제대로 작성한다.
+2. Model → Schema → Repository → Service → Dependency → View 를 기존 예제대로 작성한다. 뷰마다 접근 수준을 선언한다(§3.1).
 3. 기능 `router.py`·`__init__.py`, `main.py`, (필요시) `admin.py`·`tags_metadata.py` 를 연결한다.
 4. migration 후보를 만들고 검토·적용한다(§8).
 5. DTO 검증 → 커밋 순서, 롤백·취소·background 세션 경계를 점검한다(§4).
@@ -155,14 +156,20 @@ async def get_catalog_service_readonly(
 
 ### 3.1 라우트 보호 — Principal 주입
 
-인증·인가는 의존성으로만 겁니다(핸들러 본문이 토큰을 파싱하지 않는다). 부품은 전부
-`app/core/security/dependencies.py` 에 있어 어느 기능이든 core 하나만 import 합니다(기능끼리 import 금지).
+인증·인가는 의존성으로만 겁니다(핸들러 본문이 토큰을 파싱하지 않는다). 부품은 전부 core 의
+`app/core/security/access.py`(접근 수준)·`app/core/security/dependencies.py`(provider·주체)에 있어 어느 기능이든 core 만
+import 합니다(기능끼리 import 금지).
+
+**모든 뷰는 접근 수준을 하나 선언합니다 — 선언하지 않으면 서버가 기동하지 않습니다**(`AccessPolicyGuard`,
+[ARCHITECTURE §11.2](./ARCHITECTURE.md#112-접근-수준-선언과-기본-거부)).
 
 | 요구 | 쓰는 것 | 실패 |
 |---|---|---|
-| 로그인한 사용자 | 핸들러 인자 `principal: CurrentPrincipal` | 토큰 없음·만료·위조 401 |
-| 슈퍼유저만 | 데코레이터 `dependencies=[Depends(require_superuser)]` (주체가 필요하면 `principal: SuperuserPrincipal`) | 401 / 403 |
-| 기능 전체를 슈퍼유저로 | `APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDEN_RESPONSES)` | 401 / 403 |
+| 누구나 조회 | 데코레이터 `dependencies=[Public]` (GET·HEAD·OPTIONS 만) | — |
+| 누구나 쓰기(가입·로그인처럼 의도적으로) | 데코레이터 `dependencies=[PublicWrite]` (쓰기 메서드만) | — |
+| 로그인한 사용자 | 핸들러 인자 `principal: CurrentPrincipal` (주체가 필요 없으면 `dependencies=[LoginRequired]`) | 토큰 없음·만료·위조 401 |
+| 슈퍼유저만 | 데코레이터 `dependencies=[SuperuserRequired]` (주체가 필요하면 인자 `principal: SuperuserPrincipal`) | 401 / 403 |
+| 기능 전체를 슈퍼유저로 | 뷰마다 `dependencies=[SuperuserRequired]` — 라우터 단위 `APIRouter(dependencies=[SuperuserRequired])` 도 판정상 인정되지만 예시는 뷰 단위로 통일한다. 401/403 문서는 `APIRouter(responses=FORBIDDEN_RESPONSES)` | 401 / 403 |
 | 소유자 또는 슈퍼유저 | Service 가 생성자로 `OwnershipPolicy` 를 받고 메서드가 `principal` 을 받아 `ensure_can_modify(owner_id, principal)` | 403 |
 | DB 의 사용자 엔티티 | auth 의 `get_current_user`(`/me` 전용 — 비활성·삭제 사용자 401) | 401 |
 
@@ -200,6 +207,34 @@ async def update_item(
 - 문서용 `UNAUTHORIZED_RESPONSES`(401)·`FORBIDDEN_RESPONSES`(401+403)를 `responses=` 에 펼쳐 OpenAPI 에 싣습니다.
 - 테스트는 의존성을 바꾸지 않고 `tests/auth_headers.py` 의 `bearer(principal)` 로 진짜 토큰을 싣습니다.
   기존 CRUD 테스트는 클라이언트 기본 헤더로 `bearer()`(슈퍼유저)를 씁니다.
+
+```python
+# 뷰마다 접근 수준을 하나 — app/core/security/access.py
+from app.core.security.access import Public, PublicWrite, SuperuserRequired
+
+@router.get("/items", response_model=ItemListResponse, dependencies=[Public])          # 공개 조회
+async def list_items(...) -> ItemListResponse: ...
+
+@router.post("/items", response_model=ItemResponse, status_code=201)                   # 로그인 — 인자가 선언이다
+async def create_item(payload: ItemCreate, principal: CurrentPrincipal, ...) -> ItemResponse: ...
+
+@router.delete("/items/{item_id}", status_code=204, dependencies=[SuperuserRequired])  # 슈퍼유저
+async def delete_item(item_id: str, ...) -> None: ...
+
+@router.post("/webhooks/payment", dependencies=[PublicWrite])                          # 인증 없는 쓰기 — 의도를 남긴다
+async def payment_webhook(...) -> None: ...
+```
+
+- 선언이 없거나(`AccessPolicyError: GET /api/v1/inventory/items: 접근 수준 선언 없음`), 수준을 둘 적었거나, 쓰기에
+  `Public`·조회에 `PublicWrite` 를 달면 서버가 기동하지 않습니다. 위반은 전부 한 번에 나옵니다.
+- 새 라우트의 기대 수준을 `tests/test_authorization.py` 의 `EXPECTED_ACCESS` 에 더합니다 — 401/403 실요청 테스트가 이
+  표에서 대상을 뽑습니다.
+
+**왜 함수를 감싸는 데코레이터(`@login_required`)를 만들지 않나.** FastAPI 는 핸들러 **시그니처**를 읽어 의존성 주입·요청
+검증·OpenAPI 를 만듭니다. 함수를 감싸면 시그니처가 `*args, **kwargs` 로 가려져 주입·검증이 깨지고, `functools.wraps` 로
+겉모양을 복사해도 인증 인자를 더하려면 시그니처를 손으로 고쳐야 하며 OpenAPI 의 security 표시도 그 손질에 달립니다.
+경로 데코레이터의 `dependencies=[...]` 가 FastAPI 에서 "데코레이터로 거는" 방법이고, 데코레이터만으로는 생기지 않는
+기본 정책(선언 누락 차단)은 기동 검사가 맡습니다.
 
 ## 4. 트랜잭션 규칙
 
@@ -352,7 +387,8 @@ router = APIRouter()
 
 
 @router.post("/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED,
-             summary="상품 생성", description="…", operation_id="createProduct", responses={…})
+             summary="상품 생성", description="…", operation_id="createProduct", responses={…},
+             dependencies=[SuperuserRequired])                   # 접근 수준 선언(§3.1)
 async def create_product(payload: ProductCreate, service: CatalogService = Depends(get_catalog_service)) -> ProductResponse:
     product = await service.create_product(payload)
     response = ProductResponse.model_validate(product)   # 검증 → 커밋 → 반환
@@ -360,7 +396,7 @@ async def create_product(payload: ProductCreate, service: CatalogService = Depen
     return response
 
 
-@router.get("/products", response_model=ProductListResponse, operation_id="listProducts", …)
+@router.get("/products", response_model=ProductListResponse, operation_id="listProducts", dependencies=[Public], …)
 async def list_products(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),          # 무제한 조회 금지 (NFR-002)
@@ -482,7 +518,8 @@ async def get_report_service_readonly(db_session=Depends(get_read_only_db_sessio
 async def get_report_service(db_session=Depends(get_writer_db_session)) -> ReportService: ...   # 적재용
 
 # app/features/reports/api/routers/v1/sales_reports.py (축약)
-@router.get("/sales/daily", response_model=DailySalesReportResponse, operation_id="getDailySalesReport", …)
+@router.get("/sales/daily", response_model=DailySalesReportResponse, operation_id="getDailySalesReport",
+            dependencies=[SuperuserRequired], …)
 async def get_daily_sales_report(
     start_date: date = Query(...), end_date: date = Query(...),     # 필수
     sort_by: str = Query("sales_date"), sort_direction: str = Query("asc"),
@@ -796,7 +833,8 @@ CI 는 `--cov=app --cov-branch --cov-report=term-missing` 으로 수치를 출�
 - [ ] 모든 외부 응답이 Pydantic DTO 를 거친다(민감 필드 제외)
 - [ ] 라우터가 v1 → 기능 `router.py` → `__init__.py` → `main.py` 로 명시 취합되고 기능명 = URL 세그먼트
 - [ ] 목록 API 에 limit 상한과 고정 정렬이 있다
-- [ ] 새 엔드포인트의 인증·권한을 명시했다(의존성을 달지 않으면 공개 경로다 — §3.1). 세션 쿠키 인증을 API 에 섞지 않았다
+- [ ] 새 엔드포인트마다 접근 수준(`Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired` 또는 인자 `principal`)을 선언했고
+      `EXPECTED_ACCESS` 에 더했다(선언이 없으면 서버가 기동하지 않는다 — §3.1). 세션 쿠키 인증을 API 에 섞지 않았다
 - [ ] path operation 이 `async def` 이고 요청 경로에 동기 I/O 가 없다
 - [ ] migration 을 추가·검토했고 head 가 하나다
 - [ ] OpenAPI 메타데이터·tag·예시가 실제 구현과 맞다

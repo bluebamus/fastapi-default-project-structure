@@ -12,7 +12,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.core.exception import ErrorResponse
-from app.core.security.dependencies import FORBIDDEN_RESPONSES, require_superuser
+from app.core.security.access import SuperuserRequired
+from app.core.security.dependencies import FORBIDDEN_RESPONSES
 from app.features.home.dependencies.access_log_dependencies import get_access_log_service
 from app.features.home.schemas.user_access_log_schema import (
     AccessLogStats,
@@ -21,7 +22,8 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 from app.features.home.services.user_access_log_service import UserAccessLogService
 
-router = APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDEN_RESPONSES)
+# 접근 수준은 뷰마다 선언한다(access-policy ADR-002). 401/403 문서는 라우터 단위로 공유한다.
+router = APIRouter(responses=FORBIDDEN_RESPONSES)
 
 _ERR: dict[int | str, dict[str, Any]] = {
     500: {"model": ErrorResponse, "description": "서버 내부 오류"}
@@ -35,6 +37,7 @@ _ERR: dict[int | str, dict[str, Any]] = {
     summary="접속 로그 목록 조회",
     description="접속 로그 목록을 페이지네이션하여 조회합니다(슈퍼유저 전용).",
     operation_id="getAccessLogs",
+    dependencies=[SuperuserRequired],
 )
 async def get_access_logs(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
@@ -57,6 +60,7 @@ async def get_access_logs(
     summary="최근 접속 로그 조회",
     description="최근 접속 로그를 시간 역순으로 조회합니다(슈퍼유저 전용).",
     operation_id="getRecentAccessLogs",
+    dependencies=[SuperuserRequired],
 )
 async def get_recent_access_logs(
     limit: int = Query(50, ge=1, le=100, description="조회할 레코드 수(1-100)"),
@@ -73,6 +77,7 @@ async def get_recent_access_logs(
     summary="IP별 접속 로그 조회",
     description="특정 IP 주소의 접속 로그를 조회합니다(슈퍼유저 전용).",
     operation_id="getAccessLogsByIp",
+    dependencies=[SuperuserRequired],
 )
 async def get_access_logs_by_ip(
     ip_address: str = Path(..., description="조회할 IP 주소", examples=["192.168.1.1"]),
@@ -94,6 +99,7 @@ async def get_access_logs_by_ip(
         "기록됩니다(인증 의존성이 request.state.user_id 를 채운다)."
     ),
     operation_id="getAccessLogsByUser",
+    dependencies=[SuperuserRequired],
 )
 async def get_access_logs_by_user(
     user_id: str = Path(..., description="조회할 사용자 ID(UUID)"),
@@ -112,6 +118,7 @@ async def get_access_logs_by_user(
     summary="접속 로그 통계",
     description="장치 유형/OS/브라우저별 접속 로그 통계를 조회합니다(슈퍼유저 전용).",
     operation_id="getAccessLogStats",
+    dependencies=[SuperuserRequired],
 )
 async def get_access_log_stats(
     service: UserAccessLogService = Depends(get_access_log_service),

@@ -6,7 +6,7 @@ view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입�
 트랜잭션 경계는 쓰기 핸들러 본문이 닫는다 — 응답 DTO 검증 → ``await service.commit()`` → 반환
 (UnitOfWork 없음, docs/guides/ARCHITECTURE.md §3.2).
 
-인가(service-hardening ADR-018): 목록·생성·삭제는 슈퍼유저(``require_superuser``), 단건 조회·수정은
+인가(service-hardening ADR-018): 목록·생성·삭제는 슈퍼유저(``SuperuserRequired``), 단건 조회·수정은
 본인 또는 슈퍼유저(서비스의 ``OwnershipPolicy``), ``is_active``·``is_superuser`` 변경은 슈퍼유저만.
 """
 
@@ -15,11 +15,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
-from app.core.security.dependencies import (
-    FORBIDDEN_RESPONSES,
-    CurrentPrincipal,
-    require_superuser,
-)
+from app.core.security.access import SuperuserRequired
+from app.core.security.dependencies import FORBIDDEN_RESPONSES, CurrentPrincipal
 from app.features.user.dependencies.user_dependencies import (
     get_user_service,
     get_user_service_readonly,
@@ -53,7 +50,7 @@ _CONFLICT: dict[int | str, dict[str, Any]] = {
         "`is_superuser` 로 슈퍼유저를 만들 수 있습니다."
     ),
     operation_id="createUser",
-    dependencies=[Depends(require_superuser)],
+    dependencies=[SuperuserRequired],
 )
 async def create_user(
     payload: UserCreate,
@@ -73,7 +70,7 @@ async def create_user(
     summary="사용자 목록 조회",
     description="사용자 목록을 페이지네이션하여 조회합니다(슈퍼유저 전용).",
     operation_id="listUsers",
-    dependencies=[Depends(require_superuser)],
+    dependencies=[SuperuserRequired],
 )
 async def list_users(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
@@ -138,7 +135,7 @@ async def update_user(
     summary="사용자 삭제",
     description="사용자를 삭제하고 그 사용자의 Refresh Token 을 모두 폐기합니다(슈퍼유저 전용).",
     operation_id="deleteUser",
-    dependencies=[Depends(require_superuser)],
+    dependencies=[SuperuserRequired],
 )
 async def delete_user(
     user_id: str = Path(..., description="사용자 ID(UUID)"),

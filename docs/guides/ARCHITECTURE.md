@@ -471,7 +471,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 2. `get_logger()` 첫 호출 → `configure_logging()` — dictConfig 적용, listener 시작, `atexit`·신호 훅 등록(§9.5)
 3. `app/core/db/session.py` — 엔진·세션 팩토리 생성, 라우팅 구성 로그
 4. `app.features` 각 패키지 — 라우터·모델 import, `home` 의 sink 등록
-5. `FastAPI(...)` → 미들웨어 → 예외 핸들러 → `include_router` × 8 → health/ready/`/docs` → `ADMIN_DISABLED` 가 아니면 SQLAdmin 마운트(인증 백엔드·세션 미들웨어 포함)
+5. `FastAPI(...)` → 미들웨어 → 예외 핸들러 → `include_router` × 8 → health/ready/`/docs` → `ADMIN_DISABLED` 가 아니면 SQLAdmin 마운트(인증 백엔드·세션 미들웨어 포함) → `AccessPolicyGuard().verify(app)`(접근 수준 검사 — 위반이면 import 실패, §11.2)
 
 reload·다중 worker 는 새 프로세스마다 이 과정을 반복하므로 Redis client·DB 풀·listener 는 프로세스마다
 따로 있습니다.
@@ -525,6 +525,7 @@ client 가 없으면 `ServiceUnavailableException`(503). 라우트·의존성이
 | 실패 지점 | 결과 |
 |---|---|
 | 설정 타입·validator·설정 검사(`.env` 출처, 예전 `ADMIN` 잔존, 예시 비밀값, 배포 환경 debug) | `config` import 실패 — lifespan 전 |
+| 접근 수준 선언 위반(선언 없음·수준 둘·쓰기에 `Public`·조회에 `PublicWrite`) | `AccessPolicyError`(위반 전체 목록) — `main` import 실패, lifespan 전(§11.2) |
 | Redis ping (연결·인증·timeout) | `[startup] Redis 연결 실패: <오류 타입>` ERROR 후 재전파. background 컨텍스트에는 아직 들어가지 않았으므로 drain 없이 **Redis `aclose()` → DB dispose(“자원 해제 완료” 로그) → 로그 flush** 만 실행. `app.state.redis`·`app.state.resources` 는 `None` (`tests/core/test_resources.py::test_redis_connection_failure_stops_startup_and_cleans_up`) |
 | Redis 버전 6.2 미만 | `RedisVersionError`(`Redis <버전> 는 지원하지 않는다 — 최소 6.2.0 …`) 전파, 정리는 ping 실패와 같다 (`tests/core/test_redis_version.py`) |
 | 개발용 DDL (MySQL 없음 등) | 네 컨텍스트가 모두 역순으로 정리된 뒤 예외 전파 |
@@ -853,6 +854,11 @@ get_refresh_token_store(redis=get_redis)             # RefreshTokenStore(refresh
 get_ownership_policy()                               # OwnershipPolicy — blog·sns·reply·user
 get_current_principal(request, token=oauth2_scheme, tokens=get_token_service) -> Principal   # DB 조회 없음
 require_superuser(principal=get_current_principal)   # 403
+# core (app/core/security/access.py) — 뷰가 dependencies=[...] 에 넣는 접근 수준(§11.2)
+Public / PublicWrite                                 # 표식(아무것도 안 함) — 인증 없는 조회 / 쓰기
+LoginRequired = Depends(get_current_principal)       # 401
+SuperuserRequired = Depends(require_superuser)       # 401 / 403
+AccessPolicyGuard().verify(app)                      # main.py 조립 끝 — 선언 없거나 모순되면 기동 거부
 # auth
 get_auth_service(session=get_writer_db_session, hasher, tokens, store)
 login_rate_limit / register_rate_limit               # RateLimiter(get_redis) + ClientIPResolver
@@ -916,7 +922,8 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
   `sub`·`username`·`su` 로만 만듭니다. 요청마다 DB·Redis 왕복이 없고, 기능은 사용자 모델 대신 이 값 하나에 기댑니다.
   `get_current_principal` 이 만들고 `request.state.user_id` 를 채웁니다 — 접속 로그 미들웨어가 **응답 뒤에** 읽어
   `user_access_logs.user_id` 에 남깁니다(§10).
-- **별칭** — `CurrentPrincipal`(로그인), `SuperuserPrincipal`(슈퍼유저), 라우트·라우터 의존성 `require_superuser`.
+- **별칭** — 인자용 `CurrentPrincipal`(로그인)·`SuperuserPrincipal`(슈퍼유저), 데코레이터용 접근 수준
+  `LoginRequired`·`SuperuserRequired`·`Public`·`PublicWrite`(§11.2 — 뷰마다 하나 선언, 없으면 기동 거부).
   토큰 문제는 401(`WWW-Authenticate: Bearer`), 권한 부족은 403 `FORBIDDEN`.
 - **`OwnershipPolicy.ensure_can_modify(owner_id, principal)`** — 소유자 본인 또는 슈퍼유저만 통과. `owner_id` 가 `None`
   (인가 도입 전 행)이면 슈퍼유저만. blog·sns·reply·user 서비스가 생성자로 받고 수정·삭제(user 는 단건 조회 포함) 메서드가
@@ -926,10 +933,12 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
 
 | 기능 | 조회 | 생성 | 수정·삭제 |
 |---|---|---|---|
-| blog·sns·reply | 공개 | `CurrentPrincipal` | `OwnershipPolicy` |
-| catalog | 공개 | `require_superuser` | `require_superuser` |
-| reports·home(접속 로그) | 라우터 단위 `require_superuser` | 〃 | — |
-| user | 목록 `require_superuser` · 단건 `OwnershipPolicy` | `require_superuser`(비밀번호 필수) | 수정 `OwnershipPolicy` + `is_active`·`is_superuser` 는 슈퍼유저 · 삭제 `require_superuser` |
+| blog·sns·reply | `Public` | 인자 `CurrentPrincipal` | 인자 `CurrentPrincipal` + `OwnershipPolicy` |
+| catalog | `Public` | `SuperuserRequired` | `SuperuserRequired` |
+| reports·home(접속 로그) | 뷰마다 `SuperuserRequired` | 〃 | — |
+| user | 목록 `SuperuserRequired` · 단건 인자 `CurrentPrincipal` + `OwnershipPolicy` | `SuperuserRequired`(비밀번호 필수) | 수정 인자 `CurrentPrincipal` + `OwnershipPolicy` + `is_active`·`is_superuser` 는 슈퍼유저 · 삭제 `SuperuserRequired` |
+| auth | `/me` — `get_current_user`(안에서 `get_current_principal`) | `register`·`login`·`refresh`·`logout` 은 `PublicWrite` | — |
+| health·ready | `Public` | — | — |
 
 - **첫 슈퍼유저** — `python -m scripts.create_superuser`(`scripts/create_superuser.py`). `background_db_session` + core 의
   `get_password_hasher` + `UserRepository` 로 조립해 만들거나 승격하고 한 번 커밋합니다. 비밀번호는 `getpass` 또는
@@ -937,6 +946,39 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
   이 계정이 관리 화면(`/admin`) 로그인 계정이기도 합니다.
 - **SQLAdmin 은 이 인가 밖**입니다(§12) — `/admin` 은 JWT 가 아니라 **활성 슈퍼유저의 서명 세션 쿠키**로 들어가고,
   그 세션은 API 를 인증하지 않습니다.
+
+### 11.2 접근 수준 선언과 기본 거부
+
+모든 API 뷰는 접근 수준을 **하나** 선언합니다(access-policy ADR-001~003). 경로 데코레이터의 `dependencies=[...]` 에 넣는
+`Depends` 객체 넷이 `app/core/security/access.py` 에 있습니다.
+
+| 수준 | 정체 | 쓰는 곳 | 실패 |
+|---|---|---|---|
+| `Public` | 아무것도 하지 않는 `async` 표식 함수 | 인증 없는 조회 — GET·HEAD·OPTIONS 만 | — |
+| `PublicWrite` | 또 다른 표식 함수 | 인증 없는 쓰기를 의도적으로 연다 — 가입·로그인·refresh·logout | — |
+| `LoginRequired` | `Depends(get_current_principal)` | 로그인 | 401 |
+| `SuperuserRequired` | `Depends(require_superuser)` | 슈퍼유저 | 401 / 403 |
+
+- **판정** — `AccessPolicyGuard.levels()` 가 라우트의 의존성 트리(dependant)를 재귀로 훑어 위 호출 대상이 있는지 봅니다.
+  그래서 인자 `principal: CurrentPrincipal`/`SuperuserPrincipal`, 안에서 `get_current_principal` 을 쓰는 의존성(`/me` 의
+  `get_current_user`), 라우터 단위·`include_router(dependencies=…)` 선언도 같은 선언으로 인정됩니다. `require_superuser` 는
+  안에서 `get_current_principal` 을 쓰므로 둘이 함께 보이면 슈퍼유저로 접습니다.
+- **기본 거부** — `main.py` 가 라우터 include·health/ready·`/docs`·SQLAdmin 마운트를 마친 직후 `AccessPolicyGuard().verify(app)`
+  를 부릅니다. 위반이 하나라도 있으면 위반 **전체** 목록을 담은 `AccessPolicyError`(`RuntimeError`)로 `main` import 가
+  실패합니다(§7.3). 위반: ① 선언 없음 ② 서로 다른 수준 둘 이상(Public 계열 + 인증 계열 등) ③ 쓰기 메서드에 `Public`
+  (→ `PublicWrite` 를 쓰라는 안내) ④ 안전한 메서드에 `PublicWrite`.
+- **대상** — `fastapi.routing.iter_route_contexts(app.routes)` 로 FastAPI 0.141 의 `_IncludedRouter` 중첩을 펼친 모든
+  `APIRoute`. `include_in_schema=False` 인 경로(DEBUG 의 Scalar `/docs`)도 포함합니다. FastAPI 가 붙이는 문서 경로(Starlette
+  `Route`)와 `Mount`(`/admin` — 자체 세션 인증, §12)는 `APIRoute` 가 아니라 빠집니다.
+- **함수를 감싸는 데코레이터는 쓰지 않습니다.** FastAPI 는 핸들러 시그니처로 주입·검증·OpenAPI 를 만듭니다 — Django 식
+  `@login_required` 로 감싸면 그 시그니처가 가려집니다. 경로 데코레이터의 `dependencies=` 가 FastAPI 에서 "데코레이터로
+  거는" 방법이고, 데코레이터만으로는 생기지 않는 기본 정책을 기동 검사가 채웁니다.
+- **OpenAPI** — 401/403 응답 문서(`UNAUTHORIZED_RESPONSES`·`FORBIDDEN_RESPONSES`)는 종전대로 `responses=` 에 펼칩니다.
+  home·reports 는 의존성만 뷰로 옮기고 `responses=FORBIDDEN_RESPONSES` 는 라우터 단위로 둡니다 — 생성되는 OpenAPI 는
+  바뀌지 않았습니다(security 표시 포함).
+- **테스트** — 가드 규칙은 `tests/core/test_access_policy.py`, 예시 정책은 `tests/test_authorization.py` 의 `EXPECTED_ACCESS`
+  (유일한 기대 표 — 401/403 실요청 대상도 여기서 뽑는다), 조립 경로는 `tests/test_main.py` 의
+  `test_main_refuses_to_start_when_a_view_declares_no_access_level`(별도 프로세스에서 선언 없는 뷰를 더하면 import 실패).
 
 ## 12. SQLAdmin
 
@@ -1077,6 +1119,7 @@ config.set_main_option(
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
 | 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./admin-auth-guide.html) 신설 |
+| 2026-10-13 | 접근 수준 선언(access-policy): §11.2 신설 — `Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`, 기동 시 기본 거부 `AccessPolicyGuard`(§7.1·§7.3), home·reports 라우터 단위 인가를 뷰 단위 선언으로, §11.1 표 갱신. OpenAPI 불변 |
 | 2026-10-13 | 로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 `RedactingFilter`(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(`REDIS_MIN_VERSION`), §10 접속 로그 원문 저장은 사용자 결정으로 유지 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
 | 2026-10-07 | 설정 검사 확장(ADR-045): `.env` 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 `ADMIN=true` 는 `ADMIN_ALLOW_UNAUTHENTICATED` 확인 필요. CI 가 `review_gate --fast` 실행(ADR-044) |

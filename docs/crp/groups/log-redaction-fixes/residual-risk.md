@@ -10,3 +10,5 @@
 | R-003 | 마스킹은 **형태** 규칙이다 — DSN·`Authorization`·Bearer·이름에 password/secret/token/api_key 가 든 키만 잡는다. 키 없는 비밀(예: 예외 메시지에 값만 실린 토큰)은 남고, `token_type=bearer` 같은 값은 과하게 가려진다 | LOW | ADR-001. 비밀값을 로그·예외 메시지에 넣지 않는 것이 1차 방어(DEVELOPMENT §11)이고 이 필터는 안전망이다 | 2026-10-13 | 새 비밀 형태가 로그에서 발견되면 — `_SECRET_PATTERNS` 한 곳에 더한다 |
 | R-004 | 새 라우터를 추가하며 인증 의존성을 빠뜨리면 **막는 장치가 없다** — 기본값은 공개, 권한 계약 테스트는 손으로 적은 목록(`tests/test_authorization.py` 의 `OWNED`·`ADMIN_ROUTES`)만 본다. 라우트 인벤토리 골든(`tests/test_route_inventory.py`)은 새 경로를 실패로 드러내지만 권한은 보지 않는다 | MED | 명세 §5 — 조사만 하고 코드는 바꾸지 않는다. 판단 자료는 감독자 보고에 실었다 | 2026-10-13 | 사용자가 기본 거부(default-deny)·라우트-권한 계약 테스트를 결정하면 |
 | R-005 | `INFO` 를 막은 관리형 Redis 는 버전을 확인하지 못한 채 WARNING 만 남기고 기동한다 — 6.2 미만이면 refresh 회전에서야 실패한다 | LOW | ADR-003 · 명세 "INFO 가 막힌 관리형 Redis 면 WARNING 을 남기고 계속" | 2026-10-13 | 관리형 Redis 를 쓰는 배포가 생기면 — 운영 체크리스트 9번으로 확인 |
+
+> R-004 상태(2026-10-13): **해소** — access-policy 그룹 F-001. 모든 API 뷰가 접근 수준(`Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`)을 선언해야 하고, 선언 없는 뷰가 있으면 `AccessPolicyGuard` 가 기동을 멈춘다(`app/core/security/access.py`). 잘못 고른 수준은 access-policy R-001 로 이어진다.

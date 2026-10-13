@@ -22,6 +22,7 @@ from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.redis import get_redis
 from app.core.resources import manage_application_resources
+from app.core.security.access import AccessPolicyGuard, Public
 from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, catalog, home, reply, reports, sns, user
 from app.utils.logs import get_logger
@@ -199,6 +200,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
             "재시작됩니다. 의존 자원 준비 여부는 `/ready` 를 사용하세요."
         ),
         operation_id="healthCheck",
+        dependencies=[Public],
     )
     async def health_check() -> HealthResponse:
         """프로세스 생존 여부만 반환한다."""
@@ -218,6 +220,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
             "실패하거나 시간을 넘기면 503 을 반환합니다."
         ),
         operation_id="readinessCheck",
+        dependencies=[Public],
         responses={
             503: {
                 "model": ErrorResponse,
@@ -258,7 +261,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
     # Scalar API 문서 (DEBUG 모드에서만 활성화)
     if app_settings.DEBUG:
 
-        @app.get("/docs", include_in_schema=False)
+        @app.get("/docs", include_in_schema=False, dependencies=[Public])
         async def scalar_docs():
             """
             Scalar API 문서 페이지
@@ -332,6 +335,10 @@ if not app_settings.ADMIN_DISABLED:
     logger.info("SQLAdmin 관리 화면 활성화 (슈퍼유저 로그인 필요): /admin")
 else:
     logger.info("관리 화면 비활성화 (ADMIN_DISABLED=true)")
+
+# 기본 거부 — 조립이 끝난 앱의 모든 API 뷰가 접근 수준을 정확히 하나 선언했는지 검사하고,
+# 아니면 위반 목록과 함께 기동을 멈춘다(access-policy ADR-003). 새 라우터 include 는 이 줄 위에 둔다.
+AccessPolicyGuard().verify(app)
 
 
 def run_server(target: str = "main:app") -> None:
