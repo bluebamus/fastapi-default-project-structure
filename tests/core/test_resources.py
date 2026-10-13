@@ -48,6 +48,9 @@ class _FakeRedis:
     async def ping(self) -> bool:
         return True
 
+    async def info(self, section: str | None = None) -> dict:
+        return {"redis_version": "7.2.4"}
+
     async def aclose(self) -> None:
         return None
 

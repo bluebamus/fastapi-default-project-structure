@@ -20,12 +20,19 @@ primitive(``dispose_engine``)만 재사용하고, FastAPI lifespan 이 Celery �
 from __future__ import annotations
 
 import asyncio
+import logging
 
-from celery.signals import worker_process_init, worker_process_shutdown
+from celery.signals import (
+    after_setup_logger,
+    after_setup_task_logger,
+    worker_process_init,
+    worker_process_shutdown,
+)
 
 from app.celery.task import clear_worker_loop, get_worker_loop
 from app.core.db.session import dispose_engine
 from app.utils.logs import get_logger, restart_log_listener
+from app.utils.logs.filters import add_redacting_filter
 
 logger = get_logger("celery.lifecycle")
 
@@ -73,3 +80,16 @@ def _on_worker_process_init(**_kwargs: object) -> None:
 @worker_process_shutdown.connect
 def _on_worker_process_shutdown(**_kwargs: object) -> None:
     shutdown_worker_resources()
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def _redact_celery_log_handlers(logger: logging.Logger, **_kwargs: object) -> None:
+    """Celery 가 root·task 로거에 단 핸들러에도 비밀값 마스킹을 붙인다 (log-redaction ADR-001).
+
+    worker 는 기본값(``worker_hijack_root_logger``)으로 root 의 핸들러를 **지우고** 자기
+    핸들러를 단다 — 우리 queue 핸들러와 그 ``redact`` 필터가 함께 사라진다. 태스크 실패
+    traceback 이 이 핸들러로 나가므로 같은 필터를 여기에 붙인다.
+    """
+    for handler in logger.handlers:
+        add_redacting_filter(handler)

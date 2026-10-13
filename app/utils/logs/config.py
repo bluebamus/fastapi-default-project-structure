@@ -99,7 +99,9 @@ def build_dictconfig() -> dict:
             "respect_handler_level": True,
             # 적재 전에 요청 스레드에서 컨텍스트를 채운다(listener 스레드에서는 늦다).
             # sql_noise 는 SQL 본문·바인딩 파라미터가 로그로 새는 것을 막는다.
-            "filters": ["sql_noise", "context"],
+            # redact 는 메시지·traceback·stack 의 비밀값을 적재 **전에** 가린다 — queue 가 가득 찬
+            # ERROR 의 stderr fallback 도 이 뒤라 가려진 값을 쓴다(log-redaction ADR-001).
+            "filters": ["sql_noise", "redact", "context"],
             "level": level,
         },
     }
@@ -118,6 +120,7 @@ def build_dictconfig() -> dict:
         "disable_existing_loggers": False,
         "filters": {
             "context": {"()": "app.utils.logs.filters.ContextFilter"},
+            "redact": {"()": "app.utils.logs.filters.RedactingFilter"},
             "sql_noise": {
                 "()": "app.utils.logs.filters.SqlNoiseFilter",
                 "allow_sql_echo": log_settings.LOG_SQL_ECHO_ENABLED,

@@ -25,6 +25,7 @@ from app.core.resources import manage_application_resources
 from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, catalog, home, reply, reports, sns, user
 from app.utils.logs import get_logger
+from app.utils.logs.filters import redact
 from config import app_settings
 
 logger = get_logger("main")
@@ -159,7 +160,8 @@ def _register_exception_handlers(app: FastAPI) -> None:
             },
         )
         # DEBUG 모드에서만 상세 정보 노출 (운영 환경에서는 민감 정보 유출 방지)
-        detail = str(exc) if app_settings.DEBUG else None
+        # 응답은 클라이언트로 나간다 — 로그와 같은 규칙으로 비밀값을 가린다(log-redaction ADR-001).
+        detail = redact(str(exc)) if app_settings.DEBUG else None
         return JSONResponse(
             status_code=500,
             content=ErrorResponse(

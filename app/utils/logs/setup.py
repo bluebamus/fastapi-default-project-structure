@@ -40,11 +40,15 @@ from app.utils.logs.config import (
     _level,
     build_dictconfig,
 )
+from app.utils.logs.filters import add_redacting_filter
 from app.utils.logs.queue_handler import (
     LOG_FLUSH_TIMEOUT_SECONDS,
     BoundedQueueHandler,
     wait_until_written,
 )
+
+# traceback 을 남기는 uvicorn 로거 — CLI 실행에서는 우리 queue 를 거치지 않는다.
+UVICORN_TRACEBACK_LOGGERS = ("uvicorn", "uvicorn.error")
 
 _configured = False
 _queue_handler: BoundedQueueHandler | None = None
@@ -165,6 +169,14 @@ def configure_logging(force: bool = False) -> None:
         None,
     )
     _configured = True
+
+    # ``uvicorn main:app`` CLI 로 띄우면 uvicorn 로거는 우리 queue 가 아니라 uvicorn 자신의
+    # 핸들러로 나간다. "Exception in ASGI application"·startup 실패 traceback 을 내는
+    # 로거에 직접 붙여 그 경로도 가린다. 로거 필터는 어느 쪽 dictConfig 가 나중에 돌아도
+    # 지워지지 않는다(dictConfig 는 필터를 더하기만 한다). access 로거는 traceback 을
+    # 내지 않는다(log-redaction ADR-001).
+    for name in UVICORN_TRACEBACK_LOGGERS:
+        add_redacting_filter(logging.getLogger(name))
 
     _register_process_exit_hook()
     start_log_listener()
