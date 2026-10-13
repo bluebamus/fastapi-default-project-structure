@@ -346,6 +346,13 @@ access 토큰에는 사용자 ID(`sub`)·사용자명·슈퍼유저 여부(`su`)
 
 ### 권한
 
+모든 API 뷰는 경로 데코레이터의 `dependencies=[...]` 에 접근 수준을 **하나** 선언합니다 — `Public`(인증 없는 조회),
+`PublicWrite`(인증 없는 쓰기를 명시적으로 연다), `LoginRequired`(401), `SuperuserRequired`(401/403). 사용자 정보가 필요한 뷰는
+인자 `principal: CurrentPrincipal`/`SuperuserPrincipal` 로 같은 선언을 대신합니다. 선언이 없거나 모순된 뷰(수준 둘,
+쓰기에 `Public`, 조회에 `PublicWrite`)가 하나라도 있으면 **서버가 기동하지 않습니다** — 위반 전체 목록과 함께
+`AccessPolicyError` 로 멈춥니다(`app/core/security/access.py` 의 `AccessPolicyGuard`). 아래 표는 예시 기능의 정책이고,
+`tests/test_authorization.py` 의 `EXPECTED_ACCESS` 가 라우트별로 고정합니다.
+
 | 기능 | 조회 | 생성 | 수정 | 삭제 |
 |---|---|---|---|---|
 | Blog · SNS · Reply | 공개 | 로그인 — 작성자(`author`·`author_id`)는 서버가 토큰으로 채운다 | 작성자 또는 슈퍼유저 | 작성자 또는 슈퍼유저 |
@@ -353,8 +360,8 @@ access 토큰에는 사용자 ID(`sub`)·사용자명·슈퍼유저 여부(`su`)
 | Reports | 슈퍼유저 | 슈퍼유저(스냅샷 적재) | — | — |
 | Home(접속 로그) | 슈퍼유저 | — | — | — |
 | User | 목록 슈퍼유저 · 단건 본인 또는 슈퍼유저 | 슈퍼유저(비밀번호 필수, `is_superuser` 지정 가능) | 본인 또는 슈퍼유저 — `is_active`·`is_superuser` 는 슈퍼유저만 | 슈퍼유저 |
-| Auth | `me` 는 로그인 | `register` 공개(레이트 리밋) | — | — |
-| Health | 공개 | — | — | — |
+| Auth | `me` 는 로그인 | `register`·`login`·`refresh`·`logout` 공개 쓰기(`PublicWrite` — 가입·로그인은 레이트 리밋) | — | — |
+| Health(`/health`·`/ready`) | 공개 | — | — | — |
 
 - 인가 도입 전에 만든 게시글·피드·댓글은 작성자 ID 가 비어 있어 **슈퍼유저만** 고칠 수 있습니다.
 - 사용자를 비활성화(`is_active=false`)하거나 삭제하면 그 사용자의 refresh 토큰이 모두 폐기됩니다. 이미 발급된
