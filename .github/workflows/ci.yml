@@ -89,16 +89,20 @@ jobs:
       # Redis 는 startup 필수 자원이다. 실제 uvicorn 수명 테스트가 Redis 에 붙지 못하면
       # 모듈 전체가 skip 되고 아래 "SKIP 0" 판정에 걸린다. services: 대신 로컬과 같은
       # compose.test.yaml 로 띄운다 — 설정이 두 곳으로 갈리지 않게.
+      # 이미지(redis:7)는 compose.test.yaml 이 정한다 — 앱 최소 버전 6.2 이상(app/core/redis.py).
       - name: Redis 기동 (compose.test.yaml)
         run: docker compose -f compose.test.yaml up -d --wait redis-test
 
       # 이 job 에는 MySQL 이 없다. mysql 마커를 함께 돌리면 전부 skip 되고 "SKIP 0"
       # 판정에 걸린다. 그래서 여기서는 제외하고, 그 집합은 아래 mysql job 이
       # **실제 MySQL 에 대고** 실행한다 — 두 job 이 정확히 상보 관계다.
+      # 커버리지는 측정·출력만 한다. 하한은 pyproject.toml 의 fail_under 하나(기본 0)가 정하고 여기에
+      # --cov-fail-under 를 두지 않는다. term-missing:skip-covered 는 쓰지 않는다 — 그 "N files skipped"
+      # 줄이 아래 SKIP 판정에 걸린다(log-redaction ADR-005).
       - name: pytest (mysql 마커 제외)
         run: |
           set -o pipefail
-          uv run python -m pytest -m "not mysql" -q -rsxX | tee pytest.log
+          uv run python -m pytest -m "not mysql" -q -rsxX --cov=app --cov-branch --cov-report=term-missing | tee pytest.log
 
       # deselected 는 위 -m 필터가 만드는 정상 결과라 판정에서 뺀다.
       - name: SKIP·xfail 0건 확인 (charter §3)
