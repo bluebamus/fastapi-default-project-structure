@@ -64,6 +64,7 @@ services:
   #
   #   docker compose -f compose.test.yaml up -d --wait redis-test   # Redis 만
   redis-test:
+    # 앱 최소 버전은 6.2(GETDEL — app/core/redis.py 의 REDIS_MIN_VERSION). 7 은 그 이상이라 쓴다.
     image: redis:7-alpine
     container_name: fastapi-structure-redis-test
     # 테스트용이라 영속화하지 않는다.

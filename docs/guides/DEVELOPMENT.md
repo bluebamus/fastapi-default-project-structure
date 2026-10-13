@@ -148,7 +148,8 @@ async def get_catalog_service_readonly(
   `session.info` 표시는 보안 경계가 아닙니다.
 - 장기 자원(예: Redis client)이 필요하면 모듈 전역을 새로 만들지 말고 `app/core/resources.py` 에 자원
   컨텍스트를 추가하고 `app.state` 에서 꺼내는 작은 의존성을 둡니다. Redis 는 `app/core/redis.py` 의
-  `get_redis` 가 그 의존성입니다 — `redis: Redis = Depends(get_redis)` 로 받고, 테스트는
+  `get_redis` 가 그 의존성입니다(서버 최소 버전 `REDIS_MIN_VERSION` 도 거기 — 6.2 를 넘는 명령을 새로 쓰면 올린다) —
+  `redis: Redis = Depends(get_redis)` 로 받고, 테스트는
   `app.dependency_overrides[get_redis]` 로 fakeredis(`fakeredis.FakeAsyncRedis()`, dev 의존성)를 넣습니다 — Redis 를 쓰는
   클래스(예: `app/core/security/` 의 `RefreshTokenStore`·`RateLimiter`)는 가짜 인터페이스 없이 실물 그대로 시험됩니다. 새 자원은 정리 순서(자원을 쓰는 주체 → 자원)와 개별 timeout 을 함께 정합니다.
 
@@ -738,6 +739,8 @@ except Exception:
 - 로거 이름은 출처를 나타내는 문자열이면 됩니다. `[app=…]` 라벨은 이름이 아니라 소스 경로가 정하므로
   이름을 잘못 줘도 라벨은 맞습니다. 로깅 설정(dictConfig)에 기능별 항목을 추가하지 않습니다.
 - 비밀번호·토큰·SQL 파라미터·DSN 을 로그에 넣지 않습니다. `LOG_SQL_ECHO_ENABLED` 는 로컬에서만 잠깐 켭니다.
+  `RedactingFilter` 가 DSN 비밀번호·`password=`·`Authorization` 형태를 traceback 까지 `***` 로 가리지만(ARCHITECTURE §9.4.1)
+  형태로 찾는 안전망일 뿐입니다. 마스킹 규칙을 더하려면 `app/utils/logs/filters.py` 의 `_SECRET_PATTERNS` 한 곳만 고칩니다.
 - 포맷·레벨·출력 대상·종료 시 동작은 ARCHITECTURE §9.
 
 ## 12. 테스트
@@ -771,6 +774,16 @@ except Exception:
 | 등록 | 라우터 마운트, 모델 metadata, Admin 뷰, 라우트 인벤토리, tag |
 | 수명 | 취소·timeout·Redis 불가·정리 순서 — 건드렸다면 `tests/core/test_resources.py` 와 실제 uvicorn 테스트를 Redis 를 띄워 skip 없이 |
 | 실제 DB | MySQL Decimal·날짜 경계·제약·동시 갱신·Raw 방언·migration 왕복 |
+
+### 12.3 커버리지 하한
+
+하한은 `pyproject.toml` 의 `[tool.coverage.report] fail_under` **한 곳**이고 기본값은 `0`(하한 없음 — 측정·리포트만)입니다.
+CI 는 `--cov=app --cov-branch --cov-report=term-missing` 으로 수치를 출력합니다. CI·게이트 명령줄에 `--cov-fail-under` 를 두지 않습니다
+(`tests/test_coverage_contract.py` 가 지킨다). 올리고 싶으면:
+
+1. `uv run python -m pytest -m "not mysql" --cov=app --cov-branch --cov-report=term-missing` 로 지금 수치를 잰다.
+2. 그보다 조금 낮은 값을 `fail_under` 에 적는다(흔들림 여유). 다른 곳은 고치지 않는다.
+3. 테스트가 쌓이면 같은 방법으로 조금씩 올린다.
 
 ## 13. 코드 리뷰 체크리스트
 

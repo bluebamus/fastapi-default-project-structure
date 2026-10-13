@@ -451,6 +451,8 @@ REQUIREMENT_SOURCES = (
     "docs/crp/groups/service-hardening/charter.md",
     "docs/crp/groups/admin-login/design-baseline.md",
     "docs/crp/groups/admin-login/charter.md",
+    "docs/crp/groups/log-redaction-fixes/design-baseline.md",
+    "docs/crp/groups/log-redaction-fixes/charter.md",
 )
 REQUIREMENT_ID = re.compile(
     r"\b(?:SCN-(?:ORM|RAW)|ORM-REP|RAW-REP|TX|VIEW|AR|NFR|MIG|DOC|REQ|ADR)-\d{3}\b"
