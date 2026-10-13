@@ -63,6 +63,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   DB 풀 → 로그 큐 flush 순입니다. 정상 종료·startup 실패·취소·`SIGTERM` 모두에서 끝까지 시도하며,
   실제 uvicorn 프로세스를 띄우는 통합 테스트가 이 순서를 고정합니다.
 - **비차단 로깅** — 큐 기반 핸들러 + listener 스레드, 출력은 stdout/stderr 뿐(파일 로그 없음).
+  메시지·traceback(체인 예외 포함)·`stack_info` 의 비밀값(DSN 비밀번호·`password=`·`Authorization`)은 출력 전에
+  `***` 로 가립니다 — `uvicorn main:app` CLI 와 Celery worker 의 핸들러도 같은 규칙입니다.
 - **인증** — OAuth2 password flow + JWT access/refresh. Argon2id 해시(기존 bcrypt 는 로그인 때 재해시),
   refresh 회전·재사용 탐지·로그아웃(Redis), 로그인·가입 레이트 리밋(429 + `Retry-After`).
 - **인가** — 슈퍼유저/일반 2단계. 게시글·피드·댓글 쓰기는 로그인, 수정·삭제는 작성자 또는 슈퍼유저, 관리 경로
@@ -80,7 +82,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | Web | FastAPI 0.141, Uvicorn 0.54 |
 | DB | SQLAlchemy 2.0 async + aiomysql(MySQL), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
-| Redis | 필수 — startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) + Celery broker/backend (redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
+| Redis | 필수 — **서버 6.2 이상**(`GETDEL` 이 쓰는 명령 중 가장 높은 요구치, 기동 시 `INFO server` 로 확인해 미만이면 기동 거부) · startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) + Celery broker/backend (클라이언트 redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
 | 작업 큐 | Celery 5 (앱 `app/celery/`, 태스크는 기능별 `app/features/<name>/tasks.py` 자동 발견) |
 | 인증 | PyJWT, pwdlib[argon2](Argon2id), bcrypt(이전 해시 검증 전용) — 테스트는 fakeredis |
 | 관리·문서 | SQLAdmin(로그인 화면 Bootstrap 5.3 — CDN·SRI, 세션 쿠키 서명은 itsdangerous), Scalar |
@@ -100,7 +102,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | `DEBUG=true` (기본값) | 필요 | **필요** | startup 에서 개발용 테이블 생성을 시도하므로 MySQL 이 없으면 기동 실패 |
 | 단위 테스트 | 불필요* | 불필요* | *실제 uvicorn 수명 테스트는 Redis, `-m mysql` 테스트는 MySQL 이 없으면 skip |
 
-Redis 는 끌 수 없는 startup 조건입니다(`DEBUG` 와 무관). API 문서(`/docs`)는 `DEBUG=true` 에서만
+Redis 는 끌 수 없는 startup 조건이고 서버는 **6.2 이상**이어야 합니다(`DEBUG` 와 무관). API 문서(`/docs`)는 `DEBUG=true` 에서만
 열리고, `DEBUG=true` 는 MySQL 을 요구합니다 — 첫 실행에서 가장 헷갈리는 조합입니다.
 
 ### 1. 의존성 설치
@@ -136,7 +138,7 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # 키마�
 ### 3. Redis 만으로 배선 확인
 
 ```bash
-docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine
+docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine   # 6.2 이상이면 된다
 DEBUG=false uv run uvicorn main:app --port 8000
 curl http://127.0.0.1:8000/health      # {"status":"healthy","version":"0.1.0"}
 ```
@@ -192,6 +194,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | 증상 | 원인 | 조치 |
 |---|---|---|
 | startup 에서 `Redis 연결 실패: <오류 타입>` | Redis 미기동·주소/포트/비밀번호 오류 | `REDIS_*` 확인. `DEBUG=false` 로 우회되지 않음 |
+| startup 에서 `Redis <버전> 는 지원하지 않는다 — 최소 6.2.0 이상이 필요하다` | Redis 서버가 6.2 미만이라 `GETDEL`(refresh 회전)이 없다 | Redis 를 6.2 이상으로 올린다. `INFO` 를 막아 둔 관리형 Redis 는 WARNING 만 남기고 뜬다 — 그때는 버전을 직접 확인한다 |
 | startup 에서 `Can't connect to MySQL server` | `DEBUG=true` 가 테이블 생성을 시도 | MySQL 을 띄우거나 `DEBUG=false` |
 | `/docs` 404 | `DEBUG=false` 는 문서를 끈다 | `DEBUG=true` (MySQL 필요) |
 | 기능 API 만 500 | 앱은 떴지만 DB 가 없다 | 4단계 |
@@ -234,7 +237,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | `python main.py` 전용 바인딩 |
 | `MYSQL_HOST`·`MYSQL_PORT`·`MYSQL_USER`·`MYSQL_PASSWORD`·`MYSQL_DATABASE` | `localhost`·`3306`·`root`·`""`·`fastapi_db` | primary(writer) |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
-| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·`/ready` 대상 + refresh 회전 기록·레이트 리밋 + Celery broker/backend |
+| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·버전 확인(6.2 이상)·`/ready` 대상 + refresh 회전 기록·레이트 리밋 + Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | access·refresh 토큰 서명 키와 관리 화면 세션 쿠키(`admin_session`) 서명 키 — 예시 값·32자 미만·access==refresh 면 test 외 **기동 거부**. `SESSION_SECRET_KEY` 를 바꾸면 관리 세션이 모두 끊긴다 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access 는 서버에서 폐기할 수 없으므로 짧게. refresh 는 회전·폐기된다 |
 | `JWT_ALGORITHM` / `JWT_ISSUER` / `JWT_AUDIENCE` / `JWT_LEEWAY_SECONDS` | `HS256` / 프로젝트 이름 / 프로젝트 이름`-api` / `10` | 알고리즘은 `HS256`·`HS384`·`HS512` 만. `iss`·`aud` 는 검증 시 일치 필수 |
@@ -259,7 +262,7 @@ uv run python -m pytest -m "not mysql"         # CI gate job 과 같은 집합
 uv run ruff check . && uv run ruff format --check .
 uv run mypy .                                  # 판정용은 콜드 캐시(CI 는 캐시를 복원하지 않는다)
 
-docker compose -f compose.test.yaml up -d --wait   # MySQL 8.4(127.0.0.1:3308) + Redis 7(6379)
+docker compose -f compose.test.yaml up -d --wait   # MySQL 8.4(127.0.0.1:3308) + Redis 7(6379, 앱 최소 6.2)
 uv run python -m pytest -m mysql --mysql-required  # MySQL 에 닿지 못하면 skip 이 아니라 실패
 docker compose -f compose.test.yaml down -v        # 정리(MySQL 데이터는 tmpfs)
 ```
@@ -300,12 +303,16 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 
 | job | 내용 |
 |---|---|
-| `gate` | `uv sync --locked`(락이 `pyproject.toml` 과 어긋나면 실패) → ruff(lint·format) → mypy(콜드 캐시) → bandit(MEDIUM 이상, `app`·`main.py`·`config.py`) → `review_gate --fast`(위 표의 구조 검사·의존성 감사) → compose 의 `redis-test` 기동 → `pytest -m "not mysql" -rsxX` → **skipped/xfailed/xpassed 가 있으면 실패** → `alembic heads` 단일 head 확인 |
+| `gate` | `uv sync --locked`(락이 `pyproject.toml` 과 어긋나면 실패) → ruff(lint·format) → mypy(콜드 캐시) → bandit(MEDIUM 이상, `app`·`main.py`·`config.py`) → `review_gate --fast`(위 표의 구조 검사·의존성 감사) → compose 의 `redis-test` 기동 → `pytest -m "not mysql" -rsxX --cov=app --cov-branch --cov-report=term-missing`(커버리지는 측정·출력만) → **skipped/xfailed/xpassed 가 있으면 실패** → `alembic heads` 단일 head 확인 |
 | `mysql` | `uv sync --locked` → compose 의 `mysql-test` 기동 → `pytest -m mysql --mysql-required` → skip 또는 0건이면 실패 |
 
 두 job 은 테스트 집합이 정확히 상보입니다. push 외에 매주 월요일 09:00(KST)에도 실행해, 코드 변경이 없는 주에 새로 공개된
 의존성 권고를 잡습니다. 배포·이미지 빌드는 이 저장소 범위 밖입니다.
 커밋 전 훅(`.pre-commit-config.yaml`)은 저장소가 추적하지 않는 로컬 선택 설정입니다 — 같은 검사는 CI 가 합니다.
+
+커버리지 하한은 `pyproject.toml` 의 `[tool.coverage.report] fail_under` 하나가 정하고 **기본값은 0**(하한 없음)입니다 —
+처음에는 기능이 제대로 동작하는지가 먼저라는 사용자 결정입니다. CI 는 수치를 출력만 합니다. 올리는 방법은
+[DEVELOPMENT §12.3](./docs/guides/DEVELOPMENT.md#123-커버리지-하한).
 
 ---
 
@@ -328,6 +335,7 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 | Reports | `GET /api/v1/reports/sales/daily` · `POST /api/v1/reports/sales/daily/snapshots` | Raw SQL 참조 예제(조회·적재) |
 
 DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은 `{"error_code", "message", "detail"}` 형식입니다.
+예외가 실은 헤더는 그대로 실립니다 — 405 `Allow`, 401 `WWW-Authenticate: Bearer`, 429 `Retry-After`.
 
 인증 흐름 — `register` → `login`(form) 으로 `{access_token, refresh_token, token_type, expires_in}` 를 받고, API 는
 `Authorization: Bearer <access_token>` 으로 부릅니다. access 가 만료되면 `refresh` 에 refresh 토큰을 보내 **새 쌍**을 받습니다 —
@@ -390,11 +398,11 @@ admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않�
 | 3 | 관리 화면을 켰다면 HTTPS 로만 접속하는가(배포 환경 쿠키는 `Secure`), 가능하면 리버스 프록시·VPN 으로 `/admin` 접근 출처도 좁혔는가 | HTTP 로는 로그인이 유지되지 않는다. 출처 제한은 로그인 화면 자체를 숨기는 추가 방어선이다 |
 | 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD`·`SMTP_PASSWORD` 도) | 예시 값·빈 값·32자 미만이면 test 외 모든 `ENV` 에서 기동 거부(`RuntimeError`, 이름만 표시) |
 | 4-1 | `ENV=production`(또는 `staging`)을 **명시**했는가 | 기본값 `development` 로 뜨면 `DEBUG`·`LOG_LEVEL` 검사가 빠지고 관리 세션 쿠키에 `Secure` 가 붙지 않는다. `.env` 없이 환경 변수로 주입하는 배포는 `ENV` 가 없으면 기동 거부 |
-| 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출, worker 마다 startup 에서 `create_all` 시도 |
+| 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출(DSN 비밀번호·`password=`·`Authorization` 형태만 `***` 로 가려진다), worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
 | 7 | `CORS_ALLOW_ORIGINS` 를 실제 출처로 좁혔는가 | 기본값 `["*"]` |
 | 8 | `LOG_SQL_ECHO_ENABLED=false` 인가 | SQL 바인딩 값(해시·토큰·검색어)이 로그 수집기로 나간다 |
-| 9 | Redis 가 준비됐고, 컨테이너 종료 유예 시간이 종료 예산보다 긴가 | Redis 없으면 기동 실패 / 유예가 짧으면 정리 도중 SIGKILL ([ARCHITECTURE §8.2](./docs/guides/ARCHITECTURE.md#82-시간-예산)) |
+| 9 | Redis(**6.2 이상**)가 준비됐고, 컨테이너 종료 유예 시간이 종료 예산보다 긴가 | Redis 가 없거나 6.2 미만이면 기동 실패 / 유예가 짧으면 정리 도중 SIGKILL ([ARCHITECTURE §8.2](./docs/guides/ARCHITECTURE.md#82-시간-예산)) |
 | 10 | worker 수 × DB 풀 크기가 DB 최대 연결 수 안인가 | [ARCHITECTURE §4.1](./docs/guides/ARCHITECTURE.md#41-엔진과-커넥션-풀) |
 
 관리 화면의 기본값은 "켜짐 + 슈퍼유저 로그인" 이고 `SERVER_HOST` 기본값은 `0.0.0.0` 이라, 아무것도 설정하지 않은

@@ -154,8 +154,9 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
         # 선언 세부는 test_dictconfig_declares_the_queue_listener_natively 가 본다.
         assert queue_handler["class"] == "app.utils.logs.queue_handler.BoundedQueueHandler"
         # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
-        # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001).
-        assert queue_handler["filters"] == ["sql_noise", "context"]
+        # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001). redact 는 메시지·traceback·
+        # stack 의 비밀값을 적재 전에 가린다(log-redaction ADR-001).
+        assert queue_handler["filters"] == ["sql_noise", "redact", "context"]
 
 
 def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):

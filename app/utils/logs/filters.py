@@ -12,6 +12,7 @@ record 에 두 필드를 주입한다.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 from types import FrameType
@@ -118,6 +119,80 @@ class SqlNoiseFilter(logging.Filter):
         if record.levelno >= _SQL_NOISE_MIN_LEVEL:
             return True
         return not record.name.startswith(SQL_NOISE_LOGGER_PREFIXES)
+
+
+# =============================================================================
+# 비밀값 마스킹 — 규칙의 정본 (log-redaction ADR-001)
+# =============================================================================
+REDACTED = "***"
+
+# 각 패턴은 남길 앞부분을 ``keep`` 그룹으로 잡고, 그 뒤의 값만 ``REDACTED`` 로 바꾼다.
+# 로그 메시지·traceback·stack·DEBUG 500 응답 detail 이 모두 ``redact()`` 하나를 쓴다 —
+# 패턴을 다른 곳에 복제하지 않는다.
+_SECRET_PATTERNS = (
+    # DSN 의 비밀번호: scheme://user:<password>@host
+    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s@/]+(?=@)"),
+    # Authorization 헤더 값: "Authorization: Bearer <token>" · "authorization=<token>"
+    re.compile(
+        r"(?i)(?P<keep>\b(?:proxy-)?authorization\b[\"']?\s*[:=]\s*[\"']?"
+        r"(?:(?:bearer|basic|token)\s+)?)[^\s\"',;]+"
+    ),
+    # 헤더 이름 없이 남은 Bearer 토큰
+    re.compile(r"(?i)(?P<keep>\bbearer\s+)[a-z0-9\-._~+/]+=*"),
+    # key=value · key: value · "key": "value" — 키 이름에 비밀 단어가 들어 있으면
+    re.compile(
+        r"(?i)(?P<keep>\b[\w\-]*(?:password|passwd|pwd|secret|token|api[_\-]?key)[\w\-]*"
+        r"[\"']?\s*[:=]\s*[\"']?)[^\s\"',;&)}\]]+"
+    ),
+)
+
+
+def redact(text: str) -> str:
+    """문자열 안의 비밀값(DSN 비밀번호·Authorization·password= 류)을 ``***`` 로 가린다."""
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub(lambda m: m.group("keep") + REDACTED, text)
+    return text
+
+
+_TRACEBACK_FORMATTER = logging.Formatter()
+
+
+class RedactingFilter(logging.Filter):
+    """record 의 메시지·traceback·stack_info 에서 비밀값을 가린다 (log-redaction ADR-001).
+
+    traceback 은 보통 **포매터**가 나중에 ``exc_info`` 에서 만든다. 그때는 필터가 이미 지나간
+    뒤라 가릴 기회가 없다. 그래서 여기서 ``exc_info`` 를 미리 ``exc_text`` 로 포맷해 가려
+    둔다 — ``logging.Formatter.format`` 은 ``exc_text`` 가 있으면 다시 만들지 않는다.
+    ``exc_info`` 는 남겨 두므로 예외 타입·파일·줄 같은 진단 정보는 그대로 나간다.
+
+    메시지는 **가릴 것이 있을 때만** 합친 문자열로 바꾸고 ``args`` 를 비운다. 평소에는
+    ``msg``/``args`` 를 건드리지 않는다 — uvicorn 의 access 포매터처럼 ``args`` 를 직접
+    읽는 포매터가 있다.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # 포맷 오류는 기존대로 핸들러의 handleError 가 보고하게 둔다.
+            message = None
+        if message is not None:
+            masked = redact(message)
+            if masked != message:
+                record.msg = masked
+                record.args = None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = _TRACEBACK_FORMATTER.formatException(record.exc_info)
+        if record.exc_text:
+            record.exc_text = redact(record.exc_text)
+        if record.stack_info:
+            record.stack_info = redact(record.stack_info)
+        return True
+
+
+def add_redacting_filter(target: logging.Logger | logging.Handler) -> None:
+    """``RedactingFilter`` 를 한 번만 붙인다(여러 번 불러도 중복되지 않는다)."""
+    if not any(isinstance(existing, RedactingFilter) for existing in target.filters):
+        target.addFilter(RedactingFilter())
 
 
 class StaticAppFilter(logging.Filter):

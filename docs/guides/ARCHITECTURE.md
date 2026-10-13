@@ -45,7 +45,7 @@
 ├── conftest.py             # pytest 전역 옵션 --mysql-required (루트에 있어야 인식된다)
 ├── pyproject.toml / uv.lock / .python-version
 ├── alembic.ini / migrations/        # env.py 가 import_all_models() 로 전 기능 모델 수집
-├── compose.test.yaml       # 테스트용 MySQL 8.4(127.0.0.1:3308, tmpfs) + Redis 7(6379)
+├── compose.test.yaml       # 테스트용 MySQL 8.4(127.0.0.1:3308, tmpfs) + Redis 7(6379, 앱 최소 6.2)
 ├── scripts/review_gate.py  # 결정적 검수 게이트
 ├── .github/workflows/ci.yml
 ├── app/
@@ -67,7 +67,7 @@
 │   │       └── tests/
 │   ├── core/                        # 프레임워크 인프라
 │   │   ├── resources.py             # 프로세스 수명 자원의 생성·해제 단일 지점
-│   │   ├── redis.py                 # get_redis — lifespan Redis client 주입 provider
+│   │   ├── redis.py                 # get_redis — lifespan Redis client 주입 provider, REDIS_MIN_VERSION·ensure_redis_version
 │   │   ├── security/                # 토큰·회전 저장소·레이트 리밋·PasswordHasher·Principal·OwnershipPolicy + provider — §11
 │   │   ├── exception.py             # AppException 계층 + ErrorResponse
 │   │   ├── schemas.py               # PatchSchema(모든 Update 스키마의 기반 — null PATCH 거부)
@@ -226,7 +226,12 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 | `AppException` 과 하위(`NotFoundException`·`DuplicateException`·`DatabaseException`…) | 예외가 가진 상태 코드·`error_code`. 로그는 4xx 면 WARNING(detail 없음), 5xx 면 ERROR(detail 포함) — service-hardening ADR-008 ④ |
 | `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록 |
 | Starlette `HTTPException` | 해당 코드, `error_code=HTTP_<코드>` |
-| 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 |
+| 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001) |
+
+`AppException`·`HTTPException` 핸들러는 예외의 `headers` 를 응답에 그대로 싣습니다 — 405 `Allow`(라우팅이 채운다),
+401 `WWW-Authenticate: Bearer`, 429 `Retry-After`(log-redaction ADR-002, `tests/test_exception_headers.py`).
+405 의 `Allow` 는 Starlette 가 **처음 걸린 라우트의 메서드**로 채웁니다 — 같은 경로를 메서드별 함수로 나눈 곳
+(`GET`·`POST /api/v1/blog/posts`)에서는 그 경로의 메서드 전부가 아니라 하나만 실립니다.
 
 핸들러는 `JSONResponse(content=model.model_dump(mode="json"))` 로 직렬화합니다 — `detail` 에
 datetime·UUID 가 들어와도 깨지지 않게 하기 위해서입니다(`tests/test_response_serialization.py`).
@@ -492,7 +497,7 @@ async with _log_queue(), _database(app), _redis(app), _background_tasks():
 |---|---|
 | `_log_queue()` 진입 | 없음 (종료 때 flush 담당) |
 | `_database(app)` 진입 | 없음 (엔진은 이미 있다 — 종료 때 dispose 담당) |
-| `_redis(app)` 진입 | `Redis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)` → `await client.ping()`. 성공해야 `app.state.redis = client`. **끄는 설정 없음** |
+| `_redis(app)` 진입 | `Redis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)` → `await client.ping()` → `ensure_redis_version(client)`(`INFO server` 의 `redis_version` ≥ `REDIS_MIN_VERSION`=6.2.0, 아래 표). 성공해야 `app.state.redis = client`. **끄는 설정 없음** |
 | `_background_tasks()` 진입 | 없음 (종료 때 drain 담당) |
 | `_prepare_database()` | `import_all_models()` → `len(Base.metadata.tables)`. 0개면 DB 접속 안 함 / `DEBUG=false` 면 DDL 생략 / `DEBUG=true` 면 `create_db_tables(import_models=False)` — writer `engine.begin()` 안에서 `create_all`, 30초 guard |
 | `yield` | 서버가 요청을 받기 시작한다 |
@@ -502,12 +507,26 @@ client 가 없으면 `ServiceUnavailableException`(503). 라우트·의존성이
 `dependency_overrides[get_redis]` 로 바꿔 끼웁니다(service-hardening ADR-011). `create_all` 은 없는 테이블만 만들며 컬럼 변경·삭제·데이터 이동을 하지 않습니다.
 여러 worker 가 `DEBUG=true` 로 동시에 뜨면 DDL 도 동시에 시도되므로 운영은 `DEBUG=false` + Alembic 입니다.
 
+**Redis 최소 버전 6.2** — `app/core/redis.py` 의 `REDIS_MIN_VERSION` 이 정본입니다. 코드가 실제로 보내는 명령 중
+가장 높은 요구치로 정합니다(log-redaction ADR-003). `EXPIRE … NX`(7.0)·Lua 는 쓰지 않습니다 — 쓰게 되면 상수를 올리고,
+`tests/core/test_redis_version.py` 의 계약 테스트가 소스의 호출과 상수를 맞춰 봅니다.
+
+| 명령 | 도입 버전 | 사용처 |
+|---|---|---|
+| `GETDEL` | 6.2.0 | `RefreshTokenStore.consume`(refresh 회전) |
+| `SET key v EX n NX` | 2.6.12 | `RateLimiter.hit`(첫 hit 에만 만료) |
+| `MULTI`·`INCR`·`TTL`·`EXPIRE`·`SADD`·`SMEMBERS`·`EXISTS`·`DEL`·`PING`·`INFO` | 2.6 이하 | 레이트 리밋·회전 저장소·startup·`/ready` |
+
+보고된 버전이 낮으면 `RedisVersionError` 로 기동을 멈춥니다(Redis 필수 정책과 같다). `INFO` 를 막아 둔 관리형 Redis·
+`INFO` 를 모르는 fakeredis 처럼 버전을 알 수 없으면 WARNING 을 남기고 계속합니다.
+
 ### 7.3 기동 실패 경로
 
 | 실패 지점 | 결과 |
 |---|---|
 | 설정 타입·validator·설정 검사(`.env` 출처, 예전 `ADMIN` 잔존, 예시 비밀값, 배포 환경 debug) | `config` import 실패 — lifespan 전 |
 | Redis ping (연결·인증·timeout) | `[startup] Redis 연결 실패: <오류 타입>` ERROR 후 재전파. background 컨텍스트에는 아직 들어가지 않았으므로 drain 없이 **Redis `aclose()` → DB dispose(“자원 해제 완료” 로그) → 로그 flush** 만 실행. `app.state.redis`·`app.state.resources` 는 `None` (`tests/core/test_resources.py::test_redis_connection_failure_stops_startup_and_cleans_up`) |
+| Redis 버전 6.2 미만 | `RedisVersionError`(`Redis <버전> 는 지원하지 않는다 — 최소 6.2.0 …`) 전파, 정리는 ping 실패와 같다 (`tests/core/test_redis_version.py`) |
 | 개발용 DDL (MySQL 없음 등) | 네 컨텍스트가 모두 역순으로 정리된 뒤 예외 전파 |
 | 공통 | uvicorn 이 `Application startup failed. Exiting.` 과 traceback 을 남기고 종료. listener 가 프로세스 소유라 이 로그가 유실되지 않는다(§9.5) |
 
@@ -593,7 +612,7 @@ stdout·stderr 쓰기는 느린 동기 I/O 라 요청 스레드에서 하면 eve
 요청 코드 ─ put_nowait ─▶ [bounded queue 10,000] ─▶ QueueListener 스레드 ─▶ stdout / stderr
 ```
 
-root 로거에는 `BoundedQueueHandler` 하나만 붙고, 필터(`SqlNoiseFilter`, `ContextFilter`)는 **적재 전에
+root 로거에는 `BoundedQueueHandler` 하나만 붙고, 필터(`SqlNoiseFilter`, `RedactingFilter`, `ContextFilter`)는 **적재 전에
 요청 스레드에서** 돕니다(`ContextFilter` 는 호출 스택에서 클래스명을 뽑으므로 listener 스레드에서는 늦습니다).
 
 > **`logger.info()` 가 반환됐다고 출력된 것은 아닙니다.** 임계값·필터에서 걸러질 수 있고, 큐가 차면
@@ -661,6 +680,31 @@ uvicorn 로거 레벨은 `python main.py` 경로에서 root 와 같은 규칙(`L
 `asyncmy`·`pymysql` 로거의 **WARNING 미만**을 막습니다(장애는 계속 보입니다). SQL 을 봐야 할 때만
 `LOG_SQL_ECHO_ENABLED=true` 로 엽니다(NFR-001, `tests/core/test_sql_logging_leak.py`).
 
+### 9.4.1 비밀값 마스킹 — traceback 포함
+
+`RedactingFilter`(`app/utils/logs/filters.py`)가 메시지·traceback·`stack_info` 의 비밀값을 `***` 로 가립니다.
+규칙의 정본은 같은 파일의 `redact()` 하나이고 DEBUG 500 응답의 `detail` 도 이것을 씁니다(log-redaction ADR-001).
+
+| 가리는 형태 | 예 |
+|---|---|
+| DSN 비밀번호 | `mysql+asyncmy://u:***@h/db` · `redis://:***@cache:6379/0` |
+| `Authorization` 값·`Bearer` 토큰 | `Authorization: Bearer ***` |
+| 이름에 `password`·`passwd`·`pwd`·`secret`·`token`·`api_key` 가 든 키의 값 | `password=***` · `"refresh_token": "***"` |
+
+traceback 은 보통 포매터가 나중에 `exc_info` 에서 만들어 필터가 볼 수 없습니다. 그래서 필터가 `exc_info` 를
+미리 `exc_text` 로 포맷해 가려 둡니다(포매터는 `exc_text` 가 있으면 다시 만들지 않는다). `exc_info` 는 남겨
+예외 타입·체인·파일·줄은 그대로 보입니다. 메시지는 가릴 것이 있을 때만 합친 문자열로 바꿉니다(`args` 를 직접
+읽는 uvicorn access 포매터를 깨지 않게).
+
+| 출력 경로 | 붙는 곳 |
+|---|---|
+| 앱·SQLAlchemy·`python main.py` 의 uvicorn 로거 | root 의 queue 핸들러 필터 `redact` — stdout·stderr·큐 포화 fallback 모두 |
+| `uvicorn main:app` CLI 의 `uvicorn`·`uvicorn.error` | `configure_logging()` 이 그 **로거**에 붙인다(uvicorn 자기 핸들러로 나가는 경로) |
+| Celery worker | `after_setup_logger`·`after_setup_task_logger` 시그널에서 Celery 가 단 핸들러에 붙인다(`app/celery/lifecycle.py`) |
+
+형태로 찾는 규칙이라 모든 비밀을 잡지는 못합니다 — 비밀값을 로그·예외 메시지에 넣지 않는 것이 먼저입니다
+(`tests/utils/test_log_redaction.py`).
+
 ### 9.5 listener 수명 — 프로세스가 소유한다
 
 listener 는 FastAPI lifespan 보다 **오래** 살아야 합니다. lifespan 에서 멈추면 그 뒤에 uvicorn 이 남기는
@@ -710,6 +754,7 @@ import 합니다. 스냅샷에는 `SIG_DFL` 이 찍혀 있어 복구 순간 프�
 | `SIGTERM`/`SIGBREAK` 핸들러 | `docker stop` 에서 `atexit` 미실행 | ADR-022 |
 | lifespan 끝의 flush | `uvicorn main:app` 경로의 꼬리 유실 | ADR-023 |
 | sentinel·join 예산 | 큐 포화·listener 무응답 시 종료 불가 | ADR-021 |
+| `RedactingFilter` | traceback·stack 에 실린 DSN 비밀번호·토큰 노출 | log-redaction ADR-001 |
 
 이 계약은 실제 프로세스를 띄우는 테스트가 지킵니다. 지우거나 약화시키지 마세요 — 게이트가 존재를 확인합니다.
 
@@ -758,6 +803,8 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
   조용히 버려지던 경로를 막습니다.
 - `user_access_logs` 테이블의 `country`·`country_code`·`city` 컬럼은 채우는 코드가 없습니다.
   인덱스: `created_at`·`ip_address`·`os_name`·`browser_name`·`device_type`·`country`·`session_id`·`user_id`.
+- `session_id` 쿠키 값·`referer`·`forwarded_for`(`X-Forwarded-For`)·`real_ip` 는 **원문 그대로** 저장합니다 —
+  사용자 결정으로 유지합니다(log-redaction ADR-004). 조회 API 는 슈퍼유저 전용이고, 보존 기간 정책은 없습니다.
 - `X-Forwarded-For` 는 클라이언트가 위조할 수 있으므로 신뢰 프록시 홉 수(`TRUSTED_PROXY_HOPS`) 밖의 값은
   믿지 않습니다. 이전에는 맨 왼쪽 값을 무조건 믿었습니다 — 기본값 0 은 이 동작을 바꾼 것이니 프록시 뒤 배포는
   홉 수를 설정해야 실제 클라이언트 IP 가 기록됩니다.
@@ -998,7 +1045,7 @@ config.set_main_option(
 | ORM·Raw Base 독립 | Raw 결과에 ORM 의미가 새지 않게(AR-003) |
 | 로그는 큐 + stdout/stderr, 파일 없음, 앱별 로거 없음 | event loop 비차단(NFR-009), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
-| Redis 는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011) |
+| Redis(서버 6.2 이상 — `GETDEL`)는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011) |
 | 관리 화면은 기본 켜짐 + 활성 슈퍼유저 로그인, `ADMIN_DISABLED=true` 로 흔적 없이 끈다 | 개발 우선 템플릿이라 받자마자 DB 를 볼 수 있어야 하고, 배포에서는 로그인이 지킨다. 쓰지 않는 배포는 공격 표면 자체를 없앤다. 세션은 `/admin` 하위 앱 전용이라 API 의 Bearer 계약과 섞이지 않는다(admin-login ADR-001~006 — ADR-045 ③ 의 확인 플래그를 대체) |
 | 예시·빈 비밀값, 짧은 키, access==refresh 는 test 외 **모든 ENV** 에서 기동 거부. staging/production 은 `DEBUG=true`·`LOG_LEVEL=DEBUG` 도 거부 | 예시 키로 뜨면 누구나 토큰을 위조하고, debug 는 SQL 과 바인딩 값을 로그로 내보낸다. 잘못된 설정은 개발 단계부터 오류로 드러나야 `.env` 를 고친다(ADR-027·028·030·045) |
 | `.env` 가 없으면 필수 값이 환경 변수로 와야 한다 | 코드 기본값은 유지하되 기본값만으로는 뜨지 않게 한다. 파일 없이 주입하는 컨테이너 배포는 통과(ADR-045 ①) |
@@ -1030,6 +1077,7 @@ config.set_main_option(
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
 | 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./admin-auth-guide.html) 신설 |
+| 2026-10-13 | 로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 `RedactingFilter`(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(`REDIS_MIN_VERSION`), §10 접속 로그 원문 저장은 사용자 결정으로 유지 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
 | 2026-10-07 | 설정 검사 확장(ADR-045): `.env` 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 `ADMIN=true` 는 `ADMIN_ALLOW_UNAUTHENTICATED` 확인 필요. CI 가 `review_gate --fast` 실행(ADR-044) |
 | 2026-09-17 | 배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 `config` import 실패. `.env.example` 비밀 키 예시를 서로 다른 `change-this-...` 로 |

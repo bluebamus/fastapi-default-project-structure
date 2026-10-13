@@ -58,6 +58,7 @@ from app.core.db.models_registry import import_all_models
 from app.core.db.session import create_db_tables, dispose_engine
 from app.core.middlewares.background_tasks import access_log_tasks
 from app.core.models.models_base import Base
+from app.core.redis import ensure_redis_version
 from app.utils.logs import get_logger
 from app.utils.logs.queue_handler import LOG_FLUSH_TIMEOUT_SECONDS
 from app.utils.logs.setup import flush_log_queue
@@ -148,6 +149,7 @@ async def _redis(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.error("[startup] Redis 연결 실패: %s", type(exc).__name__)
             raise
+        await ensure_redis_version(client)
         app.state.redis = client
         logger.info("[startup] Redis 연결 확인 완료")
         yield
