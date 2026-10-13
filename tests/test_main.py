@@ -1,3 +1,8 @@
+import os
+import pathlib
+import subprocess
+import sys
+
 from fastapi.testclient import TestClient
 
 
@@ -36,3 +41,38 @@ def test_run_server_passes_the_project_log_config(monkeypatch):
 
     main.run_server("other.module:app")
     assert captured["target"] == "other.module:app"
+
+
+_UNDECLARED_ROUTE_PROBE = """
+from app.features import home
+
+@home.router.get("/v1/home/undeclared")
+async def undeclared() -> None:
+    return None
+
+import main
+"""
+
+
+def test_main_refuses_to_start_when_a_view_declares_no_access_level():
+    """앱 조립 경로(main 모듈)가 가드를 실제로 부른다 — 선언 없는 뷰가 하나라도 끼면 import 가 실패한다.
+
+    ``main`` 은 모듈 수준에서 조립되므로 별도 프로세스에서 라우터에 뷰를 하나 더한 뒤 import 한다
+    (이 세션의 ``main`` 은 이미 조립이 끝났다). 조립 끝의 ``AccessPolicyGuard().verify(app)`` 를 지우면
+    import 가 성공해 이 테스트가 실패한다.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", _UNDECLARED_ROUTE_PROBE],
+        cwd=pathlib.Path(__file__).resolve().parent.parent,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "AccessPolicyError" in result.stderr
+    assert "GET /api/v1/home/undeclared: 접근 수준 선언 없음" in result.stderr

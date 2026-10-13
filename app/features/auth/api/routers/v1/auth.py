@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.exception import ErrorResponse
+from app.core.security.access import PublicWrite
 from app.features.auth.dependencies.auth_dependencies import (
     get_auth_service,
     get_current_user,
@@ -58,7 +59,7 @@ def _token_response(pair: TokenPair) -> TokenResponse:
     description="사용자명·이메일·비밀번호로 사용자를 생성합니다(IP 단위 레이트 리밋).",
     operation_id="authRegister",
     responses={**_CONFLICT, **_TOO_MANY},
-    dependencies=[Depends(register_rate_limit)],
+    dependencies=[PublicWrite, Depends(register_rate_limit)],
 )
 async def register(
     payload: RegisterRequest,
@@ -80,6 +81,7 @@ async def register(
         "IP+사용자명·IP 단위 레이트 리밋이 걸리고, 성공하면 IP+사용자명 카운터를 지웁니다."
     ),
     operation_id="authLogin",
+    dependencies=[PublicWrite],
     responses={**_UNAUTH, **_TOO_MANY},
 )
 async def login(
@@ -105,6 +107,7 @@ async def login(
         "이미 쓴 Refresh Token 을 다시 보내면 그 계열 전체가 폐기됩니다(재사용 탐지)."
     ),
     operation_id="authRefresh",
+    dependencies=[PublicWrite],
     responses=_UNAUTH,
 )
 async def refresh(
@@ -120,6 +123,7 @@ async def refresh(
     summary="로그아웃",
     description="Refresh Token 의 계열을 폐기합니다. 이미 폐기됐어도 204 입니다(멱등).",
     operation_id="authLogout",
+    dependencies=[PublicWrite],
     responses=_UNAUTH,
 )
 async def logout(

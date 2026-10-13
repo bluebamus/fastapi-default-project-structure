@@ -18,7 +18,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 
 from app.core.exception import ErrorResponse
-from app.core.security.dependencies import FORBIDDEN_RESPONSES, require_superuser
+from app.core.security.access import SuperuserRequired
+from app.core.security.dependencies import FORBIDDEN_RESPONSES
 from app.features.reports.dependencies.report_dependencies import (
     get_report_service,
     get_report_service_readonly,
@@ -35,7 +36,8 @@ from app.features.reports.schemas.report_schema import (
 from app.features.reports.services.report_service import ReportService
 
 # 매출 집계는 운영 데이터다 — 이 라우터의 모든 경로는 슈퍼유저 전용(service-hardening ADR-018).
-router = APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDEN_RESPONSES)
+# 접근 수준은 뷰마다 선언한다(access-policy ADR-002). 401/403 문서는 라우터 단위로 공유한다.
+router = APIRouter(responses=FORBIDDEN_RESPONSES)
 
 
 @router.get(
@@ -56,6 +58,7 @@ router = APIRouter(dependencies=[Depends(require_superuser)], responses=FORBIDDE
         "종료일은 조회 범위에 포함되며, 매출이 없는 날은 결과에 나타나지 않습니다(슈퍼유저 전용)."
     ),
     operation_id="getDailySalesReport",
+    dependencies=[SuperuserRequired],
 )
 async def get_daily_sales_report(
     start_date: date = Query(description="조회 시작일(포함)", examples=["2026-08-01"]),
@@ -103,6 +106,7 @@ async def get_daily_sales_report(
         "주문 원장은 읽기만 하며 변경되지 않습니다(슈퍼유저 전용)."
     ),
     operation_id="loadDailySalesSnapshots",
+    dependencies=[SuperuserRequired],
 )
 async def load_daily_sales_snapshots(
     payload: DailySnapshotLoadRequest,

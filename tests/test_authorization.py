@@ -4,18 +4,15 @@
 을 싣는다 — 의존성을 가짜로 바꾸지 않으므로 ``OAuth2PasswordBearer`` → ``TokenService`` → ``Principal`` →
 ``require_superuser``/``OwnershipPolicy`` 경로가 운영과 같다. 클라이언트에는 기본 헤더가 없다.
 
-권한 표(README "권한" 절과 같다):
-
-| 기능 | 조회 | 생성 | 수정·삭제 |
-|---|---|---|---|
-| blog·sns·reply | 공개 | 로그인 | 작성자 또는 슈퍼유저 |
-| catalog | 공개 | 슈퍼유저 | 슈퍼유저 |
-| reports·접속 로그 | 슈퍼유저 | 슈퍼유저 | — |
-| user | 목록 슈퍼유저, 단건 본인·슈퍼유저 | 슈퍼유저 | 수정 본인·슈퍼유저(`is_active`·`is_superuser` 는 슈퍼유저), 삭제 슈퍼유저 |
+접근 수준의 정본은 뷰의 선언(``app/core/security/access.py``)이고, 선언이 빠진 뷰는 기동 검사가 막는다.
+여기 ``EXPECTED_ACCESS`` 는 예시 정책이 의도대로인지 고정하는 **유일한** 기대 표다 — 401/403 실요청
+테스트의 대상 경로도 이 표에서 뽑는다(access-policy ADR-004). 작성자·본인 판정(``OwnershipPolicy``)은
+접근 수준이 아니라 서비스 규칙이라 아래 소유권 테스트가 따로 고정한다.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -31,6 +28,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.models_registry import import_all_models
 from app.core.db.session import Base
 from app.core.redis import get_redis
+from app.core.security.access import AccessLevel, AccessPolicyGuard
 from app.core.security.dependencies import get_refresh_token_store, get_token_service
 from app.core.security.tokens import TokenType
 from app.features.blog.models.models import Post
@@ -71,6 +69,87 @@ def client(env):
 
 
 # =============================================================================
+# 예시 정책 — 라우트별 기대 접근 수준(유일한 기대 표)
+# =============================================================================
+A = AccessLevel
+
+EXPECTED_ACCESS: dict[str, AccessLevel] = {
+    "GET /health": A.PUBLIC,
+    "GET /ready": A.PUBLIC,
+    # 접속 로그는 개인정보 — 전부 슈퍼유저
+    "GET /api/v1/home/access-logs": A.SUPERUSER,
+    "GET /api/v1/home/access-logs/recent": A.SUPERUSER,
+    "GET /api/v1/home/access-logs/by-ip/{ip_address}": A.SUPERUSER,
+    "GET /api/v1/home/access-logs/by-user/{user_id}": A.SUPERUSER,
+    "GET /api/v1/home/access-logs/stats": A.SUPERUSER,
+    # 소유 리소스 — 조회 공개, 쓰기 로그인(수정·삭제는 서비스의 OwnershipPolicy 가 작성자·슈퍼유저로 좁힌다)
+    "GET /api/v1/blog/posts": A.PUBLIC,
+    "POST /api/v1/blog/posts": A.LOGIN,
+    "GET /api/v1/blog/posts/{post_id}": A.PUBLIC,
+    "PATCH /api/v1/blog/posts/{post_id}": A.LOGIN,
+    "DELETE /api/v1/blog/posts/{post_id}": A.LOGIN,
+    "GET /api/v1/reply/replies": A.PUBLIC,
+    "POST /api/v1/reply/replies": A.LOGIN,
+    "GET /api/v1/reply/replies/{reply_id}": A.PUBLIC,
+    "PATCH /api/v1/reply/replies/{reply_id}": A.LOGIN,
+    "DELETE /api/v1/reply/replies/{reply_id}": A.LOGIN,
+    "GET /api/v1/sns/posts": A.PUBLIC,
+    "POST /api/v1/sns/posts": A.LOGIN,
+    "GET /api/v1/sns/posts/{post_id}": A.PUBLIC,
+    "PATCH /api/v1/sns/posts/{post_id}": A.LOGIN,
+    "DELETE /api/v1/sns/posts/{post_id}": A.LOGIN,
+    # user — 단건 조회·수정은 로그인 + 서비스의 본인 판정(특권 필드는 슈퍼유저)
+    "GET /api/v1/user/users": A.SUPERUSER,
+    "POST /api/v1/user/users": A.SUPERUSER,
+    "GET /api/v1/user/users/{user_id}": A.LOGIN,
+    "PATCH /api/v1/user/users/{user_id}": A.LOGIN,
+    "DELETE /api/v1/user/users/{user_id}": A.SUPERUSER,
+    # auth — 인증 없는 쓰기는 명시적으로 연다
+    "POST /api/v1/auth/register": A.PUBLIC_WRITE,
+    "POST /api/v1/auth/login": A.PUBLIC_WRITE,
+    "POST /api/v1/auth/refresh": A.PUBLIC_WRITE,
+    "POST /api/v1/auth/logout": A.PUBLIC_WRITE,
+    "GET /api/v1/auth/me": A.LOGIN,
+    # catalog — 조회 공개, 쓰기 슈퍼유저
+    "GET /api/v1/catalog/products": A.PUBLIC,
+    "POST /api/v1/catalog/products": A.SUPERUSER,
+    "GET /api/v1/catalog/products/{product_id}": A.PUBLIC,
+    "PATCH /api/v1/catalog/products/{product_id}": A.SUPERUSER,
+    "DELETE /api/v1/catalog/products/{product_id}": A.SUPERUSER,
+    # reports — 운영 데이터, 전부 슈퍼유저
+    "GET /api/v1/reports/sales/daily": A.SUPERUSER,
+    "POST /api/v1/reports/sales/daily/snapshots": A.SUPERUSER,
+}
+
+
+def test_route_access_levels_match_the_policy_table():
+    """뷰 선언을 가드의 판정 함수로 읽어 기대 표와 대조한다. ``/docs`` 는 DEBUG 에서만 있어 뺀다."""
+    guard = AccessPolicyGuard()
+    actual = {
+        label: guard.levels(context.dependant)
+        for label, context in guard.routes(app)
+        if label != "GET /docs"
+    }
+
+    assert actual == {label: {level} for label, level in EXPECTED_ACCESS.items()}
+
+
+def test_main_app_passes_the_access_policy_guard():
+    assert AccessPolicyGuard().violations(app) == []
+
+
+def _routes_at(*levels: AccessLevel) -> list[tuple[str, str]]:
+    """표에서 해당 수준의 (메서드, 요청 경로)를 뽑는다. 경로 변수는 임의 값으로 채운다 —
+    인증 의존성이 본문·쿼리 검증보다 먼저 풀리므로 401/403 은 그 값과 무관하다."""
+    found = []
+    for label, level in EXPECTED_ACCESS.items():
+        if level in levels:
+            method, path = label.split(" ", 1)
+            found.append((method, re.sub(r"\{[^}]+\}", "any-id", path)))
+    return found
+
+
+# =============================================================================
 # 소유 리소스(blog·sns·reply) — 같은 규칙을 세 기능에 건다
 # =============================================================================
 @dataclass(frozen=True)
@@ -86,6 +165,17 @@ OWNED = [
     Owned("/api/v1/reply/replies", {"content": "c", "post_id": "p1"}, {"content": "changed"}),
 ]
 OWNED_IDS = ["blog", "sns", "reply"]
+
+
+def test_owned_cases_cover_every_login_created_collection():
+    """``OWNED`` 는 요청 본문 묶음일 뿐 — 대상 집합은 표에서 정해진다. 로그인으로 만드는
+    컬렉션이 새로 생기면 소유권 테스트에 본문을 더하라고 여기서 실패한다."""
+    login_created = {
+        label.split(" ", 1)[1]
+        for label, level in EXPECTED_ACCESS.items()
+        if label.startswith("POST ") and level is A.LOGIN
+    }
+    assert {case.collection for case in OWNED} == login_created
 
 
 async def _create_owned(client, case: Owned, principal=ALICE) -> dict:
@@ -268,43 +358,30 @@ async def test_missing_resource_is_404_before_ownership(client):
 
 
 # =============================================================================
-# 관리 경로 — 일반 사용자 403, 슈퍼유저 성공, 토큰 없으면 401
+# 보호 경로 — 대상은 표에서 뽑는다. 일반 사용자 403(슈퍼유저 경로), 토큰 없으면 401(모든 보호 경로)
 # =============================================================================
-ADMIN_ROUTES = [
-    ("POST", "/api/v1/catalog/products", {"name": "k", "price": "1.00"}),
-    ("PATCH", "/api/v1/catalog/products/any-id", {"price": "2.00"}),
-    ("DELETE", "/api/v1/catalog/products/any-id", None),
-    ("GET", "/api/v1/reports/sales/daily?start_date=2026-08-01&end_date=2026-08-02", None),
-    (
-        "POST",
-        "/api/v1/reports/sales/daily/snapshots",
-        {"start_date": "2026-08-01", "end_date": "2026-08-02"},
-    ),
-    ("GET", "/api/v1/home/access-logs", None),
-    ("GET", "/api/v1/home/access-logs/recent", None),
-    ("GET", "/api/v1/home/access-logs/by-ip/127.0.0.1", None),
-    ("GET", f"/api/v1/home/access-logs/by-user/{ALICE.id}", None),
-    ("GET", "/api/v1/home/access-logs/stats", None),
-    ("GET", "/api/v1/user/users", None),
-    ("POST", "/api/v1/user/users", {"username": "x", "email": "x@x.com", "password": "pw123456"}),
-    ("DELETE", f"/api/v1/user/users/{BOB.id}", None),
-]
-ADMIN_IDS = [f"{method} {path.split('?')[0]}" for method, path, _ in ADMIN_ROUTES]
+SUPERUSER_ROUTES = _routes_at(A.SUPERUSER)
+PROTECTED_ROUTES = _routes_at(A.LOGIN, A.SUPERUSER)
 
 
-@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ROUTES, ids=ADMIN_IDS)
-async def test_admin_routes_are_403_for_normal_users(client, method, path, body):
-    resp = await client.request(method, path, json=body, headers=bearer(ALICE))
+@pytest.mark.parametrize(
+    ("method", "path"), SUPERUSER_ROUTES, ids=[" ".join(r) for r in SUPERUSER_ROUTES]
+)
+async def test_superuser_routes_are_403_for_normal_users(client, method, path):
+    resp = await client.request(method, path, headers=bearer(ALICE))
 
     assert resp.status_code == 403, resp.text
     assert resp.json()["error_code"] == "FORBIDDEN"
 
 
-@pytest.mark.parametrize(("method", "path", "body"), ADMIN_ROUTES, ids=ADMIN_IDS)
-async def test_admin_routes_are_401_without_token(client, method, path, body):
-    resp = await client.request(method, path, json=body)
+@pytest.mark.parametrize(
+    ("method", "path"), PROTECTED_ROUTES, ids=[" ".join(r) for r in PROTECTED_ROUTES]
+)
+async def test_protected_routes_are_401_without_token(client, method, path):
+    resp = await client.request(method, path)
 
     assert resp.status_code == 401, resp.text
+    assert resp.headers["WWW-Authenticate"] == "Bearer"
 
 
 @pytest.mark.parametrize(

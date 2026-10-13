@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.core.exception import ErrorResponse
+from app.core.security.access import Public
 from app.core.security.dependencies import (
     FORBIDDEN_RESPONSES,
     UNAUTHORIZED_RESPONSES,
@@ -63,6 +64,7 @@ async def create_post(
     summary="피드 게시물 목록 조회",
     description="피드 게시물 목록을 페이지네이션하여 조회합니다.",
     operation_id="listSnsPosts",
+    dependencies=[Public],
 )
 async def list_posts(
     skip: int = Query(0, ge=0, description="건너뛸 레코드 수(offset)"),
@@ -85,6 +87,7 @@ async def list_posts(
     summary="피드 게시물 단건 조회",
     description="ID로 피드 게시물을 조회합니다.",
     operation_id="getSnsPost",
+    dependencies=[Public],
 )
 async def get_post(
     post_id: str = Path(..., description="피드 게시물 ID(UUID)"),

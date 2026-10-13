@@ -7,10 +7,10 @@
 - ``get_refresh_token_store`` — auth 는 회전, user 는 비활성화·삭제 시 ``revoke_user``.
 - ``get_ownership_policy`` — blog·sns·reply·user 서비스의 수정·삭제 권한.
 
-라우트는 타입 별칭으로 인증을 요구한다::
+라우트는 접근 수준을 뷰마다 선언한다(``app/core/security/access.py`` — 선언이 없으면 기동 거부)::
 
-    async def create(..., principal: CurrentPrincipal): ...         # 로그인 사용자
-    @router.post(..., dependencies=[Depends(require_superuser)])    # 슈퍼유저 전용
+    async def create(..., principal: CurrentPrincipal): ...         # 로그인 사용자(인자로 선언)
+    @router.post(..., dependencies=[SuperuserRequired])             # 슈퍼유저 전용
 
 핸들러 본문은 토큰을 직접 파싱하지 않는다(C-7). 테스트는 ``app.dependency_overrides`` 로
 provider 를 바꾸거나, 실제 ``TokenService`` 로 발급한 토큰을 헤더에 싣는다.
