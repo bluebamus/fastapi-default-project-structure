@@ -1,4 +1,4 @@
-"""관리 세션 = Redis 서버 세션 (admin-session-hardening ADR-001·002).
+"""관리 세션 = Redis 서버 세션 (admin-session-hardening ADR-001·002·007).
 
 쿠키에는 무작위 세션 ID 만, 내용은 Redis(``admin:sess:{HMAC}``). 로그아웃·강등·비활성화·삭제는 서버에서 바로
 폐기하고, 이전 쿠키 사본은 다시 쓸 수 없다. 미사용·절대 만료, Redis 장애 fail-closed, 설정 검증.
@@ -19,8 +19,10 @@ import pytest_asyncio
 from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi import FastAPI
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+from starlette.requests import Request
 
 import config
 from app.core.db.models_registry import import_all_models
@@ -28,6 +30,7 @@ from app.core.db.session import Base
 from app.core.security import admin_session
 from app.core.security.admin_session import (
     ADMIN_SESSION_COOKIE,
+    CSRF_HEADER,
     STORE_UNAVAILABLE_MESSAGE,
     AdminSessionStore,
 )
@@ -35,6 +38,7 @@ from app.core.security.authorization import OwnershipPolicy, Principal
 from app.core.security.dependencies import get_password_hasher, new_admin_session_store
 from app.core.security.refresh_store import RefreshTokenStore
 from app.features import admin as admin_module
+from app.features.user.admin import UserAdmin
 from app.features.user.models.models import User
 from app.features.user.schemas.user_schema import UserUpdate
 from app.features.user.services.user_service import UserService
@@ -356,47 +360,138 @@ async def test_user_service_without_admin_store_still_works(maker, redis):
         await service.delete_user(user_id)
 
 
-async def test_admin_ui_deactivation_revokes_other_browser_sessions(app, maker, redis):
-    user_id, actor, victim = await _two_browsers(app, maker)
+async def _target_with_two_sessions(app, maker, redis):
+    """조작하는 관리자 root 1개 + 폐기 대상 other 의 브라우저 2개. 대상 세션 키 목록도 돌려준다."""
+    await _add_user(maker)
     other = await _add_user(maker, "other")
-    async with _browser(app) as third:
-        assert (await admin_login(third, "other", PASSWORD)).status_code == 302
-        await _index_status(third)
-        token = await admin_page_token(actor, f"/admin/user/edit/{other}")
-        form = {
-            "username": "other",
-            "email": "other@example.com",
-            "is_superuser": "y",
-            "csrf_token": token,
-        }  # is_active 를 빼면 체크 해제 = 비활성화
+    actor = _browser(app)
+    assert (await admin_login(actor, "root", PASSWORD)).status_code == 302
+    targets = [_browser(app), _browser(app)]
+    for browser in targets:
+        assert (await admin_login(browser, "other", PASSWORD)).status_code == 302
+        assert await _index_status(browser) == 200
+    keys = [k.decode() for k in await redis.smembers(f"admin:user_sessions:{other}")]
+    assert len(keys) == 2
+    return other, actor, targets, keys
 
-        response = await actor.post(f"/admin/user/edit/{other}", data=form)
 
-        assert response.status_code == 302
-        assert await _index_status(third) == 302
+async def _close(*browsers) -> None:
+    for browser in browsers:
+        await browser.aclose()
+
+
+USER_FORM = {"username": "other", "email": "other@example.com"}
+
+
+@pytest.mark.parametrize(
+    ("form", "revoked"),
+    [
+        # 체크박스는 빼면 해제다.
+        pytest.param({**USER_FORM, "is_superuser": "y"}, True, id="deactivate"),
+        pytest.param({**USER_FORM, "is_active": "y"}, True, id="demote"),
+        pytest.param(
+            {
+                "username": "renamed",
+                "email": "new@example.com",
+                "is_active": "y",
+                "is_superuser": "y",
+            },
+            False,
+            id="general-edit",
+        ),
+    ],
+)
+async def test_admin_ui_edit_revokes_only_on_deactivation_or_demotion(
+    app, maker, redis, form, revoked
+):
+    other, actor, targets, keys = await _target_with_two_sessions(app, maker, redis)
+    token = await admin_page_token(actor, f"/admin/user/edit/{other}")
+
+    response = await actor.post(f"/admin/user/edit/{other}", data={**form, "csrf_token": token})
+
+    assert response.status_code == 302
+    if revoked:
+        assert await redis.exists(*keys) == 0
         assert await redis.exists(f"admin:user_sessions:{other}") == 0
-    assert await _index_status(victim) == 200  # 다른 사용자의 세션은 그대로
-    await actor.aclose()
-    await victim.aclose()
-    assert user_id
+        assert [await _index_status(b) for b in targets] == [302, 302]
+    else:
+        assert await redis.exists(*keys) == 2  # 일반 수정은 세션을 그대로 둔다
+        assert [await _index_status(b) for b in targets] == [200, 200]
+    assert await _index_status(actor) == 200  # 조작한 관리자의 세션은 그대로
+    await _close(actor, *targets)
 
 
 async def test_admin_ui_delete_revokes_that_users_sessions(app, maker, redis):
-    _, actor, victim = await _two_browsers(app, maker)
-    other = await _add_user(maker, "other")
-    async with _browser(app) as third:
-        assert (await admin_login(third, "other", PASSWORD)).status_code == 302
-        token = await admin_page_token(actor, "/admin/user/list")
+    other, actor, targets, keys = await _target_with_two_sessions(app, maker, redis)
+    token = await admin_page_token(actor, "/admin/user/list")
 
-        response = await actor.delete(
-            f"/admin/user/delete?pks={other}", headers={"X-CSRF-Token": token}
+    response = await actor.delete(f"/admin/user/delete?pks={other}", headers={CSRF_HEADER: token})
+
+    assert response.status_code == 200
+    assert await redis.exists(*keys) == 0
+    assert [await _index_status(b) for b in targets] == [302, 302]
+    assert await _index_status(actor) == 200
+    await _close(actor, *targets)
+
+
+async def test_admin_ui_password_change_revokes(app, maker, redis):
+    """관리 폼에는 비밀번호가 없다 — 훅에 해시가 바뀐 data 를 직접 준다(폼이 생기면 같은 경로)."""
+    other, actor, targets, keys = await _target_with_two_sessions(app, maker, redis)
+    request = Request(
+        {"type": "http", "headers": [], admin_session._STORE_SCOPE_KEY: _store(redis)}
+    )
+    async with maker() as session:
+        user = await session.get(User, other)
+
+    await UserAdmin().on_model_change(
+        {"hashed_password": user.hashed_password}, user, False, request
+    )
+    assert await redis.exists(*keys) == 2  # 같은 해시 — 변경 아님
+
+    await UserAdmin().on_model_change({"hashed_password": "$argon2id$new"}, user, False, request)
+    assert await redis.exists(*keys) == 0
+    await _close(actor, *targets)
+
+
+async def test_admin_ui_self_demotion_ends_the_current_session(app, maker, redis):
+    """자기 자신을 강등하면 지금 쓰는 세션도 끊긴다 — 의도된 동작(안내서 §폐기)."""
+    root = await _add_user(maker)
+    async with _browser(app) as me:
+        assert (await admin_login(me, "root", PASSWORD)).status_code == 302
+        token = await admin_page_token(me, f"/admin/user/edit/{root}")
+
+        response = await me.post(
+            f"/admin/user/edit/{root}",
+            data={
+                "username": "root",
+                "email": "root@example.com",
+                "is_active": "y",
+                "csrf_token": token,
+            },
         )
 
-        assert response.status_code == 200
-        assert await redis.exists(f"admin:user_sessions:{other}") == 0
-        assert await _index_status(third) == 302
-    await actor.aclose()
-    await victim.aclose()
+        assert response.status_code == 302
+        assert await redis.keys("admin:sess:*") == []
+        assert await _index_status(me) == 302
+
+
+async def test_admin_ui_revocation_failure_keeps_the_user_unchanged(app, maker, redis, monkeypatch):
+    """폐기가 실패하면(Redis) 커밋 전이라 비활성화도 저장되지 않는다 — 세션만 살아남는 일이 없다."""
+    other, actor, targets, keys = await _target_with_two_sessions(app, maker, redis)
+    token = await admin_page_token(actor, f"/admin/user/edit/{other}")
+
+    async def broken(self, user_id):
+        raise RedisError("down")
+
+    monkeypatch.setattr(AdminSessionStore, "revoke_user", broken)
+    response = await actor.post(
+        f"/admin/user/edit/{other}", data={**USER_FORM, "is_superuser": "y", "csrf_token": token}
+    )
+
+    assert response.status_code != 302
+    async with maker() as session:
+        assert (await session.get(User, other)).is_active is True
+    await _close(actor, *targets)
 
 
 async def test_revocation_during_a_request_is_not_undone_by_the_response(client, maker, redis):

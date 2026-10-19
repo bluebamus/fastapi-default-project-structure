@@ -129,18 +129,33 @@ class UserAdmin(ModelView, model=User):
     }
 
     # =========================================================================
-    # 관리 세션 폐기 (admin-session-hardening ADR-002)
+    # 관리 세션 폐기 (admin-session-hardening ADR-002·ADR-007)
     # =========================================================================
-    # 관리 화면에서 비활성화·강등·삭제하면 그 사용자의 관리 세션(다른 브라우저 포함)을 바로 지운다.
-    # API 경로(UserService)와 같은 규칙이다. 저장소는 이 요청의 세션 미들웨어가 준다.
-    async def after_model_change(
+    # 관리 화면에서 비활성화·슈퍼유저 해제·비밀번호 변경·삭제하면 그 사용자의 관리 세션(다른 브라우저
+    # 포함)을 바로 지운다 — 폐기는 API 경로(UserService)와 같은 ``AdminSessionStore.revoke_user`` 다.
+    # 이름·이메일 같은 일반 수정은 폐기하지 않는다. 저장소는 이 요청의 세션 미들웨어가 준다.
+    #
+    # after_* 가 아니라 on_* 훅(커밋 **전**, sqladmin 0.32 ``_queries.py`` 의 ``_update_async``·
+    # ``_delete_async``)에서 부른다: Redis 가 실패하면 예외가 커밋 전에 나 변경이 저장되지 않는다
+    # (fail-closed — 세션이 살아남은 채 비활성화만 되는 일이 없다). UserService 도 커밋 전에 폐기한다.
+    # 자기 자신을 강등·비활성화하면 지금 쓰는 세션도 끊긴다(다음 요청은 로그인 화면) — 의도된 동작이다.
+    async def on_model_change(
         self, data: dict[str, Any], model: Any, is_created: bool, request: Request
     ) -> None:
-        if not (model.is_active and model.is_superuser):
+        if not is_created and revokes_admin_sessions(model, data):
             await request_session_store(request).revoke_user(model.id)
 
-    async def after_model_delete(self, model: Any, request: Request) -> None:
+    async def on_model_delete(self, model: Any, request: Request) -> None:
         await request_session_store(request).revoke_user(model.id)
+
+
+def revokes_admin_sessions(user: Any, data: dict[str, Any]) -> bool:
+    """변경 전 ``user`` 와 저장할 ``data`` 를 비교 — 비활성화·슈퍼유저 해제·비밀번호 변경이면 True."""
+    return (
+        (user.is_active and data.get("is_active") is False)
+        or (user.is_superuser and data.get("is_superuser") is False)
+        or ("hashed_password" in data and data["hashed_password"] != user.hashed_password)
+    )
 
 
 # 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.
