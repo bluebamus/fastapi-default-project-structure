@@ -227,3 +227,43 @@ def test_empty_date_format_is_a_settings_error(datefmt):
 def test_valid_custom_format_is_accepted():
     s = LogSettings(_env_file=None, **CUSTOM)
     assert s.LOG_CONSOLE_FORMAT == CUSTOM["LOG_CONSOLE_FORMAT"]
+
+
+# =============================================================================
+# python main.py 경로의 uvicorn 접속 로그 — 회귀
+#
+# 접속 로그 레코드는 msg 와 args 만 갖는다. {client_addr}·{request_line}·{status_code} 는 uvicorn 의
+# AccessFormatter 만 만드는 필드라, 공유 queue 의 TzFormatter 가 그런 필드를 쓰면 줄마다 logging 오류가 난다.
+# 이 저장소는 {message} 로 렌더하고(필드를 쓰는 포맷은 설정 검증이 거부한다) 이 테스트가 그것을 고정한다.
+# =============================================================================
+ACCESS_PROBE = """
+import logging, logging.config
+from app.utils.logs import setup
+setup.configure_logging(force=True)
+logging.config.dictConfig(setup.setup_uvicorn_logging())   # run_server(): uvicorn.run(log_config=...)
+logging.getLogger("uvicorn.access").info(
+    '%s - "%s %s HTTP/%s" %d', "127.0.0.1:5000", "GET", "/x?password=secret42", "1.1", 200
+)
+setup.stop_log_listener()
+"""
+ACCESS_LINE = r'127\.0\.0\.1:5000 - "GET /x\?password=\*\*\* HTTP/1\.1" 200'
+
+
+@pytest.mark.parametrize("custom", [False, True], ids=["default", "custom"])
+def test_main_py_access_log_renders_without_logging_error(tmp_path, custom):
+    overrides = {"LOG_CONSOLE_FORMAT": "U|{asctime}|{tzname}|{message}", "LOG_DATE_FORMAT": "%H:%M"}
+    proc = _run(ACCESS_PROBE, tmp_path, **(overrides if custom else {}))
+    assert "Logging error" not in proc.stderr, proc.stderr
+    assert "secret42" not in proc.stdout + proc.stderr
+    if custom:
+        _line(rf"U\|\d{{2}}:\d{{2}}\|\w+\|{ACCESS_LINE}", proc.stdout)
+    else:
+        _line(
+            rf"\[\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}} \w+\] INFO  \[app=uvicorn\] \[\S+\] {ACCESS_LINE}",
+            proc.stdout,
+        )
+
+
+def test_access_only_fields_are_rejected_at_settings_load():
+    with pytest.raises(ValidationError, match="client_addr"):
+        LogSettings(_env_file=None, LOG_CONSOLE_FORMAT="{client_addr} {request_line} {message}")
