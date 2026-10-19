@@ -10,7 +10,7 @@
 """
 
 from app.utils.logs.config import LOG_FORMAT
-from app.utils.logs.filters import ContextFilter, StaticAppFilter
+from app.utils.logs.filters import ContextFilter
 from app.utils.logs.formatters import TzFormatter
 from app.utils.logs.mixin import LoggerMixin
 from app.utils.logs.queue_handler import BoundedQueueHandler
@@ -30,7 +30,6 @@ __all__ = [
     "BoundedQueueHandler",
     "ContextFilter",
     "LoggerMixin",
-    "StaticAppFilter",
     "TzFormatter",
     "configure_logging",
     "get_logger",

@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from app.utils.logs.filters import _app_from_path
 from config import timezone_settings
 
 _UTC = ZoneInfo("UTC")
@@ -43,7 +44,8 @@ class TzFormatter(logging.Formatter):
             "UTC" if self.use_utc else (datetime.now(self._tz()).strftime("%Z") or "KST")
         )
         if not getattr(record, "appname", None):
-            record.appname = "app"
+            # ContextFilter 를 거치지 않은 줄(남이 만든 핸들러)도 같은 판별 함수로 헤더를 붙인다.
+            record.appname = _app_from_path(record.pathname, record.name)
         if not getattr(record, "classname", None):
             record.classname = "-"
         return super().format(record)

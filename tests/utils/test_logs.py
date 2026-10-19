@@ -64,6 +64,38 @@ def test_installed_packages_are_external():
     assert _app_from_path("/opt/py/lib/python3.14/site-packages/httpx/_client.py") == "ext"
 
 
+@pytest.mark.parametrize(
+    ("logger_name", "expected"),
+    [
+        ("celery.worker.strategy", "celery"),
+        ("celery", "celery"),
+        ("kombu.connection", "celery"),
+        ("uvicorn.access", "uvicorn"),
+        ("uvicorn.error", "uvicorn"),
+        ("sqlalchemy.engine.Engine", "sqlalchemy"),
+        ("alembic.runtime.migration", "alembic"),
+        ("httpx", "ext"),
+        ("celeryish", "ext"),
+    ],
+)
+def test_external_code_is_labeled_by_logger_name(logger_name, expected):
+    """저장소 밖 코드는 **로거 이름**으로 출처를 붙인다(logging-overhaul L2)."""
+    site = "/opt/py/lib/python3.14/site-packages/pkg/mod.py"
+    assert _app_from_path(site, logger_name) == expected
+
+
+def test_our_code_keeps_path_label_whatever_the_logger_name():
+    assert _app_from_path("/x/app/features/blog/tasks.py", "celery.task") == "blog"
+
+
+def test_formatter_labels_records_that_skipped_the_context_filter():
+    """남이 만든 핸들러(uvicorn CLI·Celery)로 나가는 줄도 같은 판별 함수로 헤더가 붙는다."""
+    rec = logging.LogRecord(
+        "uvicorn.error", logging.INFO, "/opt/site-packages/uvicorn/server.py", 1, "hi", (), None
+    )
+    assert "[app=uvicorn]" in TzFormatter(LOG_FORMAT).format(rec)
+
+
 class _Caller:
     def run(self) -> str:
         rec = _rec()
@@ -224,8 +256,7 @@ def test_uvicorn_shares_the_app_queue(monkeypatch):
     """uvicorn 3종 로거가 앱과 **같은** queue 로 나가고 root 로 전파하지 않는다.
 
     propagate=True 면 앱 root 핸들러가 같은 줄을 한 번 더 찍어 중복 출력이 된다.
-    핸들러는 앱과 공유하므로 ``app=uvicorn`` 라벨은 **로거** 필터로 찍어야 한다 —
-    공유 핸들러에 붙이면 앱 로그까지 uvicorn 으로 라벨링된다.
+    ``app=uvicorn`` 라벨은 로거 이름으로 판별 함수가 붙인다(logging-overhaul L2) — 별도 필터가 없다.
     """
     cfg = setup_uvicorn_logging()
 
@@ -233,10 +264,8 @@ def test_uvicorn_shares_the_app_queue(monkeypatch):
     for name, spec in cfg["loggers"].items():
         assert spec["propagate"] is False, f"{name} 이 root 로 전파되면 로그가 중복된다"
         assert spec["handlers"] == ["queue"], f"{name} 이 공유 queue 를 쓰지 않는다"
-        assert spec["filters"] == ["uvicorn_app"], f"{name} 의 app 라벨 필터가 없다"
 
     assert cfg["handlers"]["queue"]["()"] == "app.utils.logs.setup.get_shared_queue_handler"
-    assert cfg["filters"]["uvicorn_app"]["appname"] == "uvicorn"
     # 공유 핸들러를 오염시키면 안 되므로 핸들러에는 필터를 두지 않는다.
     assert "filters" not in cfg["handlers"]["queue"]
 

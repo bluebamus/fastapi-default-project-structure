@@ -347,29 +347,18 @@ def get_shared_queue_handler() -> logging.Handler:
 def setup_uvicorn_logging() -> dict:
     """Uvicorn(log_config)용 dictConfig — 앱과 동일한 queue 출력 경로를 쓴다.
 
-    uvicorn 로거는 소스가 site-packages 라 경로 판별이 ``ext`` 로 떨어진다.
-    로거 단에서 ``StaticAppFilter`` 로 ``app=uvicorn`` 을 먼저 찍어두면 공유
-    핸들러의 ``ContextFilter`` 가 이미 채워진 값을 존중한다. 필터를 핸들러가 아닌
-    **로거**에 붙이는 이유는 핸들러가 앱과 공유되기 때문이다 — 핸들러에 붙이면
-    앱 로그까지 uvicorn 으로 라벨링된다.
+    ``app=uvicorn`` 헤더는 판별 함수(``filters._app_from_path``)가 로거 이름으로 붙인다.
     """
     level = _level()
     return {
         "version": 1,
         "disable_existing_loggers": False,
-        "filters": {
-            "uvicorn_app": {
-                "()": "app.utils.logs.filters.StaticAppFilter",
-                "appname": "uvicorn",
-            },
-        },
         "handlers": {
             "queue": {"()": "app.utils.logs.setup.get_shared_queue_handler"},
         },
         "loggers": {
             name: {
                 "handlers": ["queue"],
-                "filters": ["uvicorn_app"],
                 "level": level,
                 "propagate": False,
             }

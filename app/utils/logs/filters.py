@@ -1,7 +1,7 @@
 """로그 컨텍스트 필터.
 
 record 에 두 필드를 주입한다.
-- appname: 소스 파일 **경로**에서 앱 식별. 로거 이름이 아니라 경로를 쓰는 이유는
+- appname: 우리 코드는 소스 파일 **경로**, 저장소 밖 코드는 **로거 이름**으로 식별. 경로를 쓰는 이유는
   ``app/utils/logs/config.py`` 상단 참고. 산출값은 아래 ``_app_from_path`` 참조.
 - classname:
     · 방식 C — LoggerAdapter/extra 로 이미 주입돼 있으면 그대로 존중(오버헤드 0).
@@ -25,14 +25,25 @@ from config import log_secret_values
 _REPO_ROOT = str(Path(__file__).resolve().parents[3]).replace("\\", "/").rstrip("/").lower() + "/"
 
 
-def _app_from_path(pathname: str) -> str:
-    """소스 경로에서 앱 라벨을 만든다.
+# 저장소 밖 코드의 출처 — **로거 이름** 첫 조각 → 헤더 (logging-overhaul L2). 표에 없으면 ``ext``.
+_EXTERNAL_LOGGER_APPS = {
+    "celery": "celery",
+    "kombu": "celery",
+    "uvicorn": "uvicorn",
+    "sqlalchemy": "sqlalchemy",
+    "alembic": "alembic",
+}
+
+
+def _app_from_path(pathname: str, logger_name: str = "") -> str:
+    """앱 라벨(헤더 ``app=``)을 만든다 — 출처 판별의 **유일한** 함수.
 
     반환값:
         ``<기능명>``  — ``app/features/<name>/**``
         ``core`` · ``celery`` · ``utils`` · ``migrations`` — 해당 하위 시스템
         ``app``  — 그 밖의 **이 저장소 안** 코드(``main.py`` · ``config.py`` · ``tests/**`` 등)
-        ``ext``  — **저장소 밖** 코드(설치된 서드파티 패키지)
+        저장소 밖 코드 — 로거 이름으로 ``celery``(celery·kombu) · ``uvicorn`` · ``sqlalchemy`` ·
+        ``alembic``, 표에 없으면 ``ext``
 
     ``ext`` 는 "우리 코드가 아님"을 뜻한다. 예전에는 경로에 ``/app/`` 조각이 있는지로만
     판별해서 저장소 루트의 ``main.py``·``config.py``·``migrations/`` 가 ``ext`` 로 빠졌다.
@@ -45,11 +56,10 @@ def _app_from_path(pathname: str) -> str:
         if seg in p:
             return seg.strip("/").rsplit("/", 1)[-1]
     # .venv 는 저장소 루트 **안**에 있으므로 루트 판정보다 먼저 걸러야 한다.
-    if "/site-packages/" in p or "/dist-packages/" in p:
-        return "ext"
-    if "/app/" in p:
-        return "app"
-    return "app" if p.lower().startswith(_REPO_ROOT) else "ext"
+    if "/site-packages/" not in p and "/dist-packages/" not in p:
+        if "/app/" in p or p.lower().startswith(_REPO_ROOT):
+            return "app"
+    return _EXTERNAL_LOGGER_APPS.get(logger_name.split(".", 1)[0], "ext")
 
 
 def _class_from_stack() -> str:
@@ -74,7 +84,7 @@ class ContextFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, "appname", None):
-            record.appname = _app_from_path(record.pathname)
+            record.appname = _app_from_path(record.pathname, record.name)
         if not getattr(record, "classname", None):
             record.classname = _class_from_stack()
         return True
@@ -229,20 +239,3 @@ def add_redacting_filter(target: logging.Logger | logging.Handler) -> None:
     """``RedactingFilter`` 를 한 번만 붙인다(여러 번 불러도 중복되지 않는다)."""
     if not any(isinstance(existing, RedactingFilter) for existing in target.filters):
         target.addFilter(RedactingFilter())
-
-
-class StaticAppFilter(logging.Filter):
-    """appname 을 고정값으로 미리 찍는다 — 서드파티 로거용.
-
-    uvicorn 처럼 소스가 site-packages 에 있는 로거는 경로 판별이 ``ext`` 로 떨어져
-    "어느 앱의 로그인지"를 잃는다. 해당 로거에 이 필터를 붙이면 ``ContextFilter``
-    가 이미 채워진 값을 존중하므로(``if not getattr(...)``) 라벨이 유지된다.
-    """
-
-    def __init__(self, appname: str) -> None:
-        super().__init__()
-        self.appname = appname
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.appname = self.appname
-        return True
