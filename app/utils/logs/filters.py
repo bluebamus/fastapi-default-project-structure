@@ -173,8 +173,9 @@ REDACTED = "***"
 # 로그 메시지·traceback·stack·DEBUG 500 응답 detail 이 모두 ``redact()`` 하나를 쓴다 —
 # 패턴을 다른 곳에 복제하지 않는다.
 _SECRET_PATTERNS = (
-    # DSN 의 비밀번호: scheme://user:<password>@host
-    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s@/]+(?=@)"),
+    # DSN 의 비밀번호: scheme://user:<password>@host — 사용자명은 비어도 된다(redis://:pw@h).
+    # 인코딩하지 않은 `@` 가 든 비밀번호도 덮도록 **마지막** `@` 까지 잡는다(탐욕 + 되돌림).
+    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s/]+(?=@)"),
     # DSN 의 사용자명: scheme://<user>[:password]@host (logging-overhaul L7)
     re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://)[^\s:/@]+(?=(?::[^\s@/]*)?@)"),
     # Authorization 헤더 값: "Authorization: Bearer <token>" · "authorization=<token>"

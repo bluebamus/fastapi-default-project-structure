@@ -63,6 +63,12 @@ def _assert_redacted_traceback(text: str) -> None:
         (DSN, "mysql+asyncmy://***:***@h/db"),
         ("mysql://admin@h/db", "mysql://***@h/db"),
         ("redis://:p%40ss@cache:6379/0", "redis://:***@cache:6379/0"),
+        # 사용자명이 빈 꼴 — config.RedisSettings.REDIS_URL 이 만드는 모양 그대로
+        ("redis://:Redis-Pass-9@127.0.0.1:6379/0", "redis://:***@127.0.0.1:6379/0"),
+        # 인코딩하지 않은 `@`·`:` 가 든 비밀번호 — 마지막 `@` 까지가 비밀번호다
+        ("mysql://u:p@ss@h/db", "mysql://***:***@h/db"),
+        ("redis://:p@ss:w@cache:6379/0", "redis://:***@cache:6379/0"),
+        ("mysql://u:pa:ss@h:3306/db", "mysql://***:***@h:3306/db"),
         ("password=secret42 next", "password=*** next"),
         ("MYSQL_PASSWORD: 'secret42'", "MYSQL_PASSWORD: '***'"),
         ('{"refresh_token": "abc.def"}', '{"refresh_token": "***"}'),

@@ -12,7 +12,8 @@
 | F-005 | LOW | INV-5 | Fix | Fixed | `f43bf7f`·`1596f3c` · `tests/utils/test_log_rotation.py`·`tests/utils/test_log_files.py` | 파일 로그·회전·보관이 없었다(config-cleanup R-004) |
 | F-006 | LOW | INV-2 | Fix | Fixed | `a9a8958` · `test_format_missing_required_fields_is_a_settings_error` | 사용자 포맷이 모듈·클래스·함수를 빼도 기동했다 |
 | F-007 | LOW | INV-1 | Fix | Fixed | `1596f3c` · `test_configured_secret_values_never_reach_any_output`(uvicorn 줄이 app.log 에 있어야 한다) | 작업 중 발견: `configure_logging(force=True)` 로 재구성하면 uvicorn 로거에 **멈춘 옛 queue 핸들러**가 남아 그 줄이 사라졌다. 채택 함수가 현재 queue 가 아닌 핸들러를 모두 남의 것으로 본다 |
-| F-008 | LOW | INV-5 | Fix | Fixed | 이 라운드 · `test_console_disabled_with_files_on_does_not_warn` | 콘솔을 꺼도 파일이 켜져 있으면 로그는 남는데 "앱 로그가 기록되지 않습니다" 경고를 냈다 |
+| F-008 | LOW | INV-5 | Fix | Fixed | `0c5384e` · `test_console_disabled_with_files_on_does_not_warn` | 콘솔을 꺼도 파일이 켜져 있으면 로그는 남는데 "앱 로그가 기록되지 않습니다" 경고를 냈다 |
+| F-009 | MED | INV-6 | Fix | Fixed | Round 1 후속 · `test_redact_masks_known_secret_shapes`(`@`·`:` 든 비밀번호, 빈 사용자명) | 감독자 후속 확인. 인코딩하지 않은 `@` 가 든 비밀번호(`mysql://u:p@ss@h`)는 첫 `@` 까지만 가려 나머지(`ss`)가 남았다. 빈 사용자명(`redis://:pw@h` — `REDIS_URL` 의 모양)은 이 저장소에서 원래 가려졌다(패턴이 사용자명 0자 허용) — 회귀 가드로 고정 |
 
 <!--
 규칙: 계약 위반만 Fix. Fix 는 회귀 테스트 + fail-on-revert 검증 후에만 Fixed. Open 인 Fix 가 0건이어야 GATE 5 Done.

@@ -74,4 +74,14 @@
 fakeredis 는 Lua(`EVALSHA`)가 없어 Celery worker 종료 때 `Unrecoverable error: ResponseError("unknown command 'evalsha'")` 가
 `celery-error.log` 에 traceback 과 함께 남았다 — 스모크 환경의 한계이고 로깅 동작과 무관하다(형식·헤더는 같다).
 
+#### 후속 확인 (감독자 지시) — DSN 모양과 접속 줄 포매터
+
+- `config.RedisSettings.REDIS_URL` 은 `redis://:{quote(pw, safe="")}@host:port/db`(사용자명 빈 꼴, `@`·`:` 는 퍼센트 인코딩)다.
+  DSN 비밀번호 패턴은 사용자명을 0자 이상으로 받아 이 꼴은 원래 가려졌다. 대신 **인코딩하지 않은 `@`** 가 든 비밀번호는 첫 `@`
+  까지만 가려 나머지가 남았다(F-009) — 비밀번호를 마지막 `@` 까지 잡게 고쳤다. 빈 사용자명·사용자명만·`@`·`:` 든 비밀번호를
+  `test_redact_masks_known_secret_shapes` 에 고정. fail-on-revert: 옛 패턴 → `@` 두 건 실패, 사용자명을 1자 이상으로 바꾼 변이 →
+  빈 사용자명 세 건 실패.
+- 접속 줄 포매터: `uvicorn.access` 레코드의 메시지가 이미 `client - "GET /p HTTP/1.1" 200` 이라 프로젝트 형식의 `{message}` 로
+  충분하다 — `TzAccessFormatter` 는 두지 않는다(ADR-001). `python main.py` 경로가 원래 그렇게 출력했고 CLI 경로도 같은 queue 로 바뀌었다.
+
 - **수렴 판정:** `CONVERGED`
