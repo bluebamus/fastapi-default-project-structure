@@ -459,6 +459,8 @@ REQUIREMENT_SOURCES = (
     "docs/crp/groups/security-ops-hardening/charter.md",
     "docs/crp/groups/admin-session-hardening/design-baseline.md",
     "docs/crp/groups/admin-session-hardening/charter.md",
+    "docs/crp/groups/config-cleanup/design-baseline.md",
+    "docs/crp/groups/config-cleanup/charter.md",
 )
 REQUIREMENT_ID = re.compile(
     r"\b(?:SCN-(?:ORM|RAW)|ORM-REP|RAW-REP|TX|VIEW|AR|NFR|MIG|DOC|REQ|ADR)-\d{3}\b"

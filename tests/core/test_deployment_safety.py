@@ -48,7 +48,6 @@ def _check(
     log_level: str | None = "INFO",
     mysql_password: str = "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
     redis_password: str | None = None,
-    smtp_password: str = "",
     admin_disabled: bool = True,
 ) -> None:
     """.env·프로세스 환경과 무관하게 주어진 값만으로 검사를 실행한다."""
@@ -70,7 +69,6 @@ def _check(
         log=config.LogSettings(_env_file=None, LOG_LEVEL=log_level),
         db=config.DatabaseSettings(_env_file=None, MYSQL_PASSWORD=mysql_password),
         redis=config.RedisSettings(_env_file=None, REDIS_PASSWORD=redis_password),
-        smtp=config.SMTPSettings(_env_file=None, SMTP_PASSWORD=smtp_password),
     )
 
 
@@ -163,7 +161,7 @@ def test_short_secret_key_is_rejected(env):
 
 
 def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    # DEBUG·LOG_LEVEL·비밀번호 3종은 배포 안전 검사 대상이다. 개발자 `.env` 값에
+    # DEBUG·LOG_LEVEL·비밀번호 2종은 배포 안전 검사 대상이다. 개발자 `.env` 값에
     # 좌우되지 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
     # MYSQL_HOST·USER·DATABASE 는 `.env` 가 없는 환경(CI)에서 출처 검사(ADR-045 ①)를 통과시킨다.
     env = {
@@ -176,7 +174,6 @@ def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str
         "MYSQL_DATABASE": "app",
         "MYSQL_PASSWORD": "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
         "REDIS_PASSWORD": "",
-        "SMTP_PASSWORD": "",
         **extra_env,
         "PYTHONIOENCODING": "utf-8",
     }
@@ -253,16 +250,16 @@ def test_import_fails_in_production_with_debug_enabled():
 
 
 # ---------------------------------------------------------------------------
-# 비밀번호 3종 — `.env.example` 값 그대로 배포 환경에 뜨는 것을 막는다.
+# 비밀번호 2종 — `.env.example` 값 그대로 배포 환경에 뜨는 것을 막는다.
 #
 # 빈 값 취급이 둘로 갈린다:
 #   - `MYSQL_PASSWORD` 는 **비어 있으면 그 자체가 위반**이다. DB 는 이 스켈레톤이
 #     반드시 붙는 대상이고, 빈 비밀번호는 인증 없는 접속을 뜻한다.
-#   - `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **비어 있는 것이 정당한 구성**이다
-#     (인증 없는 사설망 Redis, SMTP 미사용). 값이 있을 때만 예시 값인지 본다.
+#   - `REDIS_PASSWORD` 는 **비어 있는 것이 정당한 구성**이다
+#     (인증 없는 사설망 Redis). 값이 있을 때만 예시 값인지 본다.
 # ---------------------------------------------------------------------------
 
-PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD", "SMTP_PASSWORD")
+PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD")
 
 
 def _example_value(name: str) -> str:
@@ -274,7 +271,7 @@ def _example_value(name: str) -> str:
     raise AssertionError(f".env.example 에 {name} 이 없다")
 
 
-@pytest.mark.parametrize("name", ["MYSQL_PASSWORD", "SMTP_PASSWORD"])
+@pytest.mark.parametrize("name", ["MYSQL_PASSWORD"])
 def test_env_example_passwords_are_placeholders(name):
     """`.env.example` 의 비밀번호 예시는 검사에 걸리는 모양이어야 한다."""
     assert config.is_placeholder_secret(_example_value(name))
@@ -314,21 +311,12 @@ def test_placeholder_redis_password_is_rejected(value):
     assert value not in str(exc_info.value)
 
 
-def test_placeholder_smtp_password_is_rejected():
-    value = _example_value("SMTP_PASSWORD")
-
-    with pytest.raises(RuntimeError) as exc_info:
-        _check("production", STRONG, smtp_password=value)
-
-    assert "SMTP_PASSWORD" in str(exc_info.value)
-    assert value not in str(exc_info.value)
-
-
 @pytest.mark.parametrize("env", ["staging", "production"])
-def test_unused_redis_and_smtp_passwords_pass(env):
-    """비어 있는 Redis·SMTP 비밀번호는 "기능을 안 쓴다" 는 뜻이라 통과한다."""
-    _check(env, STRONG, redis_password=None, smtp_password="")
-    _check(env, STRONG, redis_password="", smtp_password="   ")
+def test_unused_redis_password_passes(env):
+    """비어 있는 Redis 비밀번호는 "인증을 안 쓴다" 는 뜻이라 통과한다."""
+    _check(env, STRONG, redis_password=None)
+    _check(env, STRONG, redis_password="")
+    _check(env, STRONG, redis_password="   ")
 
 
 def test_passwords_are_not_checked_in_test_env():
@@ -338,7 +326,6 @@ def test_passwords_are_not_checked_in_test_env():
         STRONG,
         mysql_password="",
         redis_password="your-redis-password",
-        smtp_password=_example_value("SMTP_PASSWORD"),
     )
 
 
@@ -441,7 +428,6 @@ def test_deployed_admin_starts_without_flag_and_without_unauthenticated_warning(
         "MYSQL_DATABASE": "app",
         "MYSQL_PASSWORD": "Gt4Hn8Qz2Lp6Xw0Rb3Vy",
         "REDIS_PASSWORD": "",
-        "SMTP_PASSWORD": "",
         "PYTHONIOENCODING": "utf-8",
     }
     result = subprocess.run(

@@ -420,14 +420,14 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 
 ### 6.1 로딩 규칙
 
-- `config.py` 의 12개 `BaseSettings` 는 각각 `env_file=".env"`, `extra="ignore"` 로 자기 필드를 읽습니다.
+- `config.py` 의 10개 `BaseSettings` 는 각각 `env_file=".env"`, `extra="ignore"` 로 자기 필드를 읽습니다.
   우선순위는 **프로세스 환경 변수 → 작업 디렉터리의 `.env` → 코드 기본값**입니다.
 - `get_*_settings()` 는 `@lru_cache` 이고, 파일 끝의 `app_settings = get_app_settings()` 등이 import 시점에
   전역 객체를 만듭니다. 실행 중 `.env` 를 바꿔도 반영되지 않습니다. 테스트에서 캐시만 비워도 이미 가져간
   전역 참조는 그대로이므로 새 프로세스나 monkeypatch 로 확인합니다.
 - 타입 오류·validator 위반은 `config` import 자체를 실패시켜 lifespan 전에 기동을 막습니다.
   validator: 복제 설정 모순·replica 주소 형식(`DatabaseSettings`), `CORS_ALLOW_ORIGINS=["*"]` +
-  `CORS_ALLOW_CREDENTIALS=true`(`CORSSettings`), `SMTP_TLS` + `SMTP_SSL`(`SMTPSettings`).
+  `CORS_ALLOW_CREDENTIALS=true`(`CORSSettings`), 관리 세션 미사용 만료 > 절대 만료(`SessionSettings`).
 - 전역 객체를 만든 뒤 파일 끝에서 설정 검사 세 개가 차례로 돕니다. 모두 `RuntimeError` 로 `config` import 를
   실패시키고, 메시지에는 설정 이름만 나옵니다. `ENV=test` 는 모두 건너뜁니다(pytest 가 지정).
   1. `validate_env_source()` — **출처**(ADR-045 ①). `.env` 가 없으면 `ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE`
@@ -437,7 +437,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
   3. `validate_deployment_safety()` — **내용**. 위반을 모두 모아 한 번에 알립니다.
      - test 외 모든 ENV(ADR-027·030·045 ②): `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD`
        가 예시 값(`change-this` 포함·`your-` 시작·빈 값), 비밀 키 3종이 32자 미만, access 와 refresh 가 같음.
-       `REDIS_PASSWORD`·`SMTP_PASSWORD` 는 **값이 있을 때만** 예시 값인지 봅니다 — 비밀번호 없는 사설망 Redis·SMTP 미사용이 정당한 구성이라 빈 값은 통과합니다.
+       `REDIS_PASSWORD` 는 **값이 있을 때만** 예시 값인지 봅니다 — 비밀번호 없는 사설망 Redis 가 정당한 구성이라 빈 값은 통과합니다.
      - staging/production 만(ADR-028): `DEBUG=true`, `LOG_LEVEL=DEBUG`. 관리 화면을 켠 배포는 막지 않습니다 — 슈퍼유저
        로그인이 붙어 ADR-045 ③ 의 확인 플래그를 없앴습니다(admin-login ADR-004).
   예시 값 판정은 `is_placeholder_secret()` 하나가 맡습니다(`tests/core/test_deployment_safety.py`). `SERVER_HOST` 등
@@ -456,11 +456,14 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
 | `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도 |
-| `session_settings` | `SESSION_SECRET_KEY` — 관리 세션 ID → Redis 키 HMAC(`new_admin_session_store`, §12). `ADMIN_SESSION_MAX_AGE_SECONDS`·`ADMIN_SESSION_IDLE_SECONDS` — 관리 세션 절대·미사용 만료(§12). `SESSION_COOKIE_NAME` — 접속 로그의 `session_id` 기록(§10, 인증에 쓰지 않음). `SESSION_EXPIRE_SECONDS` 는 읽는 코드 없음 |
-| `api_settings`·`smtp_settings`·`upload_settings` | **소비 코드 없음** — 설정만 준비돼 있다(메일 발송·업로드 구현 없음) |
+| `session_settings` | `SESSION_SECRET_KEY` — 관리 세션 ID → Redis 키 HMAC(`new_admin_session_store`, §12). `ADMIN_SESSION_MAX_AGE_SECONDS`·`ADMIN_SESSION_IDLE_SECONDS` — 관리 세션 절대·미사용 만료(§12, 기본값은 README [세션·토큰 만료](../../README.md#세션토큰-만료)). `SESSION_COOKIE_NAME` — 접속 로그의 `session_id` 기록(§10, 인증에 쓰지 않음). |
+| `api_settings` | **소비 코드 없음** — URL 의 `/v1` 은 각 기능 router 가 직접 선언한다 |
 
 `LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 도 필드만 있고 코드가
 읽지 않습니다 — false 로 줘도 콘솔이 꺼지지 않고, 포맷은 §9.2 의 고정값입니다.
+읽는 코드가 없는 필드는 `tests/core/test_settings_usage.py` 가 막습니다 — 위의 `API_VERSION` 과 이 세 필드는
+그 파일의 예외 목록에 사유와 함께 있습니다. 메일(`SMTP_*`)·업로드(`UPLOAD_*`)·`SESSION_EXPIRE_SECONDS` 는
+읽는 코드가 없어 지웠고, 옛 `.env` 줄은 `extra="ignore"` 로 무시됩니다(config-cleanup).
 
 ## 7. 기동
 
@@ -911,7 +914,7 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
 
 | 설정 | 기본값 |
 |---|---|
-| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | 15 / 7 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | README [세션·토큰 만료](../../README.md#세션토큰-만료) |
 | `JWT_ALGORITHM` | `HS256` (`HS256`·`HS384`·`HS512` 만 허용) |
 | `JWT_ISSUER` / `JWT_AUDIENCE` | `fastapi-default-project-structure` / `fastapi-default-project-structure-api` |
 | `JWT_LEEWAY_SECONDS` | `10` |
@@ -1012,8 +1015,8 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
   `AdminSessionStore`(저장·조회·삭제·사용자 단위 폐기)와 `RedisSessionMiddleware`(`scope["session"]` 에 dict — `request.session`
   인터페이스 그대로). 쿠키 `admin_session` 에는 무작위 세션 ID(`secrets.token_urlsafe(32)`)만 있고, 내용은
   `admin:sess:{HMAC-SHA256(SESSION_SECRET_KEY, sid)}` → JSON `{"data", "user_id", "created_at"}`, 사용자별 인덱스
-  `admin:user_sessions:{user_id}`(SET). 만료는 절대(`ADMIN_SESSION_MAX_AGE_SECONDS`, 기본 8시간, 연장 없음)와 미사용
-  (`ADMIN_SESSION_IDLE_SECONDS`, 기본 30분, 요청마다 TTL 갱신·절대 만료 이내). 기존 세션 저장은 `SET XX` 라 요청 도중
+  `admin:user_sessions:{user_id}`(SET). 만료는 절대(`ADMIN_SESSION_MAX_AGE_SECONDS`, 연장 없음)와 미사용
+  (`ADMIN_SESSION_IDLE_SECONDS`, 요청마다 TTL 갱신·절대 만료 이내) — 기본값은 README [세션·토큰 만료](../../README.md#세션토큰-만료). 기존 세션 저장은 `SET XX` 라 요청 도중
   폐기된 세션을 응답이 되살리지 않습니다. 쿠키: `Path=/admin`, `SameSite=Strict`, HttpOnly, `Max-Age`=절대 만료,
   staging/production 은 `Secure`. 쿠키의 ID 가 Redis 에 없으면 빈 세션 + 쿠키 삭제. Redis 장애는 **503**(fail-closed).
   미들웨어는 SQLAdmin **하위 앱에만** 있어 API 인증과 섞이지 않습니다(`tests/test_admin_session_scope.py`). Redis 는
@@ -1166,6 +1169,7 @@ config.set_main_option(
 | 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./admin-auth-guide.html) 신설 |
 | 2026-10-19 | 보안·운영(security-ops-hardening): §4.1 `hide_parameters` 회귀 고정, §10 접속 로그 보존(`ACCESS_LOG_RETENTION_DAYS`, beat 매일 03:30 배치 삭제), §12 로그인 폼 CSRF 토큰·`created_at` 날짜 필터(`LocalDateFilter`), §13 beat 등록 구조 |
 | 2026-10-19 | 관리 세션(admin-session-hardening): §12 서명 쿠키 → Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 절대·미사용 만료, 강등·비활성화·삭제 즉시 폐기), 로그인 이후 CSRF(`AdminCsrfMiddleware`·`base.html` meta·스크립트), POST 로그아웃, 기간 필터. 설정 `ADMIN_SESSION_*`, 의존성 `itsdangerous` 제거 |
+| 2026-10-19 | 설정 정리(config-cleanup): 읽는 코드가 없던 `SMTPSettings`·`UploadSettings`·`SESSION_EXPIRE_SECONDS` 삭제(옛 `.env` 줄은 무시), 세션·토큰 만료의 정본을 README 표 하나로, 사용처 계약 테스트 `tests/core/test_settings_usage.py` |
 | 2026-10-13 | 접근 수준 선언(access-policy): §11.2 신설 — `Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`, 기동 시 기본 거부 `AccessPolicyGuard`(§7.1·§7.3), home·reports 라우터 단위 인가를 뷰 단위 선언으로, §11.1 표 갱신. OpenAPI 불변 |
 | 2026-10-13 | 로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 `RedactingFilter`(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(`REDIS_MIN_VERSION`), §10 접속 로그 원문 저장은 사용자 결정으로 유지 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
@@ -1228,14 +1232,7 @@ config.set_main_option(
 
 **ApiSettings** — `API_VERSION`=`v1` (소비 코드 없음)
 
-**SessionSettings** — `SESSION_COOKIE_NAME`=`session`(접속 로그의 `session_id` 쿠키 이름으로만 읽힌다), `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1. 관리 세션 ID → Redis 키 HMAC 키, §12), `SESSION_EXPIRE_SECONDS`=`86400` (읽는 코드 없음), `ADMIN_SESSION_MAX_AGE_SECONDS`=`28800`·`ADMIN_SESSION_IDLE_SECONDS`=`1800`(둘 다 ≥ 60, 미사용 ≤ 절대 — 관리 세션 만료, §12)
-
-**SMTPSettings** — `SMTP_SERVER`=`localhost`, `SMTP_PORT`=`25`, `SMTP_USERNAME`=빈 값, `SMTP_PASSWORD`=빈 값,
-`SMTP_FROM_EMAIL`·`SMTP_FROM_NAME`=없음, `SMTP_TLS`·`SMTP_SSL`=`false`(동시 true 거부) (소비 코드 없음)
-
-**UploadSettings** — `UPLOAD_DIR`=`uploads`, `UPLOAD_IMAGE_SIZE_LIMIT`=`20`(MB), `UPLOAD_IMAGE_RESIZE`=`false`,
-`UPLOAD_IMAGE_RESIZE_WIDTH`=`1200`, `UPLOAD_IMAGE_RESIZE_HEIGHT`=`2800`, `UPLOAD_IMAGE_QUALITY`=`85`(0~100),
-`UPLOAD_ALLOWED_EXTENSIONS`=`[".jpg", ".jpeg", ".png", ".gif", ".webp"]` (소비 코드 없음)
+**SessionSettings** — `SESSION_COOKIE_NAME`=`session`(접속 로그의 `session_id` 쿠키 이름으로만 읽힌다), `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1. 관리 세션 ID → Redis 키 HMAC 키, §12), `ADMIN_SESSION_MAX_AGE_SECONDS`·`ADMIN_SESSION_IDLE_SECONDS`(관리 세션 만료, §12 — 기본값은 README [세션·토큰 만료](../../README.md#세션토큰-만료))
 
 파생 값(`MYSQL_URL`·`ALEMBIC_URL`·`MYSQL_REPLICA_URLS`·`replication_active`·`routing_mode`·`REDIS_URL`·유효 로그
 레벨)은 필드가 아니라 `config.py` 의 property/메서드입니다.

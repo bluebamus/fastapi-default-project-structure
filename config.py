@@ -926,9 +926,8 @@ class SessionSettings(BaseSettings):
         Redis 서버 세션이고 쿠키(``admin_session``)에는 무작위 세션 ID 만 있다
         (``app/core/security/admin_session.py``, admin-session-hardening ADR-001). ``SESSION_SECRET_KEY``
         는 세션 ID 를 Redis 키로 바꾸는 HMAC 키다 — 바꾸면 모든 관리 세션이 무효가 된다.
-        ``SESSION_COOKIE_NAME``·``SESSION_EXPIRE_SECONDS`` 는 관리 화면 쿠키에 쓰지 않는다.
-        ``SESSION_COOKIE_NAME`` 은 접속 로그 미들웨어가 ``session_id`` 로 기록할
-        쿠키 이름으로 읽는다.
+        관리 세션 만료는 ``ADMIN_SESSION_*`` 가 정한다. ``SESSION_COOKIE_NAME`` 은 관리 화면
+        쿠키에 쓰지 않고, 접속 로그 미들웨어가 ``session_id`` 로 기록할 쿠키 이름으로 읽는다.
     """
 
     model_config = SettingsConfigDict(
@@ -948,12 +947,6 @@ class SessionSettings(BaseSettings):
     SESSION_SECRET_KEY: str = Field(
         default="change-this-session-secret-key",
         description="관리 세션 키 (/admin 세션 ID → Redis 키 HMAC)",
-    )
-
-    # 세션 만료 시간 (초, 기본값 24시간)
-    SESSION_EXPIRE_SECONDS: int = Field(
-        default=86400,
-        description="세션 만료 시간(초)",
     )
 
     # 관리 세션 절대 만료(초) — 로그인 시각 기준, 요청해도 연장되지 않는다. 쿠키 Max-Age 도 이 값.
@@ -978,143 +971,6 @@ class SessionSettings(BaseSettings):
                 "ADMIN_SESSION_IDLE_SECONDS 는 ADMIN_SESSION_MAX_AGE_SECONDS 이하여야 합니다."
             )
         return self
-
-
-# =============================================================================
-# SMTP 이메일 설정
-# =============================================================================
-class SMTPSettings(BaseSettings):
-    """이메일 발송(SMTP) 설정.
-
-    Note:
-        이메일 발송 모듈은 아직 없다. 설정만 config 에 로드해 두고, 발송 기능을
-        구현할 때 `from config import smtp_settings` 로 가져다 쓴다.
-    """
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # SMTP 서버 주소 (로컬 개발: localhost, Gmail: smtp.gmail.com)
-    SMTP_SERVER: str = Field(
-        default="localhost",
-        description="SMTP 서버 주소",
-    )
-
-    # SMTP 서버 포트 (25: 비암호화, 587: TLS, 465: SSL)
-    SMTP_PORT: int = Field(
-        default=25,
-        description="SMTP 서버 포트",
-    )
-
-    # SMTP 인증 사용자명 (보통 이메일 주소)
-    SMTP_USERNAME: str = Field(
-        default="",
-        description="SMTP 사용자명",
-    )
-
-    # SMTP 인증 비밀번호 (Gmail 은 앱 비밀번호 사용)
-    SMTP_PASSWORD: str = Field(
-        default="",
-        description="SMTP 비밀번호",
-    )
-
-    # 발신자 이메일 주소 (미설정 시 SMTP_USERNAME 사용)
-    SMTP_FROM_EMAIL: str | None = Field(
-        default=None,
-        description="발신자 이메일 주소",
-    )
-
-    # 발신자 이름 (미설정 시 PROJECT_NAME 사용)
-    SMTP_FROM_NAME: str | None = Field(
-        default=None,
-        description="발신자 이름",
-    )
-
-    # TLS 사용 여부 (포트 587)
-    SMTP_TLS: bool = Field(
-        default=False,
-        description="TLS 사용 여부",
-    )
-
-    # SSL 사용 여부 (포트 465)
-    SMTP_SSL: bool = Field(
-        default=False,
-        description="SSL 사용 여부",
-    )
-
-    @model_validator(mode="after")
-    def _reject_tls_with_ssl(self) -> "SMTPSettings":
-        """TLS 와 SSL 을 동시에 켜는 건 의미가 없다(포트별로 하나만 쓴다)."""
-        if self.SMTP_TLS and self.SMTP_SSL:
-            raise ValueError(
-                "SMTP_TLS 와 SMTP_SSL 은 동시에 켤 수 없습니다. "
-                "포트 587 이면 TLS, 465 면 SSL 하나만 사용하세요."
-            )
-        return self
-
-
-# =============================================================================
-# 이미지 업로드 설정
-# =============================================================================
-class UploadSettings(BaseSettings):
-    """파일·이미지 업로드 설정.
-
-    Note:
-        업로드 핸들러는 아직 없다. 설정만 config 에 로드해 둔다.
-    """
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # 업로드 파일 저장 경로 (프로젝트 루트 기준 상대 경로)
-    UPLOAD_DIR: str = Field(
-        default="uploads",
-        description="업로드 파일 저장 경로",
-    )
-
-    # 업로드 이미지 최대 크기 (MB)
-    UPLOAD_IMAGE_SIZE_LIMIT: int = Field(
-        default=20,
-        description="업로드 이미지 최대 크기(MB)",
-    )
-
-    # 업로드된 이미지 자동 리사이즈 활성화
-    UPLOAD_IMAGE_RESIZE: bool = Field(
-        default=False,
-        description="이미지 자동 리사이즈 활성화",
-    )
-
-    # 리사이즈 최대 너비 (px, UPLOAD_IMAGE_RESIZE=true 시 적용)
-    UPLOAD_IMAGE_RESIZE_WIDTH: int = Field(
-        default=1200,
-        description="리사이즈 최대 너비(px)",
-    )
-
-    # 리사이즈 최대 높이 (px, UPLOAD_IMAGE_RESIZE=true 시 적용)
-    UPLOAD_IMAGE_RESIZE_HEIGHT: int = Field(
-        default=2800,
-        description="리사이즈 최대 높이(px)",
-    )
-
-    # 이미지 압축 품질 (0-100)
-    UPLOAD_IMAGE_QUALITY: int = Field(
-        default=85,
-        ge=0,
-        le=100,
-        description="이미지 압축 품질(0-100)",
-    )
-
-    # 허용되는 이미지 확장자
-    UPLOAD_ALLOWED_EXTENSIONS: list[str] = Field(
-        default=[".jpg", ".jpeg", ".png", ".gif", ".webp"],
-        description="허용 이미지 확장자",
-    )
 
 
 # =============================================================================
@@ -1180,18 +1036,6 @@ def get_session_settings() -> SessionSettings:
     return SessionSettings()
 
 
-@lru_cache
-def get_smtp_settings() -> SMTPSettings:
-    """SMTP 설정 인스턴스 반환 (캐싱)"""
-    return SMTPSettings()
-
-
-@lru_cache
-def get_upload_settings() -> UploadSettings:
-    """업로드 설정 인스턴스 반환 (캐싱)"""
-    return UploadSettings()
-
-
 # =============================================================================
 # 편의를 위한 전역 설정 인스턴스
 # =============================================================================
@@ -1207,8 +1051,6 @@ middleware_settings = get_middleware_settings()
 jwt_settings = get_jwt_settings()
 api_settings = get_api_settings()
 session_settings = get_session_settings()
-smtp_settings = get_smtp_settings()
-upload_settings = get_upload_settings()
 
 
 # =============================================================================
@@ -1304,7 +1146,6 @@ def validate_deployment_safety(
     log: LogSettings | None = None,
     db: DatabaseSettings | None = None,
     redis: RedisSettings | None = None,
-    smtp: SMTPSettings | None = None,
 ) -> None:
     """설정 내용을 검사해 위반을 모두 모아 RuntimeError 하나로 올린다.
 
@@ -1321,7 +1162,6 @@ def validate_deployment_safety(
     log = log or log_settings
     db = db or db_settings
     redis = redis or redis_settings
-    smtp = smtp or smtp_settings
     if app.ENV == "test":
         return
 
@@ -1332,14 +1172,11 @@ def validate_deployment_safety(
         # DB 는 이 스켈레톤이 반드시 붙는 대상이라, 빈 비밀번호(=인증 없는 접속)도 위반이다.
         "MYSQL_PASSWORD": db.MYSQL_PASSWORD,
     }
-    # Redis·SMTP 는 **비어 있는 것이 정당한 구성**이다 — 인증 없는 사설망 Redis,
-    # SMTP 미사용. 그래서 비어 있으면 검사하지 않고, 값이 있을 때만 예시 값인지 본다.
-    for name, optional in (
-        ("REDIS_PASSWORD", redis.REDIS_PASSWORD or ""),
-        ("SMTP_PASSWORD", smtp.SMTP_PASSWORD),
-    ):
-        if optional.strip():
-            secrets[name] = optional
+    # Redis 는 **비어 있는 것이 정당한 구성**이다 — 인증 없는 사설망 Redis.
+    # 그래서 비어 있으면 검사하지 않고, 값이 있을 때만 예시 값인지 본다.
+    redis_password = redis.REDIS_PASSWORD or ""
+    if redis_password.strip():
+        secrets["REDIS_PASSWORD"] = redis_password
     violations = [
         f"{name} 가 예시 값(placeholder)입니다"
         for name, value in secrets.items()
@@ -1364,7 +1201,7 @@ def validate_deployment_safety(
             f"ENV={app.ENV} 설정 검사 실패 — " + "; ".join(violations) + ". "
             "`.env`(또는 환경 변수)를 고치세요. 비밀 키는 "
             'uv run python -c "import secrets; print(secrets.token_urlsafe(48))" 로 키마다 따로 '
-            "만들고, 비밀번호는 실제 값을 넣습니다(Redis·SMTP 를 쓰지 않으면 비웁니다)."
+            "만들고, 비밀번호는 실제 값을 넣습니다(Redis 인증을 쓰지 않으면 비웁니다)."
         )
 
 
