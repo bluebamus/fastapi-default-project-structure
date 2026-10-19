@@ -668,8 +668,8 @@ class LogSettings(BaseSettings):
     # 콘솔 포매터(TzFormatter, style="{")의 fmt·datefmt. 기본값이 곧 확정 포맷(#3)이다:
     # [시간 TZ] LEVEL [app=..] [module:class:func:line] message
     # 쓸 수 있는 필드는 LogRecord 속성 + TzFormatter 가 채우는 {tzname}·{appname}·{classname}.
-    # uvicorn CLI·Celery 의 콘솔 핸들러는 두 값 중 하나라도 **직접 지정했을 때만** 이 포맷으로
-    # 바꾼다(기본이면 각 도구의 기본 출력 그대로). 비밀값 마스킹은 포맷과 무관하게 적용된다.
+    # 앱·`python main.py`·`uvicorn main:app`·Celery worker 가 **모두** 이 포맷을 쓴다(logging-overhaul L1).
+    # 필수 자리표시자(LOG_REQUIRED_FIELDS)가 빠지면 기동 오류다. 비밀값 마스킹은 포맷과 무관하다.
     LOG_CONSOLE_FORMAT: str = Field(
         default=_DEFAULT_LOG_FORMAT,
         description="콘솔 로그 포맷 (str.format 스타일 '{field}')",

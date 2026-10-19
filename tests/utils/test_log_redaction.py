@@ -327,16 +327,19 @@ def test_uvicorn_cli_loggers_are_masked():
     _assert_redacted_traceback(buf.getvalue())
 
 
-def test_celery_worker_handlers_are_masked():
-    """Celery worker 가 root 에 단 핸들러에도 필터가 붙는다(``after_setup_logger``)."""
+def test_celery_worker_handlers_are_masked(tmp_path):
+    """Celery worker 가 남긴 ``--logfile`` 핸들러에도 필터가 붙는다(``after_setup_logger``).
+
+    콘솔 핸들러는 공유 queue 로 바뀌어 queue 의 필터를 탄다(logging-overhaul L1).
+    """
     from celery.app.log import ColorFormatter
     from celery.signals import after_setup_logger, after_setup_task_logger
 
     import app.celery.lifecycle  # noqa: F401 - 시그널 수신자 등록
 
     for signal in (after_setup_logger, after_setup_task_logger):
-        buf = io.StringIO()
-        handler = logging.StreamHandler(buf)
+        logfile = tmp_path / f"{signal.name}.log"
+        handler = logging.FileHandler(logfile, encoding="utf-8")
         handler.setFormatter(ColorFormatter("%(levelname)s %(message)s", use_color=False))
         logger = logging.getLogger(f"test.redaction.celery.{signal.name}")
         logger.addHandler(handler)
@@ -355,10 +358,12 @@ def test_celery_worker_handlers_are_masked():
             except RuntimeError:
                 logger.exception("Task failed")
         finally:
-            logger.removeHandler(handler)
+            for attached in list(logger.handlers):  # 수신자가 단 공유 queue 핸들러까지 뗀다
+                logger.removeHandler(attached)
+            handler.close()
             logger.propagate = True
 
-        _assert_redacted_traceback(buf.getvalue())
+        _assert_redacted_traceback(logfile.read_text(encoding="utf-8"))
 
 
 async def test_debug_500_detail_is_masked(monkeypatch):
@@ -390,7 +395,10 @@ setup.stop_log_listener()
 
 
 def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
-    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 줄은 uvicorn 형식 그대로 남는다(config-cleanup F-008)."""
+    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 요청 줄은 남는다(config-cleanup F-008).
+
+    시각·헤더는 프로젝트 형식이다(logging-overhaul L1).
+    """
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LOG_")}
     env.update(PYTHONPATH=str(PROJECT_ROOT), PYTHONIOENCODING="utf-8")
     proc = subprocess.run(  # noqa: S603
@@ -405,8 +413,10 @@ def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "Logging error" not in proc.stderr, proc.stderr
-    assert (
-        'INFO:     127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200 OK' in proc.stdout
+    line = next((ln for ln in proc.stdout.splitlines() if "127.0.0.1:5000" in ln), "")
+    assert line.endswith(
+        '127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200'
     ), proc.stdout + proc.stderr
+    assert "[app=uvicorn]" in line
     for secret in ("tok-9f3e7a", "secret42"):
         assert secret not in proc.stdout + proc.stderr

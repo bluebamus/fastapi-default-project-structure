@@ -7,7 +7,8 @@ ENV(development/test/staging/production)에 따라 레벨·출력·타임존을 
 
 포맷·시각 형식·콘솔 출력 여부는 ``LogSettings`` 의 ``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT``·
 ``LOG_CONSOLE_ENABLED`` 가 정한다. 콘솔 출력 여부는 ``console_enabled()`` **한 곳**에서 판단하고,
-앱 dictConfig·uvicorn CLI 핸들러·Celery 핸들러(``setup.apply_console_settings``)가 모두 그것을 본다.
+앱 dictConfig 가 그것을 보고, uvicorn CLI·Celery 의 콘솔 핸들러는 ``setup.adopt_foreign_handlers`` 가
+공유 queue 로 바꿔 같은 결정을 따르게 한다(logging-overhaul L1).
 
 **출력 경로는 항상 queue 를 거친다** (NFR-009). root 로거에는
 ``BoundedQueueHandler`` 하나만 붙고, 실제 stdout/stderr 쓰기는 ``QueueListener``
@@ -92,6 +93,11 @@ def console_formatter_kwargs(env: str | None = None) -> dict:
         "use_utc": env in ("production", "staging"),
         "with_ms": env == "development",
     }
+
+
+def file_formatter_kwargs(env: str | None = None) -> dict:
+    """파일 포매터 인자 — 콘솔과 같은 ``TzFormatter``·날짜 형식·시간대에 fmt 만 ``LOG_FILE_FORMAT``."""
+    return {**console_formatter_kwargs(env), "fmt": log_settings.LOG_FILE_FORMAT}
 
 
 def listener_handler_names(env: str | None = None) -> list[str]:

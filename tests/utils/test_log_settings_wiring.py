@@ -51,7 +51,7 @@ logging.config.dictConfig(LOGGING_CONFIG)   # uvicorn CLI 는 앱 import 전에 
 from app.utils.logs import setup
 setup.configure_logging(force=True)
 logging.getLogger("uvicorn.error").info("hello-uvicorn")
-print("UVICORN_STREAM_HANDLERS", len(logging.getLogger("uvicorn.error").handlers))
+print("UVICORN_HANDLERS", sorted(type(h).__name__ for h in logging.getLogger("uvicorn").handlers))
 setup.stop_log_listener()
 """
 
@@ -124,11 +124,29 @@ def test_default_app_output_is_unchanged(tmp_path, env, ms):
     assert DISABLED_WARNING not in proc.stderr
 
 
-def test_default_uvicorn_cli_and_celery_output_is_unchanged(tmp_path):
+PROJECT_LINE = (
+    r"\[\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}} \w+\] {level} +\[app={app}\] "
+    r"\[[^:\]]+:[^:\]]+:[^:\]]+:\d+\] {msg}"
+)
+
+
+def test_every_path_uses_the_project_format(tmp_path):
+    """앱·``uvicorn main:app`` CLI·Celery 가 모두 같은 프로젝트 형식으로 쓴다(logging-overhaul L1).
+
+    예전 테스트는 "기본값이면 도구 기본 출력 불변"을 고정했다 — 사용자 결정(포맷 C)으로 의도해서 바꿨다.
+    """
     proc = _run(UVICORN_CLI_PROBE, tmp_path)
-    _line(r"INFO:     hello-uvicorn", proc.stderr)
-    proc = _run(CELERY_PROBE.format(logfile=str(tmp_path / "c.log")), tmp_path)
-    _line(r"CELERYFMT WARNING hello-celery", proc.stderr)
+    _line(PROJECT_LINE.format(level="INFO", app="uvicorn", msg="hello-uvicorn"), proc.stdout)
+    assert "INFO:     hello-uvicorn" not in proc.stdout + proc.stderr
+    logfile = tmp_path / "c.log"
+    proc = _run(CELERY_PROBE.format(logfile=str(logfile)), tmp_path)
+    _line(PROJECT_LINE.format(level="WARNING", app="ext", msg="hello-celery"), proc.stdout)
+    assert "CELERYFMT" not in proc.stdout + proc.stderr
+    # --logfile 은 존중한다 — 파일 핸들러는 남고 형식만 같아진다.
+    _line(
+        PROJECT_LINE.format(level="WARNING", app="ext", msg="hello-celery"),
+        logfile.read_text(encoding="utf-8"),
+    )
 
 
 # =============================================================================
@@ -147,14 +165,21 @@ def test_custom_format_and_datefmt_apply_to_app_logger(tmp_path, env):
 
 def test_custom_format_applies_to_uvicorn_cli_handlers(tmp_path):
     proc = _run(UVICORN_CLI_PROBE, tmp_path, **CUSTOM)
-    _line(CUSTOM_LINE.format(level="INFO", msg="hello-uvicorn"), proc.stderr)
+    _line(CUSTOM_LINE.format(level="INFO", msg="hello-uvicorn"), proc.stdout)
 
 
-def test_custom_format_applies_to_celery_console_handler_not_file(tmp_path):
+def test_custom_formats_apply_to_celery_console_and_logfile(tmp_path):
+    """콘솔은 LOG_CONSOLE_FORMAT, ``--logfile`` 은 LOG_FILE_FORMAT 을 쓴다."""
     logfile = tmp_path / "c.log"
-    proc = _run(CELERY_PROBE.format(logfile=str(logfile)), tmp_path, **CUSTOM)
-    _line(CUSTOM_LINE.format(level="WARNING", msg="hello-celery"), proc.stderr)
-    assert logfile.read_text(encoding="utf-8").strip() == "FILE hello-celery"
+    file_fmt = "FILEFMT|{levelname}|{asctime}|{appname}|{module}|{classname}|{funcName}|{message}"
+    proc = _run(
+        CELERY_PROBE.format(logfile=str(logfile)), tmp_path, LOG_FILE_FORMAT=file_fmt, **CUSTOM
+    )
+    _line(CUSTOM_LINE.format(level="WARNING", msg="hello-celery"), proc.stdout)
+    _line(
+        CUSTOM_LINE.replace("CUSTOM", "FILEFMT").format(level="WARNING", msg="hello-celery"),
+        logfile.read_text(encoding="utf-8"),
+    )
 
 
 def test_redaction_holds_with_custom_format(tmp_path):
@@ -198,15 +223,16 @@ def test_console_disabled_builds_no_console_handlers(monkeypatch):
 def test_console_disabled_removes_uvicorn_cli_console_handlers(tmp_path):
     proc = _run(UVICORN_CLI_PROBE, tmp_path, LOG_CONSOLE_ENABLED="false")
     assert "hello-uvicorn" not in proc.stdout + proc.stderr
-    assert "UVICORN_STREAM_HANDLERS 0" in proc.stdout
+    # uvicorn 콘솔 핸들러는 공유 queue 로 바뀌었고, 그 queue 에는 콘솔 출력처가 없다.
+    assert "UVICORN_HANDLERS ['BoundedQueueHandler']" in proc.stdout
 
 
 def test_console_disabled_keeps_celery_file_handler(tmp_path):
     logfile = tmp_path / "c.log"
     proc = _run(CELERY_PROBE.format(logfile=str(logfile)), tmp_path, LOG_CONSOLE_ENABLED="false")
-    assert "hello-celery" not in proc.stderr
-    assert "CELERY_HANDLERS ['FileHandler']" in proc.stdout
-    assert logfile.read_text(encoding="utf-8").strip() == "FILE hello-celery"
+    assert "hello-celery" not in proc.stdout + proc.stderr
+    assert "CELERY_HANDLERS ['BoundedQueueHandler', 'FileHandler']" in proc.stdout
+    assert "hello-celery" in logfile.read_text(encoding="utf-8")
 
 
 # =============================================================================
