@@ -33,5 +33,7 @@ celery_app.conf.update(
     # ADR-010). ``timezone`` 은 beat 의 crontab 을 해석할 로컬 시간대다(설정 TIME_ZONE 일원화).
     timezone=timezone_settings.TIME_ZONE,
     enable_utc=True,
+    # 주기 작업은 각 기능의 tasks.py 가 import 될 때 여기에 스스로 더한다(security-ops-hardening ADR-003).
+    # beat 도 기동 시 include 모듈을 import 한다: `celery -A app.celery.app beat`.
     beat_schedule={},
 )

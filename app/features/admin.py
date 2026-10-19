@@ -165,8 +165,9 @@ def create_admin_interface(
     여기서 ``Admin(...)`` 을 생성하는 순간 SQLAdmin 이 ``/admin`` 라우트를 붙인다.
 
     인증 백엔드와 로그인 템플릿 위치는 ``Admin`` 생성 인자라서 **이 함수 안에서** 주입한다
-    (뷰 등록 쪽으로는 넣을 수 없다). 백엔드는 생성된 ``Admin`` 의 템플릿 환경을 받아 400·429
-    로그인 화면을 같은 템플릿으로 그린다.
+    (뷰 등록 쪽으로는 넣을 수 없다). 백엔드는 생성된 ``Admin`` 의 템플릿 환경을 받아 400·403·429
+    로그인 화면을 같은 템플릿으로 그린다. 로그인 폼의 CSRF 토큰도 같은 템플릿 환경의 전역
+    ``csrf_token(request)`` 로 백엔드에 연결한다.
 
     Args:
         app: FastAPI 인스턴스.
@@ -185,6 +186,8 @@ def create_admin_interface(
         templates_dir=str(ADMIN_TEMPLATES_DIR),
     )
     backend.templates = admin.templates
+    # 로그인 화면의 hidden CSRF 필드가 부른다 — 세션에 토큰이 없으면 여기서 만든다(security-ops-hardening ADR-004).
+    admin.templates.env.globals["csrf_token"] = backend.csrf_token
     return admin
 
 

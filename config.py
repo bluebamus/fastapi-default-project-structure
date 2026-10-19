@@ -726,6 +726,14 @@ class MiddlewareSettings(BaseSettings):
         description="접속 로그에서 값을 가릴 쿼리스트링 키",
     )
 
+    # 접속 로그 보존 일수(security-ops-hardening ADR-002). Celery beat 가 하루 한 번 이보다 오래된 행을 지운다.
+    # 0 이면 지우지 않는다. 음수는 기동 시 검증 오류.
+    ACCESS_LOG_RETENTION_DAYS: int = Field(
+        default=365,
+        ge=0,
+        description="접속 로그 보존 일수(0=삭제하지 않음). 기본 1년",
+    )
+
 
 # =============================================================================
 # Redis 설정

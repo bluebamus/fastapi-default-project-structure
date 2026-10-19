@@ -12,7 +12,18 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db.session import get_read_only_db_session
+from app.features.home.services.access_log_retention_service import AccessLogRetentionService
 from app.features.home.services.user_access_log_service import UserAccessLogService
+from config import middleware_settings, timezone_settings
+
+
+def build_access_log_retention_service(db_session: AsyncSession) -> AccessLogRetentionService:
+    """보존 정책 서비스를 설정값(``ACCESS_LOG_RETENTION_DAYS``)과 UTC 시계로 조립한다 — beat 태스크가 쓴다."""
+    return AccessLogRetentionService(
+        db_session,
+        retention_days=middleware_settings.ACCESS_LOG_RETENTION_DAYS,
+        clock=timezone_settings.utc_now,
+    )
 
 
 def build_user_access_log_service(db_session: AsyncSession) -> UserAccessLogService:

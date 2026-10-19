@@ -13,10 +13,19 @@ API 로그인 실패가 관리 화면 한도를 깎지 않게.
 ``build_admin_auth_backend`` 가 기존 provider(``get_password_hasher``·``get_token_service``·
 ``get_refresh_token_store``·``get_rate_limiter``)로 한다. 이 모듈은 sqladmin 을 import 하므로
 ``ADMIN=false`` 에서 로드되지 않도록 auth 패키지 ``__init__`` 으로 재노출하지 않는다.
+
+로그인 폼 CSRF (security-ops-hardening ADR-004): synchronizer token. 관리 세션에 ``csrf_token``
+(``secrets.token_urlsafe(32)``)을 두고 로그인 화면이 hidden 필드로 싣는다 — 템플릿은 Jinja 전역
+``csrf_token(request)`` 로 이 백엔드의 ``csrf_token`` 을 부른다(``create_admin_interface`` 가 연결).
+``login`` 은 레이트 리밋·자격 확인보다 **먼저** ``hmac.compare_digest`` 로 대조하고, 없거나 다르면
+403 으로 로그인 화면을 다시 그린다. 로그인 성공의 ``session.clear()`` 가 토큰도 버리므로 토큰은
+로그인마다 회전한다. 로그인 이후의 sqladmin 폼·GET 로그아웃은 범위 밖이다(SameSite=Strict·Path=/admin).
 """
 
 from __future__ import annotations
 
+import hmac
+import secrets
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 
@@ -49,6 +58,9 @@ LOG_USERNAME_MAX = 64
 LOGIN_TEMPLATE = "sqladmin/login.html"
 INVALID_LOGIN_MESSAGE = "사용자명 또는 비밀번호가 올바르지 않습니다."
 TOO_MANY_MESSAGE = "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요."
+CSRF_SESSION_KEY = "csrf_token"
+CSRF_FORM_FIELD = "csrf_token"
+CSRF_FAILED_MESSAGE = "요청이 만료되었습니다. 다시 시도하세요."
 
 
 class AdminAuthBackend(AuthenticationBackend):
@@ -87,9 +99,25 @@ class AdminAuthBackend(AuthenticationBackend):
         self._auth_service_factory = auth_service_factory
         self._rate_limiter_factory = rate_limiter_factory
         self._client_ip = client_ip_resolver
-        # 429·400 화면을 SQLAdmin 과 같은 템플릿 환경으로 그린다. Admin 이 이 백엔드를 생성 인자로
+        # 400·403·429 화면을 SQLAdmin 과 같은 템플릿 환경으로 그린다. Admin 이 이 백엔드를 생성 인자로
         # 받으므로 생성 뒤에 연결한다(``create_admin_interface``).
         self.templates: Jinja2Templates | None = None
+
+    @staticmethod
+    def csrf_token(request: Request) -> str:
+        """관리 세션의 CSRF 토큰 — 없으면 만들어 세션에 둔다(로그인 화면이 그릴 때 부른다)."""
+        token = request.session.get(CSRF_SESSION_KEY)
+        if not isinstance(token, str):
+            token = secrets.token_urlsafe(32)
+            request.session[CSRF_SESSION_KEY] = token
+        return token
+
+    @staticmethod
+    def _csrf_valid(request: Request, submitted: object) -> bool:
+        expected = request.session.get(CSRF_SESSION_KEY)
+        if not isinstance(expected, str) or not isinstance(submitted, str):
+            return False
+        return hmac.compare_digest(expected.encode(), submitted.encode())
 
     async def login(self, request: Request) -> Response | bool:
         form = await request.form()
@@ -97,6 +125,11 @@ class AdminAuthBackend(AuthenticationBackend):
         password = str(form.get("password") or "")
         ip = self._client_ip.resolve(request)
         log_name = username[:LOG_USERNAME_MAX]
+
+        # 레이트 리밋보다 먼저 — 위조 요청이 피해자의 시도 한도를 깎지 못하게 한다.
+        if not self._csrf_valid(request, form.get(CSRF_FORM_FIELD)):
+            logger.warning("[admin] 로그인 CSRF 토큰 불일치: username=%r ip=%s", log_name, ip)
+            return await self._render_login(request, CSRF_FAILED_MESSAGE, 403)
 
         limiter = self._rate_limiter_factory(request)
         user_key = f"{RATE_LIMIT_PREFIX}:{ip}:{username.lower()}"
