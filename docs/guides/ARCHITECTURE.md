@@ -709,13 +709,14 @@ uvicorn 로거 레벨은 `python main.py` 경로에서 root 와 같은 규칙(`L
 
 traceback 은 보통 포매터가 나중에 `exc_info` 에서 만들어 필터가 볼 수 없습니다. 그래서 필터가 `exc_info` 를
 미리 `exc_text` 로 포맷해 가려 둡니다(포매터는 `exc_text` 가 있으면 다시 만들지 않는다). `exc_info` 는 남겨
-예외 타입·체인·파일·줄은 그대로 보입니다. 메시지는 가릴 것이 있을 때만 합친 문자열로 바꿉니다(`args` 를 직접
-읽는 uvicorn access 포매터를 깨지 않게).
+예외 타입·체인·파일·줄은 그대로 보입니다. 메시지는 가릴 것이 있을 때만 바꿉니다. 비밀값이 인자 하나 안에만 있으면
+그 인자만 가리고 `args` 모양을 지킵니다 — `args` 를 직접 푸는 uvicorn access 포매터가 깨져 접속 줄이 사라지지 않게
+(config-cleanup F-008). 틀과 인자에 걸치면(`"password=%s"`) 합친 문자열로 바꿉니다.
 
 | 출력 경로 | 붙는 곳 |
 |---|---|
 | 앱·SQLAlchemy·`python main.py` 의 uvicorn 로거 | root 의 queue 핸들러 필터 `redact` — stdout·stderr·큐 포화 fallback 모두 |
-| `uvicorn main:app` CLI 의 `uvicorn`·`uvicorn.error` | `configure_logging()` 이 그 **로거**에 붙인다(uvicorn 자기 핸들러로 나가는 경로) |
+| `uvicorn main:app` CLI 의 `uvicorn`·`uvicorn.error`·`uvicorn.access` | `configure_logging()` 이 그 **로거**에 붙인다(uvicorn 자기 핸들러로 나가는 경로). 접속 줄의 `?token=…` 도 가려지고 줄 형식은 그대로 |
 | Celery worker | `after_setup_logger`·`after_setup_task_logger` 시그널에서 Celery 가 단 핸들러에 붙인다(`app/celery/lifecycle.py`) |
 
 형태로 찾는 규칙이라 모든 비밀을 잡지는 못합니다 — 비밀값을 로그·예외 메시지에 넣지 않는 것이 먼저입니다

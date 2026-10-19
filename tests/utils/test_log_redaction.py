@@ -135,6 +135,30 @@ def test_filter_keeps_args_when_nothing_to_mask():
     assert record.args == args
 
 
+ACCESS_FMT = '%s - "%s %s HTTP/%s" %d'
+ACCESS_SECRET_ARGS = ("127.0.0.1:5000", "GET", "/x?token=tok-9f3e7a&password=secret42", "1.1", 200)
+
+
+def test_filter_masks_inside_one_argument_and_keeps_args_shape():
+    """비밀값이 인자 하나 안에 있으면 그 인자만 가리고 ``args`` 모양을 지킨다(config-cleanup F-008).
+
+    uvicorn ``AccessFormatter`` 는 ``args`` 5개를 직접 푼다 — 비우면 접속 줄이 logging 오류와 함께 사라진다.
+    """
+    record = _record(ACCESS_FMT, ACCESS_SECRET_ARGS)
+    RedactingFilter().filter(record)
+
+    assert record.msg == ACCESS_FMT
+    assert record.args == ("127.0.0.1:5000", "GET", "/x?token=***&password=***", "1.1", 200)
+
+
+def test_filter_falls_back_when_secret_spans_template_and_argument():
+    """키는 틀에, 값은 인자에 있으면 인자만 봐서는 못 가린다 — 합친 메시지로 가리는 기존 방식."""
+    record = _record("password=%s", ("secret42",))
+    RedactingFilter().filter(record)
+
+    assert record.getMessage() == "password=***"
+
+
 # =============================================================================
 # 출력 경로별
 # =============================================================================
@@ -273,3 +297,38 @@ async def test_debug_500_detail_is_masked(monkeypatch):
     assert response.status_code == 500
     assert "secret42" not in body
     assert "mysql+asyncmy://u:***@h/db" in body
+
+
+ACCESS_CLI_PROBE = """
+import logging, logging.config
+from uvicorn.config import LOGGING_CONFIG
+logging.config.dictConfig(LOGGING_CONFIG)   # uvicorn main:app CLI 는 앱 import 전에 이것을 적용한다
+from app.utils.logs import setup
+setup.configure_logging(force=True)
+from tests.utils.test_log_redaction import ACCESS_FMT, ACCESS_SECRET_ARGS
+logging.getLogger("uvicorn.access").info(ACCESS_FMT, *ACCESS_SECRET_ARGS)
+setup.stop_log_listener()
+"""
+
+
+def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
+    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 줄은 uvicorn 형식 그대로 남는다(config-cleanup F-008)."""
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LOG_")}
+    env.update(PYTHONPATH=str(PROJECT_ROOT), PYTHONIOENCODING="utf-8")
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", ACCESS_CLI_PROBE],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Logging error" not in proc.stderr, proc.stderr
+    assert (
+        'INFO:     127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200 OK' in proc.stdout
+    ), proc.stdout + proc.stderr
+    for secret in ("tok-9f3e7a", "secret42"):
+        assert secret not in proc.stdout + proc.stderr
