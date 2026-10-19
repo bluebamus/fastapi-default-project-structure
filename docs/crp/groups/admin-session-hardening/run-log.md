@@ -76,3 +76,53 @@
 | 인라인 스크립트(렌더 결과를 node 로) | `node --check` 통과, DOM 스텁 동작 확인(POST 폼 hidden·XHR DELETE 헤더·GET/타 출처 무헤더·fetch POST 헤더·로그아웃 링크 → POST 폼) |
 
 - **수렴:** CONVERGED — Open Fix 0, charter §3 전부 그린.
+
+### Round 2 — 2026-10-19 · 후속 (R-004 해소 — 관리 화면 경로의 API refresh 폐기)
+- **트리거:** REQ-004(감독자 후속 지시, Round 1 은 main `d353c86` 으로 병합). 브랜치 `fix/admin-ui-refresh-revoke`(main 에서), 코드 커밋 `15c1f70`.
+- **현황(변경 전):** `UserAdmin.on_model_change`·`on_model_delete` 는 관리 세션만 폐기했다. API 경로 `UserService` 는 비활성화·삭제에서 refresh family 를 폐기한다(강등은 폐기하지 않음 — 회전 때 DB 값으로 재발급).
+- **결정:** ADR-008. 신규 finding: LOW 1(F-006) — Fixed.
+
+#### fail-on-revert
+
+같은 방식(작업 폴더 밖 백업 → 변이 → 테스트 → 복원, 복원 뒤 파일 해시 동일 확인). 2건 모두 실패.
+
+| 변이 | 결과 |
+|---|---|
+| `app/features/user/admin.py` 를 main(관리 세션만 폐기)으로 | 5 failed(비활성화·강등·삭제·비밀번호의 refresh 폐기, refresh 저장소 실패 시 미저장) |
+| `_revoke_credentials` 에서 refresh 폐기 줄 제거 | 5 failed |
+
+#### 게이트
+
+| 검사 | 결과 |
+|---|---|
+| `ruff check .` · `ruff format --check .` | 통과 |
+| mypy(규칙 파일 방법) | 204 파일 이슈 없음 |
+| `pytest -m "not mysql"` 작업 트리(fakeredis TCP 를 `REDIS_PORT` 로, 실제 DB·Redis 접속 없음) | 1232 passed, 19 deselected, skip 0 |
+| `pytest -m "not mysql"` `.env` 없는 저장소 밖 클론 | 1232 passed, 19 deselected, skip 0 |
+| alembic | 변경 없음 |
+
+- **수렴:** CONVERGED — Open Fix 0, charter §3 전부 그린.
+
+### Round 3 — 2026-10-19 · 감독자 결정 (폐기 집합을 API 경로에 맞춤)
+- **트리거:** 감독자 결정 — refresh 폐기 = 비활성화·비밀번호 해시 변경·삭제(`UserService` 와 같은 집합), 관리 세션 폐기 = 그 집합 + 슈퍼유저 해제.
+- **결정:** ADR-009(ADR-008 의 강등 부분 Superseded). 코드 커밋 `8300704`. 신규 finding: LOW 1(F-007) — Fixed.
+
+#### fail-on-revert (5건 모두 실패)
+
+| 변이 | 결과 |
+|---|---|
+| `user/admin.py` 를 Round 2(`15c1f70`, 강등에도 refresh 폐기)로 | 1 failed(`[demote]`) |
+| 관리 세션 집합에서 강등 제거 | 2 failed |
+| refresh 집합에 강등 추가 | 1 failed |
+| refresh 집합에서 비밀번호 변경 제거 | 1 failed |
+| refresh 폐기 호출 끔 | 4 failed |
+
+#### 게이트
+
+| 검사 | 결과 |
+|---|---|
+| `ruff check .` · `ruff format --check .` · mypy(204 파일) | 통과 |
+| `pytest -m "not mysql"` 작업 트리 | 1232 passed, 19 deselected, skip 0 |
+| `pytest -m "not mysql"` `.env` 없는 저장소 밖 클론 | 1232 passed, 19 deselected, skip 0 |
+
+- **수렴:** CONVERGED — Open Fix 0, charter §3 전부 그린.

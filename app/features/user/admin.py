@@ -24,7 +24,7 @@ Note:
     true: 마운트 자체가 없다(404). 상세는 ``config.py`` 의 ADMIN_DISABLED 필드 주석 참고.
 """
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter
@@ -32,6 +32,7 @@ from starlette.requests import Request
 
 from app.core.admin_filters import LocalDateFilter
 from app.core.security.admin_session import request_session_store
+from app.core.security.dependencies import get_refresh_token_store
 from app.features.user.models.models import User
 
 
@@ -129,10 +130,13 @@ class UserAdmin(ModelView, model=User):
     }
 
     # =========================================================================
-    # 관리 세션 폐기 (admin-session-hardening ADR-002·ADR-007)
+    # 관리 세션·refresh 토큰 폐기 (admin-session-hardening ADR-002·ADR-007·ADR-008)
     # =========================================================================
-    # 관리 화면에서 비활성화·슈퍼유저 해제·비밀번호 변경·삭제하면 그 사용자의 관리 세션(다른 브라우저
-    # 포함)을 바로 지운다 — 폐기는 API 경로(UserService)와 같은 ``AdminSessionStore.revoke_user`` 다.
+    # 판정은 ``revocations(user, data)`` 하나가 두 집합을 돌려준다(ADR-009):
+    #   - API refresh 토큰: 비활성화·비밀번호 해시 변경·삭제 — UserService 와 같은 집합.
+    #   - 관리 세션: 위 + 슈퍼유저 해제(관리 화면은 슈퍼유저 전용).
+    # 강등만 된 사용자는 일반 사용자로 API 를 계속 쓴다 — refresh 회전 때 DB 값으로 su=false 가 재발급된다.
+    # 폐기는 API 경로와 같은 ``RefreshTokenStore.revoke_user``·``AdminSessionStore.revoke_user`` 다(같은 Redis).
     # 이름·이메일 같은 일반 수정은 폐기하지 않는다. 저장소는 이 요청의 세션 미들웨어가 준다.
     #
     # after_* 가 아니라 on_* 훅(커밋 **전**, sqladmin 0.32 ``_queries.py`` 의 ``_update_async``·
@@ -142,20 +146,39 @@ class UserAdmin(ModelView, model=User):
     async def on_model_change(
         self, data: dict[str, Any], model: Any, is_created: bool, request: Request
     ) -> None:
-        if not is_created and revokes_admin_sessions(model, data):
-            await request_session_store(request).revoke_user(model.id)
+        if not is_created:
+            await _revoke(request, model.id, revocations(model, data))
 
     async def on_model_delete(self, model: Any, request: Request) -> None:
-        await request_session_store(request).revoke_user(model.id)
+        await _revoke(request, model.id, DELETED)
 
 
-def revokes_admin_sessions(user: Any, data: dict[str, Any]) -> bool:
-    """변경 전 ``user`` 와 저장할 ``data`` 를 비교 — 비활성화·슈퍼유저 해제·비밀번호 변경이면 True."""
-    return (
-        (user.is_active and data.get("is_active") is False)
-        or (user.is_superuser and data.get("is_superuser") is False)
-        or ("hashed_password" in data and data["hashed_password"] != user.hashed_password)
-    )
+class Revocation(NamedTuple):
+    """무엇을 폐기하나 — API refresh 토큰 family, 관리 세션."""
+
+    refresh: bool
+    admin_sessions: bool
+
+
+DELETED = Revocation(refresh=True, admin_sessions=True)
+
+
+def revocations(user: Any, data: dict[str, Any]) -> Revocation:
+    """변경 전 ``user`` 와 저장할 ``data`` 를 비교해 폐기 대상을 정한다(조건은 여기 한 곳)."""
+    deactivated = bool(user.is_active and data.get("is_active") is False)
+    password_changed = "hashed_password" in data and data["hashed_password"] != user.hashed_password
+    demoted = bool(user.is_superuser and data.get("is_superuser") is False)
+    refresh = deactivated or password_changed
+    return Revocation(refresh=refresh, admin_sessions=refresh or demoted)
+
+
+async def _revoke(request: Request, user_id: str, what: Revocation) -> None:
+    """refresh 를 먼저, 관리 세션을 이어서 폐기한다. 실패하면 예외 — 커밋 전이라 변경도 막힌다."""
+    sessions = request_session_store(request)
+    if what.refresh:
+        await get_refresh_token_store(sessions.redis).revoke_user(user_id)
+    if what.admin_sessions:
+        await sessions.revoke_user(user_id)
 
 
 # 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.
