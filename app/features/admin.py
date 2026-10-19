@@ -50,11 +50,18 @@ Note:
 로그인 (admin-login ADR-001~003):
     ``/admin`` 은 **활성 슈퍼유저** 로그인이 필요하다 — ``AdminAuthBackend``
     (``app/features/auth/admin_backend.py``)를 ``create_admin_interface()`` 가 주입한다.
-    계정은 ``scripts/create_superuser.py`` 로 만든다. 세션 쿠키는 ``admin_session``
-    (``SESSION_SECRET_KEY`` 로 서명, path ``/admin``, SameSite=Strict, HttpOnly, 8시간,
-    staging/production 은 Secure). 로그인 화면은 ``app/templates/admin/sqladmin/login.html``
+    계정은 ``scripts/create_superuser.py`` 로 만든다. 세션은 Redis 서버 세션이고 쿠키
+    ``admin_session`` 에는 세션 ID 만 있다(path ``/admin``, SameSite=Strict, HttpOnly, 절대 만료 8시간·
+    미사용 30분, staging/production 은 Secure — admin-session-hardening ADR-001). 로그인 화면은 ``app/templates/admin/sqladmin/login.html``
     (Bootstrap) 이 SQLAdmin 기본 화면을 덮어쓴다 — ``templates_dir`` 의 FileSystemLoader 가
     SQLAdmin 패키지 템플릿보다 먼저 찾아진다.
+
+CSRF (admin-session-hardening ADR-003·004):
+    ``/admin`` 의 POST·PUT·PATCH·DELETE 전부를 ``AdminCsrfMiddleware`` 가 검사한다. 로그인 이후 화면은
+    ``app/templates/admin/sqladmin/base.html`` 이 SQLAdmin 원본 base 를 확장해 ``<meta name="csrf-token">``
+    과 작은 인라인 스크립트(POST 폼에 hidden 토큰, 같은 출처 fetch/XHR 에 ``X-CSRF-Token``, 로그아웃 링크를
+    POST 폼으로)를 더한다. 로그아웃 라우트는 POST 만 받도록 바꿔 끼운다(``_logout_post_only``) — GET 링크로는
+    다른 사이트가 ``<img src>`` 로 강제 로그아웃시킬 수 있다.
 
 보안 주의 (이 저장소 고유):
     ``User`` 는 자격증명(``hashed_password``)을 보유한다. sqladmin 은
@@ -71,14 +78,17 @@ from redis.asyncio import Redis
 from sqladmin import Admin, ModelView
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from starlette.requests import Request
+from starlette.routing import Route
 
 from app.core.db.session import background_db_session
 from app.core.exception import ServiceUnavailableException
 from app.core.middlewares.client_ip import ClientIPResolver
+from app.core.security.admin_session import AdminSessionStore, csrf_token
 from app.core.security.dependencies import (
     get_password_hasher,
     get_refresh_token_store,
     get_token_service,
+    new_admin_session_store,
 )
 from app.core.security.rate_limit import RateLimiter
 from app.features.auth.admin_backend import AdminAuthBackend, SessionFactory
@@ -91,7 +101,7 @@ from app.features.reply.admin import admin_views as reply_admin_views
 from app.features.reports.admin import admin_views as reports_admin_views
 from app.features.sns.admin import admin_views as sns_admin_views
 from app.features.user.admin import admin_views as user_admin_views
-from config import DEPLOYED_ENVS, app_settings, middleware_settings, session_settings
+from config import DEPLOYED_ENVS, app_settings, middleware_settings
 
 # 등록 대상 뷰 목록 (SSOT). auth 는 자체 모델이 없어 관리 화면도 없다.
 # 순서는 기능명 사전순 — 사이드바 메뉴 순서가 곧 이 순서이고,
@@ -144,8 +154,11 @@ def build_admin_auth_backend(
     def rate_limiter(_request: Request) -> RateLimiter:
         return get_rate_limiter(_app_redis(app))
 
+    def session_store() -> AdminSessionStore:
+        return new_admin_session_store(_app_redis(app))
+
     return AdminAuthBackend(
-        secret_key=session_settings.SESSION_SECRET_KEY,
+        session_store_factory=session_store,
         https_only=app_settings.ENV in DEPLOYED_ENVS,
         session_factory=session_factory,
         auth_service_factory=auth_service,
@@ -166,8 +179,8 @@ def create_admin_interface(
 
     인증 백엔드와 로그인 템플릿 위치는 ``Admin`` 생성 인자라서 **이 함수 안에서** 주입한다
     (뷰 등록 쪽으로는 넣을 수 없다). 백엔드는 생성된 ``Admin`` 의 템플릿 환경을 받아 400·403·429
-    로그인 화면을 같은 템플릿으로 그린다. 로그인 폼의 CSRF 토큰도 같은 템플릿 환경의 전역
-    ``csrf_token(request)`` 로 백엔드에 연결한다.
+    로그인 화면을 같은 템플릿으로 그린다. CSRF 토큰은 같은 템플릿 환경의 전역 ``csrf_token(request)``
+    로 그린다(로그인 폼 hidden 필드·로그인 이후 화면의 meta). 로그아웃 라우트는 POST 전용으로 바꾼다.
 
     Args:
         app: FastAPI 인스턴스.
@@ -186,9 +199,21 @@ def create_admin_interface(
         templates_dir=str(ADMIN_TEMPLATES_DIR),
     )
     backend.templates = admin.templates
-    # 로그인 화면의 hidden CSRF 필드가 부른다 — 세션에 토큰이 없으면 여기서 만든다(security-ops-hardening ADR-004).
-    admin.templates.env.globals["csrf_token"] = backend.csrf_token
+    # 로그인 폼 hidden 필드·관리 화면 meta 가 부른다 — 세션에 토큰이 없으면 여기서 만든다.
+    admin.templates.env.globals["csrf_token"] = csrf_token
+    _logout_post_only(admin)
     return admin
+
+
+def _logout_post_only(admin: Admin) -> None:
+    """sqladmin 의 GET 로그아웃 라우트를 같은 엔드포인트의 POST 전용 라우트로 바꾼다(ADR-004).
+
+    POST 이므로 ``AdminCsrfMiddleware`` 가 토큰을 요구하고, GET 은 405 라 아무것도 바뀌지 않는다.
+    sqladmin 이 라우트 이름을 바꾸면 여기서 기동이 멈춘다(조용히 GET 로그아웃이 남지 않게).
+    """
+    routes = admin.admin.router.routes
+    [index] = [i for i, r in enumerate(routes) if getattr(r, "name", None) == "logout"]
+    routes[index] = Route("/logout", endpoint=admin.logout, name="logout", methods=["POST"])
 
 
 def register_admin_views(admin: Admin) -> None:

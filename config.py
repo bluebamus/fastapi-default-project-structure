@@ -922,9 +922,10 @@ class SessionSettings(BaseSettings):
     """세션 쿠키 설정.
 
     Note:
-        API 인증은 JWT(Bearer) 기반이다. 쿠키 세션은 ``/admin`` 로그인만 쓴다 —
-        ``SESSION_SECRET_KEY`` 가 그 쿠키(``admin_session``, 이름·수명은
-        ``app/features/auth/admin_backend.py`` 고정)를 서명한다(admin-login ADR-002).
+        API 인증은 JWT(Bearer) 기반이다. 쿠키 세션은 ``/admin`` 로그인만 쓴다 — 관리 세션은
+        Redis 서버 세션이고 쿠키(``admin_session``)에는 무작위 세션 ID 만 있다
+        (``app/core/security/admin_session.py``, admin-session-hardening ADR-001). ``SESSION_SECRET_KEY``
+        는 세션 ID 를 Redis 키로 바꾸는 HMAC 키다 — 바꾸면 모든 관리 세션이 무효가 된다.
         ``SESSION_COOKIE_NAME``·``SESSION_EXPIRE_SECONDS`` 는 관리 화면 쿠키에 쓰지 않는다.
         ``SESSION_COOKIE_NAME`` 은 접속 로그 미들웨어가 ``session_id`` 로 기록할
         쿠키 이름으로 읽는다.
@@ -942,11 +943,11 @@ class SessionSettings(BaseSettings):
         description="세션 쿠키 이름",
     )
 
-    # 세션 서명 키 (운영 환경에서 반드시 교체) — /admin 로그인 쿠키(admin_session)를 서명한다.
+    # 세션 키 (운영 환경에서 반드시 교체) — /admin 세션 ID 를 Redis 키로 바꾸는 HMAC 키.
     # 바꾸면 기존 관리자 세션이 모두 무효가 된다(다시 로그인).
     SESSION_SECRET_KEY: str = Field(
         default="change-this-session-secret-key",
-        description="세션 서명 키 (/admin 로그인 쿠키)",
+        description="관리 세션 키 (/admin 세션 ID → Redis 키 HMAC)",
     )
 
     # 세션 만료 시간 (초, 기본값 24시간)
@@ -954,6 +955,29 @@ class SessionSettings(BaseSettings):
         default=86400,
         description="세션 만료 시간(초)",
     )
+
+    # 관리 세션 절대 만료(초) — 로그인 시각 기준, 요청해도 연장되지 않는다. 쿠키 Max-Age 도 이 값.
+    ADMIN_SESSION_MAX_AGE_SECONDS: int = Field(
+        default=28800,
+        ge=60,
+        description="관리 세션 절대 만료(초, 기본 8시간)",
+    )
+
+    # 관리 세션 미사용 만료(초) — 요청마다 다시 잰다. 절대 만료를 넘기지 않는다.
+    ADMIN_SESSION_IDLE_SECONDS: int = Field(
+        default=1800,
+        ge=60,
+        description="관리 세션 미사용 만료(초, 기본 30분)",
+    )
+
+    @model_validator(mode="after")
+    def _idle_within_max_age(self) -> "SessionSettings":
+        """미사용 만료가 절대 만료보다 길면 뜻이 없다(절대 만료가 먼저 온다)."""
+        if self.ADMIN_SESSION_IDLE_SECONDS > self.ADMIN_SESSION_MAX_AGE_SECONDS:
+            raise ValueError(
+                "ADMIN_SESSION_IDLE_SECONDS 는 ADMIN_SESSION_MAX_AGE_SECONDS 이하여야 합니다."
+            )
+        return self
 
 
 # =============================================================================

@@ -28,7 +28,11 @@ _POLICY = OwnershipPolicy()
 # user 의 해시기·회전 저장소는 이 경로(활성 유지)에서 쓰이지 않는다.
 _CASES = [
     (lambda: BlogService(None, _POLICY), "update_post", PostUpdate(title="unchanged")),
-    (lambda: UserService(None, _POLICY, None, None), "update_user", UserUpdate(is_active=True)),
+    (
+        lambda: UserService(None, _POLICY, None, None, None),
+        "update_user",
+        UserUpdate(is_active=True),
+    ),
     (lambda: ReplyService(None, _POLICY), "update_reply", ReplyUpdate(content="unchanged")),
     (lambda: SnsService(None, _POLICY), "update_post", SnsPostUpdate(content="unchanged")),
 ]

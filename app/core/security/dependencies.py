@@ -5,6 +5,8 @@
 - ``get_password_hasher`` — auth(가입·로그인)와 user(관리자의 사용자 생성)가 함께 쓴다.
 - ``get_token_service`` — auth 는 발급, 여기 ``get_current_principal`` 은 검증.
 - ``get_refresh_token_store`` — auth 는 회전, user 는 비활성화·삭제 시 ``revoke_user``.
+- ``get_admin_session_store`` — user 는 비활성화·강등·삭제 시 관리 세션도 ``revoke_user``(``ADMIN_DISABLED`` 면 None).
+  ``new_admin_session_store`` 는 관리 화면 조립(``app/features/admin.py``)이 같은 설정으로 저장소를 만든다.
 - ``get_ownership_policy`` — blog·sns·reply·user 서비스의 수정·삭제 권한.
 
 라우트는 접근 수준을 뷰마다 선언한다(``app/core/security/access.py`` — 선언이 없으면 기동 거부)::
@@ -27,11 +29,12 @@ from redis.asyncio import Redis
 
 from app.core.exception import ErrorResponse, ForbiddenException
 from app.core.redis import get_redis
+from app.core.security.admin_session import AdminSessionStore
 from app.core.security.authorization import OwnershipPolicy, Principal
 from app.core.security.password_hasher import PasswordHasher
 from app.core.security.refresh_store import RefreshTokenStore
 from app.core.security.tokens import InvalidTokenException, TokenService, TokenType
-from config import jwt_settings
+from config import app_settings, jwt_settings, session_settings
 
 # 로그인 엔드포인트에서 access token 을 발급받는다(OpenAPI 의 "Authorize" 버튼이 이 경로를 쓴다).
 # 토큰이 없으면 FastAPI 가 401 + ``WWW-Authenticate: Bearer`` 를 낸다.
@@ -55,6 +58,23 @@ def get_token_service() -> TokenService:
 def get_refresh_token_store(redis: Redis = Depends(get_redis)) -> RefreshTokenStore:
     """lifespan 의 Redis 로 회전 저장소를 만든다."""
     return RefreshTokenStore(redis, jwt_settings.refresh_token_ttl_seconds)
+
+
+def new_admin_session_store(redis: Redis) -> AdminSessionStore:
+    """설정(``SESSION_SECRET_KEY``·``ADMIN_SESSION_*``)으로 관리 세션 저장소를 만든다."""
+    return AdminSessionStore(
+        redis,
+        secret_key=session_settings.SESSION_SECRET_KEY,
+        max_age_seconds=session_settings.ADMIN_SESSION_MAX_AGE_SECONDS,
+        idle_seconds=session_settings.ADMIN_SESSION_IDLE_SECONDS,
+    )
+
+
+def get_admin_session_store(redis: Redis = Depends(get_redis)) -> AdminSessionStore | None:
+    """관리 세션 폐기용 저장소 — 관리 화면을 끈 앱(``ADMIN_DISABLED=true``)에는 관리 세션이 없어 None."""
+    if app_settings.ADMIN_DISABLED:
+        return None
+    return new_admin_session_store(redis)
 
 
 def get_ownership_policy() -> OwnershipPolicy:

@@ -24,10 +24,14 @@ Note:
     true: 마운트 자체가 없다(404). 상세는 ``config.py`` 의 ADMIN_DISABLED 필드 주석 참고.
 """
 
+from typing import Any
+
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter
+from starlette.requests import Request
 
 from app.core.admin_filters import LocalDateFilter
+from app.core.security.admin_session import request_session_store
 from app.features.user.models.models import User
 
 
@@ -123,6 +127,20 @@ class UserAdmin(ModelView, model=User):
         User.created_at: "가입 시각",
         User.updated_at: "수정 시각",
     }
+
+    # =========================================================================
+    # 관리 세션 폐기 (admin-session-hardening ADR-002)
+    # =========================================================================
+    # 관리 화면에서 비활성화·강등·삭제하면 그 사용자의 관리 세션(다른 브라우저 포함)을 바로 지운다.
+    # API 경로(UserService)와 같은 규칙이다. 저장소는 이 요청의 세션 미들웨어가 준다.
+    async def after_model_change(
+        self, data: dict[str, Any], model: Any, is_created: bool, request: Request
+    ) -> None:
+        if not (model.is_active and model.is_superuser):
+            await request_session_store(request).revoke_user(model.id)
+
+    async def after_model_delete(self, model: Any, request: Request) -> None:
+        await request_session_store(request).revoke_user(model.id)
 
 
 # 취합기 ``app/features/admin.py`` 가 이 모듈에서 직접 import 해 ADMIN_VIEWS 에 넣는다.

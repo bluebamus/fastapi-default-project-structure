@@ -1,0 +1,82 @@
+{% extends "sqladmin_original/base.html" %}
+{#
+  SQLAdmin 원본 base.html 을 확장한다(복사하지 않는다) — admin-session-hardening ADR-004.
+  원본 대비 바꾼 것은 두 블록뿐이다(둘 다 super() 로 원본 내용을 유지):
+    head_meta : <meta name="csrf-token"> 추가
+    tail      : CSRF 인라인 스크립트 추가
+      1) method=POST 폼 제출에 hidden csrf_token 을 붙인다(생성·수정 폼).
+      2) 같은 출처의 GET·HEAD·OPTIONS 가 아닌 fetch / XMLHttpRequest(jQuery $.ajax 포함)에
+         X-CSRF-Token 헤더를 붙인다(삭제 모달·일괄 삭제 DELETE, import fetch).
+      3) 로그아웃 링크(원본 layout.html 의 <a href=admin:logout>) 클릭을 토큰을 실은 POST 폼 제출로 바꾼다
+         — 로그아웃 라우트는 POST 전용이다(app/features/admin.py 의 _logout_post_only).
+  sqladmin 을 올릴 때 원본의 블록 이름·로그아웃 링크가 바뀌면 tests/test_admin_csrf.py 의 드리프트 검사가 실패한다.
+#}
+{% block head_meta %}
+{{ super() }}
+<meta name="csrf-token" content="{{ csrf_token(request) }}">
+{% endblock %}
+{% block tail %}
+{{ super() }}
+<script>
+(function () {
+  var token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+  var logoutUrl = {{ request.url_for('admin:logout') | string | tojson }};
+  var SAFE = /^(GET|HEAD|OPTIONS)$/i;
+
+  function needsToken(method, url) {
+    return !SAFE.test(method || 'GET') && new URL(url, window.location.href).origin === window.location.origin;
+  }
+
+  function addHidden(form) {
+    if (form.querySelector('input[name="csrf_token"]')) return;
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'csrf_token';
+    input.value = token;
+    form.appendChild(input);
+  }
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if ((form.getAttribute('method') || 'get').toLowerCase() === 'post') addHidden(form);
+  }, true);
+
+  var open = XMLHttpRequest.prototype.open;
+  var send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this._csrfNeeded = needsToken(method, String(url));
+    return open.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function () {
+    if (this._csrfNeeded) this.setRequestHeader('X-CSRF-Token', token);
+    return send.apply(this, arguments);
+  };
+
+  var nativeFetch = window.fetch;
+  window.fetch = function (input, init) {
+    var isRequest = input instanceof Request;
+    var method = (init && init.method) || (isRequest ? input.method : 'GET');
+    var url = isRequest ? input.url : String(input);
+    if (needsToken(method, url)) {
+      init = Object.assign({}, init);
+      var headers = new Headers(init.headers || (isRequest ? input.headers : undefined));
+      headers.set('X-CSRF-Token', token);
+      init.headers = headers;
+    }
+    return nativeFetch.call(this, input, init);
+  };
+
+  document.addEventListener('click', function (event) {
+    var link = event.target.closest && event.target.closest('a[href]');
+    if (!link || link.href !== logoutUrl) return;
+    event.preventDefault();
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = logoutUrl;
+    addHidden(form);
+    document.body.appendChild(form);
+    form.submit();
+  });
+})();
+</script>
+{% endblock %}
