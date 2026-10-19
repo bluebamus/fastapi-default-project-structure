@@ -37,6 +37,8 @@ _IGNORED_DIRS = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache",
 ALLOWED_MISSING = {
     "app/apps.py",  # 제거된 중앙 등록 파일 — 과거 배선을 설명하는 부정 서술
     "inventory/__init__.py",  # DEVELOPMENT: 새 기능을 만드는 가상 예시
+    # sqladmin 패키지 템플릿의 접두사 로더 이름 — 저장소 파일이 아니다(admin-session-hardening ADR-004).
+    "sqladmin_original/base.html",
 }
 
 

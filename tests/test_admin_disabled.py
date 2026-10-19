@@ -6,7 +6,7 @@ import 해 두어 같은 프로세스에서는 판별할 수 없다.
 1. ``/admin`` 이하 경로가 모두 404 — 마운트 자체가 없다.
 2. 앱이 내보내는 응답(OpenAPI·``/docs``·공개 GET 경로·오류 본문·헤더) 어디에도 ``/admin`` 이 없다.
 3. 기동 로그가 관리 화면 경로를 싣지 않는다.
-4. sqladmin·인증 백엔드가 import 되지 않고 세션 미들웨어가 없다.
+4. sqladmin·인증 백엔드가 import 되지 않고 세션 미들웨어·관리 세션 저장소가 없다(admin-session-hardening).
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ _PROBE = r"""
 import json, sys
 import main
 from fastapi.testclient import TestClient
+from app.core.security.dependencies import get_admin_session_store
 
 client = TestClient(main.app, raise_server_exceptions=False)
 admin_paths = ["/admin", "/admin/", "/admin/login", "/admin/statics/css/main.css"]
@@ -48,6 +49,7 @@ print("PROBE=" + json.dumps({
     "backend_loaded": "app.features.auth.admin_backend" in sys.modules,
     "session_middleware": [m.cls.__name__ for m in main.app.user_middleware if "Session" in m.cls.__name__],
     "has_admin": hasattr(main, "admin"),
+    "admin_session_store": get_admin_session_store(object()) is not None,
 }))
 """
 
@@ -101,6 +103,7 @@ def test_admin_layer_objects_are_not_created(probe):
     assert probe["backend_loaded"] is False
     assert probe["session_middleware"] == []
     assert probe["has_admin"] is False
+    assert probe["admin_session_store"] is False  # 폐기 훅도 저장소를 만들지 않는다
 
 
 def test_startup_log_does_not_mention_admin_path():

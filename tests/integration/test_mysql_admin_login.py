@@ -19,7 +19,7 @@ from fakeredis import FakeAsyncRedis
 from fastapi import FastAPI
 
 from app.features import admin as admin_module
-from tests.admin_csrf import admin_login
+from tests.admin_csrf import admin_login, admin_logout
 from tests.integration.conftest import (
     MYSQL_DATABASE,
     MYSQL_HOST,
@@ -86,7 +86,7 @@ async def test_superuser_from_script_logs_into_admin(mysql_session_maker):
             assert (await admin_login(client, username, "wrong-password")).status_code == 400
             assert (await admin_login(client, username, PASSWORD)).status_code == 302
             assert (await client.get("/admin/")).status_code == 200
-            assert (await client.get("/admin/logout")).status_code == 302
+            assert (await admin_logout(client)).status_code == 302  # POST + 토큰
             assert (await client.get("/admin/")).status_code == 302
     finally:
         await app.state.redis.aclose()

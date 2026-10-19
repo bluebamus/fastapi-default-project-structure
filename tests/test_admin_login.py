@@ -1,7 +1,7 @@
 """/admin 로그인 — ``AdminAuthBackend``·Bootstrap 로그인 화면·create_superuser 흐름 (admin-login).
 
 실물 부품으로 조립한다: SQLite 파일 DB(``NullPool`` — create_superuser 가 자기 이벤트 루프를 돌린다),
-fakeredis(레이트 리밋), 실제 ``build_admin_auth_backend``·``create_admin_interface``. 앱은 테스트마다
+fakeredis(레이트 리밋·관리 세션), 실제 ``build_admin_auth_backend``·``create_admin_interface``. 앱은 테스트마다
 새 ``FastAPI()`` 이고 ``app.state.redis`` 에 fakeredis 를 둔다(lifespan 이 하는 일과 같다).
 """
 
@@ -11,11 +11,9 @@ import asyncio
 import io
 import json
 import re
-from base64 import b64decode, b64encode
 
 import bcrypt
 import httpx
-import itsdangerous
 import pytest
 import pytest_asyncio
 from fakeredis import FakeAsyncRedis
@@ -27,15 +25,24 @@ from sqlalchemy.pool import NullPool
 import config
 from app.core.db.models_registry import import_all_models
 from app.core.db.session import Base
-from app.core.security.dependencies import get_password_hasher
+from app.core.security import admin_session
+from app.core.security.admin_session import ADMIN_SESSION_COOKIE
+from app.core.security.dependencies import get_password_hasher, new_admin_session_store
 from app.features import admin as admin_module
 from app.features.auth import admin_backend
-from app.features.auth.admin_backend import ADMIN_SESSION_COOKIE, AdminAuthBackend
+from app.features.auth.admin_backend import AdminAuthBackend
 from app.features.user.models.models import User
 from config import jwt_settings, session_settings
 from scripts.create_superuser import EXIT_OK
 from scripts.create_superuser import main as create_superuser_main
-from tests.admin_csrf import CSRF_INPUT, admin_csrf_token, admin_login
+from tests.admin_csrf import (
+    CSRF_INPUT,
+    admin_csrf_token,
+    admin_login,
+    admin_logout,
+    admin_session_data,
+    admin_session_id,
+)
 
 import_all_models()
 
@@ -114,26 +121,22 @@ async def _login(client, username: str, password: str = PASSWORD) -> httpx.Respo
     return await admin_login(client, username, password)
 
 
-def _session_data(client) -> dict:
-    """클라이언트 쿠키 jar 의 admin_session 을 풀어 본다(서명 검증 포함)."""
-    raw = client.cookies.get(ADMIN_SESSION_COOKIE)
-    if raw is None:
-        return {}
-    signer = itsdangerous.TimestampSigner(session_settings.SESSION_SECRET_KEY)
-    return json.loads(b64decode(signer.unsign(raw.encode())))
+async def _session_data(client, redis) -> dict:
+    """클라이언트 쿠키의 세션 ID 로 Redis 의 관리 세션 내용을 읽는다."""
+    return await admin_session_data(client, redis)
 
 
 # =============================================================================
 # 백엔드 — login / authenticate / logout
 # =============================================================================
-async def test_active_superuser_logs_in_and_reaches_index(client, maker):
+async def test_active_superuser_logs_in_and_reaches_index(client, maker, redis):
     user_id = await _add_user(maker, "root")
 
     response = await _login(client, "root")
 
     assert response.status_code == 302
     assert response.headers["location"].endswith("/admin/")
-    assert _session_data(client) == {"user_id": user_id}
+    assert await _session_data(client, redis) == {"user_id": user_id}
     assert (await client.get("/admin/")).status_code == 200
 
 
@@ -148,7 +151,7 @@ async def test_active_superuser_logs_in_and_reaches_index(client, maker):
     ids=["wrong-password", "unknown-user", "not-superuser", "inactive"],
 )
 async def test_failed_login_is_400_with_one_generic_message(
-    client, maker, username, password, superuser, active
+    client, maker, username, password, superuser, active, redis
 ):
     for name in ("root", "plain", "sleepy"):
         await _add_user(maker, name, superuser=name != "plain", active=name != "sleepy")
@@ -158,7 +161,7 @@ async def test_failed_login_is_400_with_one_generic_message(
     assert response.status_code == 400
     assert admin_backend.INVALID_LOGIN_MESSAGE in response.text
     assert "alert alert-danger" in response.text
-    assert "user_id" not in _session_data(client)
+    assert "user_id" not in await _session_data(client, redis)
     assert (await client.get("/admin/")).status_code == 302
 
 
@@ -173,7 +176,7 @@ async def test_too_many_attempts_redraw_login_with_429_and_retry_after(client, m
     assert int(response.headers["Retry-After"]) >= 1
     assert admin_backend.TOO_MANY_MESSAGE in response.text
     assert 'name="password"' in response.text
-    keys = {key.decode() for key in await redis.keys("*")}
+    keys = {key.decode() for key in await redis.keys("admin:rl:*")}  # 세션 키는 따로 본다
     assert keys and all(key.startswith("admin:rl:login:") for key in keys)  # API 로그인 키와 분리
 
 
@@ -183,11 +186,11 @@ async def test_success_resets_ip_username_counter(client, maker, redis):
 
     assert (await _login(client, "root")).status_code == 302
 
-    keys = {key.decode() for key in await redis.keys("*")}
+    keys = {key.decode() for key in await redis.keys("admin:rl:*")}  # 세션 키는 따로 본다
     assert keys == {"admin:rl:login:127.0.0.1"}  # IP 카운터만 남는다
 
 
-async def test_demoted_superuser_is_rejected_on_next_request(client, maker):
+async def test_demoted_superuser_is_rejected_on_next_request(client, maker, redis):
     user_id = await _add_user(maker, "root")
     await _login(client, "root")
     assert (await client.get("/admin/")).status_code == 200
@@ -197,7 +200,7 @@ async def test_demoted_superuser_is_rejected_on_next_request(client, maker):
     response = await client.get("/admin/")
     assert response.status_code == 302
     assert response.headers["location"].endswith("/admin/login")
-    assert _session_data(client) == {}  # 세션도 비운다
+    assert await _session_data(client, redis) == {}  # 세션도 비운다
 
 
 async def test_deactivated_superuser_is_rejected_on_next_request(client, maker):
@@ -209,35 +212,34 @@ async def test_deactivated_superuser_is_rejected_on_next_request(client, maker):
     assert (await client.get("/admin/")).status_code == 302
 
 
-async def test_logout_clears_session(client, maker):
+async def test_logout_clears_session(client, maker, redis):
     await _add_user(maker, "root")
     await _login(client, "root")
 
-    response = await client.get("/admin/logout")
+    response = await admin_logout(client)
 
     assert response.status_code == 302
-    assert _session_data(client) == {}
+    assert await _session_data(client, redis) == {}
     assert (await client.get("/admin/")).status_code == 302
 
 
-async def test_login_replaces_preexisting_session_data(client, maker):
-    """세션 고정 방지 — 로그인 전 세션 내용(심어 둔 값 포함)은 남지 않는다."""
+async def test_login_replaces_preexisting_session_data(client, maker, redis):
+    """세션 고정 방지 — 로그인 전 세션 내용(심어 둔 값 포함)은 남지 않고 세션 ID 도 바뀐다."""
     user_id = await _add_user(maker, "root")
-    signer = itsdangerous.TimestampSigner(session_settings.SESSION_SECRET_KEY)
-    planted = b64encode(json.dumps({"planted": "x", "user_id": "attacker"}).encode())
-    # httpx 는 점 없는 호스트의 쿠키를 "<host>.local" 도메인으로 저장한다 — 서버가 내려 줄 쿠키와
-    # 같은 자리에 심어야 로그인 응답이 그것을 덮어쓴다.
-    client.cookies.set(
-        ADMIN_SESSION_COOKIE,
-        signer.sign(planted).decode(),
-        domain="testserver.local",
-        path="/admin",
-    )
-    assert _session_data(client)["planted"] == "x"
+    await admin_csrf_token(client)  # 로그인 전 세션(sid A)
+    before = admin_session_id(client)
+    store = new_admin_session_store(redis)
+    key = store.key(before)
+    record = json.loads(await redis.get(key))
+    record["data"].update(planted="x", user_id="attacker")
+    await redis.set(key, json.dumps(record))
+    assert (await _session_data(client, redis))["planted"] == "x"
 
     await _login(client, "root")
 
-    assert _session_data(client) == {"user_id": user_id}
+    assert admin_session_id(client) != before
+    assert await redis.get(key) is None  # 이전 키는 지워졌다
+    assert await _session_data(client, redis) == {"user_id": user_id}
 
 
 async def test_session_cookie_attributes(client, maker):
@@ -353,7 +355,7 @@ async def test_create_superuser_then_admin_login_flow(client, maker):
     assert (await _login(client, "worker")).status_code == 400  # 일반 사용자는 못 들어온다
     assert (await _login(client, "boss")).status_code == 302
     assert (await client.get("/admin/")).status_code == 200
-    assert (await client.get("/admin/logout")).status_code == 302
+    assert (await admin_logout(client)).status_code == 302
     assert (await client.get("/admin/")).status_code == 302
 
 
@@ -364,7 +366,7 @@ def test_main_app_admin_requires_login():
     assert isinstance(main.admin.authentication_backend, AdminAuthBackend)
     assert main.admin.templates_dir == str(admin_module.ADMIN_TEMPLATES_DIR)
     assert (admin_module.ADMIN_TEMPLATES_DIR / "sqladmin" / "login.html").is_file()
-    assert config.session_settings.SESSION_SECRET_KEY  # 서명 키는 기존 설정
+    assert config.session_settings.SESSION_SECRET_KEY  # 세션 키 HMAC 는 기존 설정
 
 
 # =============================================================================
@@ -386,11 +388,11 @@ async def _post(client, csrf_token: str | None, username: str = "root") -> httpx
     return await client.post("/admin/login", data=data)
 
 
-async def test_login_page_renders_hidden_csrf_field_bound_to_session(client):
+async def test_login_page_renders_hidden_csrf_field_bound_to_session(client, redis):
     token = await admin_csrf_token(client)
 
     assert len(token) >= 43  # token_urlsafe(32)
-    assert _session_data(client)["csrf_token"] == token
+    assert (await _session_data(client, redis))["csrf_token"] == token
     assert await admin_csrf_token(client) == token  # 다시 그려도 같은 토큰
 
 
@@ -408,11 +410,11 @@ async def test_post_without_matching_csrf_token_is_403_before_rate_limit_and_cre
     assert response.status_code == 403
     assert admin_backend.CSRF_FAILED_MESSAGE in response.text
     assert 'name="password"' in response.text  # 로그인 화면을 다시 그린다
-    assert await redis.keys("*") == []  # 레이트 리밋 카운터도 늘지 않는다
-    assert "user_id" not in _session_data(client)
+    assert await redis.keys("admin:rl:*") == []  # 레이트 리밋 카운터도 늘지 않는다
+    assert "user_id" not in await _session_data(client, redis)
 
 
-async def test_post_without_any_session_is_403(client, admin_app, maker):
+async def test_post_without_any_session_is_403(client, admin_app, maker, redis):
     _, backend = admin_app
     await _add_user(maker, "root")
     _refuse_credentials(backend)
@@ -421,7 +423,10 @@ async def test_post_without_any_session_is_403(client, admin_app, maker):
 
     assert response.status_code == 403
     # 다시 그린 화면은 새 토큰을 싣는다 — 사용자가 바로 재시도할 수 있다.
-    assert CSRF_INPUT.search(response.text).group(1) == _session_data(client)["csrf_token"]
+    assert (
+        CSRF_INPUT.search(response.text).group(1)
+        == (await _session_data(client, redis))["csrf_token"]
+    )
 
 
 async def test_token_from_another_session_is_rejected(admin_app, maker):
@@ -452,12 +457,12 @@ async def test_failed_login_keeps_token_so_the_user_can_retry(client, maker):
     assert (await _post(client, token)).status_code == 302
 
 
-async def test_successful_login_rotates_csrf_token(client, maker):
+async def test_successful_login_rotates_csrf_token(client, maker, redis):
     user_id = await _add_user(maker, "root")
     before = await admin_csrf_token(client)
 
     assert (await _post(client, before)).status_code == 302
-    assert _session_data(client) == {"user_id": user_id}  # 이전 토큰은 버려졌다
+    assert await _session_data(client, redis) == {"user_id": user_id}  # 이전 토큰은 버려졌다
 
     after = await admin_csrf_token(client)
     assert after != before
@@ -468,14 +473,14 @@ async def test_csrf_comparison_is_constant_time(client, maker, monkeypatch):
     await _add_user(maker, "root")
     token = await admin_csrf_token(client)
     calls = []
-    real = admin_backend.hmac.compare_digest
+    real = admin_session.hmac.compare_digest
 
     def spy(a, b):
         calls.append((a, b))
         return real(a, b)
 
-    monkeypatch.setattr(admin_backend.hmac, "compare_digest", spy)
+    monkeypatch.setattr(admin_session.hmac, "compare_digest", spy)
 
     assert (await _post(client, token)).status_code == 302
-    # 같은 hmac 모듈을 세션 서명 검증(itsdangerous)도 쓴다 — 토큰 대조 호출이 있는지만 본다.
+    # 토큰 대조 호출이 있는지만 본다.
     assert (token.encode(), token.encode()) in calls

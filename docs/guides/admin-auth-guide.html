@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="fastapi-default-project-structure 관리 화면 인증 안내서 — /admin 서명 세션 쿠키와 API JWT 의 범위, 흐름, 운영">
+<meta name="description" content="fastapi-default-project-structure 관리 화면 인증 안내서 — /admin Redis 서버 세션·CSRF 와 API JWT 의 범위, 흐름, 운영">
 <title>관리 화면 인증 안내서 | /admin 로그인·세션·운영</title>
 <style>
 :root{color-scheme:light;--ink:#183047;--muted:#4d6175;--accent:#12657a;--line:#d5e0e8;--paper:#fff;--bg:#edf3f6}
@@ -17,344 +17,475 @@ header{background:#15374b;color:#fff;padding:3rem max(5vw,1rem)}header .eyebrow{
 </head>
 <body>
 <a class="skip" href="#main-content">본문으로 바로 이동</a>
-<header><div class="eyebrow">fastapi-default-project-structure · 관리 화면 인증 안내서</div><h1>/admin 인증: 슈퍼유저 로그인 · 서명 세션 쿠키 · ADMIN_DISABLED</h1><p>SQLAdmin 관리 화면의 로그인과 세션이 어떻게 조립되고, 요청마다 무엇을 확인하며, API 인증(JWT)과 어디서 갈라지는지 코드 기준으로 설명한다. 이 주제의 원본 문서다 — 코드와 다르면 코드가 정답이며 이 문서를 고친다. 설계 결정의 근거는 CRP 그룹 <a href="../crp/groups/admin-login/design-baseline.md">admin-login</a> 에 있다.</p><p>기준일: 2026-10-12 · 기준: 브랜치 <code>feat/admin-login</code> 의 소스·테스트 · <a href="../../README.md">저장소 README</a> · <a href="ARCHITECTURE.md#12-sqladmin">ARCHITECTURE §12</a> · <a href="server-lifecycle-guide.html">서버 수명주기 안내서</a></p></header>
+<header><div class="eyebrow">fastapi-default-project-structure · 관리 화면 인증 안내서</div><h1>/admin 인증: 슈퍼유저 로그인 · Redis 서버 세션 · CSRF · ADMIN_DISABLED</h1><p>SQLAdmin 관리 화면의 로그인과 세션이 어떻게 조립되고, 요청마다 무엇을 확인하며, 상태를 바꾸는 요청을 어떻게 CSRF 로부터 지키고, API 인증(JWT)과 어디서 갈라지는지 코드 기준으로 설명한다. 이 주제의 원본 문서다 — 코드와 다르면 코드가 정답이며 이 문서를 고친다. 설계 결정의 근거는 CRP 그룹 <a href="../crp/groups/admin-login/design-baseline.md">admin-login</a>·<a href="../crp/groups/security-ops-hardening/design-baseline.md">security-ops-hardening</a>·<a href="../crp/groups/admin-session-hardening/design-baseline.md">admin-session-hardening</a> 에 있다.</p><p>기준일: 2026-10-19 · 기준: 브랜치 <code>feat/admin-session</code> 의 소스·테스트 · <a href="../../README.md">저장소 README</a> · <a href="ARCHITECTURE.md#12-sqladmin">ARCHITECTURE §12</a> · <a href="server-lifecycle-guide.html">서버 수명주기 안내서</a></p></header>
 <div class="layout">
-<nav aria-label="문서 목차"><strong>목차</strong><ol><li><a href="#overview">개요와 범위 — 두 인증 체계</a></li><li><a href="#architecture">구성도와 주입 관계</a></li><li><a href="#startup">기동 결정 흐름</a></li><li><a href="#login">로그인 시퀀스</a></li><li><a href="#per-request">요청별 인증 흐름</a></li><li><a href="#failures">실패 경로</a></li><li><a href="#logout">로그아웃 흐름</a></li><li><a href="#cookie">세션 쿠키 구조와 속성</a></li><li><a href="#lifecycle">계정 수명주기</a></li><li><a href="#security">보안 설계 근거와 위협 모델</a></li><li><a href="#ops">운영 — 설정·배포 체크리스트·문제 해결</a></li><li><a href="#extend">확장 시 주의</a></li></ol></nav>
+<nav aria-label="문서 목차"><strong>목차</strong><ol><li><a href="#overview">개요와 범위 — 두 인증 체계</a></li><li><a href="#architecture">구성도와 주입 관계</a></li><li><a href="#session">세션 구조 — 서명 쿠키에서 Redis 서버 세션으로</a></li><li><a href="#startup">기동 결정 흐름</a></li><li><a href="#login">로그인 시퀀스</a></li><li><a href="#per-request">요청별 인증 흐름</a></li><li><a href="#csrf">CSRF 흐름 — meta · 스크립트 · 미들웨어</a></li><li><a href="#failures">실패 경로</a></li><li><a href="#logout">로그아웃 흐름</a></li><li><a href="#revoke">폐기 흐름 — 강등·비활성화·비밀번호 변경·삭제</a></li><li><a href="#lifecycle">계정 수명주기</a></li><li><a href="#security">보안 설계 근거와 위협 모델</a></li><li><a href="#ops">운영 — 설정·배포 체크리스트·문제 해결</a></li><li><a href="#extend">확장 시 주의</a></li></ol></nav>
 <main id="main-content">
 <aside class="callout"><span class="pill">도식 읽기</span><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·코드·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
 <section id="overview"><h2>1. 개요와 범위 — 두 인증 체계</h2>
 <p>이 저장소에는 인증 체계가 <strong>둘</strong> 있다. 서로 다른 경로에 붙고, 서로를 대신하지 않는다.</p>
 <ul>
 <li><strong>API 인증</strong> — OAuth2 password flow 로 받은 <strong>JWT Bearer</strong> 토큰. <code>/api/v1/...</code> 의 보호 경로가
-<code>Authorization: Bearer</code> 헤더만 본다(<code>app/core/security/dependencies.py</code>:38 <code>oauth2_scheme</code>, :68 <code>get_current_principal</code>).
+<code>Authorization: Bearer</code> 헤더만 본다(<code>app/core/security/dependencies.py</code> 의 <code>oauth2_scheme</code>·<code>get_current_principal</code>).
 어느 API 뷰가 보호되는지는 뷰마다 선언한 접근 수준(<code>Public</code>·<code>PublicWrite</code>·<code>LoginRequired</code>·<code>SuperuserRequired</code>)이
 정하고, 선언이 빠진 뷰가 하나라도 있으면 서버가 기동하지 않는다(<code>app/core/security/access.py</code> <code>AccessPolicyGuard</code>).</li>
-<li><strong>관리 화면 인증</strong> — <code>/admin</code> 에 마운트된 SQLAdmin 하위 앱 안에서만 동작하는 <strong>서명 세션 쿠키</strong>
-<code>admin_session</code>. 로그인·세션 확인·로그아웃은 <code>AdminAuthBackend</code>(<code>app/features/auth/admin_backend.py</code>:66)가 한다.</li>
+<li><strong>관리 화면 인증</strong> — <code>/admin</code> 에 마운트된 SQLAdmin 하위 앱 안에서만 동작하는 <strong>Redis 서버 세션</strong>.
+쿠키 <code>admin_session</code> 에는 무작위 세션 ID 만 있고 내용은 Redis 에 있다(<code>app/core/security/admin_session.py</code>).
+로그인·세션 확인·로그아웃은 <code>AdminAuthBackend</code>(<code>app/features/auth/admin_backend.py</code>), 상태를 바꾸는 모든 요청의 CSRF 검사는
+<code>AdminCsrfMiddleware</code> 가 한다.</li>
 </ul>
-<aside class="callout"><strong>확인 결과 — 세션은 /admin 전용이다.</strong> 앱 전역 <code>SessionMiddleware</code> 는 없고(메인 앱 <code>user_middleware</code> 에 없음),
-세션 미들웨어는 SQLAdmin 이 <code>AuthenticationBackend.middlewares</code> 로 받아 <strong>자기 하위 Starlette 앱에만</strong> 붙인다.
-코드에서 <code>request.session</code> 을 쓰는 곳은 <code>app/features/auth/admin_backend.py</code> 하나다. API 경로는 유효한 <code>admin_session</code>
+<aside class="callout"><strong>2026-10-19 변경 (admin-session-hardening).</strong> 관리 세션이 서명 쿠키(starlette <code>SessionMiddleware</code>, 내용 전체가
+쿠키)에서 <strong>Redis 서버 세션</strong>으로 바뀌었다 — 로그아웃·강등·비활성화·삭제가 서버에서 즉시 세션을 지우고, 로그아웃 전에 복사해 둔 쿠키는 더
+쓸 수 없다. 로그인 이후의 생성·수정·삭제·로그아웃도 CSRF 토큰을 요구하고, 로그아웃은 POST 만 받는다. 결정 근거:
+<a href="../crp/groups/admin-session-hardening/design-baseline.md">admin-session-hardening design-baseline</a>.</aside>
+<aside class="callout"><strong>세션은 /admin 전용이다.</strong> 앱 전역 세션 미들웨어는 없고, <code>RedisSessionMiddleware</code>·<code>AdminCsrfMiddleware</code> 는
+SQLAdmin 이 <code>AuthenticationBackend.middlewares</code> 로 받아 <strong>자기 하위 Starlette 앱에만</strong> 붙인다. API 경로는 <code>admin_session</code>
 쿠키를 보내도 401 이다. 설정 <code>SESSION_COOKIE_NAME</code> 은 접속 로그 미들웨어가 그 쿠키 <strong>값을 기록용으로 읽을 뿐</strong>
-(<code>app/core/middlewares/user_info_middleware.py</code>:58·:175) 인증에 쓰지 않는다.</aside>
-<p>이 사실은 테스트로 고정돼 있다 — <code>tests/test_admin_session_scope.py</code> 의
-<code>test_main_app_has_no_session_middleware</code>, <code>test_session_middleware_lives_only_in_the_admin_sub_app</code>,
-<code>test_api_is_not_authenticated_by_a_valid_admin_session_cookie</code>, <code>test_admin_session_cookie_is_never_set_outside_admin</code>.</p>
+(<code>app/core/middlewares/user_info_middleware.py</code>) 인증에 쓰지 않는다. 테스트: <code>tests/test_admin_session_scope.py</code>.</aside>
 <h3><code>SESSION_SECRET_KEY</code> 의 소비처 (전부)</h3>
-<div class="table-wrap"><table><thead><tr><th scope="col">소비처</th><th scope="col">용도</th><th scope="col">근거</th></tr></thead><tbody><tr><td><code>build_admin_auth_backend()</code> → <code>AdminAuthBackend</code> → starlette <code>SessionMiddleware</code></td><td>관리 세션 쿠키 <code>admin_session</code> 서명(itsdangerous <code>TimestampSigner</code>)</td><td><code>app/features/admin.py</code>:147, <code>app/features/auth/admin_backend.py</code>:90</td></tr><tr><td><code>validate_deployment_safety()</code></td><td>예시 값·32자 미만이면 기동 거부(test 제외)</td><td><code>config.py</code> — 비밀 키 검사</td></tr><tr><td><code>REQUIRED_WITHOUT_ENV_FILE</code></td><td><code>.env</code> 없는 배포에서 환경 변수로 들어와야 하는 값</td><td><code>config.py</code>:1205</td></tr></tbody></table></div>
-<p>그 밖의 코드는 이 키를 읽지 않는다. 같은 <code>SessionSettings</code> 의 <code>SESSION_COOKIE_NAME</code>(접속 로그 기록)과
-<code>SESSION_EXPIRE_SECONDS</code>(읽는 코드 없음)는 관리 쿠키의 이름·수명에 쓰이지 <strong>않는다</strong> — 관리 쿠키의 이름·수명은
-<code>admin_backend.py</code>:51·:52 의 상수다.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">소비처</th><th scope="col">용도</th><th scope="col">근거</th></tr></thead><tbody><tr><td><code>new_admin_session_store()</code> → <code>AdminSessionStore.key()</code></td><td>세션 ID → Redis 키 <code>admin:sess:{HMAC-SHA256(키, sid)}</code>. 키가 유출돼도 쿠키(sid)를 만들 수 없고, 키를 바꾸면 모든 관리 세션이 무효</td><td><code>app/core/security/dependencies.py</code>, <code>app/core/security/admin_session.py</code></td></tr><tr><td><code>validate_deployment_safety()</code></td><td>예시 값·32자 미만이면 기동 거부(test 제외)</td><td><code>config.py</code> — 비밀 키 검사</td></tr><tr><td><code>REQUIRED_WITHOUT_ENV_FILE</code></td><td><code>.env</code> 없는 배포에서 환경 변수로 들어와야 하는 값</td><td><code>config.py</code></td></tr></tbody></table></div>
 <h3>비교표</h3>
-<div class="table-wrap"><table><thead><tr><th scope="col">항목</th><th scope="col">API (JWT Bearer)</th><th scope="col">관리 화면 (서명 세션 쿠키)</th></tr></thead><tbody><tr><td>적용 경로</td><td><code>/api/v1/...</code> 의 보호 라우트</td><td><code>/admin</code> 이하(SQLAdmin 하위 앱)</td></tr><tr><td>적용 범위 선언</td><td>뷰마다 경로 데코레이터의 <code>dependencies=[...]</code> 에 접근 수준 하나. 선언이 없거나 모순되면 기동 거부(<code>AccessPolicyGuard</code>)</td><td><code>/admin</code> 마운트 전체에 인증 백엔드 하나. <code>Mount</code> 라 API 접근 수준 검사 대상이 아니다</td></tr><tr><td>저장 위치</td><td>클라이언트가 보관하는 토큰(access·refresh). refresh 회전 기록은 Redis</td><td>브라우저 쿠키 <code>admin_session</code>(서명된 JSON <code>{"user_id": ...}</code>). 서버 저장소 없음</td></tr><tr><td>수명</td><td>access 15분·refresh 7일(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>·<code>REFRESH_TOKEN_EXPIRE_DAYS</code>)</td><td>8시간(<code>Max-Age=28800</code>, 서명 타임스탬프로도 검증)</td></tr><tr><td>폐기</td><td>refresh 는 family 폐기(로그아웃·재사용 탐지·비활성화). access 는 만료까지 유효</td><td>로그아웃이 세션을 비운다. 키 교체 시 전부 무효. 강등·비활성화는 다음 요청에서 세션을 비운다</td></tr><tr><td>CSRF</td><td>헤더로 보내므로 해당 없음</td><td><code>SameSite=Strict</code> — 다른 사이트에서 시작된 요청에는 쿠키가 실리지 않는다</td></tr><tr><td>레이트 리밋</td><td><code>auth:rl:login:</code> 키(IP+사용자명·IP)</td><td>같은 한도 설정, <code>admin:rl:login:</code> 키로 따로 센다</td></tr><tr><td>권한 확인 시점</td><td>토큰 발급 시점의 <code>su</code> claim(요청마다 DB 를 보지 않는다)</td><td><strong>요청마다 DB</strong> 에서 활성·슈퍼유저 확인</td></tr><tr><td>강등·비활성화 즉시 반영</td><td>아니오 — access 만료까지(service-hardening R-014)</td><td>예 — 다음 관리 화면 요청부터 거부</td></tr></tbody></table></div>
-<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="AdminAuthBackend" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · AdminAuthBackend</a> · <a data-source="app/core/security/dependencies.py" data-symbol="get_current_principal" href="../../app/core/security/dependencies.py">app/core/security/dependencies.py · get_current_principal</a> · <a data-source="app/core/security/access.py" data-symbol="AccessPolicyGuard" href="../../app/core/security/access.py">app/core/security/access.py · AccessPolicyGuard</a> · <a data-source="tests/test_admin_session_scope.py" href="../../tests/test_admin_session_scope.py">tests/test_admin_session_scope.py</a></p>
+<div class="table-wrap"><table><thead><tr><th scope="col">항목</th><th scope="col">API (JWT Bearer)</th><th scope="col">관리 화면 (Redis 서버 세션)</th></tr></thead><tbody><tr><td>적용 경로</td><td><code>/api/v1/...</code> 의 보호 라우트</td><td><code>/admin</code> 이하(SQLAdmin 하위 앱)</td></tr><tr><td>저장 위치</td><td>클라이언트가 보관하는 토큰(access·refresh). refresh 회전 기록은 Redis</td><td>쿠키에는 세션 ID 만. 내용(<code>user_id</code>·<code>csrf_token</code>)은 Redis <code>admin:sess:*</code></td></tr><tr><td>수명</td><td>access 15분·refresh 7일</td><td>절대 8시간(연장 없음) + 미사용 30분(<code>ADMIN_SESSION_MAX_AGE_SECONDS</code>·<code>ADMIN_SESSION_IDLE_SECONDS</code>)</td></tr><tr><td>폐기</td><td>refresh 는 family 폐기. access 는 만료까지 유효</td><td>로그아웃·강등·비활성화·삭제 시 Redis 키 삭제 — <strong>즉시</strong>, 다른 브라우저 세션 포함</td></tr><tr><td>CSRF</td><td>헤더로 보내므로 해당 없음</td><td>모든 POST·PUT·PATCH·DELETE 에 synchronizer token(헤더 또는 폼 필드) + <code>SameSite=Strict</code></td></tr><tr><td>레이트 리밋</td><td><code>auth:rl:login:</code> 키</td><td>같은 한도, <code>admin:rl:login:</code> 키로 따로 센다</td></tr><tr><td>권한 확인 시점</td><td>토큰 발급 시점의 <code>su</code> claim</td><td><strong>요청마다 DB</strong> 에서 활성·슈퍼유저 확인(서버 폐기와 이중 방어)</td></tr><tr><td>저장소 장애</td><td>refresh 회전 실패(503)</td><td>관리 화면 전체 503 — 통과시키지 않는다(fail-closed)</td></tr></tbody></table></div>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_session.py" data-symbol="AdminSessionStore" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · AdminSessionStore</a> · <a data-source="app/features/auth/admin_backend.py" data-symbol="AdminAuthBackend" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · AdminAuthBackend</a> · <a data-source="tests/test_admin_session_scope.py" href="../../tests/test_admin_session_scope.py">tests/test_admin_session_scope.py</a></p>
 </section>
 <section id="architecture"><h2>2. 구성도와 주입 관계</h2>
 <p>메인 FastAPI 앱의 미들웨어(CORS·접속 로그)와 API 라우터는 JWT 의존성만 쓴다. SQLAdmin 은 <code>Admin(app, ...)</code> 이 생성되는 순간
-<code>/admin</code> 에 <strong>별도의 Starlette 하위 앱</strong>으로 마운트되고, 세션 미들웨어는 그 하위 앱 안에만 있다.</p>
-<figure class="figure"><figcaption>구성도 — 세션 미들웨어는 /admin 하위 앱 안에만 있다</figcaption><div class="mermaid">flowchart LR
+<code>/admin</code> 에 <strong>별도의 Starlette 하위 앱</strong>으로 마운트되고, 세션·CSRF 미들웨어는 그 하위 앱 안에만 있다. 순서는 세션이 바깥,
+CSRF 가 안쪽이다 — CSRF 는 세션의 토큰을 읽는다.</p>
+<figure class="figure"><figcaption>구성도 — 세션·CSRF 미들웨어는 /admin 하위 앱 안에만 있다</figcaption><div class="mermaid">flowchart LR
   browser[&quot;브라우저 / API 클라이언트&quot;] --&gt; mw[&quot;메인 앱 미들웨어 / CORS · 접속 로그&quot;]
   mw --&gt; api[&quot;API 라우터 /api/v1/...&quot;]
   api --&gt; jwt[&quot;get_current_principal / JWT Bearer&quot;]
   mw --&gt; mount[&quot;Mount /admin / SQLAdmin 하위 Starlette 앱&quot;]
   subgraph adminapp[&quot;/admin 하위 앱&quot;]
-    sess[&quot;SessionMiddleware / admin_session 쿠키 서명 검증&quot;] --&gt; views[&quot;Admin 라우트 / login · logout · index · ModelView&quot;]
-    views --&gt; backend[&quot;AdminAuthBackend / login · authenticate · logout&quot;]
+    sess[&quot;RedisSessionMiddleware / sid 쿠키 → Redis 세션&quot;] --&gt; csrf[&quot;AdminCsrfMiddleware / POST·PUT·PATCH·DELETE 토큰 대조&quot;]
+    csrf --&gt; views[&quot;Admin 라우트 / login · logout(POST) · index · ModelView&quot;]
+    views --&gt; backend[&quot;AdminAuthBackend / login · authenticate · logout · csrf_rejected&quot;]
   end
   mount --&gt; sess
+  sess --&gt; store[(&quot;Redis / admin:sess:* · admin:user_sessions:*&quot;)]
   backend --&gt; db[(&quot;MySQL / users&quot;)]
-  backend --&gt; redis[(&quot;Redis / admin:rl:login:*&quot;)]
+  backend --&gt; rl[(&quot;Redis / admin:rl:login:*&quot;)]
   jwt -.-&gt; redis2[(&quot;Redis / refresh 회전 기록&quot;)]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
   browser[&quot;브라우저 / API 클라이언트&quot;] --&gt; mw[&quot;메인 앱 미들웨어 / CORS · 접속 로그&quot;]
   mw --&gt; api[&quot;API 라우터 /api/v1/...&quot;]
   api --&gt; jwt[&quot;get_current_principal / JWT Bearer&quot;]
   mw --&gt; mount[&quot;Mount /admin / SQLAdmin 하위 Starlette 앱&quot;]
   subgraph adminapp[&quot;/admin 하위 앱&quot;]
-    sess[&quot;SessionMiddleware / admin_session 쿠키 서명 검증&quot;] --&gt; views[&quot;Admin 라우트 / login · logout · index · ModelView&quot;]
-    views --&gt; backend[&quot;AdminAuthBackend / login · authenticate · logout&quot;]
+    sess[&quot;RedisSessionMiddleware / sid 쿠키 → Redis 세션&quot;] --&gt; csrf[&quot;AdminCsrfMiddleware / POST·PUT·PATCH·DELETE 토큰 대조&quot;]
+    csrf --&gt; views[&quot;Admin 라우트 / login · logout(POST) · index · ModelView&quot;]
+    views --&gt; backend[&quot;AdminAuthBackend / login · authenticate · logout · csrf_rejected&quot;]
   end
   mount --&gt; sess
+  sess --&gt; store[(&quot;Redis / admin:sess:* · admin:user_sessions:*&quot;)]
   backend --&gt; db[(&quot;MySQL / users&quot;)]
-  backend --&gt; redis[(&quot;Redis / admin:rl:login:*&quot;)]
+  backend --&gt; rl[(&quot;Redis / admin:rl:login:*&quot;)]
   jwt -.-&gt; redis2[(&quot;Redis / refresh 회전 기록&quot;)]</code></pre></details></figure>
 <figure class="figure"><figcaption>주입 관계 — 누가 무엇을 생성자에 넣는가</figcaption><div class="mermaid">flowchart TD
   main[&quot;main.py / ADMIN_DISABLED 가 아니면&quot;] --&gt; reg[&quot;register_admin(app, engine)&quot;]
   reg --&gt; create[&quot;create_admin_interface(app, engine)&quot;]
   create --&gt; build[&quot;build_admin_auth_backend(app)&quot;]
   build --&gt; be[&quot;AdminAuthBackend(...)&quot;]
-  cfg[&quot;config / SESSION_SECRET_KEY · ENV · TRUSTED_PROXY_HOPS&quot;] --&gt; build
+  cfg[&quot;config / SESSION_SECRET_KEY · ADMIN_SESSION_* · ENV · TRUSTED_PROXY_HOPS&quot;] --&gt; build
+  ssf[&quot;session_store_factory / new_admin_session_store(_app_redis(app))&quot;] --&gt; be
   sf[&quot;background_db_session / 요청 밖 DB 세션&quot;] --&gt; be
-  asf[&quot;auth_service_factory / AuthService(세션, get_password_hasher(), get_token_service(), get_refresh_token_store(redis))&quot;] --&gt; be
+  asf[&quot;auth_service_factory / AuthService(세션, hasher, token, refresh store)&quot;] --&gt; be
   rlf[&quot;rate_limiter_factory / get_rate_limiter(redis)&quot;] --&gt; be
-  cip[&quot;ClientIPResolver(TRUSTED_PROXY_HOPS)&quot;] --&gt; be
+  be --&gt; mws[&quot;be.middlewares = RedisSessionMiddleware(store_factory, https_only) + AdminCsrfMiddleware(reject=be.csrf_rejected)&quot;]
   be --&gt; admin[&quot;Admin(app, engine, authentication_backend=be, templates_dir=app/templates/admin)&quot;]
-  admin --&gt; tpl[&quot;be.templates = admin.templates / 400·429 화면을 같은 템플릿으로&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  admin --&gt; tpl[&quot;be.templates = admin.templates / 전역 csrf_token(request)&quot;]
+  admin --&gt; lo[&quot;_logout_post_only(admin) / GET 로그아웃 라우트 → POST 전용&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
   main[&quot;main.py / ADMIN_DISABLED 가 아니면&quot;] --&gt; reg[&quot;register_admin(app, engine)&quot;]
   reg --&gt; create[&quot;create_admin_interface(app, engine)&quot;]
   create --&gt; build[&quot;build_admin_auth_backend(app)&quot;]
   build --&gt; be[&quot;AdminAuthBackend(...)&quot;]
-  cfg[&quot;config / SESSION_SECRET_KEY · ENV · TRUSTED_PROXY_HOPS&quot;] --&gt; build
+  cfg[&quot;config / SESSION_SECRET_KEY · ADMIN_SESSION_* · ENV · TRUSTED_PROXY_HOPS&quot;] --&gt; build
+  ssf[&quot;session_store_factory / new_admin_session_store(_app_redis(app))&quot;] --&gt; be
   sf[&quot;background_db_session / 요청 밖 DB 세션&quot;] --&gt; be
-  asf[&quot;auth_service_factory / AuthService(세션, get_password_hasher(), get_token_service(), get_refresh_token_store(redis))&quot;] --&gt; be
+  asf[&quot;auth_service_factory / AuthService(세션, hasher, token, refresh store)&quot;] --&gt; be
   rlf[&quot;rate_limiter_factory / get_rate_limiter(redis)&quot;] --&gt; be
-  cip[&quot;ClientIPResolver(TRUSTED_PROXY_HOPS)&quot;] --&gt; be
+  be --&gt; mws[&quot;be.middlewares = RedisSessionMiddleware(store_factory, https_only) + AdminCsrfMiddleware(reject=be.csrf_rejected)&quot;]
   be --&gt; admin[&quot;Admin(app, engine, authentication_backend=be, templates_dir=app/templates/admin)&quot;]
-  admin --&gt; tpl[&quot;be.templates = admin.templates / 400·429 화면을 같은 템플릿으로&quot;]</code></pre></details></figure>
-<p>Redis 는 바깥 앱의 lifespan 이 연 <code>app.state.redis</code> 를 쓴다. SQLAdmin 하위 앱에서는 <code>request.app</code> 이 하위 앱을 가리켜
-<code>get_redis(request)</code> 로는 닿지 않으므로, 조립 함수가 바깥 앱을 클로저로 잡는다(<code>app/features/admin.py</code>:114 <code>_app_redis</code>).
-비밀번호 확인·bcrypt→Argon2 재해시는 API 로그인과 같은 <code>AuthService.authenticate</code>(<code>app/features/auth/services/auth_service.py</code>:65)를
-그대로 쓴다 — 관리 화면용 검증 코드를 따로 두지 않는다.</p>
-<p class="source">코드 근거: <a data-source="app/features/admin.py" data-symbol="build_admin_auth_backend" href="../../app/features/admin.py">app/features/admin.py · build_admin_auth_backend</a> · <a data-source="app/features/admin.py" data-symbol="create_admin_interface" href="../../app/features/admin.py">app/features/admin.py · create_admin_interface</a> · <a data-source="app/features/auth/services/auth_service.py" data-symbol="authenticate" href="../../app/features/auth/services/auth_service.py">app/features/auth/services/auth_service.py · authenticate</a></p>
+  admin --&gt; tpl[&quot;be.templates = admin.templates / 전역 csrf_token(request)&quot;]
+  admin --&gt; lo[&quot;_logout_post_only(admin) / GET 로그아웃 라우트 → POST 전용&quot;]</code></pre></details></figure>
+<p>Redis 는 바깥 앱의 lifespan 이 연 <code>app.state.redis</code> 다. SQLAdmin 하위 앱에서는 <code>request.app</code> 이 하위 앱을 가리켜
+<code>get_redis(request)</code> 로는 닿지 않으므로 조립 함수가 바깥 앱을 클로저로 잡고(<code>app/features/admin.py</code> 의 <code>_app_redis</code>),
+세션 저장소는 <strong>요청마다</strong> 그 Redis 로 만든다(미들웨어가 앱 조립 시점에 만들어지지만 Redis 는 lifespan 이 연 뒤에야 있다).
+비밀번호 확인·bcrypt→Argon2 재해시는 API 로그인과 같은 <code>AuthService.authenticate</code> 를 그대로 쓴다.</p>
+<p class="source">코드 근거: <a data-source="app/features/admin.py" data-symbol="build_admin_auth_backend" href="../../app/features/admin.py">app/features/admin.py · build_admin_auth_backend</a> · <a data-source="app/features/admin.py" data-symbol="create_admin_interface" href="../../app/features/admin.py">app/features/admin.py · create_admin_interface</a> · <a data-source="app/core/security/dependencies.py" data-symbol="new_admin_session_store" href="../../app/core/security/dependencies.py">app/core/security/dependencies.py · new_admin_session_store</a></p>
 </section>
-<section id="startup"><h2>3. 기동 결정 흐름</h2>
+<section id="session"><h2>3. 세션 구조 — 서명 쿠키에서 Redis 서버 세션으로</h2>
+<figure class="figure"><figcaption>전과 후 — 쿠키에 무엇이 있는가</figcaption><div class="mermaid">flowchart LR
+  subgraph before[&quot;전: 서명 쿠키 (2026-10-19 이전)&quot;]
+    c1[&quot;쿠키 admin_session = base64(JSON user_id·csrf_token) + 서명&quot;] --&gt; v1[&quot;서버: 서명·타임스탬프 검증만 / 저장소 없음&quot;]
+    v1 --&gt; r1[&quot;로그아웃 = 빈 쿠키로 덮어쓰기 / 복사본은 8시간 유효&quot;]
+  end
+  subgraph after[&quot;후: Redis 서버 세션&quot;]
+    c2[&quot;쿠키 admin_session = 무작위 sid(43자)&quot;] --&gt; k2[&quot;HMAC-SHA256(SESSION_SECRET_KEY, sid)&quot;]
+    k2 --&gt; v2[(&quot;Redis admin:sess:&lt;hex&gt; / data · user_id · created_at&quot;)]
+    v2 --&gt; r2[&quot;로그아웃·폐기 = 키 삭제 / 복사본도 즉시 무효&quot;]
+  end</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
+  subgraph before[&quot;전: 서명 쿠키 (2026-10-19 이전)&quot;]
+    c1[&quot;쿠키 admin_session = base64(JSON user_id·csrf_token) + 서명&quot;] --&gt; v1[&quot;서버: 서명·타임스탬프 검증만 / 저장소 없음&quot;]
+    v1 --&gt; r1[&quot;로그아웃 = 빈 쿠키로 덮어쓰기 / 복사본은 8시간 유효&quot;]
+  end
+  subgraph after[&quot;후: Redis 서버 세션&quot;]
+    c2[&quot;쿠키 admin_session = 무작위 sid(43자)&quot;] --&gt; k2[&quot;HMAC-SHA256(SESSION_SECRET_KEY, sid)&quot;]
+    k2 --&gt; v2[(&quot;Redis admin:sess:&lt;hex&gt; / data · user_id · created_at&quot;)]
+    v2 --&gt; r2[&quot;로그아웃·폐기 = 키 삭제 / 복사본도 즉시 무효&quot;]
+  end</code></pre></details></figure>
+<h3>쿠키</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">속성</th><th scope="col">값</th><th scope="col">이유</th></tr></thead><tbody><tr><td>이름</td><td><code>admin_session</code></td><td>기존 <code>SESSION_COOKIE_NAME</code>(기본 <code>session</code>)과 겹치지 않게</td></tr><tr><td>값</td><td><code>secrets.token_urlsafe(32)</code> — 무작위 세션 ID 하나</td><td>사용자 id·권한·토큰을 싣지 않는다. 추측할 수 없는 값</td></tr><tr><td>Path</td><td><code>/admin</code></td><td>API 요청에 실리지 않는다</td></tr><tr><td>SameSite</td><td><code>Strict</code></td><td>다른 사이트에서 시작된 요청에 실리지 않는다 — CSRF 1차 방어</td></tr><tr><td>HttpOnly</td><td>항상</td><td>스크립트가 읽지 못한다(CSRF 토큰은 meta 로 따로 준다)</td></tr><tr><td>Secure</td><td><code>ENV</code> 가 staging/production</td><td>배포 환경은 HTTPS 로만 전송</td></tr><tr><td>Max-Age</td><td><code>ADMIN_SESSION_MAX_AGE_SECONDS</code>(기본 28800)</td><td>절대 만료와 같다. 새 세션을 만들 때만 내려 보낸다</td></tr><tr><td>삭제</td><td><code>Max-Age=0</code></td><td>로그아웃, 또는 쿠키의 ID 가 Redis 에 없을 때(만료·폐기)</td></tr></tbody></table></div>
+<h3>Redis 키</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">키</th><th scope="col">형</th><th scope="col">값</th><th scope="col">TTL</th></tr></thead><tbody><tr><td><code>admin:sess:{HMAC-SHA256(SESSION_SECRET_KEY, sid)}</code></td><td>STRING</td><td>JSON <code>{"data": {"user_id", "csrf_token"}, "user_id", "created_at"}</code></td><td>min(미사용 만료, 절대 만료까지 남은 시간) — 요청마다 다시 잡는다</td></tr><tr><td><code>admin:user_sessions:{user_id}</code></td><td>SET</td><td>그 사용자의 세션 키(<code>admin:sess:*</code>) 목록 — 사용자 단위 폐기용</td><td>절대 만료(저장할 때마다 다시 잡는다)</td></tr><tr><td><code>admin:rl:login:{ip}:{username}</code> · <code>admin:rl:login:{ip}</code></td><td>STRING</td><td>로그인 시도 카운터</td><td><code>AUTH_LOGIN_WINDOW_SECONDS</code></td></tr></tbody></table></div>
+<h3>만료 정책</h3>
+<ul>
+<li><strong>절대 만료</strong> — <code>created_at</code>(로그인해 세션을 만든 시각) + <code>ADMIN_SESSION_MAX_AGE_SECONDS</code>. 요청해도 연장되지 않는다. 지나면
+읽을 때 키를 지우고 빈 세션으로 본다(<code>AdminSessionStore.load</code>).</li>
+<li><strong>미사용 만료</strong> — 요청마다 TTL 을 <code>ADMIN_SESSION_IDLE_SECONDS</code> 로 다시 잡는다. 단 절대 만료까지 남은 시간보다 길게 잡지 않는다
+(<code>AdminSessionStore.save</code>). 설정은 둘 다 60 이상, 미사용 ≤ 절대(어기면 기동 시 <code>ValidationError</code>).</li>
+<li><strong>되살리기 방지</strong> — 기존 세션 저장은 <code>SET ... XX</code>(키가 있을 때만)다. 요청을 처리하는 도중 다른 곳에서 폐기된 세션을 그 요청의 응답 저장이
+다시 만들지 않는다. 새 세션은 <code>SET ... NX</code>.</li>
+<li><strong>세션 고정 방지</strong> — 로그인 성공은 <code>session.clear()</code> 후 <code>rotate_session(request)</code> 로 미들웨어에 회전을 요청한다 →
+새 sid 발급, 이전 키 삭제, 사용자 인덱스에서도 제거. CSRF 토큰도 함께 버려져 새로 만들어진다.</li>
+</ul>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_session.py" data-symbol="AdminSessionStore" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · AdminSessionStore</a> · <a data-source="app/core/security/admin_session.py" data-symbol="RedisSessionMiddleware" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · RedisSessionMiddleware</a> · <a data-source="tests/test_admin_session.py" href="../../tests/test_admin_session.py">tests/test_admin_session.py</a></p>
+</section>
+<section id="startup"><h2>4. 기동 결정 흐름</h2>
 <figure class="figure"><figcaption>기동 — 설정 로드에서 관리 화면 마운트까지</figcaption><div class="mermaid">flowchart TD
-  load[&quot;config import / Settings 생성&quot;] --&gt; src{&quot;validate_env_source / .env 또는 필수 환경 변수&quot;}
+  load[&quot;config import / Settings 생성&quot;] --&gt; sess{&quot;SessionSettings / ADMIN_SESSION_* ≥ 60, 미사용 ≤ 절대&quot;}
+  sess -- 위반 --&gt; stop0[&quot;ValidationError — 기동 중단&quot;]
+  sess -- 통과 --&gt; src{&quot;validate_env_source / .env 또는 필수 환경 변수&quot;}
   src -- 없음 --&gt; stop1[&quot;RuntimeError — 기동 중단&quot;]
-  src -- 있음 --&gt; legacy{&quot;validate_no_legacy_admin / 예전 ADMIN 이 환경 변수·.env 에 남았나&quot;}
+  src -- 있음 --&gt; legacy{&quot;validate_no_legacy_admin / 예전 ADMIN 이 남았나&quot;}
   legacy -- 남음 --&gt; stop2[&quot;RuntimeError — ADMIN 은 ADMIN_DISABLED 로 바뀜&quot;]
   legacy -- 없음 --&gt; safety{&quot;validate_deployment_safety / 예시 키·DEBUG 등&quot;}
   safety -- 위반 --&gt; stop3[&quot;RuntimeError&quot;]
   safety -- 통과 --&gt; mainpy[&quot;main.py 앱 조립&quot;]
   mainpy --&gt; dis{&quot;ADMIN_DISABLED&quot;}
-  dis -- true --&gt; off[&quot;sqladmin import 없음 / 마운트·세션 미들웨어·백엔드 없음 / 로그: 관리 화면 비활성화&quot;]
-  dis -- false --&gt; on[&quot;register_admin → 백엔드 조립 → /admin 마운트 / 로그: 슈퍼유저 로그인 필요&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
-  load[&quot;config import / Settings 생성&quot;] --&gt; src{&quot;validate_env_source / .env 또는 필수 환경 변수&quot;}
+  dis -- true --&gt; off[&quot;sqladmin import 없음 / 마운트·세션·CSRF 미들웨어·백엔드·세션 저장소 없음&quot;]
+  dis -- false --&gt; on[&quot;register_admin → 백엔드 조립 → /admin 마운트 → 로그아웃 POST 전용 교체&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  load[&quot;config import / Settings 생성&quot;] --&gt; sess{&quot;SessionSettings / ADMIN_SESSION_* ≥ 60, 미사용 ≤ 절대&quot;}
+  sess -- 위반 --&gt; stop0[&quot;ValidationError — 기동 중단&quot;]
+  sess -- 통과 --&gt; src{&quot;validate_env_source / .env 또는 필수 환경 변수&quot;}
   src -- 없음 --&gt; stop1[&quot;RuntimeError — 기동 중단&quot;]
-  src -- 있음 --&gt; legacy{&quot;validate_no_legacy_admin / 예전 ADMIN 이 환경 변수·.env 에 남았나&quot;}
+  src -- 있음 --&gt; legacy{&quot;validate_no_legacy_admin / 예전 ADMIN 이 남았나&quot;}
   legacy -- 남음 --&gt; stop2[&quot;RuntimeError — ADMIN 은 ADMIN_DISABLED 로 바뀜&quot;]
   legacy -- 없음 --&gt; safety{&quot;validate_deployment_safety / 예시 키·DEBUG 등&quot;}
   safety -- 위반 --&gt; stop3[&quot;RuntimeError&quot;]
   safety -- 통과 --&gt; mainpy[&quot;main.py 앱 조립&quot;]
   mainpy --&gt; dis{&quot;ADMIN_DISABLED&quot;}
-  dis -- true --&gt; off[&quot;sqladmin import 없음 / 마운트·세션 미들웨어·백엔드 없음 / 로그: 관리 화면 비활성화&quot;]
-  dis -- false --&gt; on[&quot;register_admin → 백엔드 조립 → /admin 마운트 / 로그: 슈퍼유저 로그인 필요&quot;]</code></pre></details></figure>
-<p>예전 이름 <code>ADMIN</code>(true=켬)은 뜻이 뒤집힌 <code>ADMIN_DISABLED</code>(true=끔)로 바뀌었다. 조용히 무시하면 <code>ADMIN=false</code> 로 꺼 두었던
-배포가 관리 화면이 켜진 채 뜨므로, 남아 있으면 기동을 멈춘다(<code>config.py</code>:1242, 대소문자 무시, ENV=test 는 검사하지 않는다).
-<code>ADMIN_DISABLED=true</code> 면 <code>main.py</code>:325 의 분기가 <code>app.features.admin</code> 을 import 하지 않아 sqladmin·인증 백엔드·세션 미들웨어가
-생성되지 않고, 앱의 어떤 응답·기동 로그에도 관리 화면 경로가 나오지 않는다(<code>tests/test_admin_disabled.py</code>).</p>
-<p class="source">코드 근거: <a data-source="config.py" data-symbol="validate_no_legacy_admin" href="../../config.py">config.py · validate_no_legacy_admin</a> · <a data-source="main.py" href="../../main.py">main.py</a> · <a data-source="tests/test_admin_disabled.py" href="../../tests/test_admin_disabled.py">tests/test_admin_disabled.py</a></p>
+  dis -- true --&gt; off[&quot;sqladmin import 없음 / 마운트·세션·CSRF 미들웨어·백엔드·세션 저장소 없음&quot;]
+  dis -- false --&gt; on[&quot;register_admin → 백엔드 조립 → /admin 마운트 → 로그아웃 POST 전용 교체&quot;]</code></pre></details></figure>
+<p><code>ADMIN_DISABLED=true</code> 면 <code>main.py</code> 의 분기가 <code>app.features.admin</code> 을 import 하지 않아 sqladmin·인증 백엔드·미들웨어가 생성되지 않는다.
+API 의 사용자 비활성화·삭제가 쓰는 폐기 provider <code>get_admin_session_store</code> 도 이때는 <code>None</code> 을 돌려준다(관리 세션이 없다).
+앱의 어떤 응답·기동 로그에도 관리 화면 경로가 나오지 않는다(<code>tests/test_admin_disabled.py</code>).</p>
+<p class="source">코드 근거: <a data-source="config.py" data-symbol="SessionSettings" href="../../config.py">config.py · SessionSettings</a> · <a data-source="main.py" href="../../main.py">main.py</a> · <a data-source="tests/test_admin_disabled.py" href="../../tests/test_admin_disabled.py">tests/test_admin_disabled.py</a></p>
 </section>
-<section id="login"><h2>4. 로그인 시퀀스</h2>
+<section id="login"><h2>5. 로그인 시퀀스</h2>
 <figure class="figure"><figcaption>로그인 — 성공 경로</figcaption><div class="mermaid">sequenceDiagram
   autonumber
   participant B as 브라우저
-  participant S as SessionMiddleware(/admin)
+  participant S as RedisSessionMiddleware
+  participant C as AdminCsrfMiddleware
   participant A as SQLAdmin 라우트
   participant K as AdminAuthBackend
   participant R as Redis
   participant D as DB(users)
-  B-&gt;&gt;S: GET /admin/
-  S-&gt;&gt;A: index (login_required)
-  A-&gt;&gt;K: authenticate — 세션에 user_id 없음
-  K--&gt;&gt;A: False
-  A--&gt;&gt;B: 302 → /admin/login
-  B-&gt;&gt;A: GET /admin/login
-  A-&gt;&gt;K: csrf_token(request) — 세션에 없으면 token_urlsafe(32) 저장
-  A--&gt;&gt;B: 200 Bootstrap 로그인 화면 (hidden csrf_token) + Set-Cookie admin_session
-  B-&gt;&gt;A: POST /admin/login (username, password, csrf_token)
+  B-&gt;&gt;S: GET /admin/login
+  S-&gt;&gt;A: 빈 세션(쿠키 없음)
+  A-&gt;&gt;A: csrf_token(request) — 세션에 token_urlsafe(32)
+  S-&gt;&gt;R: SET NX admin:sess:&lt;HMAC(sid A)&gt;
+  A--&gt;&gt;B: 200 로그인 화면(hidden csrf_token) + Set-Cookie admin_session=sid A
+  B-&gt;&gt;S: POST /admin/login (username, password, csrf_token) + 쿠키 sid A
+  S-&gt;&gt;R: GET admin:sess:&lt;HMAC(sid A)&gt;
+  S-&gt;&gt;C: scope.session = data
+  C-&gt;&gt;C: 폼 csrf_token == 세션 토큰 (hmac.compare_digest) — 아니면 403
+  C-&gt;&gt;A: 통과(본문 재생)
   A-&gt;&gt;K: login(request)
-  K-&gt;&gt;K: 폼 csrf_token 과 세션 값 hmac.compare_digest (불일치면 403, 아래 단계 없음)
-  K-&gt;&gt;R: hit admin:rl:login:{ip}:{username} · admin:rl:login:{ip}
-  R--&gt;&gt;K: 허용
-  K-&gt;&gt;D: AuthService.authenticate — 사용자 조회·Argon2 검증(bcrypt면 재해시)
-  D--&gt;&gt;K: 활성 사용자
-  K-&gt;&gt;K: is_superuser 확인 (재해시면 commit)
-  K-&gt;&gt;R: reset IP+사용자명 카운터
-  K-&gt;&gt;S: session.clear() 후 user_id 만 저장 (CSRF 토큰도 버려져 회전)
-  A--&gt;&gt;B: 302 → /admin/ + Set-Cookie admin_session (서명)
-  B-&gt;&gt;S: GET /admin/ (쿠키)
-  S-&gt;&gt;A: 서명·만료 검증 후 세션 복원
-  A-&gt;&gt;K: authenticate — DB 에서 활성·슈퍼유저 확인
-  A--&gt;&gt;B: 200 관리 화면</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+  K-&gt;&gt;R: 레이트 리밋 hit admin:rl:login:*
+  K-&gt;&gt;D: AuthService.authenticate · is_superuser
+  K-&gt;&gt;K: session.clear() · user_id 저장 · rotate_session
+  S-&gt;&gt;R: DEL 이전 키 · SET NX admin:sess:&lt;HMAC(sid B)&gt; · SADD admin:user_sessions:&lt;id&gt;
+  A--&gt;&gt;B: 302 /admin/ + Set-Cookie admin_session=sid B (Max-Age=절대 만료)</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
   autonumber
   participant B as 브라우저
-  participant S as SessionMiddleware(/admin)
+  participant S as RedisSessionMiddleware
+  participant C as AdminCsrfMiddleware
   participant A as SQLAdmin 라우트
   participant K as AdminAuthBackend
   participant R as Redis
   participant D as DB(users)
-  B-&gt;&gt;S: GET /admin/
-  S-&gt;&gt;A: index (login_required)
-  A-&gt;&gt;K: authenticate — 세션에 user_id 없음
-  K--&gt;&gt;A: False
-  A--&gt;&gt;B: 302 → /admin/login
-  B-&gt;&gt;A: GET /admin/login
-  A-&gt;&gt;K: csrf_token(request) — 세션에 없으면 token_urlsafe(32) 저장
-  A--&gt;&gt;B: 200 Bootstrap 로그인 화면 (hidden csrf_token) + Set-Cookie admin_session
-  B-&gt;&gt;A: POST /admin/login (username, password, csrf_token)
+  B-&gt;&gt;S: GET /admin/login
+  S-&gt;&gt;A: 빈 세션(쿠키 없음)
+  A-&gt;&gt;A: csrf_token(request) — 세션에 token_urlsafe(32)
+  S-&gt;&gt;R: SET NX admin:sess:&lt;HMAC(sid A)&gt;
+  A--&gt;&gt;B: 200 로그인 화면(hidden csrf_token) + Set-Cookie admin_session=sid A
+  B-&gt;&gt;S: POST /admin/login (username, password, csrf_token) + 쿠키 sid A
+  S-&gt;&gt;R: GET admin:sess:&lt;HMAC(sid A)&gt;
+  S-&gt;&gt;C: scope.session = data
+  C-&gt;&gt;C: 폼 csrf_token == 세션 토큰 (hmac.compare_digest) — 아니면 403
+  C-&gt;&gt;A: 통과(본문 재생)
   A-&gt;&gt;K: login(request)
-  K-&gt;&gt;K: 폼 csrf_token 과 세션 값 hmac.compare_digest (불일치면 403, 아래 단계 없음)
-  K-&gt;&gt;R: hit admin:rl:login:{ip}:{username} · admin:rl:login:{ip}
-  R--&gt;&gt;K: 허용
-  K-&gt;&gt;D: AuthService.authenticate — 사용자 조회·Argon2 검증(bcrypt면 재해시)
-  D--&gt;&gt;K: 활성 사용자
-  K-&gt;&gt;K: is_superuser 확인 (재해시면 commit)
-  K-&gt;&gt;R: reset IP+사용자명 카운터
-  K-&gt;&gt;S: session.clear() 후 user_id 만 저장 (CSRF 토큰도 버려져 회전)
-  A--&gt;&gt;B: 302 → /admin/ + Set-Cookie admin_session (서명)
-  B-&gt;&gt;S: GET /admin/ (쿠키)
-  S-&gt;&gt;A: 서명·만료 검증 후 세션 복원
-  A-&gt;&gt;K: authenticate — DB 에서 활성·슈퍼유저 확인
-  A--&gt;&gt;B: 200 관리 화면</code></pre></details></figure>
+  K-&gt;&gt;R: 레이트 리밋 hit admin:rl:login:*
+  K-&gt;&gt;D: AuthService.authenticate · is_superuser
+  K-&gt;&gt;K: session.clear() · user_id 저장 · rotate_session
+  S-&gt;&gt;R: DEL 이전 키 · SET NX admin:sess:&lt;HMAC(sid B)&gt; · SADD admin:user_sessions:&lt;id&gt;
+  A--&gt;&gt;B: 302 /admin/ + Set-Cookie admin_session=sid B (Max-Age=절대 만료)</code></pre></details></figure>
 <ol>
-<li>폼 값은 <code>username</code>·<code>password</code>(API 로그인과 같은 식별자). IP 는 <code>ClientIPResolver</code> 가 <code>TRUSTED_PROXY_HOPS</code> 로 정한다(<code>admin_backend.py</code>:123-126).</li>
-<li><strong>CSRF 토큰이 먼저다</strong> — 폼의 <code>csrf_token</code> 과 관리 세션의 값을 <code>hmac.compare_digest</code> 로 대조하고(:130-132), 없거나 다르면 로그인 화면을 403 으로 다시 그린다. 레이트 리밋 카운터도 자격 확인도 건드리지 않는다 — 위조 요청이 피해자의 시도 한도를 깎지 못한다. 토큰은 로그인 화면을 그릴 때 템플릿 전역 <code>csrf_token(request)</code>(<code>AdminAuthBackend.csrf_token</code>, <code>create_admin_interface</code> 가 연결)가 세션에 만든다(security-ops-hardening ADR-004).</li>
-<li>레이트 리밋은 API 와 같은 한도(<code>AUTH_LOGIN_MAX_ATTEMPTS</code>·<code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code>·<code>AUTH_LOGIN_WINDOW_SECONDS</code>)를 쓰되 키 접두사가 <code>admin:rl:login</code> 이다(:134-143). <strong>맞는 비밀번호여도 한도가 먼저다.</strong></li>
-<li>자격 확인은 <code>AuthService.authenticate</code>(:151-156). 없는 사용자·틀린 비밀번호·비활성은 같은 예외로 온다. 일반 사용자도 같은 실패로 합친다(:158).</li>
-<li>성공하면 IP+사용자명 카운터만 지우고(IP 카운터는 남긴다), <strong>세션을 비운 뒤</strong> <code>user_id</code> 하나만 넣는다(:166-169) — 세션 고정 방지.</li>
+<li>폼 값은 <code>username</code>·<code>password</code>(API 로그인과 같은 식별자). IP 는 <code>ClientIPResolver</code> 가 <code>TRUSTED_PROXY_HOPS</code> 로 정한다.</li>
+<li><strong>CSRF 가 먼저다</strong> — <code>AdminCsrfMiddleware</code> 가 엔드포인트보다 먼저 폼의 <code>csrf_token</code> 을 세션 값과 대조한다. 다르면 로그인 화면을
+403 으로 다시 그리고(<code>AdminAuthBackend.csrf_rejected</code>) 레이트 리밋 카운터도 자격 확인도 건드리지 않는다 — 위조 요청이 피해자의 시도 한도를
+깎지 못한다. 2026-10-19 부터 이 검사는 백엔드의 <code>login</code> 이 아니라 미들웨어 한 곳에서 한다(중복 검사 없음).</li>
+<li>레이트 리밋은 API 와 같은 한도를 쓰되 키 접두사가 <code>admin:rl:login</code> 이다. <strong>맞는 비밀번호여도 한도가 먼저다.</strong></li>
+<li>자격 확인은 <code>AuthService.authenticate</code>. 없는 사용자·틀린 비밀번호·비활성·일반 사용자는 같은 400 으로 합친다.</li>
+<li>성공하면 IP+사용자명 카운터만 지우고, <strong>세션을 비운 뒤</strong> <code>user_id</code> 하나만 넣고 세션 ID 를 회전한다.</li>
 </ol>
-<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="login" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · login</a> · <a data-source="app/core/security/rate_limit.py" data-symbol="RateLimiter" href="../../app/core/security/rate_limit.py">app/core/security/rate_limit.py · RateLimiter</a> · <a data-source="app/core/security/password_hasher.py" data-symbol="verify_and_update" href="../../app/core/security/password_hasher.py">app/core/security/password_hasher.py · verify_and_update</a></p>
+<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="login" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · login</a> · <a data-source="app/core/security/admin_session.py" data-symbol="AdminCsrfMiddleware" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · AdminCsrfMiddleware</a> · <a data-source="app/core/security/admin_session.py" data-symbol="rotate_session" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · rotate_session</a></p>
 </section>
-<section id="per-request"><h2>5. 요청별 인증 흐름</h2>
+<section id="per-request"><h2>6. 요청별 인증 흐름</h2>
 <figure class="figure"><figcaption>관리 화면 요청마다 — 쿠키에서 DB 확인까지</figcaption><div class="mermaid">flowchart TD
-  req[&quot;GET/POST /admin/...&quot;] --&gt; cookie{&quot;admin_session 쿠키가 있나&quot;}
+  req[&quot;/admin/... 요청&quot;] --&gt; redis{&quot;Redis 사용 가능&quot;}
+  redis -- 아니오 --&gt; r503[&quot;503 관리 세션 저장소를 사용할 수 없습니다 (통과 없음)&quot;]
+  redis -- 예 --&gt; cookie{&quot;admin_session 쿠키&quot;}
   cookie -- 없음 --&gt; empty[&quot;빈 세션&quot;]
-  cookie -- 있음 --&gt; sig{&quot;서명 검증 / SESSION_SECRET_KEY&quot;}
-  sig -- 위조 --&gt; empty
-  sig -- 통과 --&gt; age{&quot;서명 시각이 8시간 이내&quot;}
-  age -- 만료 --&gt; empty
-  age -- 이내 --&gt; uid{&quot;세션에 문자열 user_id&quot;}
-  empty --&gt; uid
-  uid -- 없음 --&gt; deny[&quot;authenticate=False → 302 /admin/login&quot;]
-  uid -- 있음 --&gt; dbq[&quot;DB: users 에서 id 조회&quot;]
-  dbq --&gt; ok{&quot;존재 · is_active · is_superuser&quot;}
-  ok -- 예 --&gt; pass[&quot;통과 → 뷰 실행&quot;]
-  ok -- 아니오 --&gt; clear[&quot;session.clear() → 쿠키 삭제 응답 / 302 /admin/login&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
-  req[&quot;GET/POST /admin/...&quot;] --&gt; cookie{&quot;admin_session 쿠키가 있나&quot;}
+  cookie -- 있음 --&gt; load{&quot;GET admin:sess:HMAC(sid)&quot;}
+  load -- 없음(만료·폐기) --&gt; clear1[&quot;빈 세션 + 응답에서 쿠키 삭제&quot;]
+  load -- 있음 --&gt; abs{&quot;절대 만료 이내&quot;}
+  abs -- 지남 --&gt; clear1
+  abs -- 이내 --&gt; data[&quot;scope.session = data&quot;]
+  empty --&gt; unsafe
+  clear1 --&gt; unsafe
+  data --&gt; unsafe{&quot;POST·PUT·PATCH·DELETE&quot;}
+  unsafe -- 예 --&gt; tok{&quot;헤더 X-CSRF-Token 또는 폼 csrf_token == 세션 토큰&quot;}
+  tok -- 아니오 --&gt; r403[&quot;403 관리 화면 오류(로그인 POST 는 로그인 화면)&quot;]
+  tok -- 예 --&gt; auth
+  unsafe -- 아니오 --&gt; auth{&quot;authenticate / 세션 user_id → DB 활성·슈퍼유저&quot;}
+  auth -- 아니오 --&gt; out[&quot;session.clear() → 키 삭제·쿠키 삭제 / 302 /admin/login&quot;]
+  auth -- 예 --&gt; view[&quot;뷰 실행&quot;]
+  view --&gt; save[&quot;응답 시작 때 SET XX + TTL=min(미사용, 남은 절대 만료)&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  req[&quot;/admin/... 요청&quot;] --&gt; redis{&quot;Redis 사용 가능&quot;}
+  redis -- 아니오 --&gt; r503[&quot;503 관리 세션 저장소를 사용할 수 없습니다 (통과 없음)&quot;]
+  redis -- 예 --&gt; cookie{&quot;admin_session 쿠키&quot;}
   cookie -- 없음 --&gt; empty[&quot;빈 세션&quot;]
-  cookie -- 있음 --&gt; sig{&quot;서명 검증 / SESSION_SECRET_KEY&quot;}
-  sig -- 위조 --&gt; empty
-  sig -- 통과 --&gt; age{&quot;서명 시각이 8시간 이내&quot;}
-  age -- 만료 --&gt; empty
-  age -- 이내 --&gt; uid{&quot;세션에 문자열 user_id&quot;}
-  empty --&gt; uid
-  uid -- 없음 --&gt; deny[&quot;authenticate=False → 302 /admin/login&quot;]
-  uid -- 있음 --&gt; dbq[&quot;DB: users 에서 id 조회&quot;]
-  dbq --&gt; ok{&quot;존재 · is_active · is_superuser&quot;}
-  ok -- 예 --&gt; pass[&quot;통과 → 뷰 실행&quot;]
-  ok -- 아니오 --&gt; clear[&quot;session.clear() → 쿠키 삭제 응답 / 302 /admin/login&quot;]</code></pre></details></figure>
-<p>서명·만료 검증은 starlette <code>SessionMiddleware</code> 가(실패하면 조용히 빈 세션), 사용자 확인은 <code>AdminAuthBackend.authenticate</code>
-(<code>admin_backend.py</code>:173-182)가 한다. SQLAdmin 의 <code>login_required</code> 가 모든 관리 라우트에서 이 메서드를 부른다.
-DB 를 매 요청 확인하므로 강등·비활성화·삭제가 <strong>다음 요청</strong>부터 반영된다 — JWT 의 R-014 와 다르다.</p>
-<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="authenticate" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · authenticate</a></p>
+  cookie -- 있음 --&gt; load{&quot;GET admin:sess:HMAC(sid)&quot;}
+  load -- 없음(만료·폐기) --&gt; clear1[&quot;빈 세션 + 응답에서 쿠키 삭제&quot;]
+  load -- 있음 --&gt; abs{&quot;절대 만료 이내&quot;}
+  abs -- 지남 --&gt; clear1
+  abs -- 이내 --&gt; data[&quot;scope.session = data&quot;]
+  empty --&gt; unsafe
+  clear1 --&gt; unsafe
+  data --&gt; unsafe{&quot;POST·PUT·PATCH·DELETE&quot;}
+  unsafe -- 예 --&gt; tok{&quot;헤더 X-CSRF-Token 또는 폼 csrf_token == 세션 토큰&quot;}
+  tok -- 아니오 --&gt; r403[&quot;403 관리 화면 오류(로그인 POST 는 로그인 화면)&quot;]
+  tok -- 예 --&gt; auth
+  unsafe -- 아니오 --&gt; auth{&quot;authenticate / 세션 user_id → DB 활성·슈퍼유저&quot;}
+  auth -- 아니오 --&gt; out[&quot;session.clear() → 키 삭제·쿠키 삭제 / 302 /admin/login&quot;]
+  auth -- 예 --&gt; view[&quot;뷰 실행&quot;]
+  view --&gt; save[&quot;응답 시작 때 SET XX + TTL=min(미사용, 남은 절대 만료)&quot;]</code></pre></details></figure>
+<p>세션 복원·저장은 <code>RedisSessionMiddleware</code>, 토큰 대조는 <code>AdminCsrfMiddleware</code>, 사용자 확인은 <code>AdminAuthBackend.authenticate</code> 가 한다.
+SQLAdmin 의 <code>login_required</code> 가 모든 관리 라우트에서 <code>authenticate</code> 를 부른다. DB 를 매 요청 확인하는 것은 서버 쪽 폐기(<a href="#revoke">폐기 흐름</a>)와
+<strong>이중 방어</strong>다 — 관리 화면 밖에서 DB 를 직접 고쳐도 다음 요청에서 막힌다.</p>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_session.py" data-symbol="RedisSessionMiddleware" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · RedisSessionMiddleware</a> · <a data-source="app/features/auth/admin_backend.py" data-symbol="authenticate" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · authenticate</a></p>
 </section>
-<section id="failures"><h2>6. 실패 경로</h2>
-<div class="table-wrap"><table><thead><tr><th scope="col">상황</th><th scope="col">응답</th><th scope="col">세션·카운터</th><th scope="col">근거(테스트)</th></tr></thead><tbody><tr><td>CSRF 토큰 없음·불일치(다른 세션의 토큰, 로그인 뒤 옛 토큰, 세션 쿠키 만료)</td><td>403, 로그인 화면 + "요청이 만료되었습니다. 다시 시도하세요." — 다시 그린 화면의 토큰으로 바로 재시도할 수 있다</td><td>세션의 토큰 유지(없었으면 새로 만든다), 시도 카운터 그대로</td><td><code>test_post_without_matching_csrf_token_is_403_before_rate_limit_and_credentials</code>, <code>test_token_from_another_session_is_rejected</code></td></tr><tr><td>틀린 비밀번호 · 없는 사용자 · 비활성 · 일반 사용자</td><td>400, 로그인 화면 + <code>alert alert-danger</code> "사용자명 또는 비밀번호가 올바르지 않습니다." — 사유를 구분하지 않는다</td><td>세션 그대로(<code>user_id</code> 없음, CSRF 토큰 유지 — 재시도 가능), 시도 카운터 증가</td><td><code>test_failed_login_is_400_with_one_generic_message</code></td></tr><tr><td>한도 초과(IP+사용자명 5회 또는 IP 20회 / 60초)</td><td>429 + <code>Retry-After</code>(초), 로그인 화면을 다시 그린다</td><td>카운터 유지</td><td><code>test_too_many_attempts_redraw_login_with_429_and_retry_after</code></td></tr><tr><td>로그인 뒤 강등·비활성화</td><td>다음 요청 302 → <code>/admin/login</code></td><td>세션 비움(쿠키 삭제)</td><td><code>test_demoted_superuser_is_rejected_on_next_request</code></td></tr><tr><td>쿠키 위조(서명 불일치)·만료(8시간)</td><td>302 → <code>/admin/login</code></td><td>빈 세션으로 취급</td><td>starlette <code>SessionMiddleware</code> 동작</td></tr><tr><td>Redis 장애</td><td>로그인 POST 가 실패(레이트 리밋을 우회해 열지 않는다)</td><td>—</td><td>service-hardening R-005 와 같은 fail-closed</td></tr></tbody></table></div>
+<section id="csrf"><h2>7. CSRF 흐름 — meta · 스크립트 · 미들웨어</h2>
+<p>sqladmin 0.32 가 그리는 화면과 <code>statics/js/main.js</code> 를 조사해 <strong>상태를 바꾸는 요청</strong>을 모두 목록화했다. 서버는 경로와
+상관없이 <code>/admin</code> 아래의 POST·PUT·PATCH·DELETE 전부를 검사하고, 클라이언트는 덮어쓴 <code>base.html</code> 하나가 토큰을 싣는다.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">요청</th><th scope="col">메서드·경로</th><th scope="col">보내는 방식</th><th scope="col">토큰을 싣는 방법</th></tr></thead><tbody><tr><td>로그인</td><td><code>POST /admin/login</code></td><td>덮어쓴 <code>login.html</code> 의 폼</td><td>폼 hidden <code>csrf_token</code>(템플릿이 그린다)</td></tr><tr><td>생성</td><td><code>POST /admin/{identity}/create</code></td><td><code>create.html</code> 네이티브 폼</td><td>스크립트가 submit 때 hidden <code>csrf_token</code> 을 붙인다</td></tr><tr><td>수정(저장·다른 이름으로 저장)</td><td><code>POST /admin/{identity}/edit/{pk}</code></td><td><code>edit.html</code> 네이티브 폼</td><td>같음</td></tr><tr><td>삭제(행·상세 모달)</td><td><code>DELETE /admin/{identity}/delete?pks=…</code></td><td><code>main.js</code> <code>$.ajax</code>(XHR)</td><td>스크립트가 XHR 에 <code>X-CSRF-Token</code> 헤더</td></tr><tr><td>일괄 삭제(목록 선택 → action)</td><td>같은 DELETE, <code>pks=a,b,…</code></td><td><code>main.js</code> 가 같은 모달로</td><td>같음</td></tr><tr><td>CSV 가져오기</td><td><code>POST /admin/{identity}/import</code></td><td><code>main.js</code> <code>fetch(FormData)</code></td><td>스크립트가 fetch 에 헤더. 모든 뷰가 <code>can_import=False</code> 라 지금은 꺼져 있다</td></tr><tr><td>사용자 정의 action</td><td><code>GET /admin/{identity}/action/{slug}</code></td><td><code>window.location</code></td><td><strong>등록된 것이 없다</strong> — GET 이라 미들웨어가 보지 않으므로 쓰지 않는다(<code>test_no_view_registers_a_custom_get_action</code>)</td></tr><tr><td>로그아웃</td><td><code>POST /admin/logout</code>(원래 GET)</td><td><code>layout.html</code> 의 링크</td><td>라우트를 POST 전용으로 교체(GET 은 405), 스크립트가 링크 클릭을 토큰 실은 POST 폼으로</td></tr><tr><td>내보내기·상세·목록·ajax lookup·파일 내려받기</td><td>GET</td><td>링크·select2</td><td>상태를 바꾸지 않는다 — 대상 아님</td></tr></tbody></table></div>
+<figure class="figure"><figcaption>CSRF — 화면이 토큰을 받아 요청에 싣고, 미들웨어가 대조한다</figcaption><div class="mermaid">sequenceDiagram
+  participant B as 브라우저(base.html 스크립트)
+  participant S as RedisSessionMiddleware
+  participant C as AdminCsrfMiddleware
+  participant A as SQLAdmin
+  B-&gt;&gt;S: GET /admin/product/list
+  S-&gt;&gt;A: 세션 복원
+  A--&gt;&gt;B: 200 + meta csrf-token(세션 토큰) + 인라인 스크립트
+  Note over B: submit 캡처 — POST 폼에 hidden csrf_token
+  Note over B: XHR·fetch 패치 — 같은 출처 비안전 메서드에 X-CSRF-Token
+  Note over B: 로그아웃 링크 클릭 — 토큰 실은 POST 폼 제출
+  B-&gt;&gt;S: DELETE /admin/product/delete?pks=1 + X-CSRF-Token
+  S-&gt;&gt;C: 세션
+  C-&gt;&gt;C: 헤더 우선, 없으면 폼 본문을 버퍼링해 csrf_token 읽기(본문은 다시 흘린다)
+  C-&gt;&gt;C: hmac.compare_digest(세션 토큰, 제출 토큰)
+  alt 일치
+    C-&gt;&gt;A: 통과 → 삭제
+  else 없음·불일치·세션 없음
+    C--&gt;&gt;B: 403 오류 화면(요청이 만료되었습니다)
+  end</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+  participant B as 브라우저(base.html 스크립트)
+  participant S as RedisSessionMiddleware
+  participant C as AdminCsrfMiddleware
+  participant A as SQLAdmin
+  B-&gt;&gt;S: GET /admin/product/list
+  S-&gt;&gt;A: 세션 복원
+  A--&gt;&gt;B: 200 + meta csrf-token(세션 토큰) + 인라인 스크립트
+  Note over B: submit 캡처 — POST 폼에 hidden csrf_token
+  Note over B: XHR·fetch 패치 — 같은 출처 비안전 메서드에 X-CSRF-Token
+  Note over B: 로그아웃 링크 클릭 — 토큰 실은 POST 폼 제출
+  B-&gt;&gt;S: DELETE /admin/product/delete?pks=1 + X-CSRF-Token
+  S-&gt;&gt;C: 세션
+  C-&gt;&gt;C: 헤더 우선, 없으면 폼 본문을 버퍼링해 csrf_token 읽기(본문은 다시 흘린다)
+  C-&gt;&gt;C: hmac.compare_digest(세션 토큰, 제출 토큰)
+  alt 일치
+    C-&gt;&gt;A: 통과 → 삭제
+  else 없음·불일치·세션 없음
+    C--&gt;&gt;B: 403 오류 화면(요청이 만료되었습니다)
+  end</code></pre></details></figure>
+<ul>
+<li><strong>토큰</strong> — 세션에 하나(<code>csrf_token</code>, <code>secrets.token_urlsafe(32)</code>). 화면을 그릴 때 템플릿 전역 <code>csrf_token(request)</code> 가 없으면 만든다.
+로그인 때 세션과 함께 회전한다. 세션이 없으면(토큰이 없으면) 본문을 읽지도 않고 거부한다.</li>
+<li><strong>본문 처리</strong> — 헤더가 없고 폼(<code>application/x-www-form-urlencoded</code>·<code>multipart/form-data</code>)이면 본문을 끝까지 버퍼링해(상한 10 MiB, 넘으면 413)
+Starlette 폼 파서로 읽고, 같은 바이트를 다운스트림 <code>receive</code> 로 다시 흘린다 — sqladmin 이 같은 폼을 다시 읽는다.
+헤더로만 통일하지 않은 이유: 생성·수정은 브라우저 네이티브 폼 제출이라 헤더를 붙일 수 없다(admin-session-hardening ADR-003).</li>
+<li><strong>덮어쓴 템플릿</strong> — <code>app/templates/admin/sqladmin/base.html</code> 은 원본을 <strong>복사하지 않고</strong> <code>sqladmin_original/base.html</code>(sqladmin 이
+제공하는 접두사 로더)을 확장해 <code>head_meta</code>·<code>tail</code> 두 블록에만 <code>super()</code> + 추가를 한다. sqladmin 을 올릴 때 원본 블록·로그아웃 링크가
+바뀌면 <code>tests/test_admin_csrf.py</code> 의 드리프트 검사가 실패한다.</li>
+<li><strong>로그아웃</strong> — sqladmin 의 로그아웃 라우트는 GET 만 받는다. <code>_logout_post_only</code> 가 같은 엔드포인트의 POST 전용 라우트로 바꿔 끼운다.
+다른 사이트가 <code>&lt;img src="/admin/logout"&gt;</code> 로 강제 로그아웃시킬 수 없다(GET 은 405).</li>
+</ul>
+<p class="source">코드 근거: <a data-source="app/core/security/admin_session.py" data-symbol="AdminCsrfMiddleware" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · AdminCsrfMiddleware</a> · <a data-source="app/templates/admin/sqladmin/base.html" href="../../app/templates/admin/sqladmin/base.html">app/templates/admin/sqladmin/base.html</a> · <a data-source="app/features/admin.py" data-symbol="_logout_post_only" href="../../app/features/admin.py">app/features/admin.py · _logout_post_only</a> · <a data-source="tests/test_admin_csrf.py" href="../../tests/test_admin_csrf.py">tests/test_admin_csrf.py</a></p>
+</section>
+<section id="failures"><h2>8. 실패 경로</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">상황</th><th scope="col">응답</th><th scope="col">세션·카운터</th><th scope="col">근거(테스트)</th></tr></thead><tbody><tr><td>로그인 POST 의 CSRF 토큰 없음·불일치</td><td>403, 로그인 화면 + "요청이 만료되었습니다. 다시 시도하세요." — 다시 그린 화면의 토큰으로 재시도</td><td>세션 토큰 유지(없었으면 새로 만든다), 카운터 그대로</td><td><code>test_post_without_matching_csrf_token_is_403_before_rate_limit_and_credentials</code></td></tr><tr><td>로그인 이후 생성·수정·삭제·로그아웃의 토큰 없음·불일치·다른 세션 토큰</td><td>403, 관리 화면 오류 화면(같은 문구). 아무것도 바뀌지 않는다</td><td>그대로</td><td><code>tests/test_admin_csrf.py</code></td></tr><tr><td>틀린 비밀번호 · 없는 사용자 · 비활성 · 일반 사용자</td><td>400, 같은 문구</td><td>카운터 증가</td><td><code>test_failed_login_is_400_with_one_generic_message</code></td></tr><tr><td>한도 초과</td><td>429 + <code>Retry-After</code></td><td>카운터 유지</td><td><code>test_too_many_attempts_redraw_login_with_429_and_retry_after</code></td></tr><tr><td>미사용 만료·절대 만료·폐기된 세션의 쿠키</td><td>302 → <code>/admin/login</code>, 쿠키 삭제</td><td>빈 세션</td><td><code>test_idle_session_expires</code>, <code>test_absolute_expiry_caps_the_ttl_and_is_not_extended</code></td></tr><tr><td>Redis 장애(관리 세션 저장소)</td><td>503 "관리 세션 저장소를 사용할 수 없습니다" — 로그인 화면도 열리지 않는다</td><td>—</td><td><code>test_redis_outage_is_503_not_a_pass</code>, <code>test_missing_redis_client_is_503</code></td></tr><tr><td>GET <code>/admin/logout</code></td><td>405 — 로그아웃되지 않는다</td><td>그대로</td><td><code>test_get_logout_does_not_log_out</code></td></tr></tbody></table></div>
 <figure class="figure"><figcaption>로그인 POST 의 분기</figcaption><div class="mermaid">flowchart TD
-  post[&quot;POST /admin/login&quot;] --&gt; csrf{&quot;CSRF 토큰 = 세션 값&quot;}
+  post[&quot;POST /admin/login&quot;] --&gt; csrf{&quot;CSRF 토큰 = 세션 값 (미들웨어)&quot;}
   csrf -- 아니오 --&gt; r403[&quot;403 / 로그인 화면 (카운터 그대로)&quot;]
   csrf -- 예 --&gt; rl{&quot;레이트 리밋 허용&quot;}
-  rl -- 아니오 --&gt; r429[&quot;429 + Retry-After / 로그인 화면&quot;]
+  rl -- 아니오 --&gt; r429[&quot;429 + Retry-After&quot;]
   rl -- 예 --&gt; cred{&quot;AuthService.authenticate&quot;}
   cred -- 실패 --&gt; r400[&quot;400 / 같은 문구&quot;]
   cred -- 성공 --&gt; su{&quot;is_superuser&quot;}
   su -- 아니오 --&gt; r400
-  su -- 예 --&gt; ok[&quot;세션 clear → user_id 저장 → 302 /admin/&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
-  post[&quot;POST /admin/login&quot;] --&gt; csrf{&quot;CSRF 토큰 = 세션 값&quot;}
+  su -- 예 --&gt; ok[&quot;세션 clear → user_id → sid 회전 → 302 /admin/&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart TD
+  post[&quot;POST /admin/login&quot;] --&gt; csrf{&quot;CSRF 토큰 = 세션 값 (미들웨어)&quot;}
   csrf -- 아니오 --&gt; r403[&quot;403 / 로그인 화면 (카운터 그대로)&quot;]
   csrf -- 예 --&gt; rl{&quot;레이트 리밋 허용&quot;}
-  rl -- 아니오 --&gt; r429[&quot;429 + Retry-After / 로그인 화면&quot;]
+  rl -- 아니오 --&gt; r429[&quot;429 + Retry-After&quot;]
   rl -- 예 --&gt; cred{&quot;AuthService.authenticate&quot;}
   cred -- 실패 --&gt; r400[&quot;400 / 같은 문구&quot;]
   cred -- 성공 --&gt; su{&quot;is_superuser&quot;}
   su -- 아니오 --&gt; r400
-  su -- 예 --&gt; ok[&quot;세션 clear → user_id 저장 → 302 /admin/&quot;]</code></pre></details></figure>
-<p>실패·성공·한도 초과는 WARNING/INFO 로그로 남는다. 로그에는 사용자명(64자까지)과 IP 만 싣고 비밀번호·해시는 싣지 않는다(<code>admin_backend.py</code>:131·:145·:163·:170).</p>
-<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="login" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · login</a> · <a data-source="tests/test_admin_login.py" href="../../tests/test_admin_login.py">tests/test_admin_login.py</a></p>
+  su -- 예 --&gt; ok[&quot;세션 clear → user_id → sid 회전 → 302 /admin/&quot;]</code></pre></details></figure>
+<p>실패·성공·한도 초과·CSRF 불일치는 WARNING/INFO 로그로 남는다. 로그에는 사용자명(64자까지)·IP·경로만 싣고 비밀번호·토큰·세션 ID 는 싣지 않는다.</p>
+<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="csrf_rejected" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · csrf_rejected</a> · <a data-source="tests/test_admin_login.py" href="../../tests/test_admin_login.py">tests/test_admin_login.py</a> · <a data-source="tests/test_admin_session.py" href="../../tests/test_admin_session.py">tests/test_admin_session.py</a></p>
 </section>
-<section id="logout"><h2>7. 로그아웃 흐름</h2>
-<figure class="figure"><figcaption>로그아웃</figcaption><div class="mermaid">sequenceDiagram
+<section id="logout"><h2>9. 로그아웃 흐름</h2>
+<figure class="figure"><figcaption>로그아웃 — POST + 토큰, 서버에서 키 삭제</figcaption><div class="mermaid">sequenceDiagram
   participant B as 브라우저
-  participant A as SQLAdmin /admin/logout
+  participant S as RedisSessionMiddleware
+  participant C as AdminCsrfMiddleware
   participant K as AdminAuthBackend
-  B-&gt;&gt;A: GET /admin/logout (쿠키)
-  A-&gt;&gt;K: logout(request)
-  K-&gt;&gt;K: session.clear()
-  A--&gt;&gt;B: 302 → /admin/ + 쿠키 삭제(Set-Cookie 만료)
-  B-&gt;&gt;A: GET /admin/
-  A--&gt;&gt;B: 302 → /admin/login</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+  participant R as Redis
+  B-&gt;&gt;B: 로그아웃 링크 클릭 → 스크립트가 POST 폼(csrf_token) 제출
+  B-&gt;&gt;S: POST /admin/logout + 쿠키 sid
+  S-&gt;&gt;C: 세션
+  C-&gt;&gt;C: 토큰 대조(불일치 403)
+  C-&gt;&gt;K: logout → session.clear()
+  S-&gt;&gt;R: DEL admin:sess:HMAC(sid) · SREM admin:user_sessions:id
+  S--&gt;&gt;B: 302 + Set-Cookie admin_session=; Max-Age=0
+  Note over B,R: 로그아웃 전에 복사해 둔 쿠키 sid → Redis 에 없음 → 빈 세션 → 302 /admin/login</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
   participant B as 브라우저
-  participant A as SQLAdmin /admin/logout
+  participant S as RedisSessionMiddleware
+  participant C as AdminCsrfMiddleware
   participant K as AdminAuthBackend
-  B-&gt;&gt;A: GET /admin/logout (쿠키)
-  A-&gt;&gt;K: logout(request)
-  K-&gt;&gt;K: session.clear()
-  A--&gt;&gt;B: 302 → /admin/ + 쿠키 삭제(Set-Cookie 만료)
-  B-&gt;&gt;A: GET /admin/
-  A--&gt;&gt;B: 302 → /admin/login</code></pre></details></figure>
-<p>서버에 세션 저장소가 없으므로 로그아웃은 "쿠키를 비운 새 쿠키로 덮어쓰기" 다. 로그아웃 전에 복사해 둔 쿠키 문자열은 서명이 유효한 동안(최대 8시간)
-다시 쓸 수 있다 — 다만 요청마다 DB 확인을 하므로 그 사이 계정을 강등·비활성화하면 즉시 막힌다(<a href="#security">보안 설계</a>).</p>
-<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="logout" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · logout</a> · <a data-source="tests/test_admin_login.py" href="../../tests/test_admin_login.py">tests/test_admin_login.py</a></p>
+  participant R as Redis
+  B-&gt;&gt;B: 로그아웃 링크 클릭 → 스크립트가 POST 폼(csrf_token) 제출
+  B-&gt;&gt;S: POST /admin/logout + 쿠키 sid
+  S-&gt;&gt;C: 세션
+  C-&gt;&gt;C: 토큰 대조(불일치 403)
+  C-&gt;&gt;K: logout → session.clear()
+  S-&gt;&gt;R: DEL admin:sess:HMAC(sid) · SREM admin:user_sessions:id
+  S--&gt;&gt;B: 302 + Set-Cookie admin_session=; Max-Age=0
+  Note over B,R: 로그아웃 전에 복사해 둔 쿠키 sid → Redis 에 없음 → 빈 세션 → 302 /admin/login</code></pre></details></figure>
+<p>서버에 세션이 있으므로 로그아웃은 "키 삭제" 다. 로그아웃 전에 복사해 둔 쿠키 문자열은 즉시 무효다(<code>test_logout_deletes_the_server_session_and_rejects_a_copied_cookie</code>).</p>
+<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="logout" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · logout</a> · <a data-source="tests/test_admin_csrf.py" href="../../tests/test_admin_csrf.py">tests/test_admin_csrf.py</a></p>
 </section>
-<section id="cookie"><h2>8. 세션 쿠키 구조와 속성</h2>
-<div class="table-wrap"><table><thead><tr><th scope="col">속성</th><th scope="col">값</th><th scope="col">이유</th></tr></thead><tbody><tr><td>이름</td><td><code>admin_session</code></td><td>기존 <code>SESSION_COOKIE_NAME</code>(기본 <code>session</code>)과 겹치지 않게</td></tr><tr><td>Path</td><td><code>/admin</code></td><td>API 요청에 실리지 않는다</td></tr><tr><td>SameSite</td><td><code>Strict</code></td><td>다른 사이트에서 시작된 요청에 실리지 않는다 — 관리 화면 CSRF 차단</td></tr><tr><td>HttpOnly</td><td>항상</td><td>스크립트가 읽지 못한다</td></tr><tr><td>Secure</td><td><code>ENV</code> 가 staging/production 일 때</td><td>배포 환경은 HTTPS 로만 전송(<code>app/features/admin.py</code>:149)</td></tr><tr><td>Max-Age</td><td>28800(8시간)</td><td>서명 타임스탬프도 같은 값으로 검증한다</td></tr><tr><td>서명 키</td><td><code>SESSION_SECRET_KEY</code></td><td>itsdangerous <code>TimestampSigner</code>. 키를 바꾸면 모든 관리 세션 무효</td></tr></tbody></table></div>
-<p>쿠키 값은 <code>base64(JSON)</code> 에 서명을 붙인 것이다 — <strong>암호화가 아니라 서명</strong>이라 내용은 읽을 수 있다. 그래서 저장하는 값은
-<code>{"user_id": "&lt;사용자 UUID&gt;"}</code> 하나뿐이다(이름·권한·비밀번호 해시를 싣지 않는다). 권한은 요청마다 DB 에서 다시 읽는다.</p>
-<p class="source">코드 근거: <a data-source="app/features/auth/admin_backend.py" data-symbol="AdminAuthBackend" href="../../app/features/auth/admin_backend.py">app/features/auth/admin_backend.py · AdminAuthBackend</a> · <a data-source="tests/test_admin_login.py" href="../../tests/test_admin_login.py">tests/test_admin_login.py</a></p>
+<section id="revoke"><h2>10. 폐기 흐름 — 강등·비활성화·비밀번호 변경·삭제</h2>
+<figure class="figure"><figcaption>사용자 단위 폐기 — 다른 브라우저 세션까지</figcaption><div class="mermaid">sequenceDiagram
+  participant O as 운영자
+  participant U as UserService / UserAdmin
+  participant T as RefreshTokenStore
+  participant S as AdminSessionStore
+  participant R as Redis
+  O-&gt;&gt;U: 비활성화 · 슈퍼유저 강등 · (관리 화면) 비밀번호 해시 변경 · 삭제
+  U-&gt;&gt;T: revoke_user (비활성화·삭제 — API 경로)
+  U-&gt;&gt;S: revoke_user(user_id) — 커밋 전
+  Note over U,S: 실패하면 예외 → 커밋 안 됨(fail-closed)
+  S-&gt;&gt;R: SMEMBERS admin:user_sessions:id
+  S-&gt;&gt;R: DEL 각 admin:sess:* · DEL 인덱스
+  Note over R: 그 사용자의 모든 브라우저 세션이 다음 요청에서 빈 세션</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>sequenceDiagram
+  participant O as 운영자
+  participant U as UserService / UserAdmin
+  participant T as RefreshTokenStore
+  participant S as AdminSessionStore
+  participant R as Redis
+  O-&gt;&gt;U: 비활성화 · 슈퍼유저 강등 · (관리 화면) 비밀번호 해시 변경 · 삭제
+  U-&gt;&gt;T: revoke_user (비활성화·삭제 — API 경로)
+  U-&gt;&gt;S: revoke_user(user_id) — 커밋 전
+  Note over U,S: 실패하면 예외 → 커밋 안 됨(fail-closed)
+  S-&gt;&gt;R: SMEMBERS admin:user_sessions:id
+  S-&gt;&gt;R: DEL 각 admin:sess:* · DEL 인덱스
+  Note over R: 그 사용자의 모든 브라우저 세션이 다음 요청에서 빈 세션</code></pre></details></figure>
+<div class="table-wrap"><table><thead><tr><th scope="col">경로</th><th scope="col">어디서 부르나</th><th scope="col">저장소를 얻는 방법</th></tr></thead><tbody><tr><td>API — <code>PATCH /users/{id}</code>(<code>is_active=false</code>·<code>is_superuser=false</code>)·<code>DELETE /users/{id}</code></td><td><code>UserService.update_user</code>·<code>delete_user</code> — refresh <code>revoke_user</code> 와 같은 자리</td><td>provider <code>get_admin_session_store</code> 주입(<code>ADMIN_DISABLED=true</code> 면 <code>None</code> 이라 건너뛴다)</td></tr><tr><td>관리 화면 — 사용자 수정(활성 해제·슈퍼유저 해제·비밀번호 해시 변경)·삭제(일괄 삭제 포함)</td><td><code>UserAdmin.on_model_change</code>·<code>on_model_delete</code> — sqladmin 의 <strong>커밋 전</strong> 훅</td><td>이 요청의 세션 미들웨어가 둔 저장소(<code>request_session_store</code>)</td></tr><tr><td>비밀번호 변경</td><td>API 에는 경로가 없다. 관리 폼은 비밀번호를 다루지 않지만, 해시가 저장 값에 실리면 관리 화면 훅이 변경으로 보고 폐기한다</td><td>생기면 같은 <code>revoke_user</code> 를 부른다</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th scope="col">관리 화면에서의 변경</th><th scope="col">관리 세션</th><th scope="col">근거(테스트)</th></tr></thead><tbody><tr><td>활성 → 비활성</td><td>그 사용자의 세션 전부 폐기</td><td><code>test_admin_ui_edit_revokes_only_on_deactivation_or_demotion[deactivate]</code></td></tr><tr><td>슈퍼유저 → 일반</td><td>전부 폐기</td><td><code>[demote]</code></td></tr><tr><td>비밀번호 해시 변경</td><td>전부 폐기</td><td><code>test_admin_ui_password_change_revokes</code></td></tr><tr><td>삭제</td><td>전부 폐기</td><td><code>test_admin_ui_delete_revokes_that_users_sessions</code></td></tr><tr><td>이름·이메일 등 일반 수정, 같은 값으로 저장</td><td><strong>유지</strong></td><td><code>[general-edit]</code></td></tr><tr><td>자기 자신을 강등·비활성화</td><td>지금 쓰는 세션도 폐기 — 저장은 되고 다음 요청은 로그인 화면(의도된 동작)</td><td><code>test_admin_ui_self_demotion_ends_the_current_session</code></td></tr><tr><td>폐기 중 Redis 오류</td><td>커밋 전이라 <strong>변경도 저장되지 않는다</strong> — 폼이 오류로 다시 그려진다(fail-closed)</td><td><code>test_admin_ui_revocation_failure_keeps_the_user_unchanged</code></td></tr></tbody></table></div>
+<p>판정은 <code>revokes_admin_sessions(user, data)</code> 하나 — 변경 <strong>전</strong> 모델(<code>on_model_change</code> 가 받는 객체)과 저장할 값(<code>data</code>)을 비교한다.
+폐기 자체는 API 경로와 같은 <code>AdminSessionStore.revoke_user</code> 다(중복 구현 없음). <code>after_*</code> 훅을 쓰지 않는 이유: 커밋 뒤라 폐기가 실패하면
+"비활성화는 저장됨 + 세션은 생존" 이 남는다(admin-session-hardening ADR-007).</p>
+<p>되돌려도(재활성화·재승격) 폐기된 세션은 살아나지 않는다 — 키가 지워졌기 때문이다(<code>test_user_service_revokes_every_admin_session_of_that_user</code>).
+매 요청 DB 확인도 그대로 있어, 이 훅을 거치지 않은 변경(DB 직접 수정)도 다음 요청에서 막힌다.</p>
+<p class="source">코드 근거: <a data-source="app/features/user/services/user_service.py" data-symbol="update_user" href="../../app/features/user/services/user_service.py">app/features/user/services/user_service.py · update_user</a> · <a data-source="app/features/user/admin.py" data-symbol="UserAdmin" href="../../app/features/user/admin.py">app/features/user/admin.py · UserAdmin</a> · <a data-source="app/core/security/admin_session.py" data-symbol="revoke_user" href="../../app/core/security/admin_session.py">app/core/security/admin_session.py · revoke_user</a></p>
 </section>
-<section id="lifecycle"><h2>9. 계정 수명주기</h2>
-<figure class="figure"><figcaption>슈퍼유저 계정의 수명주기</figcaption><div class="mermaid">flowchart LR
-  create[&quot;scripts/create_superuser.py / 생성(Argon2) 또는 승격&quot;] --&gt; login[&quot;/admin 로그인 · API 로그인&quot;]
-  login --&gt; demote[&quot;API PATCH /users/{id} / is_superuser=false&quot;]
-  login --&gt; deact[&quot;API PATCH /users/{id} / is_active=false&quot;]
-  login --&gt; delete[&quot;API DELETE /users/{id}&quot;]</div><details><summary>Mermaid 원문 보기 / 오프라인 대체</summary><pre><code>flowchart LR
-  create[&quot;scripts/create_superuser.py / 생성(Argon2) 또는 승격&quot;] --&gt; login[&quot;/admin 로그인 · API 로그인&quot;]
-  login --&gt; demote[&quot;API PATCH /users/{id} / is_superuser=false&quot;]
-  login --&gt; deact[&quot;API PATCH /users/{id} / is_active=false&quot;]
-  login --&gt; delete[&quot;API DELETE /users/{id}&quot;]</code></pre></details></figure>
-<div class="table-wrap"><table><thead><tr><th scope="col">사건</th><th scope="col">관리 세션(<code>admin_session</code>)</th><th scope="col">API access 토큰</th><th scope="col">API refresh 토큰</th></tr></thead><tbody><tr><td><code>create_superuser</code> 로 생성·승격</td><td>다음 로그인부터 사용 가능</td><td>다음 로그인부터 <code>su=true</code></td><td>—</td></tr><tr><td>슈퍼유저 강등</td><td><strong>다음 요청에서 거부</strong>·세션 비움</td><td>만료(15분)까지 <code>su=true</code> 로 통과(R-014)</td><td>회전 시 DB 값으로 재발급(<code>su=false</code>)</td></tr><tr><td>비활성화</td><td>다음 요청에서 거부</td><td>만료까지 통과(R-002)</td><td>즉시 폐기(<code>revoke_user</code>)</td></tr><tr><td>삭제</td><td>다음 요청에서 거부</td><td>만료까지 통과</td><td>즉시 폐기</td></tr><tr><td><code>SESSION_SECRET_KEY</code> 교체</td><td>모두 무효(다시 로그인)</td><td>영향 없음</td><td>영향 없음</td></tr></tbody></table></div>
+<section id="lifecycle"><h2>11. 계정 수명주기</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">사건</th><th scope="col">관리 세션</th><th scope="col">API access 토큰</th><th scope="col">API refresh 토큰</th></tr></thead><tbody><tr><td><code>create_superuser</code> 로 생성·승격</td><td>다음 로그인부터</td><td>다음 로그인부터 <code>su=true</code></td><td>—</td></tr><tr><td>슈퍼유저 강등</td><td><strong>즉시 폐기</strong>(모든 브라우저)</td><td>만료(15분)까지 <code>su=true</code>(service-hardening R-014)</td><td>회전 시 DB 값으로 재발급</td></tr><tr><td>비활성화</td><td>즉시 폐기</td><td>만료까지 통과(R-002)</td><td>즉시 폐기</td></tr><tr><td>삭제</td><td>즉시 폐기</td><td>만료까지 통과</td><td>즉시 폐기</td></tr><tr><td><code>SESSION_SECRET_KEY</code> 교체</td><td>모두 무효(같은 sid 가 다른 키를 가리킨다)</td><td>영향 없음</td><td>영향 없음</td></tr><tr><td>30분 미사용 / 로그인 8시간 경과</td><td>만료(다시 로그인)</td><td>—</td><td>—</td></tr></tbody></table></div>
 <p>첫 관리자는 서버 밖 도구로 만든다 — <code>uv run python -m scripts.create_superuser --username admin --email admin@example.com</code>
-(대화형, 비밀번호 두 번) 또는 <code>--password-stdin</code>(자동화). 이미 있는 사용자명이면 비밀번호를 바꾸지 않고 승격만 한다.</p>
+(대화형, 비밀번호 두 번) 또는 <code>--password-stdin</code>. 이미 있는 사용자명이면 비밀번호를 바꾸지 않고 승격만 한다.</p>
 <p class="source">코드 근거: <a data-source="scripts/create_superuser.py" data-symbol="main" href="../../scripts/create_superuser.py">scripts/create_superuser.py · main</a> · <a data-source="app/features/user/services/user_service.py" data-symbol="update_user" href="../../app/features/user/services/user_service.py">app/features/user/services/user_service.py · update_user</a></p>
 </section>
-<section id="security"><h2>10. 보안 설계 근거와 위협 모델</h2>
-<div class="table-wrap"><table><thead><tr><th scope="col">위협</th><th scope="col">대응</th><th scope="col">근거</th></tr></thead><tbody><tr><td>세션 고정</td><td>로그인 성공 시 <code>session.clear()</code> 후 <code>user_id</code> 만 저장</td><td><code>test_login_replaces_preexisting_session_data</code></td></tr><tr><td>로그인 CSRF(피해자를 공격자 계정으로 로그인시키기)·로그인 시도 한도 소진</td><td>synchronizer token — 세션의 <code>csrf_token</code> 과 폼 hidden 값을 상수 시간 비교, 레이트 리밋보다 먼저. 성공 시 세션을 비워 토큰 회전</td><td><code>test_post_without_matching_csrf_token_is_403_before_rate_limit_and_credentials</code>, <code>test_successful_login_rotates_csrf_token</code>, <code>test_csrf_comparison_is_constant_time</code></td></tr><tr><td>CSRF(관리 화면 쓰기)</td><td><code>SameSite=Strict</code> 쿠키 — 교차 사이트 요청에 세션이 없다</td><td><code>test_session_cookie_attributes</code></td></tr><tr><td>계정 열거</td><td>없는 사용자·틀린 비밀번호·비활성·일반 사용자가 같은 400 문구. 없는 사용자도 더미 Argon2 비용을 치른다(<code>PasswordHasher</code>)</td><td><code>test_failed_login_is_400_with_one_generic_message</code></td></tr><tr><td>무차별 대입·스터핑</td><td>IP+사용자명·IP 두 키의 고정 창 한도, 429 + <code>Retry-After</code></td><td><code>test_too_many_attempts_redraw_login_with_429_and_retry_after</code></td></tr><tr><td>쿠키 탈취·위조</td><td>HttpOnly·Secure(배포)·서명·8시간 만료·<code>Path=/admin</code>. 위조는 서명에서 실패한다</td><td><code>test_session_cookie_attributes</code>, <code>test_secure_cookie_in_deployed_envs</code></td></tr><tr><td>권한 회수 지연</td><td>요청마다 DB 확인 — 강등·비활성화 즉시 반영</td><td><code>test_demoted_superuser_is_rejected_on_next_request</code></td></tr><tr><td>세션이 API 인증으로 새는 것</td><td>세션 미들웨어가 하위 앱에만 있고 API 는 Bearer 만 본다</td><td><code>tests/test_admin_session_scope.py</code></td></tr><tr><td>관리 화면 노출 자체</td><td><code>ADMIN_DISABLED=true</code> — 마운트·import·경로 노출이 모두 없다</td><td><code>tests/test_admin_disabled.py</code></td></tr><tr><td>XSS(로그인 화면)</td><td>Jinja 자동 이스케이프, JS 없음, Bootstrap CSS 는 SRI(<code>integrity</code>)+<code>crossorigin</code></td><td><code>test_error_message_is_html_escaped</code>, <code>test_login_page_is_bootstrap_with_sri</code></td></tr></tbody></table></div>
+<section id="security"><h2>12. 보안 설계 근거와 위협 모델</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">위협</th><th scope="col">대응</th><th scope="col">근거(테스트)</th></tr></thead><tbody><tr><td>쿠키 복사·탈취 후 재사용</td><td>서버 세션 — 로그아웃·폐기가 키를 지운다. 미사용 30분·절대 8시간. HttpOnly·Secure(배포)·<code>Path=/admin</code></td><td><code>test_logout_deletes_the_server_session_and_rejects_a_copied_cookie</code></td></tr><tr><td>쿠키 위조·세션 ID 추측</td><td>256비트 무작위 sid. Redis 키는 HMAC 이라 키 목록이 새도 쿠키를 만들 수 없다</td><td><code>test_redis_key_is_hmac_of_session_id_and_value_holds_the_session</code></td></tr><tr><td>세션 고정</td><td>로그인 성공 시 sid 회전·이전 키 삭제·내용 비움</td><td><code>test_login_replaces_preexisting_session_data</code>, <code>test_relogin_from_a_logged_in_session_rotates_the_id</code></td></tr><tr><td>로그인 CSRF·시도 한도 소진</td><td>synchronizer token, 엔드포인트(레이트 리밋)보다 먼저</td><td><code>test_post_without_matching_csrf_token_is_403_before_rate_limit_and_credentials</code></td></tr><tr><td>관리 화면 쓰기 CSRF(생성·수정·삭제·일괄)</td><td>모든 비안전 메서드에 토큰 + <code>SameSite=Strict</code></td><td><code>test_create</code>·<code>test_edit</code>·<code>test_delete_and_bulk_delete</code></td></tr><tr><td>강제 로그아웃(<code>&lt;img src&gt;</code>)</td><td>로그아웃은 POST + 토큰, GET 은 405</td><td><code>test_get_logout_does_not_log_out</code>, <code>test_logout</code></td></tr><tr><td>권한 회수 지연</td><td>강등·비활성화·삭제 즉시 폐기 + 요청마다 DB 확인</td><td><code>test_user_service_revokes_every_admin_session_of_that_user</code>, <code>test_admin_ui_edit_revokes_only_on_deactivation_or_demotion</code></td></tr><tr><td>저장소 장애 때 열림</td><td>Redis 장애는 503 — 예외를 삼키고 빈 세션으로 통과시키지 않는다</td><td><code>test_redis_outage_is_503_not_a_pass</code></td></tr><tr><td>익명 대용량 본문으로 메모리 소모</td><td>세션 토큰이 없으면 본문을 읽지 않고 거부, 읽을 때도 10 MiB 상한(413)</td><td><code>test_unsafe_request_without_any_session_is_rejected</code></td></tr><tr><td>계정 열거·무차별 대입</td><td>같은 400 문구·더미 Argon2 비용, IP+사용자명·IP 한도</td><td><code>test_failed_login_is_400_with_one_generic_message</code></td></tr><tr><td>세션이 API 인증으로 새는 것</td><td>미들웨어가 하위 앱에만, API 는 Bearer 만</td><td><code>tests/test_admin_session_scope.py</code></td></tr></tbody></table></div>
 <h3>남은 위험</h3>
 <ul>
-<li>서버 쪽 세션 폐기 목록이 없다 — 로그아웃 전에 복사된 쿠키는 만료(8시간)까지 서명이 유효하다. 계정이 슈퍼유저·활성인 동안에만 쓸 수 있다(admin-login R-001).</li>
-<li>로그인 <strong>이후</strong> sqladmin 이 그리는 생성·수정·삭제 폼과 GET 로그아웃에는 CSRF 토큰이 없다 — <code>SameSite=Strict</code>·<code>Path=/admin</code> 쿠키가 1차 방어다(security-ops-hardening R-001). 로그인 폼의 토큰 부재(admin-login R-002)는 2026-10-19 에 해소했다.</li>
+<li>JS 를 끈 브라우저는 생성·수정·삭제·로그아웃이 403/405 다 — 토큰을 붙이는 것이 인라인 스크립트다(sqladmin 삭제 모달도 원래 JS 가 필요하다).</li>
+<li>sqladmin <code>@action</code>(GET 으로 상태 변경)은 미들웨어가 보지 않는다 — 쓰지 않는 것으로 막는다(테스트). 필요해지면 action 을 POST 로 감싸야 한다.</li>
+<li>세션이 Redis 에만 있어 Redis 를 비우거나(<code>FLUSHDB</code>) 장애가 나면 모든 관리자가 다시 로그인해야 한다(장애 중에는 503).</li>
 <li>고정 창 레이트 리밋의 창 경계 2배 버스트·분산 IP 공격은 API 로그인과 같다(service-hardening R-004·R-007).</li>
-<li>로그인 화면의 Bootstrap CSS 는 CDN(jsDelivr)에서 받는다 — CDN 이 막힌 망에서는 스타일 없이 보인다(기능은 동작). SRI 가 내용 변조를 막는다.</li>
 </ul>
 </section>
-<section id="ops"><h2>11. 운영 — 설정·배포 체크리스트·문제 해결</h2>
-<div class="table-wrap"><table><thead><tr><th scope="col">설정</th><th scope="col">기본값</th><th scope="col">의미</th></tr></thead><tbody><tr><td><code>ADMIN_DISABLED</code></td><td><code>false</code></td><td>true 면 관리 화면을 완전히 끈다(404, 응답·로그에 경로 없음)</td></tr><tr><td><code>SESSION_SECRET_KEY</code></td><td>예시 값(기동 거부)</td><td>관리 세션 쿠키 서명 키. 32자 이상, 다른 키와 다르게</td></tr><tr><td><code>AUTH_LOGIN_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_WINDOW_SECONDS</code></td><td>5 / 20 / 60</td><td>API 와 같은 한도(카운터는 <code>admin:rl:login:</code> 로 따로)</td></tr><tr><td><code>TRUSTED_PROXY_HOPS</code></td><td>0</td><td>레이트 리밋·로그의 IP. 프록시 뒤면 앞단 프록시 단 수</td></tr><tr><td><code>ENV</code></td><td>development</td><td>staging/production 이면 쿠키에 <code>Secure</code></td></tr></tbody></table></div>
+<section id="ops"><h2>13. 운영 — 설정·배포 체크리스트·문제 해결</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">설정</th><th scope="col">기본값</th><th scope="col">의미</th></tr></thead><tbody><tr><td><code>ADMIN_DISABLED</code></td><td><code>false</code></td><td>true 면 관리 화면을 완전히 끈다(404, 응답·로그에 경로 없음, 세션 저장소도 없음)</td></tr><tr><td><code>SESSION_SECRET_KEY</code></td><td>예시 값(기동 거부)</td><td>세션 ID → Redis 키 HMAC 키. 32자 이상, 다른 키와 다르게</td></tr><tr><td><code>ADMIN_SESSION_MAX_AGE_SECONDS</code></td><td>28800</td><td>절대 만료(로그인 기준, 연장 없음). 쿠키 Max-Age. 60 이상</td></tr><tr><td><code>ADMIN_SESSION_IDLE_SECONDS</code></td><td>1800</td><td>미사용 만료(요청마다 다시 잰다). 60 이상, 절대 만료 이하</td></tr><tr><td><code>AUTH_LOGIN_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code> / <code>AUTH_LOGIN_WINDOW_SECONDS</code></td><td>5 / 20 / 60</td><td>API 와 같은 한도(카운터는 따로)</td></tr><tr><td><code>TRUSTED_PROXY_HOPS</code></td><td>0</td><td>레이트 리밋·로그의 IP</td></tr><tr><td><code>ENV</code></td><td>development</td><td>staging/production 이면 쿠키에 <code>Secure</code></td></tr></tbody></table></div>
 <h3>배포 체크리스트 (관리 화면)</h3>
 <ol>
 <li>관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>.</li>
-<li>예전 <code>ADMIN</code> 설정을 환경 변수·<code>.env</code> 에서 지웠다(남아 있으면 기동 거부).</li>
+<li>예전 <code>ADMIN</code> 설정을 지웠다(남아 있으면 기동 거부).</li>
 <li><code>SESSION_SECRET_KEY</code> 를 새로 만들었다: <code>uv run python -c "import secrets; print(secrets.token_urlsafe(48))"</code>.</li>
+<li>Redis(6.2 이상)가 준비됐다 — 관리 세션도 여기 있다.</li>
 <li>첫 슈퍼유저를 <code>scripts/create_superuser.py</code> 로 만들었다.</li>
 <li>HTTPS 로 접속한다(배포 환경 쿠키는 Secure). 프록시 뒤면 <code>TRUSTED_PROXY_HOPS</code> 를 설정했다.</li>
 </ol>
-<p><strong>키 교체 영향:</strong> <code>SESSION_SECRET_KEY</code> 를 바꾸면 모든 관리 세션이 무효가 된다(다시 로그인). API 토큰에는 영향이 없다.</p>
+<p><strong>키 교체 영향:</strong> <code>SESSION_SECRET_KEY</code> 를 바꾸면 같은 쿠키가 다른 Redis 키를 가리켜 모든 관리 세션이 무효가 된다(다시 로그인).
+옛 키의 세션은 Redis 에 남았다가 미사용 만료로 사라진다. API 토큰에는 영향이 없다.</p>
 <h3>문제 해결</h3>
-<div class="table-wrap"><table><thead><tr><th scope="col">증상</th><th scope="col">원인</th><th scope="col">조치</th></tr></thead><tbody><tr><td>로그인 후에도 계속 로그인 화면으로 돌아온다</td><td>슈퍼유저·활성이 아니다 / 배포 환경인데 HTTP 로 접속해 Secure 쿠키가 저장되지 않는다</td><td><code>create_superuser</code> 로 승격 / HTTPS 로 접속</td></tr><tr><td>로그인 화면이 403 "요청이 만료되었습니다"</td><td>로그인 화면을 연 뒤 세션 쿠키가 바뀌었다(다른 탭에서 로그인·로그아웃, 8시간 만료, <code>SESSION_SECRET_KEY</code> 교체) — 폼의 CSRF 토큰이 세션과 다르다</td><td>다시 그려진 화면에서 그대로 다시 로그인한다(새 토큰이 실려 있다). 계속되면 브라우저가 <code>admin_session</code> 쿠키를 저장하는지(HTTPS·<code>Path=/admin</code>) 확인</td></tr><tr><td>로그인 화면이 429</td><td>한도 초과(IP+사용자명 5회·IP 20회 / 60초)</td><td><code>Retry-After</code> 만큼 기다린다. 프록시 뒤인데 모두 막히면 <code>TRUSTED_PROXY_HOPS</code></td></tr><tr><td>쿠키가 안 붙는다</td><td>HTTP + <code>ENV=staging/production</code>(Secure), 또는 <code>/admin</code> 밖 경로</td><td>HTTPS. 쿠키는 <code>/admin</code> 에서만 쓰인다</td></tr><tr><td>기동 시 "설정 ADMIN 은 ADMIN_DISABLED 로 바뀌었습니다"</td><td>옛 <code>.env.example</code> 사본·환경 변수에 <code>ADMIN</code> 이 남아 있다</td><td>그 줄을 지운다. <code>ADMIN=false</code> 였다면 <code>ADMIN_DISABLED=true</code></td></tr><tr><td>로그인 화면에 스타일이 없다</td><td>CDN 접근이 막혔다</td><td>기능은 동작한다. 필요하면 내부 미러로 바꾸고 SRI 를 다시 계산한다</td></tr></tbody></table></div>
-<p class="source">코드 근거: <a data-source="config.py" data-symbol="AppSettings" href="../../config.py">config.py · AppSettings</a> · <a data-source=".env.example" href="../../.env.example">.env.example</a> · <a data-source="README.md" href="../../README.md">README.md</a></p>
+<div class="table-wrap"><table><thead><tr><th scope="col">증상</th><th scope="col">원인</th><th scope="col">조치</th></tr></thead><tbody><tr><td><code>/admin</code> 이 503 "관리 세션 저장소를 사용할 수 없습니다"</td><td>Redis 장애·연결 불가 — 관리 화면은 fail-closed</td><td>Redis 를 복구한다(<code>/ready</code> 로 확인). 세션은 Redis 에 남아 있으면 복구 뒤 그대로 쓴다</td></tr><tr><td>잠깐 자리를 비웠더니 로그인 화면으로 돌아간다</td><td>미사용 만료(기본 30분)</td><td>다시 로그인. 늘리려면 <code>ADMIN_SESSION_IDLE_SECONDS</code>(절대 만료 이하)</td></tr><tr><td>계속 쓰고 있었는데 8시간 뒤 로그인 화면</td><td>절대 만료 — 연장되지 않는다</td><td>다시 로그인. 바꾸려면 <code>ADMIN_SESSION_MAX_AGE_SECONDS</code></td></tr><tr><td>저장·삭제·로그아웃이 403 "요청이 만료되었습니다"</td><td>화면을 연 뒤 다른 탭에서 다시 로그인해 세션(토큰)이 바뀌었다 / 브라우저 JS 가 꺼졌다</td><td>화면을 새로 고쳐 다시 시도. JS 를 켠다</td></tr><tr><td>로그아웃 버튼이 405</td><td>JS 가 꺼져 링크가 GET 으로 나갔다 — 로그아웃은 POST 전용</td><td>JS 를 켠다. 또는 미사용 만료를 기다린다</td></tr><tr><td>로그인 화면이 403</td><td>로그인 화면을 연 뒤 세션이 바뀌었다(다른 탭, 만료, 키 교체)</td><td>다시 그려진 화면에서 그대로 다시 로그인</td></tr><tr><td>로그인 후에도 로그인 화면으로 돌아온다</td><td>슈퍼유저·활성이 아니다 / 배포 환경인데 HTTP 라 Secure 쿠키가 저장되지 않는다</td><td><code>create_superuser</code> 로 승격 / HTTPS</td></tr><tr><td>로그인 화면이 429</td><td>한도 초과</td><td><code>Retry-After</code> 만큼 기다린다</td></tr><tr><td>모든 관리자가 한꺼번에 로그아웃됐다</td><td><code>SESSION_SECRET_KEY</code> 교체 또는 Redis 데이터 삭제</td><td>의도한 것이면 정상. 다시 로그인</td></tr></tbody></table></div>
+<p class="source">코드 근거: <a data-source="config.py" data-symbol="SessionSettings" href="../../config.py">config.py · SessionSettings</a> · <a data-source=".env.example" href="../../.env.example">.env.example</a> · <a data-source="README.md" href="../../README.md">README.md</a></p>
 </section>
-<section id="extend"><h2>12. 확장 시 주의</h2>
+<section id="extend"><h2>14. 확장 시 주의</h2>
 <ul>
 <li><strong>새 관리 뷰</strong> — 기능 폴더의 <code>admin.py</code> 에 ModelView 와 <code>admin_views</code> 를 만들고 <code>app/features/admin.py</code> 의
-<code>ADMIN_VIEWS</code> 에 한 줄 더한다. 인증은 SQLAdmin 이 모든 관리 라우트에 이미 걸어 준다 — 뷰마다 따로 할 일이 없다.
-기능 패키지 <code>__init__.py</code> 로 재노출하지 않는다(<code>ADMIN_DISABLED=true</code> 에서 sqladmin 이 로드되지 않게).</li>
-<li><strong>필터</strong> — <code>column_filters</code> 에는 <code>sqladmin.filters</code> 객체(<code>BooleanFilter</code>·<code>OperationColumnFilter</code> 등)를 넣는다.
-모델 컬럼을 그대로 넣으면 sqladmin 0.32 의 목록 화면이 <code>parameter_name</code> <code>AttributeError</code> 로 500 이다. 생성 시각(<code>UTCDateTime</code>)에는
-연산 필터를 걸지 않는다 — 날짜 형으로 인식되지 않아 입력 문자열이 그대로 바인딩된다(500). <code>tests/test_admin_views_render.py</code> 가 모든 뷰의 목록·필터·상세 화면을
-로그인한 슈퍼유저로 200 인지 확인한다(admin-login F-005).</li>
-<li><strong>로그인 화면</strong> — <code>app/templates/admin/sqladmin/login.html</code> 이 SQLAdmin 기본 화면을 덮어쓴다(<code>templates_dir</code> 의
-FileSystemLoader 가 패키지 템플릿보다 먼저 찾아진다). 이 화면과 연동은 <strong>유지 대상</strong>이다 — 바꿀 때 지킬 것: form action
-<code>url_for('admin:login')</code>·POST, 필드 이름 <code>username</code>·<code>password</code>, <code>error</code> 변수의 자동 이스케이프, Bootstrap 버전을 올리면
-SRI 해시를 실제 파일로 다시 계산. <code>tests/test_admin_login.py</code> 의 화면 테스트가 이것을 지킨다.</li>
-<li><strong>API 에 세션 인증을 섞지 않는다</strong> — API 는 상태 없는 Bearer 토큰이 계약이다. 쿠키 인증을 API 에 더하면 CSRF 방어가 필요해지고
-(지금은 헤더라 불필요), 두 체계의 폐기·수명이 엇갈린다. 관리 세션 미들웨어를 메인 앱으로 옮기지 말 것 —
-<code>tests/test_admin_session_scope.py</code> 가 막는다.</li>
-<li>세션에 더 많은 값을 넣지 않는다 — 서명일 뿐 암호화가 아니고, 권한은 요청마다 DB 에서 읽는 것이 설계다.</li>
+<code>ADMIN_VIEWS</code> 에 한 줄 더한다. 인증·CSRF 는 하위 앱 전체에 이미 걸려 있다 — 뷰마다 할 일이 없다.</li>
+<li><strong>sqladmin <code>@action</code> 을 쓰지 않는다</strong> — GET 으로 상태를 바꿔 CSRF 미들웨어를 비켜 간다. <code>tests/test_admin_csrf.py</code> 가 막는다.</li>
+<li><strong>새 상태 변경 요청</strong> — POST·PUT·PATCH·DELETE 면 자동으로 검사된다. 직접 쓰는 JS 는 같은 출처 <code>fetch</code>/XHR 이면 스크립트가 헤더를 붙이고,
+네이티브 POST 폼은 submit 때 hidden 필드가 붙는다. <code>form.submit()</code> 처럼 submit 이벤트가 없는 제출은 직접 <code>csrf_token</code> 필드를 넣는다.</li>
+<li><strong>템플릿</strong> — <code>base.html</code> 은 원본을 확장만 한다. 다른 원본 템플릿을 덮어써야 하면 같은 방식(<code>sqladmin_original/</code> 확장)을 쓰고
+드리프트 테스트를 더한다. 로그인 화면(<code>app/templates/admin/sqladmin/login.html</code>)의 hidden <code>csrf_token</code> 은 지우지 않는다.</li>
+<li><strong>필터</strong> — 생성 시각은 <code>LocalDateFilter</code>(같은 날·이후·이전·기간). sqladmin 연산 필터를 <code>UTCDateTime</code> 에 걸지 않는다.</li>
+<li><strong>비밀번호 변경 경로를 만들면</strong> refresh <code>revoke_user</code> 와 관리 세션 <code>revoke_user</code> 를 함께 부른다.</li>
+<li><strong>API 에 세션 인증을 섞지 않는다</strong> — 세션 미들웨어를 메인 앱으로 옮기지 말 것(<code>tests/test_admin_session_scope.py</code>).</li>
 </ul>
-<p class="source">코드 근거: <a data-source="app/features/admin.py" data-symbol="ADMIN_VIEWS" href="../../app/features/admin.py">app/features/admin.py · ADMIN_VIEWS</a> · <a data-source="app/templates/admin/sqladmin/login.html" href="../../app/templates/admin/sqladmin/login.html">app/templates/admin/sqladmin/login.html</a></p>
+<p class="source">코드 근거: <a data-source="app/features/admin.py" data-symbol="ADMIN_VIEWS" href="../../app/features/admin.py">app/features/admin.py · ADMIN_VIEWS</a> · <a data-source="app/templates/admin/sqladmin/base.html" href="../../app/templates/admin/sqladmin/base.html">app/templates/admin/sqladmin/base.html</a></p>
 </section>
 </main>
 </div>
-<footer><p>줄 번호는 기준일의 소스 기준이다. 소스가 바뀌면 실제 호출 경로·설정·테스트와 대조하여 갱신하세요. 이 문서 자체는 DB·Redis 연결이나 앱을 실행하지 않습니다.</p></footer>
+<footer><p>코드 근거는 파일·심볼 이름으로 적는다(줄 번호는 적지 않는다). 소스가 바뀌면 실제 호출 경로·설정·테스트와 대조하여 갱신하세요. 이 문서 자체는 DB·Redis 연결이나 앱을 실행하지 않습니다.</p></footer>
 
 <script type="module">
 const status = document.getElementById("diagram-status");

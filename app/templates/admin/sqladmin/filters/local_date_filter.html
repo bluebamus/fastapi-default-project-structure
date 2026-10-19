@@ -1,5 +1,7 @@
 {% extends "sqladmin/filters/base_filter.html" %}
-{# app/core/admin_filters.py 의 LocalDateFilter — 업무 시간대 날짜 + 연산, 빠른 선택(security-ops-hardening ADR-005). #}
+{# app/core/admin_filters.py 의 LocalDateFilter — 업무 시간대 날짜 + 연산, 빠른 선택(security-ops-hardening ADR-005),
+   기간(시작일~종료일, 양 끝 포함 — admin-session-hardening ADR-005): 아래 두 번째 폼이 날짜 두 개를
+   "YYYY-MM-DD~YYYY-MM-DD" 하나로 합쳐 {name}=값, {name}_op=between 으로 보낸다. #}
 
 {% block filter_body %}
   {% set name = filter.parameter_name %}
@@ -29,13 +31,30 @@
     {% endfor %}
 
     <select name="{{ name }}_op" class="form-select form-select-sm" required>
-      {% for op_value, op_label in filter.get_operation_options_for_model(model_view.model) %}
+      {% for op_value, op_label in filter.get_operation_options_for_model(model_view.model) if op_value != 'between' %}
       <option value="{{ op_value }}" {% if current_op == op_value %}selected{% endif %}>{{ op_label }}</option>
       {% endfor %}
     </select>
 
-    <input type="date" name="{{ name }}" class="form-control form-control-sm" value="{{ current_filter }}" required>
+    <input type="date" name="{{ name }}" class="form-control form-control-sm" value="{{ current_filter if current_op != 'between' else '' }}" required>
 
     <button type="submit" class="btn btn-sm btn-outline-primary">{{ _("Apply Filter") }}</button>
+  </form>
+
+  {# 기간 — 이름 없는 날짜 입력 두 개를 제출 때 hidden {name} 하나로 합친다. 한쪽만 채우면 열린 구간. #}
+  {% set range_start, range_end = (current_filter.split('~', 1) + ['', ''])[:2] if current_op == 'between' else ('', '') %}
+  <form method="get" class="d-flex flex-column filter-form local-date-range mt-2"
+    onsubmit="var f=this, s=f.querySelector('[data-range=start]').value, e=f.querySelector('[data-range=end]').value; if (!s && !e) { return false; } f.elements['{{ name }}'].value = s + '~' + e;">
+    {% for key, value in request.query_params.items() %}
+      {% if key != name and key != name + '_op' and key != 'error' %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endif %}
+    {% endfor %}
+    <input type="hidden" name="{{ name }}_op" value="between">
+    <input type="hidden" name="{{ name }}" value="{{ current_filter if current_op == 'between' else '' }}">
+    <label class="small text-muted">기간(양 끝 포함)</label>
+    <input type="date" data-range="start" aria-label="시작일" class="form-control form-control-sm" value="{{ range_start }}">
+    <input type="date" data-range="end" aria-label="종료일" class="form-control form-control-sm" value="{{ range_end }}">
+    <button type="submit" class="btn btn-sm btn-outline-primary">기간 적용</button>
   </form>
 {% endblock %}

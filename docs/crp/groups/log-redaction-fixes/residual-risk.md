@@ -14,3 +14,5 @@
 > R-004 상태(2026-10-13): **해소** — access-policy 그룹 F-001. 모든 API 뷰가 접근 수준(`Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`)을 선언해야 하고, 선언 없는 뷰가 있으면 `AccessPolicyGuard` 가 기동을 멈춘다(`app/core/security/access.py`). 잘못 고른 수준은 access-policy R-001 로 이어진다.
 
 > R-001 상태(2026-10-19): **보존 기간 부분 해소** — security-ops-hardening F-002. `ACCESS_LOG_RETENTION_DAYS`(기본 365일, `.env` 설정, 0=보존)가 지난 행을 Celery beat 가 매일 03:30(`TIME_ZONE`) 배치로 지운다. 원문 저장(`session_id`·Referer·XFF)은 사용자 결정으로 그대로다.
+
+> R-002 상태(2026-10-19): **사용자 결정으로 수용(2026-10-19)** — admin-session-hardening ADR-006 "405 문제는 현행 유지한다". 기능·보안 영향이 없고, 고치려면 FastAPI 내부 라우터 구조에 의존해야 한다.

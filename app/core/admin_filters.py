@@ -6,8 +6,11 @@ sqladmin 의 ``OperationColumnFilter`` 는 ``UTCDateTime``(TypeDecorator)을 날
 그대로 따르되, 입력 날짜(``YYYY-MM-DD``, 업무 시간대 ``TIME_ZONE``)의 로컬 자정을 UTC aware 시각으로 바꿔
 범위 조건으로 질의한다.
 
-- 연산: ``on``(그날 하루), ``on_or_after``(그날 0시 이후, 포함), ``before``(그날 0시 이전, 미포함).
-- 형식이 틀린 입력·모르는 연산은 필터를 적용하지 않고 WARNING 로그만 남긴다(500 이 아니다).
+- 연산: ``on``(그날 하루), ``on_or_after``(그날 0시 이후, 포함), ``before``(그날 0시 이전, 미포함),
+  ``between``(기간, admin-session-hardening ADR-005) — 값 ``YYYY-MM-DD~YYYY-MM-DD``, **양 끝 포함**
+  (시작일 0시 ≤ t < 종료일 다음날 0시). 한쪽만 주면 열린 구간(``2026-10-01~`` 이후, ``~2026-10-19`` 까지).
+  sqladmin 은 필터 값 하나만 넘기므로 필터 템플릿이 날짜 입력 두 개를 이 형식으로 합쳐 보낸다.
+- 형식이 틀린 입력·시작일 > 종료일·모르는 연산은 필터를 적용하지 않고 WARNING 로그만 남긴다(500 이 아니다).
 - 빠른 선택(오늘·최근 7일·최근 30일)은 ``quick_ranges()`` 가 같은 연산·값으로 만든다.
 
 sqladmin 을 import 하지 않는다 — 관리 화면을 끈 앱(``ADMIN_DISABLED=true``)에서도 이 모듈은 가볍다.
@@ -32,7 +35,9 @@ OPERATIONS: list[tuple[str, str]] = [
     ("on", "같은 날"),
     ("on_or_after", "이후(포함)"),
     ("before", "이전(미포함)"),
+    ("between", "기간(양 끝 포함)"),
 ]
+RANGE_SEPARATOR = "~"
 
 
 class LocalDateFilter:
@@ -81,17 +86,41 @@ class LocalDateFilter:
             ("최근 30일", "on_or_after", (today - timedelta(days=29)).strftime(DATE_FORMAT)),
         ]
 
+    def date_range(self, value: str) -> tuple[datetime | None, datetime | None]:
+        """``YYYY-MM-DD~YYYY-MM-DD`` → [시작일 0시, 종료일 다음날 0시) UTC. 빈 쪽은 ``None``(열린 구간).
+
+        Raises:
+            ValueError: 구분자 없음·양쪽 다 빔·형식 오류·시작일 > 종료일.
+            OverflowError: 9999-12-31 의 다음날처럼 날짜 범위를 넘을 때.
+        """
+        first, separator, last = (part.strip() for part in value.partition(RANGE_SEPARATOR))
+        if not separator or not (first or last):
+            raise ValueError(value)
+        start = self.day_start(_parse_day(first)) if first else None
+        end = self.day_start(_parse_day(last) + timedelta(days=1)) if last else None
+        if start is not None and end is not None and start >= end:
+            raise ValueError(value)  # 시작일이 종료일보다 늦다
+        return start, end
+
     async def get_filtered_query(
         self, query: Select[Any], operation: str, value: Any, model: Any
     ) -> Select[Any]:
         try:
-            day = datetime.strptime(str(value).strip(), DATE_FORMAT).date()
-            start = self.day_start(day)
-            end = self.day_start(day + timedelta(days=1))
-        except (ValueError, OverflowError):  # 형식 오류, 0001-01-01·9999-12-31 경계 넘침
+            if operation == "between":
+                start, end = self.date_range(str(value))
+            else:
+                day = _parse_day(str(value))
+                start, end = self.day_start(day), self.day_start(day + timedelta(days=1))
+        except (ValueError, OverflowError):  # 형식 오류, 역순, 0001-01-01·9999-12-31 경계 넘침
             logger.warning(
                 "[admin] 날짜 필터 입력 무시: %s=%r", self.parameter_name, str(value)[:32]
             )
+            return query
+        if operation == "between":
+            if start is not None:
+                query = query.filter(self.column >= start)
+            if end is not None:
+                query = query.filter(self.column < end)
             return query
         if operation == "on":
             return query.filter(self.column >= start, self.column < end)
@@ -101,3 +130,7 @@ class LocalDateFilter:
             return query.filter(self.column < start)
         logger.warning("[admin] 날짜 필터 연산 무시: %s_op=%r", self.parameter_name, operation[:32])
         return query
+
+
+def _parse_day(text: str) -> date:
+    return datetime.strptime(text.strip(), DATE_FORMAT).date()
