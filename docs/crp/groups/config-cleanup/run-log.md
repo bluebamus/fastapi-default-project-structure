@@ -54,3 +54,56 @@
 - HTML 2편 `html.parser` 파싱 확인.
 
 - **수렴 판정:** `CONVERGED`
+
+### Round 2 — 2026-10-19 · config-cleanup-2 (API_VERSION 삭제 · 로그 설정 연결 · 예외 목록 삭제)
+- **트리거:** REQ-005·REQ-006(사용자 결정 "API_VERSION 삭제, 로그 설정은 실제로 연결"). 기준선 main `cdfb44f`, 브랜치
+  `chore/config-cleanup-2`, 코드 커밋 `8dde820`, 회귀 테스트 커밋 `eae4a99`.
+- **현황(변경 전) — 로깅 흐름 조사:**
+  - 앱: `configure_logging()` → `dictConfig(build_dictconfig())`. root 에는 `BoundedQueueHandler`(필터 `sql_noise`·`redact`·
+    `context`) 하나, listener 가 `console`(stdout) 과 staging/production 의 `error_console`(stderr, ERROR) 에 쓴다. 포매터는
+    `TzFormatter(fmt=LOG_FORMAT)` — `LOG_FORMAT` 은 `app/utils/logs/config.py` 의 **하드코딩 상수**, datefmt 는 넘기지 않아
+    `TzFormatter.formatTime` 안의 하드코딩 `"%Y-%m-%d %H:%M:%S"`(+ development 밀리초), UTC 는 ENV 로 결정.
+  - `python main.py`: `run_server()` 가 `uvicorn.run(log_config=setup_uvicorn_logging())` — uvicorn 3종 로거가 앱의 같은 queue
+    핸들러를 쓴다(앱 포맷).
+  - `uvicorn main:app` CLI: uvicorn 이 앱 import **전에** 자기 `LOGGING_CONFIG` 를 적용(`uvicorn`·`uvicorn.error` → stderr
+    `DefaultFormatter "%(levelprefix)s %(message)s"`, `uvicorn.access` → stdout `AccessFormatter`). 앱은 `uvicorn`·`uvicorn.error`
+    에 마스킹 필터만 붙였다.
+  - Celery worker: 기본 `worker_hijack_root_logger` 로 root 핸들러를 지우고 자기 `StreamHandler(stderr)`(또는 `--logfile` 파일
+    핸들러)와 Celery 포맷을 단다. `after_setup_logger`·`after_setup_task_logger` 수신자는 마스킹 필터만 붙였다.
+  - `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 은 어느 경로도 읽지 않았고, `LOG_CONSOLE_FORMAT` 기본값
+    (`[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}`)은 실제 포맷과 달랐다. `ApiSettings.API_VERSION` 도 읽는
+    코드가 없었다(접두어 `/api`·`/v1` 은 `main.py`·각 기능 `router.py` 가 선언).
+- **결정:** ADR-005~007
+- **신규 finding:** LOW 3(F-005~F-007) — 전부 Fixed. 변경 후 9개 Settings·62필드, 읽히지 않는 필드 0, 예외 목록 없음. R-001 해소,
+  R-004·R-005 수용.
+
+#### fail-on-revert (변이 → 실패한 테스트)
+
+변경한 파일을 작업 폴더 밖에 복사해 두고 변경 전 내용으로 바꿔 테스트 → 복사본으로 복원(`cmp` 일치 확인, `git checkout` 미사용).
+새 테스트 파일은 `tests/utils/test_log_settings_wiring.py`(24건 — `8dde820` 21건 + `eae4a99` 3건).
+
+| 변이 | 실패 |
+|---|---|
+| 테스트 먼저(구현 전) | 새 파일 16건 + `test_every_settings_field_is_read_somewhere` + `test_removed_keys_are_ignored[ApiSettings]` — 18 failed(기본 출력 회귀 가드 4건·정상 포맷 수용 1건은 통과) |
+| 로깅 연결 코드 4개(`logs/config.py`·`setup.py`·`formatters.py`·`celery/lifecycle.py`)를 변경 전으로 | 11 failed — 사용자 포맷 5·콘솔 끄기 5·사용처 계약 1(`LOG_CONSOLE_*`·`LOG_DATE_FORMAT` 이 다시 안 읽힘) |
+| `formatters.py` 만 | `test_default_app_output_is_unchanged[development]`·`test_custom_format_and_datefmt_apply_to_app_logger[development]`(밀리초 소실) |
+| `celery/lifecycle.py` 만 | `test_custom_format_applies_to_celery_console_handler_not_file`·`test_console_disabled_keeps_celery_file_handler` |
+| `config.py` 만 | 9 failed — 기본값 = 옛 포맷 4(기본 출력이 바뀜)·검증 5 |
+| 콘솔 fmt 에 `{client_addr}` 를 덧붙임(검증 우회) | `test_main_py_access_log_renders_without_logging_error[default·custom]` — 줄마다 `Logging error` |
+
+#### 검사
+
+- `ruff check .` 통과 · `ruff format --check .` 327 files · mypy(격리 실행, 규칙 파일 방법) 204 source files 이상 없음.
+- `pytest -m "not mysql"`(Redis 는 저장소 밖 fakeredis TCP, `REDIS_PORT`·`REDIS_TEST_PORT` 함께): 작업 트리
+  **1265 passed · 0 skipped · 19 deselected** · `.env` 없는 저장소 밖 클론(`eae4a99`, `uv sync --frozen`): **1265 passed · 0 skipped · 19 deselected**
+  (변경 전 1243 — 낡음 검사 1건 삭제, 새 24건, `ApiSettings` 파라미터 1건 삭제).
+- `pytest -m mysql --collect-only`: 19 수집.
+- 추가 확인(감독자 요청) — `python main.py` 경로의 uvicorn 접속 로그: 접속 레코드(msg·args 만)를 실제 `setup_uvicorn_logging()`
+  dictConfig 로 흘려 봤다. 공유 `TzFormatter` 는 `{message}` 로 렌더해 기본·사용자 포맷 모두 오류 없이 요청 줄이 나오고(쿼리
+  `password=` 마스킹, 시간대·`LOG_DATE_FORMAT` 반영), `{client_addr}` 류 접속 전용 필드를 쓰는 포맷은 설정 로드에서 거부된다 —
+  **결함 없음**. 회귀 테스트 3건만 추가(`eae4a99`).
+- `review_gate --fast`: 전건 통과(pip-audit 포함 — 네트워크 가능했음).
+- alembic: 마이그레이션 변경 없음.
+- HTML 안내서 2편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 로컬 review 문서 2편 `html.parser` 파싱 확인.
+
+- **수렴 판정:** `CONVERGED`

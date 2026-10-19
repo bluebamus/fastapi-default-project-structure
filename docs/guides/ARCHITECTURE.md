@@ -134,8 +134,8 @@ app.include_router(catalog.router, prefix="/api")
   = `/api/v1/catalog/products`. 디렉터리 이름이 URL 을 만들지 않습니다.
 - 기능명과 URL 세그먼트가 같아야 합니다 — `tests/test_router_registration.py` 가
   `/api/v1/<기능명>/` 으로 마운트 여부를 확인합니다.
-- **폴더가 있어도 `main.py` 에 없으면 라우트는 없습니다.** `ApiSettings.API_VERSION` 은 존재하지만
-  prefix 는 각 `router.py` 가 `/v1` 을 직접 선언하므로 설정값만 바꿔서는 버전이 바뀌지 않습니다.
+- **폴더가 있어도 `main.py` 에 없으면 라우트는 없습니다.** 버전 세그먼트(`/v1`)는 설정이 아니라 각
+  `router.py` 가 직접 선언합니다(버전 설정 `API_VERSION` 은 읽는 코드가 없어 지웠습니다 — config-cleanup-2).
 - 기능 `__init__.py` 는 `admin_views` 를 재노출하지 않습니다(§12).
 
 ### 2.2 모델 메타데이터
@@ -452,18 +452,15 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | `app_settings` | FastAPI 메타데이터, `DEBUG`(문서·DDL·로그 레벨 기본값·500 detail·reload), `ADMIN_DISABLED`(관리 화면 마운트 여부), `ENV`(로그 구성·관리 세션 쿠키 `Secure`), `SERVER_HOST/PORT` |
 | `db_settings` | DSN·라우팅·replica(`session.py`), `ALEMBIC_URL`(`migrations/env.py`) |
 | `cors_settings` | `CustomCORSMiddleware.configure_cors()` |
-| `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED` |
+| `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED`, `console_formatter_kwargs()`(`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT`), `console_enabled()`(`LOG_CONSOLE_ENABLED`) — §9.2 |
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
 | `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도 |
 | `session_settings` | `SESSION_SECRET_KEY` — 관리 세션 ID → Redis 키 HMAC(`new_admin_session_store`, §12). `ADMIN_SESSION_MAX_AGE_SECONDS`·`ADMIN_SESSION_IDLE_SECONDS` — 관리 세션 절대·미사용 만료(§12, 기본값은 README [세션·토큰 만료](../../README.md#세션토큰-만료)). `SESSION_COOKIE_NAME` — 접속 로그의 `session_id` 기록(§10, 인증에 쓰지 않음). |
-| `api_settings` | **소비 코드 없음** — URL 의 `/v1` 은 각 기능 router 가 직접 선언한다 |
 
-`LogSettings` 의 `LOG_CONSOLE_ENABLED`·`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 도 필드만 있고 코드가
-읽지 않습니다 — false 로 줘도 콘솔이 꺼지지 않고, 포맷은 §9.2 의 고정값입니다.
-읽는 코드가 없는 필드는 `tests/core/test_settings_usage.py` 가 막습니다 — 위의 `API_VERSION` 과 이 세 필드는
-그 파일의 예외 목록에 사유와 함께 있습니다. 메일(`SMTP_*`)·업로드(`UPLOAD_*`)·`SESSION_EXPIRE_SECONDS` 는
-읽는 코드가 없어 지웠고, 옛 `.env` 줄은 `extra="ignore"` 로 무시됩니다(config-cleanup).
+읽는 코드가 없는 필드는 `tests/core/test_settings_usage.py` 가 막습니다 — 예외 목록은 없습니다.
+메일(`SMTP_*`)·업로드(`UPLOAD_*`)·`SESSION_EXPIRE_SECONDS`(config-cleanup)와 `API_VERSION`·`ApiSettings`
+(config-cleanup-2)는 읽는 코드가 없어 지웠고, 옛 `.env` 줄은 `extra="ignore"` 로 무시됩니다.
 
 ## 7. 기동
 
@@ -646,12 +643,25 @@ producer 를 막는 선택지는 쓰지 않습니다 — 로그 때문에 API �
 
 파일 핸들러·rotation 은 없습니다. 저장·검색·rotation 은 Docker·Kubernetes·수집 agent 가 맡습니다.
 
-포맷은 고정입니다(`LOG_FORMAT`):
+포맷은 `LOG_CONSOLE_FORMAT`(`style="{"`), 시각은 `LOG_DATE_FORMAT`(strftime)이 정하고
+`console_formatter_kwargs()` 가 `TzFormatter` 에 넘깁니다. 기본값(= `LOG_FORMAT`)은 다음과 같습니다:
 
 ```
 [{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}
 [2026-09-17 16:29:05.704 KST] INFO  [app=core] [session:-:<module>:166] [database] 라우팅 구성: {...}
 ```
+
+- 필드는 `LogRecord` 속성과 `TzFormatter` 가 채우는 `{tzname}`·`{appname}`·`{classname}`. 설정 로드 때 샘플
+  레코드를 한 번 포맷해 보고, 모르는 필드·괄호 불일치·잘못된 서식 지정자·빈 날짜 형식이면 기동을 멈춥니다.
+- 시각: `development` 는 날짜 형식 뒤에 밀리초(`.704`)가 붙고, `staging`·`production` 은 UTC 로 렌더합니다.
+- 비밀값 마스킹(§9.4.1)은 queue 적재 전 필터라 포맷과 무관합니다.
+- `LOG_CONSOLE_ENABLED=false` 면 콘솔(stdout/stderr) 핸들러를 하나도 만들지 않습니다. 판단은
+  `console_enabled()` 한 곳이고, 앱 dictConfig·`uvicorn main:app` CLI 의 uvicorn 핸들러·Celery worker 의
+  콘솔 핸들러(`setup.apply_console_settings`)가 모두 그것을 봅니다. 파일 핸들러(Celery `--logfile`)는 남습니다.
+  앱 자체에는 파일 출력이 없으므로 앱 로그는 버려지고, 기동 때 stderr 에 `[logging] 경고: LOG_CONSOLE_ENABLED=false …`
+  한 줄이 나옵니다.
+- uvicorn CLI·Celery 의 콘솔 핸들러는 `LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 중 하나라도 **직접 지정했을 때만**
+  이 포맷으로 바꿉니다. 지정하지 않으면 각 도구의 기본 포맷 그대로입니다(기본 출력 불변).
 
 - `app=` 은 로거 이름이 아니라 **소스 경로**에서 정합니다: 기능명(`app/features/<name>/`), `core`·`celery`·
   `utils`·`migrations`, 그 밖의 저장소 코드는 `app`, 설치된 패키지는 `ext`. uvicorn 로거는
@@ -734,7 +744,7 @@ listener 는 FastAPI lifespan 보다 **오래** 살아야 합니다. lifespan �
 
 | | `uv run python main.py` | `uv run uvicorn main:app` |
 |---|---|---|
-| uvicorn 로그 | 프로젝트 포맷 + `[app=uvicorn]`, 같은 큐 | uvicorn 기본 포맷(`INFO:     …`) |
+| uvicorn 로그 | 프로젝트 포맷 + `[app=uvicorn]`, 같은 큐 | uvicorn 기본 포맷(`INFO:     …`). `LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 을 지정하면 그 포맷, `LOG_CONSOLE_ENABLED=false` 면 출력 없음(§9.2) |
 | 앱 로그 | 프로젝트 포맷 | 프로젝트 포맷 |
 | 오류·traceback | 출력 | 출력 |
 | `SIGTERM` 시 로그 비우기 | 신호 핸들러 + lifespan flush | lifespan flush 만 |
@@ -1219,9 +1229,9 @@ config.set_main_option(
 |---|---|---|
 | `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | §9.3 |
 | `LOG_SQL_ECHO_ENABLED` | `false` | §9.4 |
-| `LOG_CONSOLE_ENABLED` | `true` | 코드가 읽지 않음 |
-| `LOG_CONSOLE_FORMAT` | `[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}` | 코드가 읽지 않음 — 실제 포맷은 §9.2 |
-| `LOG_DATE_FORMAT` | `%Y-%m-%d %H:%M:%S` | 코드가 읽지 않음 |
+| `LOG_CONSOLE_ENABLED` | `true` | false 면 콘솔 핸들러 없음(앱·uvicorn CLI·Celery), 기동 시 경고 한 줄 — §9.2 |
+| `LOG_CONSOLE_FORMAT` | `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}` | 콘솔 포매터 fmt, 잘못되면 기동 오류 — §9.2 |
+| `LOG_DATE_FORMAT` | `%Y-%m-%d %H:%M:%S` | 콘솔 포매터 datefmt(빈 값 금지) — §9.2 |
 
 **MiddlewareSettings** — §10 표
 
@@ -1229,8 +1239,6 @@ config.set_main_option(
 (`REDIS_URL` = `redis://[:비밀번호@]호스트:포트/DB`, 비밀번호는 퍼센트 인코딩)
 
 **JWTSettings** — §11 표
-
-**ApiSettings** — `API_VERSION`=`v1` (소비 코드 없음)
 
 **SessionSettings** — `SESSION_COOKIE_NAME`=`session`(접속 로그의 `session_id` 쿠키 이름으로만 읽힌다), `SESSION_SECRET_KEY`=(placeholder — test 외 기동 거부, §6.1. 관리 세션 ID → Redis 키 HMAC 키, §12), `ADMIN_SESSION_MAX_AGE_SECONDS`·`ADMIN_SESSION_IDLE_SECONDS`(관리 세션 만료, §12 — 기본값은 README [세션·토큰 만료](../../README.md#세션토큰-만료))
 

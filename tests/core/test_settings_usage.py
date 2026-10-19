@@ -23,15 +23,7 @@ SOURCE_ROOTS = ("app", "scripts", "migrations")
 SOURCE_FILES = ("main.py", "config.py")
 VALIDATOR_DECORATORS = {"model_validator", "field_validator"}
 
-#: 읽는 코드가 없지만 이번 범위에서 지우지 않은 필드 — 사유와 함께. 빈 목록이 목표다.
-UNUSED_ALLOWED = {
-    "API_VERSION": "URL 의 /v1 은 각 기능 router.py 가 선언한다. 존치·삭제는 별도 결정 대기",
-    "LOG_CONSOLE_ENABLED": "출력 구성은 build_dictconfig() 가 ENV 로 정한다. 존치·삭제는 별도 결정 대기",
-    "LOG_CONSOLE_FORMAT": "실제 포맷은 고정 LOG_FORMAT. 존치·삭제는 별도 결정 대기",
-    "LOG_DATE_FORMAT": "시각 표기는 ENV 가 정한다. 존치·삭제는 별도 결정 대기",
-}
-
-#: 이번에 지운 키 — `.env` 에 남아 있어도 무시돼야 한다.
+#: 지운 키 — `.env` 에 남아 있어도 무시돼야 한다(config-cleanup 1차·2차).
 REMOVED_KEYS = {
     "SMTP_SERVER": "smtp.example.com",
     "SMTP_PASSWORD": "your-app-password",
@@ -40,6 +32,7 @@ REMOVED_KEYS = {
     "UPLOAD_DIR": "uploads",
     "UPLOAD_IMAGE_QUALITY": "999",
     "SESSION_EXPIRE_SECONDS": "not-a-number",
+    "API_VERSION": "v9",
 }
 
 
@@ -108,18 +101,11 @@ def _all_fields() -> set[str]:
 
 def test_every_settings_field_is_read_somewhere():
     """정의만 있고 읽히지 않는 설정 필드가 없어야 한다."""
-    unused = sorted(_all_fields() - _read_names() - set(UNUSED_ALLOWED))
+    unused = sorted(_all_fields() - _read_names())
     assert not unused, (
         f"읽는 코드가 없는 설정 필드: {unused}\n"
-        "쓰는 코드를 함께 넣거나 필드를 지운다(.env.example 도). 꼭 남겨야 하면 UNUSED_ALLOWED 에 사유와 함께 적는다."
+        "쓰는 코드를 함께 넣거나 필드를 지운다(.env.example 도). 예외 목록은 두지 않는다(config-cleanup-2)."
     )
-
-
-def test_unused_allowlist_is_not_stale():
-    """예외 목록은 실제로 남아 있고 여전히 안 읽히는 필드만 담는다 — 쓰이게 되면 목록에서 뺀다."""
-    fields, read = _all_fields(), _read_names()
-    stale = sorted(name for name in UNUSED_ALLOWED if name not in fields or name in read)
-    assert not stale, f"UNUSED_ALLOWED 에서 뺄 항목: {stale}"
 
 
 def test_reader_sees_known_reads():
