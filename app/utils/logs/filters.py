@@ -165,9 +165,11 @@ class RedactingFilter(logging.Filter):
     둔다 — ``logging.Formatter.format`` 은 ``exc_text`` 가 있으면 다시 만들지 않는다.
     ``exc_info`` 는 남겨 두므로 예외 타입·파일·줄 같은 진단 정보는 그대로 나간다.
 
-    메시지는 **가릴 것이 있을 때만** 합친 문자열로 바꾸고 ``args`` 를 비운다. 평소에는
-    ``msg``/``args`` 를 건드리지 않는다 — uvicorn 의 access 포매터처럼 ``args`` 를 직접
-    읽는 포매터가 있다.
+    메시지는 **가릴 것이 있을 때만** 바꾼다. 평소에는 ``msg``/``args`` 를 건드리지 않는다 —
+    uvicorn 의 access 포매터처럼 ``args`` 를 직접 읽는 포매터가 있다. 가릴 것이 있어도 비밀값이
+    **인자 안에만** 있으면 그 인자만 가리고 ``args`` 모양을 지킨다(그 포매터가 ``args`` 를 풀다
+    실패해 줄이 사라지지 않게 — config-cleanup F-008). 틀·인자에 걸치면 합친 문자열로 바꾸고
+    ``args`` 를 비운다.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -177,7 +179,7 @@ class RedactingFilter(logging.Filter):
             message = None
         if message is not None:
             masked = redact(message)
-            if masked != message:
+            if masked != message and not self._mask_args_only(record, masked):
                 record.msg = masked
                 record.args = None
         if record.exc_info and not record.exc_text:
@@ -186,6 +188,20 @@ class RedactingFilter(logging.Filter):
             record.exc_text = redact(record.exc_text)
         if record.stack_info:
             record.stack_info = redact(record.stack_info)
+        return True
+
+    @staticmethod
+    def _mask_args_only(record: logging.LogRecord, masked: str) -> bool:
+        """인자만 가려서 합친 결과가 ``masked`` 와 같으면 그 인자로 바꾸고 True."""
+        if not isinstance(record.args, tuple):
+            return False
+        args = tuple(redact(a) if isinstance(a, str) else a for a in record.args)
+        try:
+            if str(record.msg) % args != masked:
+                return False
+        except Exception:
+            return False
+        record.args = args
         return True
 
 

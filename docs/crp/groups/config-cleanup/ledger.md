@@ -11,6 +11,7 @@
 | F-004 | LOW | INV-1 — 재발 방지 | Fix | Fixed | Round 1 · `tests/core/test_settings_usage.py` | 정의만 있는 필드를 막는 검사가 없었다(`test_settings_contract.py` 는 `.env.example` ↔ config 만 본다) |
 | F-005 | LOW | INV-1 | Fix | Fixed | Round 2 · `8dde820` · `test_removed_keys_are_ignored` · `test_every_settings_field_is_read_somewhere` | `API_VERSION` — 읽는 코드가 없고 바꿔도 경로가 바뀌지 않았다(R-001 일부) |
 | F-006 | LOW | INV-1·INV-5 | Fix | Fixed | Round 2 · `8dde820` · `test_console_disabled_*` | `LOG_CONSOLE_ENABLED` — false 로 줘도 콘솔 출력이 꺼지지 않았다(R-001 일부) |
+| F-008 | MED | INV-7·INV-6 — 비밀값 노출 | Fix | Fixed | Round 3 · `f52ef4f` · `test_filter_masks_inside_one_argument_and_keeps_args_shape` · `test_uvicorn_cli_access_line_is_masked_and_not_lost` | `uvicorn main:app` 의 접속 줄은 마스킹 필터가 없어 `?token=`·`?password=` 를 원문으로 냈다. 필터를 붙이면 `args=None` 때문에 `AccessFormatter` 가 줄을 잃는 형제 결함이 있어 제외돼 있던 것 — 필터가 `args` 모양을 지키게 하고 붙였다 |
 | F-007 | LOW | INV-1·INV-4 | Fix | Fixed | Round 2 · `8dde820` · `test_custom_format_*` · `test_default_*` · `test_invalid_console_format_is_a_settings_error` | `LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` — 읽히지 않았고, `LOG_CONSOLE_FORMAT` 기본값(`[{asctime}] {levelname:8} [{name}:…]`)이 실제 포맷과 달랐다(R-001 일부) |
 
 <!--

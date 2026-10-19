@@ -216,9 +216,9 @@ def configure_logging(force: bool = False) -> None:
     # ``uvicorn main:app`` CLI 로 띄우면 uvicorn 로거는 우리 queue 가 아니라 uvicorn 자신의
     # 핸들러로 나간다. "Exception in ASGI application"·startup 실패 traceback 을 내는
     # 로거에 직접 붙여 그 경로도 가린다. 로거 필터는 어느 쪽 dictConfig 가 나중에 돌아도
-    # 지워지지 않는다(dictConfig 는 필터를 더하기만 한다). access 로거는 traceback 을
-    # 내지 않는다(log-redaction ADR-001).
-    for name in UVICORN_TRACEBACK_LOGGERS:
+    # 지워지지 않는다(dictConfig 는 필터를 더하기만 한다). access 로거도 붙인다 — 접속 줄의
+    # 쿼리 비밀값을 가리고, 필터가 args 모양을 지켜 AccessFormatter 가 깨지지 않는다(config-cleanup F-008).
+    for name in UVICORN_LOGGERS:
         add_redacting_filter(logging.getLogger(name))
     # 같은 CLI 경로의 uvicorn 콘솔 핸들러도 LOG_CONSOLE_* 를 따른다. ``python main.py`` 경로에서는
     # 이 로거들이 공유 queue 핸들러를 쓰므로 여기서 바뀌는 것이 없다.
