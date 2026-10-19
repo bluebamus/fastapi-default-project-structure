@@ -1022,7 +1022,8 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
   `UserService` 가 refresh 토큰 `revoke_user` 와 같은 자리에서 주입된 `AdminSessionStore.revoke_user` 를 부르고
   (`get_admin_session_store` — `ADMIN_DISABLED=true` 면 `None`), 관리 화면 경로는 `UserAdmin.on_model_change`·
   `on_model_delete`(sqladmin 의 **커밋 전** 훅, ADR-007)가 이 요청의 저장소(`request_session_store`)로 부릅니다 — 수정은 변경 전
-  모델과 저장할 값을 비교해 비활성화·슈퍼유저 해제·비밀번호 해시 변경일 때만(`revokes_admin_sessions`), 삭제는 항상. 폐기가
+  모델과 저장할 값을 `revocations` 하나로 비교해 두 집합을 정합니다 — API refresh 토큰은 비활성화·비밀번호 해시 변경·삭제
+  (`UserService` 와 같은 집합), 관리 세션은 그 집합 + 슈퍼유저 해제(ADR-009). 일반 수정은 아무것도 폐기하지 않습니다. 폐기가
   실패하면(Redis) 커밋 전이라 변경도 저장되지 않습니다. 자기 자신을 강등하면 현재 세션도 끊깁니다. 매 요청 DB 확인은 이중 방어로 남깁니다.
 - **CSRF**(ADR-003·004) — `AdminCsrfMiddleware`(하위 앱, 세션 미들웨어 안쪽)가 `/admin` 의 POST·PUT·PATCH·DELETE 전부
   (로그인·로그아웃 포함)에서 세션의 `csrf_token` 과 요청 토큰(헤더 `X-CSRF-Token` 또는 폼 필드 `csrf_token`)을

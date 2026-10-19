@@ -21,4 +21,10 @@
 - [x] 안내서 폐기 표·수명주기 표, README, residual-risk R-004 상태, docs/review 상태
 - [x] 공통 게이트 그린(작업 트리·`.env` 없는 클론)
 
+## Round 3 — 2026-10-19 · 감독자 결정 (폐기 집합을 API 경로에 맞춤)
+- [x] ADR-009(ADR-008 해당 부분 Superseded), INV-6 고침
+- [x] (F-007) `revocations` 판정 함수 하나 + `_revoke`, 강등 테스트(관리 세션 0·refresh 유지), 변이 5건
+- [x] 안내서 폐기·수명주기 표, ARCHITECTURE §12, README, docs/review
+- [x] 공통 게이트 그린(작업 트리·`.env` 없는 클론)
+
 > 미닫힘(`[ ]`) 항목이 1개라도 있으면 그 라운드는 GATE 5 Done 이 아니다.

@@ -36,7 +36,7 @@
 - **INV-2**: 비활성화·강등·비밀번호 변경·삭제 뒤 그 사용자의 모든 관리 세션이 Redis 에 없다(되돌려도 살아나지 않는다). API·관리 화면 어느 경로든 같다. 폐기가 실패하면 그 변경도 저장되지 않는다.
 - **INV-3**: `/admin` 의 POST·PUT·PATCH·DELETE 는 세션 토큰과 같은 토큰 없이는 아무것도 바꾸지 않는다(403). GET 으로는 로그아웃되지 않는다.
 - **INV-4**: 관리 세션의 수명은 로그인 뒤 `ADMIN_SESSION_MAX_AGE_SECONDS` 를 넘지 않는다.
-- **INV-6**(Round 2): 관리 화면에서 비활성화·슈퍼유저 해제·비밀번호 해시 변경·삭제한 사용자의 API refresh family 는 모두 폐기된다. 일반 수정은 그대로이고, 폐기가 실패하면 변경이 저장되지 않는다.
+- **INV-6**(Round 2, Round 3 에서 고침): 관리 화면에서 비활성화·비밀번호 해시 변경·삭제한 사용자의 API refresh family 는 모두 폐기되고, 강등만 된 사용자의 refresh 는 유지된다(관리 세션은 강등에서도 폐기). 일반 수정은 그대로이고, 폐기가 실패하면 변경이 저장되지 않는다.
 - **INV-5**: 기간 필터는 [시작일 0시, 종료일 다음날 0시) 이고 어떤 입력도 500 을 내지 않는다.
 
 ## 3. 인수 기준 — 전부 그린
@@ -48,6 +48,7 @@
 - [x] **세션 범위·끄기** — 메인 앱에 세션 미들웨어 없음, 하위 앱은 세션 → CSRF 순서, `ADMIN_DISABLED=true` 에서 미들웨어·저장소 없음 — `tests/test_admin_session_scope.py`, `tests/test_admin_disabled.py`
 - [x] **공통 게이트** — ruff check·format, mypy, `pytest -m "not mysql"`(작업 트리 + `.env` 없는 저장소 밖 클론, skip 0), mysql 마커 수집, `review_gate` 네트워크 없는 단계, alembic 변경 없음, 실기동 스모크 — run-log
 - [x] **fail-on-revert** — 변이 20건(1차 14 + 추가 범위 6) 모두 해당 테스트 실패(run-log)
+- [x] **폐기 집합 정합**(Round 3) — 강등 → 관리 세션 0 + refresh 유지, 비활성화·비밀번호·삭제 → 둘 다 폐기, 변이 5건 실패(run-log Round 3)
 - [x] **관리 화면 refresh 폐기**(Round 2) — 네 조건 refresh 폐기·일반 수정 유지·두 저장소 각각 실패 시 미저장 — `tests/test_admin_session.py`, 변이 2건 실패(run-log Round 2)
 
 ## 4. 변경 이력

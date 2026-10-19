@@ -11,6 +11,7 @@
 | F-005 | MED | INV-2 — 관리 화면 경로의 폐기 조건·실패 처리 | Fix | Fixed | Round 1 · `25901ae` · `tests/test_admin_session.py`(관리 화면 7건) | 출처: 감독자 추가 범위 REQ-003. 1차 구현(`after_*` 훅)은 변경 전후를 비교하지 않아 비활성·일반 사용자의 일반 수정에도 폐기했고, 비밀번호 변경을 보지 않았고, 커밋 뒤라 Redis 실패 시 "저장됨 + 세션 생존" 이 남았다 |
 | F-004 | LOW | INV-5 — 기간 필터 | Fix | Fixed | Round 1 · `2768083` · `tests/core/test_admin_date_filter.py`(+13건) · `tests/test_admin_views_render.py`(+9건) | 출처: security-ops-hardening R-004 |
 | F-006 | LOW | INV-6 — 관리 화면 경로의 refresh 폐기 | Fix | Fixed | Round 2 · `15c1f70` · `tests/test_admin_session.py`(관리 화면 8건) | 출처: R-004. 관리 화면에서 비활성화·삭제해도 API refresh 토큰이 살아 있었다(API 경로는 폐기) |
+| F-007 | LOW | INV-6 — 강등 시 refresh 유지(API 경로와 같은 집합) | Fix | Fixed | Round 3 · `8300704` · `tests/test_admin_session.py`(`[demote]`) | 출처: 감독자 결정. Round 2(`15c1f70`)는 강등에도 refresh 를 폐기해 일반 사용자로 API 를 계속 쓸 수 없었다 |
 
 <!--
 규칙: 계약 위반만 Fix. Fix 는 회귀 테스트 + fail-on-revert 검증 후에만 Fixed. Open 인 Fix 가 0건이어야 GATE 5 Done.
