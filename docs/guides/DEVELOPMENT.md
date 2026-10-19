@@ -44,7 +44,7 @@ ORM 과 Raw SQL 은 **Repository 구현에서만** 갈라집니다. 나머지(�
 | Composition root | `dependencies/` — 세션 선택 + `Service(db_session)` 반환 | 유스케이스 실행, 커밋, `yield` 후 커밋 |
 | Service | `services/` — `BaseService` 상속, 업무 규칙·오케스트레이션 | HTTP 객체, SQL 문자열, 임의 커밋 |
 | Repository | `repositories/` — `BaseRepository` 또는 `RawRepositoryBase` 상속 | 커밋, HTTP, 업무 규칙 |
-| 관리 UI | `admin.py` — SQLAdmin ModelView. 인증은 관리 화면 전체에 이미 걸려 있다(활성 슈퍼유저 로그인 — [관리 화면 인증 안내서](./admin-auth-guide.html)) | API 권한 계약과 공유되는 보안 장치 아님 — 관리 세션은 API 를 인증하지 않는다 |
+| 관리 UI | `admin.py` — SQLAdmin ModelView. 인증(활성 슈퍼유저 로그인, Redis 서버 세션)과 쓰기 요청 CSRF 는 관리 화면 전체에 이미 걸려 있다([관리 화면 인증 안내서](./admin-auth-guide.html)). sqladmin `@action` 은 GET 으로 상태를 바꿔 CSRF 검사를 비켜 가므로 쓰지 않는다(`tests/test_admin_csrf.py` 가 막는다) | API 권한 계약과 공유되는 보안 장치 아님 — 관리 세션은 API 를 인증하지 않는다 |
 
 "뷰" 는 이 저장소에서 path operation 함수를 뜻합니다(SQLAdmin ModelView·DB 의 SQL VIEW 와 다릅니다).
 Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입으로 쓸 수 있는 것이 계층을 나누는
@@ -69,7 +69,7 @@ Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입
 | `api/routers/router.py` | `<name>_router` 가 v1 파일들을 `prefix="/v1/<name>"`, `tags=[...]` 로 취합 |
 | `__init__.py` | `router` 공개 + `models` import. `admin_views` 는 재노출하지 않는다 |
 | `exceptions.py` | 기능 예외(`NotFoundException` 등 `app/core/exception.py` 하위) |
-| `admin.py` | 모델이 있으면 ModelView + `admin_views`. `column_filters` 는 `sqladmin.filters` 객체로(컬럼을 그대로 넣으면 목록 화면 500 — `tests/test_admin_views_render.py`). `created_at` 이 있으면 `LocalDateFilter(<Model>.created_at)`(`app/core/admin_filters.py`)를 넣는다 — sqladmin 연산 필터는 `UTCDateTime` 에서 500 이고, 빠뜨리면 같은 테스트가 실패한다 |
+| `admin.py` | 모델이 있으면 ModelView + `admin_views`. `column_filters` 는 `sqladmin.filters` 객체로(컬럼을 그대로 넣으면 목록 화면 500 — `tests/test_admin_views_render.py`). `created_at` 이 있으면 `LocalDateFilter(<Model>.created_at)`(`app/core/admin_filters.py`)를 넣는다 — 같은 날·이후·이전·기간(시작일~종료일, 양 끝 포함). sqladmin 연산 필터는 `UTCDateTime` 에서 500 이고, 빠뜨리면 같은 테스트가 실패한다(기간 필터도 모든 `created_at` 뷰에서 실제로 좁혀지는지 본다) |
 | `tests/` | §12 |
 
 ```python

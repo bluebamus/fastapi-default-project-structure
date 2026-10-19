@@ -13,3 +13,5 @@
 
 > R-002 상태(2026-10-19): **해소** — security-ops-hardening F-003. 로그인 폼에 synchronizer token(관리 세션의 `csrf_token`, 폼 hidden 필드)을 싣고 `login` 이 레이트 리밋보다 먼저 `hmac.compare_digest` 로 대조한다(불일치 403). 로그인 이후 sqladmin 폼의 토큰 부재는 security-ops-hardening R-001 로 이어진다.
 > R-001 상태(2026-10-19): 그대로 — 관리 세션의 Redis 이전은 사용자 결정 대기(security-ops-hardening ADR-006).
+
+> R-001 상태(2026-10-19, 2차): **해소** — admin-session-hardening F-001·F-002·F-005. 관리 세션이 Redis 서버 세션이 됐다(쿠키에는 무작위 세션 ID 만, 키 `admin:sess:{HMAC}`). 로그아웃은 서버 키를 지워 복사한 쿠키도 즉시 무효이고, 강등·비활성화·삭제(API·관리 화면)는 그 사용자의 모든 관리 세션을 지운다. 미사용 30분·절대 8시간 만료(`ADMIN_SESSION_*`).
