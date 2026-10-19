@@ -35,7 +35,11 @@ from app.core.security.admin_session import (
     AdminSessionStore,
 )
 from app.core.security.authorization import OwnershipPolicy, Principal
-from app.core.security.dependencies import get_password_hasher, new_admin_session_store
+from app.core.security.dependencies import (
+    get_password_hasher,
+    get_refresh_token_store,
+    new_admin_session_store,
+)
 from app.core.security.refresh_store import RefreshTokenStore
 from app.features import admin as admin_module
 from app.features.user.admin import UserAdmin
@@ -372,7 +376,16 @@ async def _target_with_two_sessions(app, maker, redis):
         assert await _index_status(browser) == 200
     keys = [k.decode() for k in await redis.smembers(f"admin:user_sessions:{other}")]
     assert len(keys) == 2
+    # API 로그인으로 받은 refresh 토큰 family 하나(관리 화면 폐기가 함께 지워야 한다, ADR-008).
+    await get_refresh_token_store(redis).register("jti-other", other, REFRESH_FAMILY)
     return other, actor, targets, keys
+
+
+REFRESH_FAMILY = "fam-other"
+
+
+async def _refresh_revoked(redis) -> bool:
+    return await get_refresh_token_store(redis).is_family_revoked(REFRESH_FAMILY)
 
 
 async def _close(*browsers) -> None:
@@ -414,9 +427,11 @@ async def test_admin_ui_edit_revokes_only_on_deactivation_or_demotion(
         assert await redis.exists(*keys) == 0
         assert await redis.exists(f"admin:user_sessions:{other}") == 0
         assert [await _index_status(b) for b in targets] == [302, 302]
+        assert await _refresh_revoked(redis)  # API refresh 토큰도 폐기
     else:
         assert await redis.exists(*keys) == 2  # 일반 수정은 세션을 그대로 둔다
         assert [await _index_status(b) for b in targets] == [200, 200]
+        assert not await _refresh_revoked(redis)  # refresh 토큰도 그대로
     assert await _index_status(actor) == 200  # 조작한 관리자의 세션은 그대로
     await _close(actor, *targets)
 
@@ -429,6 +444,7 @@ async def test_admin_ui_delete_revokes_that_users_sessions(app, maker, redis):
 
     assert response.status_code == 200
     assert await redis.exists(*keys) == 0
+    assert await _refresh_revoked(redis)
     assert [await _index_status(b) for b in targets] == [302, 302]
     assert await _index_status(actor) == 200
     await _close(actor, *targets)
@@ -447,9 +463,11 @@ async def test_admin_ui_password_change_revokes(app, maker, redis):
         {"hashed_password": user.hashed_password}, user, False, request
     )
     assert await redis.exists(*keys) == 2  # 같은 해시 — 변경 아님
+    assert not await _refresh_revoked(redis)
 
     await UserAdmin().on_model_change({"hashed_password": "$argon2id$new"}, user, False, request)
     assert await redis.exists(*keys) == 0
+    assert await _refresh_revoked(redis)
     await _close(actor, *targets)
 
 
@@ -475,15 +493,20 @@ async def test_admin_ui_self_demotion_ends_the_current_session(app, maker, redis
         assert await _index_status(me) == 302
 
 
-async def test_admin_ui_revocation_failure_keeps_the_user_unchanged(app, maker, redis, monkeypatch):
-    """폐기가 실패하면(Redis) 커밋 전이라 비활성화도 저장되지 않는다 — 세션만 살아남는 일이 없다."""
+@pytest.mark.parametrize(
+    "broken_store", [AdminSessionStore, RefreshTokenStore], ids=["admin-session", "refresh"]
+)
+async def test_admin_ui_revocation_failure_keeps_the_user_unchanged(
+    app, maker, redis, monkeypatch, broken_store
+):
+    """폐기가 실패하면(Redis) 커밋 전이라 비활성화도 저장되지 않는다 — 세션·토큰만 살아남는 일이 없다."""
     other, actor, targets, keys = await _target_with_two_sessions(app, maker, redis)
     token = await admin_page_token(actor, f"/admin/user/edit/{other}")
 
     async def broken(self, user_id):
         raise RedisError("down")
 
-    monkeypatch.setattr(AdminSessionStore, "revoke_user", broken)
+    monkeypatch.setattr(broken_store, "revoke_user", broken)
     response = await actor.post(
         f"/admin/user/edit/{other}", data={**USER_FORM, "is_superuser": "y", "csrf_token": token}
     )

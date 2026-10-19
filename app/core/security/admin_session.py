@@ -100,6 +100,11 @@ class AdminSessionStore:
         self.idle = idle_seconds
         self._clock = clock
 
+    @property
+    def redis(self) -> Redis:
+        """이 저장소의 Redis — 관리 화면의 폐기 훅이 같은 Redis 로 refresh 저장소를 만든다."""
+        return self._redis
+
     @staticmethod
     def new_session_id() -> str:
         return secrets.token_urlsafe(32)

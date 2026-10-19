@@ -32,6 +32,7 @@ from starlette.requests import Request
 
 from app.core.admin_filters import LocalDateFilter
 from app.core.security.admin_session import request_session_store
+from app.core.security.dependencies import get_refresh_token_store
 from app.features.user.models.models import User
 
 
@@ -129,10 +130,11 @@ class UserAdmin(ModelView, model=User):
     }
 
     # =========================================================================
-    # 관리 세션 폐기 (admin-session-hardening ADR-002·ADR-007)
+    # 관리 세션·refresh 토큰 폐기 (admin-session-hardening ADR-002·ADR-007·ADR-008)
     # =========================================================================
     # 관리 화면에서 비활성화·슈퍼유저 해제·비밀번호 변경·삭제하면 그 사용자의 관리 세션(다른 브라우저
-    # 포함)을 바로 지운다 — 폐기는 API 경로(UserService)와 같은 ``AdminSessionStore.revoke_user`` 다.
+    # 포함)과 API refresh 토큰을 바로 폐기한다 — 폐기는 API 경로(UserService)와 같은
+    # ``RefreshTokenStore.revoke_user``·``AdminSessionStore.revoke_user`` 다(같은 Redis).
     # 이름·이메일 같은 일반 수정은 폐기하지 않는다. 저장소는 이 요청의 세션 미들웨어가 준다.
     #
     # after_* 가 아니라 on_* 훅(커밋 **전**, sqladmin 0.32 ``_queries.py`` 의 ``_update_async``·
@@ -143,10 +145,17 @@ class UserAdmin(ModelView, model=User):
         self, data: dict[str, Any], model: Any, is_created: bool, request: Request
     ) -> None:
         if not is_created and revokes_admin_sessions(model, data):
-            await request_session_store(request).revoke_user(model.id)
+            await _revoke_credentials(request, model.id)
 
     async def on_model_delete(self, model: Any, request: Request) -> None:
-        await request_session_store(request).revoke_user(model.id)
+        await _revoke_credentials(request, model.id)
+
+
+async def _revoke_credentials(request: Request, user_id: str) -> None:
+    """그 사용자의 refresh 토큰 family 와 관리 세션을 모두 폐기한다. 실패하면 예외 — 커밋 전이라 변경도 막힌다."""
+    sessions = request_session_store(request)
+    await get_refresh_token_store(sessions.redis).revoke_user(user_id)
+    await sessions.revoke_user(user_id)
 
 
 def revokes_admin_sessions(user: Any, data: dict[str, Any]) -> bool:
