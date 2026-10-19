@@ -66,8 +66,10 @@ def known_app_names() -> set[str]:
     """``_app_from_path`` 가 낼 수 있는 헤더 이름 — ``LOG_APP_LEVELS`` 의 모르는 키 경고에 쓴다."""
     features = Path(_REPO_ROOT) / "app" / "features"
     names = {p.name for p in features.iterdir() if p.is_dir() and not p.name.startswith("_")}
-    return names | {"app", "core", "celery", "utils", "migrations", "ext"} | set(
-        _EXTERNAL_LOGGER_APPS.values()
+    return (
+        names
+        | {"app", "core", "celery", "utils", "migrations", "ext"}
+        | set(_EXTERNAL_LOGGER_APPS.values())
     )
 
 
@@ -110,7 +112,9 @@ class AppLevelFilter(logging.Filter):
     def __init__(self, levels: dict[str, int], default: int | str) -> None:
         super().__init__()
         self.levels = levels
-        self.default = logging.getLevelNamesMapping()[default] if isinstance(default, str) else default
+        self.default = (
+            logging.getLevelNamesMapping()[default] if isinstance(default, str) else default
+        )
 
     def filter(self, record: logging.LogRecord) -> bool:
         appname = getattr(record, "appname", None) or _app_from_path(record.pathname, record.name)

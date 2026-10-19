@@ -27,17 +27,20 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
+import os
 import queue as queue_module
 import signal
 import sys
 import threading
 from logging.config import dictConfig
 from logging.handlers import QueueListener
+from zoneinfo import ZoneInfo
 
 from app.utils.logs.config import (
     LOG_FORMAT,
     _env,
     _level,
+    app_settings,
     build_dictconfig,
     console_enabled,
     file_formatter_kwargs,
@@ -51,11 +54,13 @@ from app.utils.logs.filters import (
     known_app_names,
 )
 from app.utils.logs.formatters import TzFormatter
+from app.utils.logs.handlers import DailySizeRotatingFileHandler
 from app.utils.logs.queue_handler import (
     LOG_FLUSH_TIMEOUT_SECONDS,
     BoundedQueueHandler,
     wait_until_written,
 )
+from config import timezone_settings
 
 # traceback 을 남기는 uvicorn 로거 — CLI 실행에서는 우리 queue 를 거치지 않는다.
 UVICORN_TRACEBACK_LOGGERS = ("uvicorn", "uvicorn.error")
@@ -166,7 +171,8 @@ def adopt_foreign_handlers(logger: logging.Logger) -> None:
     - 파일 핸들러(Celery ``--logfile``)는 존중해 남기고 ``LOG_FILE_FORMAT`` 과 같은 필터만 입힌다.
     - 핸들러가 하나도 없던 로거(uvicorn ``--no-access-log``)는 그대로 둔다 — 꺼 둔 출력을 켜지 않는다.
     """
-    foreign = [h for h in logger.handlers if not isinstance(h, BoundedQueueHandler)]
+    # 재구성(``configure_logging(force=True)``) 전의 옛 queue 핸들러도 남의 것으로 본다 — 그 listener 는 멈췄다.
+    foreign = [h for h in logger.handlers if h is not _queue_handler]
     for handler in foreign:
         if isinstance(handler, logging.FileHandler):
             handler.setFormatter(TzFormatter(**file_formatter_kwargs()))
@@ -175,6 +181,45 @@ def adopt_foreign_handlers(logger: logging.Logger) -> None:
             logger.removeHandler(handler)
     if foreign and _queue_handler is not None and _queue_handler not in logger.handlers:
         logger.addHandler(_queue_handler)
+
+
+# 프로세스 종류 → (주 파일, 에러 파일). 에러 파일도 프로세스별로 나눈다 — 웹과 워커가 한 파일을
+# 회전시키면 서로의 회전이 엇갈린다(logging-overhaul ADR).
+LOG_FILES = {"app": ("app.log", "error.log"), "celery": ("celery.log", "celery-error.log")}
+
+
+def attach_log_files(process: str) -> None:
+    """``LOG_FILE_ENABLED`` 면 프로세스별 파일 핸들러를 listener 에 더한다 (logging-overhaul L5).
+
+    프로세스 종류는 **진입점**이 정해 부른다 — 웹은 ``main.py``(앱 import 시점, uvicorn 의 기동
+    줄보다 먼저), Celery 는 worker 의 ``after_setup_logger`` 수신자. 판단은 이 한 곳이다.
+    쓰기는 listener 스레드에서 일어나 요청 event loop 를 막지 않는다(NFR-009). 여러 번 불러도
+    처음 한 번만 붙는다.
+    """
+    listener = getattr(_queue_handler, "listener", None)
+    if not log_settings.LOG_FILE_ENABLED or listener is None:
+        return
+    if any(isinstance(h, DailySizeRotatingFileHandler) for h in listener.handlers):
+        return
+    kwargs = file_formatter_kwargs()
+    tz = ZoneInfo("UTC") if kwargs["use_utc"] else timezone_settings.tz
+    handlers = []
+    for filename, level in zip(
+        LOG_FILES[process],
+        (log_settings.get_effective_file_level(app_settings.DEBUG), "ERROR"),
+        strict=True,
+    ):
+        handler = DailySizeRotatingFileHandler(
+            os.path.join(log_settings.LOG_DIR, filename),
+            tz=tz,
+            max_bytes=log_settings.LOG_MAX_SIZE_MB * 1024 * 1024,
+            retention_days=log_settings.LOG_RETENTION_DAYS,
+        )
+        handler.setLevel(level)
+        handler.setFormatter(TzFormatter(**kwargs))
+        handlers.append(handler)
+    # listener 는 매 레코드마다 ``self.handlers`` 를 읽는다 — 튜플을 통째로 바꿔 끼운다.
+    listener.handlers = (*listener.handlers, *handlers)
 
 
 def _add_record_filters(handler: logging.Handler) -> None:
@@ -390,6 +435,7 @@ __all__ = [
     "LOG_FORMAT",
     "_env",
     "adopt_foreign_handlers",
+    "attach_log_files",
     "configure_logging",
     "flush_log_queue",
     "get_logger",

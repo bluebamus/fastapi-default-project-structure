@@ -193,10 +193,11 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
 
 
 def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
-    """어느 환경에도 애플리케이션 파일 핸들러를 만들지 않는다 (NFR-009).
+    """dictConfig 에는 파일 핸들러가 없다 (NFR-009).
 
-    저장·rotation 은 Docker/Kubernetes/운영 agent 가 담당한다. 파일 핸들러가
-    다시 생기면 요청 스레드가 동기 rotation 을 수행하게 되므로 이 테스트가 관문이다.
+    파일 로그(``LOG_FILE_ENABLED``)는 진입점이 ``attach_log_files()`` 로 **listener** 에 더한다
+    (logging-overhaul L5) — 요청 스레드가 동기 rotation 을 하지 않게. dictConfig 에 파일 핸들러가
+    생기면 root·요청 스레드 쪽에 붙을 수 있으므로 이 테스트가 관문이다.
     """
     for env in ("development", "test", "staging", "production"):
         cfg = _build_with(monkeypatch, tmp_path, env=env)
@@ -209,7 +210,9 @@ def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
 def test_app_level_filter_applies_per_header_minimum():
     from app.utils.logs.filters import AppLevelFilter
 
-    f = AppLevelFilter(levels={"blog": logging.DEBUG, "sqlalchemy": logging.WARNING}, default="INFO")
+    f = AppLevelFilter(
+        levels={"blog": logging.DEBUG, "sqlalchemy": logging.WARNING}, default="INFO"
+    )
 
     def rec(app, level):
         r = logging.LogRecord("x", level, "x.py", 1, "m", (), None)
@@ -246,8 +249,14 @@ def test_unknown_app_level_header_warns_but_starts(tmp_path):
         LOG_APP_LEVELS="nosuchapp=DEBUG,blog=INFO",
     )
     proc = subprocess.run(  # noqa: S603
-        [sys.executable, "-c", code], cwd=tmp_path, env=env, capture_output=True,
-        text=True, encoding="utf-8", errors="replace", timeout=120,
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
     )
     assert proc.returncode == 0, proc.stderr
     out = proc.stdout + proc.stderr

@@ -33,6 +33,10 @@ REMOVED_KEYS = {
     "UPLOAD_IMAGE_QUALITY": "999",
     "SESSION_EXPIRE_SECONDS": "not-a-number",
     "API_VERSION": "v9",
+    # 옛 파일 로그 키 — 프로세스별 고정 이름과 LOG_RETENTION_DAYS 로 바뀌었다(logging-overhaul L5·L6).
+    "LOG_APP_FILENAME": "{date}_app.log",
+    "LOG_ERROR_FILENAME": "{date}_error.log",
+    "LOG_BACKUP_COUNT": "not-a-number",
 }
 
 

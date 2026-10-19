@@ -220,8 +220,9 @@ def test_every_secret_like_setting_is_in_the_log_secret_list():
     """새 비밀 설정이 생기면 ``LOG_SECRET_SETTINGS`` 에 넣어야 한다 — 이름 규칙으로 감시한다."""
     import re
 
-    import config
     from pydantic_settings import BaseSettings
+
+    import config
 
     rule = re.compile(r"(_USER|_PASSWORD|SECRET|_KEY)$|SECRET")
     secret_like = {
@@ -414,9 +415,9 @@ def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "Logging error" not in proc.stderr, proc.stderr
     line = next((ln for ln in proc.stdout.splitlines() if "127.0.0.1:5000" in ln), "")
-    assert line.endswith(
-        '127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200'
-    ), proc.stdout + proc.stderr
+    assert line.endswith('127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200'), (
+        proc.stdout + proc.stderr
+    )
     assert "[app=uvicorn]" in line
     for secret in ("tok-9f3e7a", "secret42"):
         assert secret not in proc.stdout + proc.stderr

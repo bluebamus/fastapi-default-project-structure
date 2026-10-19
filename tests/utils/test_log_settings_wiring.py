@@ -320,9 +320,7 @@ def test_file_settings_defaults():
     assert s.LOG_MAX_SIZE_MB > 0
 
 
-@pytest.mark.parametrize(
-    ("key", "value"), [("LOG_RETENTION_DAYS", -1), ("LOG_MAX_SIZE_MB", 0)]
-)
+@pytest.mark.parametrize(("key", "value"), [("LOG_RETENTION_DAYS", -1), ("LOG_MAX_SIZE_MB", 0)])
 def test_bad_file_rotation_values_are_settings_errors(key, value):
     with pytest.raises(ValidationError, match=key):
         LogSettings(_env_file=None, **{key: value})

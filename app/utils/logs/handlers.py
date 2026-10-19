@@ -15,9 +15,8 @@ from __future__ import annotations
 import os
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from datetime import time as dtime
-from datetime import tzinfo
 from logging import LogRecord
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -31,7 +30,9 @@ class DailySizeRotatingFileHandler(TimedRotatingFileHandler):
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
         super().__init__(filename, when="midnight", encoding="utf-8", delay=True)
         # 회전 파일 이름: <base>.YYYY-MM-DD 또는 <base>.YYYY-MM-DD.N
-        self._rotated = re.compile(re.escape(Path(self.baseFilename).name) + r"\.(\d{4}-\d{2}-\d{2})(?:\.\d+)?$")
+        self._rotated = re.compile(
+            re.escape(Path(self.baseFilename).name) + r"\.(\d{4}-\d{2}-\d{2})(?:\.\d+)?$"
+        )
 
     def computeRollover(self, currentTime: float) -> int:
         """``currentTime`` 다음의 자정(설정 시간대)."""

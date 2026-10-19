@@ -32,7 +32,7 @@ from celery.signals import (
 from app.celery.task import clear_worker_loop, get_worker_loop
 from app.core.db.session import dispose_engine
 from app.utils.logs import get_logger, restart_log_listener
-from app.utils.logs.setup import adopt_foreign_handlers
+from app.utils.logs.setup import adopt_foreign_handlers, attach_log_files
 
 logger = get_logger("celery.lifecycle")
 
@@ -92,4 +92,5 @@ def _redact_celery_log_handlers(logger: logging.Logger, **_kwargs: object) -> No
     ``adopt_foreign_handlers`` 가 콘솔 핸들러를 공유 queue 로 바꾸고, ``--logfile`` 파일 핸들러는
     남겨 같은 포맷·필터를 입힌다(log-redaction ADR-001 의 마스킹 포함).
     """
+    attach_log_files("celery")  # 이 프로세스가 worker 임을 아는 유일한 지점(logging-overhaul L5)
     adopt_foreign_handlers(logger)

@@ -711,7 +711,7 @@ class LogSettings(BaseSettings):
     )
 
     LOG_MAX_SIZE_MB: int = Field(
-        default=100,
+        default=10,
         gt=0,
         description="하루 안에서 파일을 나누는 크기(MB)",
     )

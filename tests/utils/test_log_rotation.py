@@ -107,9 +107,7 @@ def _seed(tmp_path: Path, days_ago: int, suffix: str = "") -> Path:
 
 
 @pytest.mark.parametrize("retention_days", [3, 7])
-def test_retention_keeps_exactly_n_days_and_deletes_older_including_parts(
-    tmp_path, retention_days
-):
+def test_retention_keeps_exactly_n_days_and_deletes_older_including_parts(tmp_path, retention_days):
     edge = _seed(tmp_path, retention_days)
     edge_part = _seed(tmp_path, retention_days, ".2")
     older = _seed(tmp_path, retention_days + 1)

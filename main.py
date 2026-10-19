@@ -27,9 +27,13 @@ from app.core.tags_metadata import tags_metadata
 from app.features import auth, blog, catalog, home, reply, reports, sns, user
 from app.utils.logs import get_logger
 from app.utils.logs.filters import redact
+from app.utils.logs.setup import attach_log_files
 from config import app_settings
 
 logger = get_logger("main")
+# 이 프로세스가 웹임을 정하는 지점 — LOG_FILE_ENABLED 면 app.log·error.log (logging-overhaul L5).
+# lifespan 이 아니라 import 시점인 이유: uvicorn 의 기동 줄("Waiting for application startup")이 먼저 나온다.
+attach_log_files("app")
 
 
 @asynccontextmanager
