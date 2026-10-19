@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 from types import FrameType
 
+from config import log_secret_values
+
 # 이 파일은 <저장소루트>/app/utils/logs/filters.py 다. parents[3] 이 저장소 루트.
 # 파일을 옮기면 이 계산이 조용히 어긋나므로, tests/utils/test_logs.py 가
 # main.py -> "app" 을 단언해 이동을 즉시 잡는다.
@@ -132,6 +134,8 @@ REDACTED = "***"
 _SECRET_PATTERNS = (
     # DSN 의 비밀번호: scheme://user:<password>@host
     re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s@/]+(?=@)"),
+    # DSN 의 사용자명: scheme://<user>[:password]@host (logging-overhaul L7)
+    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://)[^\s:/@]+(?=(?::[^\s@/]*)?@)"),
     # Authorization 헤더 값: "Authorization: Bearer <token>" · "authorization=<token>"
     re.compile(
         r"(?i)(?P<keep>\b(?:proxy-)?authorization\b[\"']?\s*[:=]\s*[\"']?"
@@ -147,8 +151,24 @@ _SECRET_PATTERNS = (
 )
 
 
+# 설정된 비밀값 원문(``config.LOG_SECRET_SETTINGS``). 이보다 짧은 값(주로 계정명)은 일반 단어를
+# 가리는 오탐을 막으려고 원문 일치로 가리지 않고 ``user=``·``username=`` 형태에서만 가린다 —
+# DSN 의 사용자명은 위 패턴이 따로 가린다.
+SECRET_VALUES: tuple[str, ...] = log_secret_values()
+_LITERAL_MIN_LENGTH = 4
+
+
 def redact(text: str) -> str:
-    """문자열 안의 비밀값(DSN 비밀번호·Authorization·password= 류)을 ``***`` 로 가린다."""
+    """문자열 안의 비밀값(DSN 계정·Authorization·password= 류·설정 비밀값 원문)을 ``***`` 로 가린다."""
+    for value in SECRET_VALUES:
+        if len(value) >= _LITERAL_MIN_LENGTH:
+            text = text.replace(value, REDACTED)
+        else:
+            text = re.sub(
+                rf"(?i)(\buser(?:name)?[\"']?\s*[:=]\s*[\"']?){re.escape(value)}(?![\w])",
+                lambda m: m.group(1) + REDACTED,
+                text,
+            )
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub(lambda m: m.group("keep") + REDACTED, text)
     return text

@@ -1061,6 +1061,36 @@ session_settings = get_session_settings()
 
 
 # =============================================================================
+# 로그에서 원문을 가릴 설정 (logging-overhaul L7)
+# =============================================================================
+# 새 비밀 설정(이름이 *_USER·*_PASSWORD·*_KEY 이거나 SECRET 을 담는 것)은 여기 넣는다 —
+# tests/utils/test_log_redaction.py 의 계약 테스트가 이름 규칙으로 빠진 것을 잡는다.
+LOG_SECRET_SETTINGS = (
+    "MYSQL_USER",
+    "MYSQL_PASSWORD",
+    "MYSQL_REPLICA_USER",
+    "MYSQL_REPLICA_PASSWORD",
+    "REDIS_PASSWORD",
+    "ACCESS_TOKEN_SECRET_KEY",
+    "REFRESH_TOKEN_SECRET_KEY",
+    "SESSION_SECRET_KEY",
+)
+
+
+def log_secret_values() -> tuple[str, ...]:
+    """``LOG_SECRET_SETTINGS`` 의 현재 값(빈 값 제외) — 로그 마스킹(``filters.redact``)이 쓴다."""
+    sources = (db_settings, redis_settings, jwt_settings, session_settings)
+    values = {
+        value
+        for source in sources
+        for name in LOG_SECRET_SETTINGS
+        if isinstance(value := getattr(source, name, None), str) and value
+    }
+    # 긴 값부터 — 한 값이 다른 값을 품을 때 짧은 쪽이 먼저 바꿔 긴 쪽 조각이 남지 않게.
+    return tuple(sorted(values, key=len, reverse=True))
+
+
+# =============================================================================
 # 설정 검사 (ADR-027 · ADR-028 · ADR-045)
 # =============================================================================
 # 값의 **출처**(.env 또는 환경 변수)와 **내용**(예시 값·약한 키·배포 금지 조합)을 import
