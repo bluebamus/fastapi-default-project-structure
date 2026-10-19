@@ -5,6 +5,10 @@ ENV(development/test/staging/production)에 따라 레벨·출력·타임존을 
 - test: stdout, 간결, 로컬 TZ
 - staging/production: stdout + stderr(ERROR 전용), INFO, UTC
 
+포맷·시각 형식·콘솔 출력 여부는 ``LogSettings`` 의 ``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT``·
+``LOG_CONSOLE_ENABLED`` 가 정한다. 콘솔 출력 여부는 ``console_enabled()`` **한 곳**에서 판단하고,
+앱 dictConfig·uvicorn CLI 핸들러·Celery 핸들러(``setup.apply_console_settings``)가 모두 그것을 본다.
+
 **출력 경로는 항상 queue 를 거친다** (NFR-009). root 로거에는
 ``BoundedQueueHandler`` 하나만 붙고, 실제 stdout/stderr 쓰기는 ``QueueListener``
 스레드가 수행한다. 요청 event loop 에서 동기 write/flush 가 일어나지 않게 하려는
@@ -41,13 +45,11 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
 
 from __future__ import annotations
 
-from config import app_settings, log_settings
+from config import LogSettings, app_settings, log_settings
 
 # 확정 포맷 (#3): [시간 TZ] LEVEL [app=..] [module:class:func:line] message
-LOG_FORMAT = (
-    "[{asctime} {tzname}] {levelname:5} [app={appname}] "
-    "[{module}:{classname}:{funcName}:{lineno}] {message}"
-)
+# 정본은 LOG_CONSOLE_FORMAT 의 기본값이다 — 실제 출력은 설정값을 쓴다(console_formatter_kwargs).
+LOG_FORMAT: str = LogSettings.model_fields["LOG_CONSOLE_FORMAT"].default
 
 # listener 가 소유하는 실제 출력 핸들러 이름. queue 핸들러가 아니라 이 handler 들이
 # stdout/stderr 에 쓴다.
@@ -64,9 +66,27 @@ def _level() -> str:
     return log_settings.get_effective_log_level(app_settings.DEBUG)
 
 
-def listener_handler_names(env: str | None = None) -> list[str]:
-    """QueueListener 가 위임할 출력 핸들러 이름 목록."""
+def console_enabled() -> bool:
+    """콘솔(stdout/stderr) 핸들러를 붙일지 — 콘솔 핸들러를 만드는 모든 경로가 이것만 본다."""
+    return log_settings.LOG_CONSOLE_ENABLED
+
+
+def console_formatter_kwargs(env: str | None = None) -> dict:
+    """콘솔 포매터(``TzFormatter``) 인자 — 앱 dictConfig 와 uvicorn CLI·Celery 핸들러가 함께 쓴다."""
     env = env if env is not None else _env()
+    return {
+        "fmt": log_settings.LOG_CONSOLE_FORMAT,
+        "datefmt": log_settings.LOG_DATE_FORMAT,
+        "use_utc": env in ("production", "staging"),
+        "with_ms": env == "development",
+    }
+
+
+def listener_handler_names(env: str | None = None) -> list[str]:
+    """QueueListener 가 위임할 출력 핸들러 이름 목록(콘솔이 꺼졌으면 빈 목록)."""
+    env = env if env is not None else _env()
+    if not console_enabled():
+        return []
     names = [CONSOLE_HANDLER]
     if env in ("production", "staging"):
         names.append(ERROR_CONSOLE_HANDLER)
@@ -76,8 +96,6 @@ def listener_handler_names(env: str | None = None) -> list[str]:
 def build_dictconfig() -> dict:
     env = _env()
     level = _level()
-    use_utc = env in ("production", "staging")
-    with_ms = env == "development"
 
     # listener 스레드가 소유하는 출력 핸들러. root 에는 붙이지 않는다.
     handlers: dict = {
@@ -115,6 +133,13 @@ def build_dictconfig() -> dict:
             "level": "ERROR",
         }
 
+    # 콘솔이 꺼졌으면 listener 가 쓰지 않는 출력 핸들러는 만들지도 않는다.
+    handlers = {
+        name: spec
+        for name, spec in handlers.items()
+        if name == QUEUE_HANDLER or name in handlers[QUEUE_HANDLER]["handlers"]
+    }
+
     return {
         "version": 1,
         "disable_existing_loggers": False,
@@ -129,9 +154,7 @@ def build_dictconfig() -> dict:
         "formatters": {
             "app": {
                 "()": "app.utils.logs.formatters.TzFormatter",
-                "fmt": LOG_FORMAT,
-                "use_utc": use_utc,
-                "with_ms": with_ms,
+                **console_formatter_kwargs(env),
             },
         },
         "handlers": handlers,

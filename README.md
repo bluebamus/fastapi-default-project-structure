@@ -253,6 +253,8 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 시도 한도(IP) |
 | `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | 없으면 `DEBUG` 에 따라 DEBUG/INFO |
 | `LOG_SQL_ECHO_ENABLED` | `false` | SQL 과 **바인딩 값** 로깅. 운영에서 켜지 않음 |
+| `LOG_CONSOLE_FORMAT` / `LOG_DATE_FORMAT` | 프로젝트 포맷 / `%Y-%m-%d %H:%M:%S` | 콘솔 로그 형식(`{필드}`)과 시각 형식(strftime). 잘못된 형식은 기동 시 오류. 지정하면 uvicorn CLI·Celery 콘솔 로그에도 적용 — [ARCHITECTURE §9.2](./docs/guides/ARCHITECTURE.md#92-출력-구성과-포맷) |
+| `LOG_CONSOLE_ENABLED` | `true` | false: 콘솔(stdout/stderr) 로그를 모두 끈다(앱·uvicorn·Celery, 파일 출력은 유지). 앱 로그는 버려지고 기동 때 경고 한 줄 |
 | `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
 | `TRUSTED_PROXY_HOPS` | `0` | 접속 로그·로그인 레이트 리밋의 IP 를 `X-Forwarded-For` 오른쪽에서 몇 번째로 읽을지(앞단 신뢰 프록시 수). 0 이면 헤더를 보지 않는다. **프록시 뒤 배포는 단수만큼 설정** — 0 이면 전원이 프록시 IP 하나로 보여 한 사람으로 취급되고, 크게 잡으면 IP 위조가 가능하다 |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `password`·`token`·… | 접속 로그에 값을 `***` 로 저장할 쿼리스트링 키 |

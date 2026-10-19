@@ -32,9 +32,8 @@ class TzFormatter(logging.Formatter):
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         dt = datetime.fromtimestamp(record.created, tz=self._tz())
-        if datefmt:
-            return dt.strftime(datefmt)
-        rendered = dt.strftime("%Y-%m-%d %H:%M:%S")
+        rendered = dt.strftime(datefmt or "%Y-%m-%d %H:%M:%S")
+        # 밀리초는 날짜 형식과 무관하게 붙인다 — LOG_DATE_FORMAT 을 줘도 development 의 표기가 유지된다.
         if self.with_ms:
             rendered = f"{rendered}.{int(record.msecs):03d}"
         return rendered

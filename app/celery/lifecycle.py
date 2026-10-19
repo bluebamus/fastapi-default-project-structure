@@ -33,6 +33,7 @@ from app.celery.task import clear_worker_loop, get_worker_loop
 from app.core.db.session import dispose_engine
 from app.utils.logs import get_logger, restart_log_listener
 from app.utils.logs.filters import add_redacting_filter
+from app.utils.logs.setup import apply_console_settings
 
 logger = get_logger("celery.lifecycle")
 
@@ -90,6 +91,10 @@ def _redact_celery_log_handlers(logger: logging.Logger, **_kwargs: object) -> No
     worker 는 기본값(``worker_hijack_root_logger``)으로 root 의 핸들러를 **지우고** 자기
     핸들러를 단다 — 우리 queue 핸들러와 그 ``redact`` 필터가 함께 사라진다. 태스크 실패
     traceback 이 이 핸들러로 나가므로 같은 필터를 여기에 붙인다.
+
+    콘솔 핸들러는 앱과 같은 ``LOG_CONSOLE_*`` 결정을 따른다(``apply_console_settings``) —
+    꺼졌으면 떼어 내고, 포맷을 지정했으면 바꾼다. ``--logfile`` 파일 핸들러는 그대로 둔다.
     """
+    apply_console_settings(logger)
     for handler in logger.handlers:
         add_redacting_filter(handler)

@@ -15,6 +15,7 @@
     3. Field의 default 값
 """
 
+import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -25,7 +26,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from dotenv import dotenv_values
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
 
@@ -596,11 +597,14 @@ class LogSettings(BaseSettings):
     )
 
     # === 출력 대상 설정 ===
-    # 코드가 읽지 않는 필드다 — false 로 줘도 콘솔 출력은 꺼지지 않는다.
-    # 출력 구성은 app/utils/logs/config.py 의 build_dictconfig() 가 ENV 로만 정한다.
+    # false 면 콘솔(stdout/stderr) 핸들러를 하나도 붙이지 않는다 — 앱 로거(listener 의 console·
+    # error_console), ``uvicorn main:app`` CLI 의 uvicorn 핸들러, Celery worker 의 콘솔 핸들러 모두.
+    # 판단은 app/utils/logs/config.py 의 console_enabled() 한 곳에서 한다. 파일 핸들러(Celery
+    # --logfile)는 그대로 둔다. 앱에는 파일 출력이 없으므로 false 면 앱 로그는 버려지고, 기동 때
+    # stderr 에 경고 한 줄을 남긴다.
     LOG_CONSOLE_ENABLED: bool = Field(
         default=True,
-        description="콘솔 로그 활성화 (현재 코드가 읽지 않음 — false 여도 콘솔 출력은 유지)",
+        description="콘솔(stdout/stderr) 로그 출력 — false 면 콘솔 핸들러를 붙이지 않는다",
     )
 
     # SQL 본문·바인딩 파라미터를 로그로 내보낼지 여부.
@@ -628,17 +632,47 @@ class LogSettings(BaseSettings):
     )
 
     # === 포맷 설정 ===
-    # 아래 두 필드도 코드가 읽지 않는다. 실제 포맷은 app/utils/logs/config.py 의
-    # 고정 상수 LOG_FORMAT 이고, 시각 표기는 ENV 가 정한다.
+    # 콘솔 포매터(TzFormatter, style="{")의 fmt·datefmt. 기본값이 곧 확정 포맷(#3)이다:
+    # [시간 TZ] LEVEL [app=..] [module:class:func:line] message
+    # 쓸 수 있는 필드는 LogRecord 속성 + TzFormatter 가 채우는 {tzname}·{appname}·{classname}.
+    # uvicorn CLI·Celery 의 콘솔 핸들러는 두 값 중 하나라도 **직접 지정했을 때만** 이 포맷으로
+    # 바꾼다(기본이면 각 도구의 기본 출력 그대로). 비밀값 마스킹은 포맷과 무관하게 적용된다.
     LOG_CONSOLE_FORMAT: str = Field(
-        default="[{asctime}] {levelname:8} [{name}:{funcName}:{lineno}] {message}",
-        description="콘솔 로그 포맷 (현재 코드가 읽지 않음 — 실제 포맷은 고정 LOG_FORMAT)",
+        default=(
+            "[{asctime} {tzname}] {levelname:5} [app={appname}] "
+            "[{module}:{classname}:{funcName}:{lineno}] {message}"
+        ),
+        description="콘솔 로그 포맷 (str.format 스타일 '{field}')",
     )
 
+    # strftime 형식. development 에서는 그 뒤에 밀리초(.123)가 붙고, staging/production 은 UTC 로 렌더한다.
     LOG_DATE_FORMAT: str = Field(
         default="%Y-%m-%d %H:%M:%S",
-        description="날짜 포맷 (현재 코드가 읽지 않음)",
+        description="로그 시각 형식 (strftime)",
     )
+
+    @field_validator("LOG_CONSOLE_FORMAT")
+    @classmethod
+    def _console_format_must_render(cls, value: str) -> str:
+        """샘플 레코드를 실제로 한 번 포맷해 본다 — 모르는 필드·괄호 불일치·잘못된 서식을 기동 시 잡는다.
+
+        TzFormatter 를 import 하면 순환(formatters → config)이라, 그것이 채우는 tzname·appname·
+        classname 을 직접 넣은 표준 Formatter(같은 style="{")로 같은 검사를 한다.
+        """
+        record = logging.LogRecord("check", logging.INFO, __file__, 1, "msg", None, None, "check")
+        record.tzname, record.appname, record.classname = "UTC", "app", "-"
+        try:
+            logging.Formatter(value, style="{").format(record)
+        except Exception as exc:
+            raise ValueError(f"로그 포맷을 적용할 수 없습니다: {exc}") from exc
+        return value
+
+    @field_validator("LOG_DATE_FORMAT")
+    @classmethod
+    def _date_format_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("빈 날짜 형식은 쓸 수 없습니다")
+        return value
 
     def get_effective_log_level(self, debug: bool) -> str:
         """
@@ -896,26 +930,6 @@ class JWTSettings(BaseSettings):
 
 
 # =============================================================================
-# API 설정
-# =============================================================================
-class ApiSettings(BaseSettings):
-    """REST API 관련 설정."""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # REST API 버전. 현재 이 값을 읽는 코드는 없다 — URL 의 /v1 은 각 기능의
-    # api/routers/router.py 가 직접 선언하므로 이 값만 바꿔서는 경로가 바뀌지 않는다.
-    API_VERSION: str = Field(
-        default="v1",
-        description="REST API 버전",
-    )
-
-
-# =============================================================================
 # 세션 설정
 # =============================================================================
 class SessionSettings(BaseSettings):
@@ -1025,12 +1039,6 @@ def get_jwt_settings() -> JWTSettings:
 
 
 @lru_cache
-def get_api_settings() -> ApiSettings:
-    """API 설정 인스턴스 반환 (캐싱)"""
-    return ApiSettings()
-
-
-@lru_cache
 def get_session_settings() -> SessionSettings:
     """세션 설정 인스턴스 반환 (캐싱)"""
     return SessionSettings()
@@ -1049,7 +1057,6 @@ log_settings = get_log_settings()
 redis_settings = get_redis_settings()
 middleware_settings = get_middleware_settings()
 jwt_settings = get_jwt_settings()
-api_settings = get_api_settings()
 session_settings = get_session_settings()
 
 

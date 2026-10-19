@@ -39,8 +39,12 @@ from app.utils.logs.config import (
     _env,
     _level,
     build_dictconfig,
+    console_enabled,
+    console_formatter_kwargs,
+    log_settings,
 )
 from app.utils.logs.filters import add_redacting_filter
+from app.utils.logs.formatters import TzFormatter
 from app.utils.logs.queue_handler import (
     LOG_FLUSH_TIMEOUT_SECONDS,
     BoundedQueueHandler,
@@ -49,6 +53,10 @@ from app.utils.logs.queue_handler import (
 
 # traceback 을 남기는 uvicorn 로거 — CLI 실행에서는 우리 queue 를 거치지 않는다.
 UVICORN_TRACEBACK_LOGGERS = ("uvicorn", "uvicorn.error")
+UVICORN_LOGGERS = (*UVICORN_TRACEBACK_LOGGERS, "uvicorn.access")
+
+# 이 중 하나라도 직접 지정했을 때만 남이 만든 콘솔 핸들러(uvicorn CLI·Celery)의 포맷을 바꾼다.
+_CONSOLE_FORMAT_SETTINGS = frozenset({"LOG_CONSOLE_FORMAT", "LOG_DATE_FORMAT"})
 
 _configured = False
 _queue_handler: BoundedQueueHandler | None = None
@@ -146,6 +154,40 @@ def _register_process_exit_hook() -> None:
     _exit_hook_registered = True
 
 
+def apply_console_settings(logger: logging.Logger) -> None:
+    """**남이 만든** 콘솔 핸들러(uvicorn CLI·Celery worker)에 콘솔 설정을 적용한다.
+
+    - ``LOG_CONSOLE_ENABLED=false`` → stdout/stderr ``StreamHandler`` 를 떼어 낸다.
+    - ``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT`` 를 직접 지정했으면 앱과 같은 ``TzFormatter`` 로 바꾼다.
+      지정하지 않았으면 각 도구의 기본 포맷을 그대로 둔다(기본 출력 불변).
+
+    파일 핸들러(``FileHandler`` 계열 — Celery ``--logfile``)와 queue 핸들러는 건드리지 않는다.
+    """
+    for handler in list(logger.handlers):
+        if not isinstance(handler, logging.StreamHandler) or isinstance(
+            handler, logging.FileHandler
+        ):
+            continue
+        if not console_enabled():
+            logger.removeHandler(handler)
+        elif _CONSOLE_FORMAT_SETTINGS & log_settings.model_fields_set:
+            handler.setFormatter(TzFormatter(**console_formatter_kwargs()))
+
+
+def _warn_if_no_output() -> None:
+    """콘솔이 꺼지면 앱 로그를 받을 곳이 없다 — 조용히 잃지 않게 stderr 에 한 줄 남긴다."""
+    if console_enabled():
+        return
+    stream = sys.__stderr__
+    if stream is None:  # pragma: no cover - pythonw 등 stderr 가 없는 환경
+        return
+    print(
+        "[logging] 경고: LOG_CONSOLE_ENABLED=false — 콘솔 출력이 없어 앱 로그가 기록되지 않습니다",
+        file=stream,
+        flush=True,
+    )
+
+
 def configure_logging(force: bool = False) -> None:
     """환경별 로깅 구성을 root 로거에 적용한다(idempotent)."""
     global _configured, _queue_handler
@@ -162,6 +204,7 @@ def configure_logging(force: bool = False) -> None:
         return
 
     dictConfig(build_dictconfig())
+    _warn_if_no_output()
 
     # dictConfig 직후에만 이름 레지스트리가 우리 것이다 — 지금 붙잡는다.
     _queue_handler = next(
@@ -177,6 +220,10 @@ def configure_logging(force: bool = False) -> None:
     # 내지 않는다(log-redaction ADR-001).
     for name in UVICORN_TRACEBACK_LOGGERS:
         add_redacting_filter(logging.getLogger(name))
+    # 같은 CLI 경로의 uvicorn 콘솔 핸들러도 LOG_CONSOLE_* 를 따른다. ``python main.py`` 경로에서는
+    # 이 로거들이 공유 queue 핸들러를 쓰므로 여기서 바뀌는 것이 없다.
+    for name in UVICORN_LOGGERS:
+        apply_console_settings(logging.getLogger(name))
 
     _register_process_exit_hook()
     start_log_listener()
@@ -334,6 +381,7 @@ def setup_uvicorn_logging() -> dict:
 __all__ = [
     "LOG_FORMAT",
     "_env",
+    "apply_console_settings",
     "configure_logging",
     "flush_log_queue",
     "get_logger",
