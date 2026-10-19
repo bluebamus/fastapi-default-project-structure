@@ -69,7 +69,7 @@ Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입
 | `api/routers/router.py` | `<name>_router` 가 v1 파일들을 `prefix="/v1/<name>"`, `tags=[...]` 로 취합 |
 | `__init__.py` | `router` 공개 + `models` import. `admin_views` 는 재노출하지 않는다 |
 | `exceptions.py` | 기능 예외(`NotFoundException` 등 `app/core/exception.py` 하위) |
-| `admin.py` | 모델이 있으면 ModelView + `admin_views`. `column_filters` 는 `sqladmin.filters` 객체로(컬럼을 그대로 넣으면 목록 화면 500 — `tests/test_admin_views_render.py`) |
+| `admin.py` | 모델이 있으면 ModelView + `admin_views`. `column_filters` 는 `sqladmin.filters` 객체로(컬럼을 그대로 넣으면 목록 화면 500 — `tests/test_admin_views_render.py`). `created_at` 이 있으면 `LocalDateFilter(<Model>.created_at)`(`app/core/admin_filters.py`)를 넣는다 — sqladmin 연산 필터는 `UTCDateTime` 에서 500 이고, 빠뜨리면 같은 테스트가 실패한다 |
 | `tests/` | §12 |
 
 ```python
@@ -757,6 +757,21 @@ def aggregate_access_stats() -> dict[str, Any]:
 함께 빠집니다. 서비스는 직접 생성하지 말고 그 기능 dependencies 의 조립 함수(세션을 인자로 받는 일반 함수)를
 부릅니다 — HTTP provider 도 같은 함수를 써서 조립 규칙이 한 곳에 있습니다. `app/celery` 에서 기능을 import 하지
 않습니다(계약 테스트가 막는다). worker 수명은 ARCHITECTURE §13.
+
+주기 실행이 필요하면 같은 `tasks.py` 에서 beat 항목을 **스스로** 등록합니다(중앙 Celery 앱은 기능을 모른다):
+
+```python
+# app/features/home/tasks.py — 접속 로그 보존(매일 03:30, TIME_ZONE 기준)
+celery_app.conf.beat_schedule[PURGE_TASK_NAME] = {
+    "task": PURGE_TASK_NAME,
+    "schedule": crontab(hour=3, minute=30),
+}
+```
+
+beat 는 worker 와 별도 프로세스로 **하나만** 띄웁니다 — `uv run python -m celery -A app.celery.app:celery_app beat --loglevel=INFO`.
+지우는 작업은 한 트랜잭션에 몰지 않고 배치(예: 5,000행)마다 커밋합니다 — 접속 로그 보존(`AccessLogRetentionService`)이
+예시입니다. 테스트는 등록 여부(`celery_app.conf.beat_schedule`)와 태스크가 provider 로 조립되는지를 봅니다
+(`app/features/home/tests/test_access_log_retention.py`).
 
 ## 11. 로깅 사용법
 

@@ -35,6 +35,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | [docs/crp/groups/orm-raw-repository/](./docs/crp/groups/orm-raw-repository/) | 검수 이력(append-only) — 요구·설계 결정(REQ/ADR)·결함 원장·검수 기록 | 결정의 근거와 이력을 볼 때 |
 | [docs/crp/groups/service-hardening/](./docs/crp/groups/service-hardening/) | 검수 이력(append-only) — 2026-10-12 서비스 하드닝(CI·DSN·접속 로그·UTC·Redis·인증/인가) 단계 A~F2 의 요구·결정·원장. REQ/ADR 번호는 그룹 안에서만 유효 | 하드닝 단계의 근거를 볼 때 |
 | [docs/crp/groups/admin-login/](./docs/crp/groups/admin-login/) | 검수 이력(append-only) — 2026-10-12 관리 화면 로그인(슈퍼유저·Bootstrap 화면)·`ADMIN_DISABLED`·세션 범위·배포 전 할 일 문서화의 요구·결정·원장 | 관리 화면 인증 결정의 근거를 볼 때 |
+| [docs/crp/groups/security-ops-hardening/](./docs/crp/groups/security-ops-hardening/) | 검수 이력(append-only) — 2026-10-19 DB 오류 바인드 값 숨김 회귀·접속 로그 보존(beat)·관리 로그인 CSRF·`created_at` 날짜 필터의 요구·결정·원장 | 보안·운영 보강의 근거를 볼 때 |
 
 - `docs/specs/` 세 문서는 **고정 기준선**이라 내용을 고치지 않습니다(경로·이름 정정만). 현재 동작은
   `docs/guides/` 가, 이후의 확장·변경은 CRP 의 `design-baseline.md` 가 담습니다. `requirements.md` 는
@@ -70,7 +71,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 - **인가** — 슈퍼유저/일반 2단계. 게시글·피드·댓글 쓰기는 로그인, 수정·삭제는 작성자 또는 슈퍼유저, 관리 경로
   (상품 쓰기·리포트·접속 로그·사용자 관리)는 슈퍼유저. 첫 관리자는 `python -m scripts.create_superuser` 로 만든다.
 - **문서·관리 화면** — Scalar(`/docs`, `DEBUG=true` 에서만), SQLAdmin(`/admin`, **활성 슈퍼유저 로그인** —
-  Bootstrap 로그인 화면·서명 세션 쿠키·레이트 리밋. 쓰지 않으면 `ADMIN_DISABLED=true` 로 흔적 없이 끈다).
+  Bootstrap 로그인 화면·CSRF 토큰·서명 세션 쿠키·레이트 리밋, 목록의 `created_at` 날짜 필터. 쓰지 않으면
+  `ADMIN_DISABLED=true` 로 흔적 없이 끈다).
   관리 세션은 `/admin` 전용이고 API 인증(JWT)과 섞이지 않는다([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html)).
 - **결정적 검수** — `scripts/review_gate.py` 와 CI 가 계층 불변식·공개 API 불변·SKIP 0 을 기계로 확인합니다.
 
@@ -180,7 +182,8 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준
 | <http://127.0.0.1:8000/admin> | `ADMIN_DISABLED=false`(기본값) — **활성 슈퍼유저 로그인 필요**(아래). `ADMIN_DISABLED=true` 면 404 |
 
 관리 화면에 들어가려면 MySQL 이 뜬 상태에서 슈퍼유저를 하나 만들고(비밀번호를 두 번 묻는다) 그 계정으로
-`/admin/login` 의 Bootstrap 로그인 화면에서 로그인합니다:
+`/admin/login` 의 Bootstrap 로그인 화면에서 로그인합니다(폼에 CSRF 토큰이 숨은 필드로 실린다 — 화면을 오래 열어 두었다가
+세션이 바뀌면 "요청이 만료되었습니다" 403 이 나오고, 다시 그려진 화면에서 그대로 다시 로그인하면 된다):
 
 ```bash
 uv run python -m scripts.create_superuser --username admin --email admin@example.com
@@ -248,6 +251,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
 | `TRUSTED_PROXY_HOPS` | `0` | 접속 로그·로그인 레이트 리밋의 IP 를 `X-Forwarded-For` 오른쪽에서 몇 번째로 읽을지(앞단 신뢰 프록시 수). 0 이면 헤더를 보지 않는다. **프록시 뒤 배포는 단수만큼 설정** — 0 이면 전원이 프록시 IP 하나로 보여 한 사람으로 취급되고, 크게 잡으면 IP 위조가 가능하다 |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `password`·`token`·… | 접속 로그에 값을 `***` 로 저장할 쿼리스트링 키 |
+| `ACCESS_LOG_RETENTION_DAYS` | `365` | 접속 로그 보존 일수. Celery beat 가 매일 03:30(`TIME_ZONE`) 이보다 오래된 행을 5,000행씩 지운다. `0` 이면 지우지 않는다, 음수는 기동 시 검증 오류. **beat 를 띄워야 동작**(아래 체크리스트 11) |
 | `CORS_ALLOW_ORIGINS` / `CORS_ALLOW_CREDENTIALS` | `["*"]` / `false` | 와일드카드 + credentials 조합은 기동 시 거부 |
 
 ---
@@ -411,6 +415,7 @@ admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않�
 | 8 | `LOG_SQL_ECHO_ENABLED=false` 인가 | SQL 바인딩 값(해시·토큰·검색어)이 로그 수집기로 나간다 |
 | 9 | Redis(**6.2 이상**)가 준비됐고, 컨테이너 종료 유예 시간이 종료 예산보다 긴가 | Redis 가 없거나 6.2 미만이면 기동 실패 / 유예가 짧으면 정리 도중 SIGKILL ([ARCHITECTURE §8.2](./docs/guides/ARCHITECTURE.md#82-시간-예산)) |
 | 10 | worker 수 × DB 풀 크기가 DB 최대 연결 수 안인가 | [ARCHITECTURE §4.1](./docs/guides/ARCHITECTURE.md#41-엔진과-커넥션-풀) |
+| 11 | 접속 로그 보존 기간(`ACCESS_LOG_RETENTION_DAYS`, 기본 365일)을 정했고, Celery worker 와 **beat 한 개**를 띄웠는가 — `uv run python -m celery -A app.celery.app:celery_app worker --loglevel=INFO`, `uv run python -m celery -A app.celery.app:celery_app beat --loglevel=INFO` | beat 가 없으면 접속 로그가 영원히 쌓인다(IP·UA·`session_id`·Referer 원문). beat 를 둘 띄우면 삭제가 두 번 돈다(해는 없지만 부하) ([ARCHITECTURE §13](./docs/guides/ARCHITECTURE.md#13-celery)) |
 
 관리 화면의 기본값은 "켜짐 + 슈퍼유저 로그인" 이고 `SERVER_HOST` 기본값은 `0.0.0.0` 이라, 아무것도 설정하지 않은
 배포는 **로그인 화면이 네트워크에 열린** 상태입니다. 로그인한 슈퍼유저는 API 의 [권한](#권한) 표와 별개로 모든 모델을
