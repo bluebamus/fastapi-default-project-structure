@@ -397,11 +397,12 @@ USER_FORM = {"username": "other", "email": "other@example.com"}
 
 
 @pytest.mark.parametrize(
-    ("form", "revoked"),
+    ("form", "revoked", "refresh_revoked"),
     [
         # 체크박스는 빼면 해제다.
-        pytest.param({**USER_FORM, "is_superuser": "y"}, True, id="deactivate"),
-        pytest.param({**USER_FORM, "is_active": "y"}, True, id="demote"),
+        pytest.param({**USER_FORM, "is_superuser": "y"}, True, True, id="deactivate"),
+        # 강등만 — 관리 세션은 폐기, refresh 는 유지(일반 사용자로 API 를 계속 쓴다, ADR-009).
+        pytest.param({**USER_FORM, "is_active": "y"}, True, False, id="demote"),
         pytest.param(
             {
                 "username": "renamed",
@@ -410,12 +411,13 @@ USER_FORM = {"username": "other", "email": "other@example.com"}
                 "is_superuser": "y",
             },
             False,
+            False,
             id="general-edit",
         ),
     ],
 )
 async def test_admin_ui_edit_revokes_only_on_deactivation_or_demotion(
-    app, maker, redis, form, revoked
+    app, maker, redis, form, revoked, refresh_revoked
 ):
     other, actor, targets, keys = await _target_with_two_sessions(app, maker, redis)
     token = await admin_page_token(actor, f"/admin/user/edit/{other}")
@@ -427,11 +429,10 @@ async def test_admin_ui_edit_revokes_only_on_deactivation_or_demotion(
         assert await redis.exists(*keys) == 0
         assert await redis.exists(f"admin:user_sessions:{other}") == 0
         assert [await _index_status(b) for b in targets] == [302, 302]
-        assert await _refresh_revoked(redis)  # API refresh 토큰도 폐기
     else:
         assert await redis.exists(*keys) == 2  # 일반 수정은 세션을 그대로 둔다
         assert [await _index_status(b) for b in targets] == [200, 200]
-        assert not await _refresh_revoked(redis)  # refresh 토큰도 그대로
+    assert await _refresh_revoked(redis) is refresh_revoked
     assert await _index_status(actor) == 200  # 조작한 관리자의 세션은 그대로
     await _close(actor, *targets)
 
