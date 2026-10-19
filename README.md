@@ -131,7 +131,6 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(48))"   # 키마�
 |---|---|
 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY` | 위 명령으로 만든 값을 **서로 다르게** 넣는다(32자 이상) |
 | `MYSQL_PASSWORD` | 4단계에서 띄울 MySQL 의 비밀번호와 같은 값. 비워 두거나 예시 값이면 거부 |
-| `SMTP_PASSWORD` | 메일을 안 쓰면 **비운다**. 예시 값을 남겨 두면 거부 |
 
 - `.env` 가 없으면 기동하지 않습니다. 파일 없이 환경 변수로 주입하는 경우(컨테이너)는 `ENV`·비밀 키 3종·
   `MYSQL_HOST/USER/PASSWORD/DATABASE` 가 모두 있어야 합니다.
@@ -231,7 +230,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 |---|---|
 | `.env` 가 없고 `ENV`·비밀 키 3종·`MYSQL_HOST/USER/PASSWORD/DATABASE` 가 환경 변수로도 없음(`validate_env_source()`) | test 외 전부 |
 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 가 예시 값(`change-this` 포함·`your-` 시작·빈 값) | test 외 전부 |
-| `REDIS_PASSWORD`·`SMTP_PASSWORD` 가 **값이 있는데** 예시 값(빈 값은 "안 쓴다" 로 통과) | test 외 전부 |
+| `REDIS_PASSWORD` 가 **값이 있는데** 예시 값(빈 값은 "인증을 안 쓴다" 로 통과) | test 외 전부 |
 | 비밀 키 3종이 32자 미만, access 와 refresh 가 같음 | test 외 전부 |
 | `DEBUG=true`, `LOG_LEVEL=DEBUG` | staging·production |
 | 예전 설정 `ADMIN` 이 환경 변수·`.env` 에 남아 있음(`validate_no_legacy_admin()` — `ADMIN_DISABLED` 로 교체됨) | test 외 전부 |
@@ -248,8 +247,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
 | `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·버전 확인(6.2 이상)·`/ready` 대상 + refresh 회전 기록·레이트 리밋 + Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | access·refresh 토큰 서명 키와 관리 세션 키(쿠키의 세션 ID 를 Redis 키 `admin:sess:<HMAC-SHA256>` 로 바꾼다) — 예시 값·32자 미만·access==refresh 면 test 외 **기동 거부**. `SESSION_SECRET_KEY` 를 바꾸면 관리 세션이 모두 끊긴다 |
-| `ADMIN_SESSION_MAX_AGE_SECONDS` / `ADMIN_SESSION_IDLE_SECONDS` | `28800` / `1800` | 관리 세션 절대 만료(로그인 시각 기준, 연장 없음 — 쿠키 Max-Age 도 이 값)와 미사용 만료(요청마다 다시 잼). 둘 다 60 이상, 미사용 ≤ 절대 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | `15` / `7` | access 는 서버에서 폐기할 수 없으므로 짧게. refresh 는 회전·폐기된다 |
+| `ADMIN_SESSION_*` · `*_TOKEN_EXPIRE_*` | 아래 표 | [세션·토큰 만료](#세션토큰-만료) |
 | `JWT_ALGORITHM` / `JWT_ISSUER` / `JWT_AUDIENCE` / `JWT_LEEWAY_SECONDS` | `HS256` / 프로젝트 이름 / 프로젝트 이름`-api` / `10` | 알고리즘은 `HS256`·`HS384`·`HS512` 만. `iss`·`aud` 는 검증 시 일치 필수 |
 | `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` | 로그인 시도 한도(IP+사용자명 / IP, 창 초). 초과 시 429 + `Retry-After`. 관리 화면 로그인도 같은 한도(카운터는 따로) |
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 시도 한도(IP) |
@@ -260,6 +258,24 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `password`·`token`·… | 접속 로그에 값을 `***` 로 저장할 쿼리스트링 키 |
 | `ACCESS_LOG_RETENTION_DAYS` | `365` | 접속 로그 보존 일수. Celery beat 가 매일 03:30(`TIME_ZONE`) 이보다 오래된 행을 5,000행씩 지운다. `0` 이면 지우지 않는다, 음수는 기동 시 검증 오류. **beat 를 띄워야 동작**(아래 체크리스트 11) |
 | `CORS_ALLOW_ORIGINS` / `CORS_ALLOW_CREDENTIALS` | `["*"]` / `false` | 와일드카드 + credentials 조합은 기동 시 거부 |
+
+### 세션·토큰 만료
+
+만료 설정은 이 표가 정본입니다. 다른 문서는 이 표를 가리킵니다.
+
+| 대상 | 설정 | 기본값 | 뜻 |
+|---|---|---|---|
+| 관리 세션(`/admin`) 절대 만료 | `ADMIN_SESSION_MAX_AGE_SECONDS` | `28800`(8시간) | 로그인 시각 기준, 요청해도 연장되지 않는다. 쿠키 `Max-Age` 도 이 값. 60 이상 |
+| 관리 세션 미사용 만료 | `ADMIN_SESSION_IDLE_SECONDS` | `1800`(30분) | 요청마다 다시 잰다. 60 이상, 절대 만료 이하(어기면 기동 거부) |
+| API access 토큰 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15`(분) | 서버에서 폐기할 수 없으므로 짧게 둔다 |
+| API refresh 토큰 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7`(일) | 회전·폐기된다. 회전 기록·폐기 표시(Redis)도 같은 TTL |
+
+### 업그레이드 노트 — 지운 설정
+
+`SMTP_*`(메일)·`UPLOAD_*`(업로드)·`SESSION_EXPIRE_SECONDS` 는 읽는 코드가 없어 지웠습니다. 기존 `.env` 의 이 줄들은
+**지워도 되고, 남아 있어도 무시됩니다** — 기동을 막지 않습니다(설정 클래스가 `extra="ignore"`,
+`tests/core/test_settings_usage.py`). 세션 만료는 위 [세션·토큰 만료](#세션토큰-만료) 표의 설정이 정합니다.
+새 설정은 읽는 코드와 함께 넣습니다 — 정의만 있는 필드는 같은 테스트가 막습니다.
 
 ---
 
@@ -417,7 +433,7 @@ admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않�
 | 1 | 예전 설정 `ADMIN`(·인증 없는 관리 화면 확인 플래그)을 환경 변수·`.env` 에서 지웠는가 | `ADMIN` 이 남아 있으면 기동 거부(뜻이 뒤집힌 이름이라 조용히 무시하지 않는다) |
 | 2 | 외부 노출이 필요 없으면 `SERVER_HOST=127.0.0.1` 인가 (`python main.py` 실행 시) | 기본값 `0.0.0.0` |
 | 3 | 관리 화면을 켰다면 HTTPS 로만 접속하는가(배포 환경 쿠키는 `Secure`), 가능하면 리버스 프록시·VPN 으로 `/admin` 접근 출처도 좁혔는가 | HTTP 로는 로그인이 유지되지 않는다. 출처 제한은 로그인 화면 자체를 숨기는 추가 방어선이다 |
-| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD`·`SMTP_PASSWORD` 도) | 예시 값·빈 값·32자 미만이면 test 외 모든 `ENV` 에서 기동 거부(`RuntimeError`, 이름만 표시) |
+| 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD` 도) | 예시 값·빈 값·32자 미만이면 test 외 모든 `ENV` 에서 기동 거부(`RuntimeError`, 이름만 표시) |
 | 4-1 | `ENV=production`(또는 `staging`)을 **명시**했는가 | 기본값 `development` 로 뜨면 `DEBUG`·`LOG_LEVEL` 검사가 빠지고 관리 세션 쿠키에 `Secure` 가 붙지 않는다. `.env` 없이 환경 변수로 주입하는 배포는 `ENV` 가 없으면 기동 거부 |
 | 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출(DSN 비밀번호·`password=`·`Authorization` 형태만 `***` 로 가려진다), worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
@@ -430,7 +446,7 @@ admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않�
 관리 화면의 기본값은 "켜짐 + 슈퍼유저 로그인" 이고 `SERVER_HOST` 기본값은 `0.0.0.0` 이라, 아무것도 설정하지 않은
 배포는 **로그인 화면이 네트워크에 열린** 상태입니다. 로그인한 슈퍼유저는 API 의 [권한](#권한) 표와 별개로 모든 모델을
 고칠 수 있으므로 슈퍼유저 계정·`SESSION_SECRET_KEY` 가 곧 관리 화면의 열쇠입니다. refresh 토큰은 Redis 에 회전 기록이 남아
-로그아웃·재사용 탐지로 폐기되지만, access 토큰은 폐기 목록이 없어 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`, 기본 15분)까지
+로그아웃·재사용 탐지로 폐기되지만, access 토큰은 폐기 목록이 없어 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`, [세션·토큰 만료](#세션토큰-만료))까지
 유효합니다 — 관리 세션은 반대로 Redis 서버 세션이라 로그아웃·강등·비활성화·삭제 즉시 폐기되고, 요청마다 DB 도 확인합니다.
 
 ---
