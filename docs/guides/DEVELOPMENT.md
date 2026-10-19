@@ -788,13 +788,27 @@ except Exception:
     logger.exception("작업 실패")                          # traceback 포함
 ```
 
-- `BaseService` 하위 클래스는 `self.log` 를 씁니다(`LoggerMixin` — 로그에 클래스명이 들어갑니다).
-- 로거 이름은 출처를 나타내는 문자열이면 됩니다. `[app=…]` 라벨은 이름이 아니라 소스 경로가 정하므로
-  이름을 잘못 줘도 라벨은 맞습니다. 로깅 설정(dictConfig)에 기능별 항목을 추가하지 않습니다.
+- **새 기능의 로그는 아무것도 하지 않아도 헤더가 붙습니다.** `app/features/<기능>/` 아래 코드에서 `get_logger(__name__)`
+  나 `self.log` 로 쓰면 `[app=<기능>]` 이 붙습니다 — 로깅 설정(dictConfig)에 기능별 항목을 추가하지 않습니다.
+- 클래스 안에서는 `LoggerMixin` 을 상속해 `self.log` 를 씁니다(`BaseService` 는 이미 상속 — 줄에 클래스명이 들어간다).
+  상속하지 않은 클래스의 메서드에서 `get_logger()` 로 써도 호출 프레임의 `self`/`cls` 에서 클래스명을 찾고, 함수면 `-` 입니다.
+
+  ```python
+  from app.utils.logs import LoggerMixin
+
+  class InvoiceService(LoggerMixin):
+      def issue(self, invoice_id: int) -> None:
+          self.log.info("발행 %s", invoice_id)
+          # [… INFO  [app=billing] [invoice_service:InvoiceService:issue:5] 발행 7
+  ```
+- 로거 이름은 출처를 나타내는 문자열이면 됩니다. 우리 코드의 `[app=…]` 헤더는 이름이 아니라 소스 경로가 정하므로
+  이름을 잘못 줘도 헤더는 맞습니다(외부 라이브러리만 로거 이름으로 `celery`·`uvicorn`·`sqlalchemy`·`alembic`·`ext`).
+- 한 기능만 자세히 보려면 `.env` 에 `LOG_APP_LEVELS=billing=DEBUG` 처럼 헤더별 레벨을 줍니다(README "로깅").
 - 비밀번호·토큰·SQL 파라미터·DSN 을 로그에 넣지 않습니다. `LOG_SQL_ECHO_ENABLED` 는 로컬에서만 잠깐 켭니다.
-  `RedactingFilter` 가 DSN 비밀번호·`password=`·`Authorization` 형태를 traceback 까지 `***` 로 가리지만(ARCHITECTURE §9.4.1)
-  형태로 찾는 안전망일 뿐입니다. 마스킹 규칙을 더하려면 `app/utils/logs/filters.py` 의 `_SECRET_PATTERNS` 한 곳만 고칩니다.
-- 포맷·레벨·출력 대상·종료 시 동작은 ARCHITECTURE §9.
+  `RedactingFilter` 가 DSN 계정·`password=`·`Authorization` 형태와 설정 비밀값 원문을 traceback 까지 `***` 로 가리지만
+  (ARCHITECTURE §9.4.1) 안전망일 뿐입니다. 마스킹 규칙을 더하려면 `app/utils/logs/filters.py` 의 `_SECRET_PATTERNS` 한 곳만,
+  새 비밀 설정은 `config.LOG_SECRET_SETTINGS` 에 넣습니다.
+- 포맷·레벨·출력 대상·파일·종료 시 동작은 README "로깅" 과 ARCHITECTURE §9.
 
 ## 12. 테스트
 

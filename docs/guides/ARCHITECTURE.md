@@ -452,7 +452,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | `app_settings` | FastAPI 메타데이터, `DEBUG`(문서·DDL·로그 레벨 기본값·500 detail·reload), `ADMIN_DISABLED`(관리 화면 마운트 여부), `ENV`(로그 구성·관리 세션 쿠키 `Secure`), `SERVER_HOST/PORT` |
 | `db_settings` | DSN·라우팅·replica(`session.py`), `ALEMBIC_URL`(`migrations/env.py`) |
 | `cors_settings` | `CustomCORSMiddleware.configure_cors()` |
-| `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED`, `console_formatter_kwargs()`(`LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT`), `console_enabled()`(`LOG_CONSOLE_ENABLED`) — §9.2 |
+| `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_APP_LEVELS`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED`, `console_formatter_kwargs()`·`file_formatter_kwargs()`(`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT`), `console_enabled()`(`LOG_CONSOLE_ENABLED`), `setup.attach_log_files()`(`LOG_FILE_*`·`LOG_DIR`·`LOG_MAX_SIZE_MB`·`LOG_RETENTION_DAYS`) — §9.2 |
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
 | `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도 |
@@ -612,11 +612,12 @@ uvicorn: "Application shutdown complete" · "Finished server process"
 stdout·stderr 쓰기는 느린 동기 I/O 라 요청 스레드에서 하면 event loop 전체가 멈춥니다. 그래서:
 
 ```
-요청 코드 ─ put_nowait ─▶ [bounded queue 10,000] ─▶ QueueListener 스레드 ─▶ stdout / stderr
+요청 코드 ─ put_nowait ─▶ [bounded queue 10,000] ─▶ QueueListener 스레드 ─▶ stdout / stderr / 파일(LOG_FILE_ENABLED)
 ```
 
-root 로거에는 `BoundedQueueHandler` 하나만 붙고, 필터(`SqlNoiseFilter`, `RedactingFilter`, `ContextFilter`)는 **적재 전에
-요청 스레드에서** 돕니다(`ContextFilter` 는 호출 스택에서 클래스명을 뽑으므로 listener 스레드에서는 늦습니다).
+root 로거에는 `BoundedQueueHandler` 하나만 붙고, 필터(`SqlNoiseFilter`, `RedactingFilter`, `ContextFilter`, `AppLevelFilter`)는
+**적재 전에 요청 스레드에서** 돕니다(`ContextFilter` 는 호출 스택에서 클래스명을 뽑으므로 listener 스레드에서는 늦습니다).
+파일 쓰기·회전도 listener 스레드가 하므로 요청 event loop 를 막지 않습니다.
 
 > **`logger.info()` 가 반환됐다고 출력된 것은 아닙니다.** 임계값·필터에서 걸러질 수 있고, 큐가 차면
 > 버려질 수 있으며, 큐에 들어갔더라도 listener 가 쓰기 전에 프로세스가 죽으면 사라집니다(listener 는
@@ -641,10 +642,18 @@ producer 를 막는 선택지는 쓰지 않습니다 — 로그 때문에 API �
 | `test` | stdout | 설정 타임존 |
 | `staging`·`production` | stdout + **ERROR 이상은 stderr 에도** | UTC |
 
-파일 핸들러·rotation 은 없습니다. 저장·검색·rotation 은 Docker·Kubernetes·수집 agent 가 맡습니다.
+기본은 파일이 없고 저장·검색·rotation 은 Docker·Kubernetes·수집 agent 가 맡습니다. `LOG_FILE_ENABLED=true` 면
+**진입점**이 프로세스 종류를 정해 `setup.attach_log_files()` 로 listener 에 파일 핸들러를 더합니다 — 웹은
+`main.py` import 시점(`app.log`·`error.log`), Celery 는 worker 의 `after_setup_logger` 수신자(`celery.log`·
+`celery-error.log`). 에러 파일도 프로세스별로 나눈 이유는 웹과 worker 가 한 파일을 회전시키지 않게 하려는 것입니다
+(logging-overhaul ADR-002). 핸들러는 `DailySizeRotatingFileHandler`(`app/utils/logs/handlers.py`) 하나입니다 —
+매일 자정(포매터와 같은 시간대)에 `app.log.YYYY-MM-DD`, 하루 안에서 `LOG_MAX_SIZE_MB` 초과면 `.1`·`.2`…, 교체 때
+`LOG_RETENTION_DAYS` 보다 오래된 날짜 파일(분할 포함)을 지웁니다. 이미 있는 이름은 덮지 않고 다음 번호를 씁니다.
+`uvicorn --workers` 2 이상·Celery prefork 처럼 여러 프로세스가 같은 파일을 쓰면 회전이 엇갈리므로 파일을 끄고
+콘솔 + 수집기를 씁니다(README "여러 워커 주의").
 
-포맷은 `LOG_CONSOLE_FORMAT`(`style="{"`), 시각은 `LOG_DATE_FORMAT`(strftime)이 정하고
-`console_formatter_kwargs()` 가 `TzFormatter` 에 넘깁니다. 기본값(= `LOG_FORMAT`)은 다음과 같습니다:
+포맷은 `LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`(`style="{"`), 시각은 `LOG_DATE_FORMAT`(strftime)이 정하고
+`console_formatter_kwargs()`·`file_formatter_kwargs()` 가 `TzFormatter` 에 넘깁니다. 기본값(= `LOG_FORMAT`)은 다음과 같습니다:
 
 ```
 [{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}
@@ -653,22 +662,29 @@ producer 를 막는 선택지는 쓰지 않습니다 — 로그 때문에 API �
 
 - 필드는 `LogRecord` 속성과 `TzFormatter` 가 채우는 `{tzname}`·`{appname}`·`{classname}`. 설정 로드 때 샘플
   레코드를 한 번 포맷해 보고, 모르는 필드·괄호 불일치·잘못된 서식 지정자·빈 날짜 형식이면 기동을 멈춥니다.
+  필수 필드(`config.LOG_REQUIRED_FIELDS` — `{asctime}`·`{levelname}`·`{appname}`·`{module}`·`{classname}`·
+  `{funcName}`·`{message}`)가 하나라도 빠져도 빠진 목록과 함께 기동을 멈춥니다.
 - 시각: `development` 는 날짜 형식 뒤에 밀리초(`.704`)가 붙고, `staging`·`production` 은 UTC 로 렌더합니다.
 - 비밀값 마스킹(§9.4.1)은 queue 적재 전 필터라 포맷과 무관합니다.
 - `LOG_CONSOLE_ENABLED=false` 면 콘솔(stdout/stderr) 핸들러를 하나도 만들지 않습니다. 판단은
-  `console_enabled()` 한 곳이고, 앱 dictConfig·`uvicorn main:app` CLI 의 uvicorn 핸들러·Celery worker 의
-  콘솔 핸들러(`setup.apply_console_settings`)가 모두 그것을 봅니다. 파일 핸들러(Celery `--logfile`)는 남습니다.
-  앱 자체에는 파일 출력이 없으므로 앱 로그는 버려지고, 기동 때 stderr 에 `[logging] 경고: LOG_CONSOLE_ENABLED=false …`
-  한 줄이 나옵니다.
-- uvicorn CLI·Celery 의 콘솔 핸들러는 `LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 중 하나라도 **직접 지정했을 때만**
-  이 포맷으로 바꿉니다. 지정하지 않으면 각 도구의 기본 포맷 그대로입니다(기본 출력 불변).
+  `console_enabled()` 한 곳이고, 앱 dictConfig 가 그것을 보며 uvicorn CLI·Celery 의 콘솔 핸들러는 공유 queue 로
+  바뀌어 같은 결정을 따릅니다. 파일 출력(`LOG_FILE_ENABLED`·Celery `--logfile`)은 남습니다. 파일도 꺼져 있으면
+  앱 로그는 버려지고, 기동 때 stderr 에 `[logging] 경고: LOG_CONSOLE_ENABLED=false …` 한 줄이 나옵니다.
+- **모든 실행 경로가 같은 형식입니다**(logging-overhaul L1). `uvicorn main:app`(·`fastapi dev`) CLI 와 Celery
+  worker 는 자기 콘솔 핸들러를 다는데, `setup.adopt_foreign_handlers()` 가 그것을 떼고 공유 queue 핸들러를 답니다 —
+  CLI 는 `configure_logging()` 이 uvicorn 로거 3종에, Celery 는 `after_setup_logger`·`after_setup_task_logger`
+  수신자가. 핸들러가 없던 로거(`--no-access-log`)는 그대로 두고, Celery `--logfile` 파일 핸들러는 남긴 채
+  `LOG_FILE_FORMAT` 과 같은 필터만 입힙니다. uvicorn 접속 줄은 요청 줄(`client - "GET /p HTTP/1.1" 200`)을
+  `{message}` 로 담습니다 — uvicorn `AccessFormatter` 가 만드는 상태 문구(`OK`)는 빠집니다.
 
-- `app=` 은 로거 이름이 아니라 **소스 경로**에서 정합니다: 기능명(`app/features/<name>/`), `core`·`celery`·
-  `utils`·`migrations`, 그 밖의 저장소 코드는 `app`, 설치된 패키지는 `ext`. uvicorn 로거는
-  `setup_uvicorn_logging()` 이 붙인 필터로 `app=uvicorn`.
+- `app=` 은 판별 함수 하나(`filters._app_from_path(pathname, logger_name)`)가 정합니다. 우리 코드는 **소스
+  경로**로: 기능명(`app/features/<name>/`), `core`·`celery`·`utils`·`migrations`, 그 밖의 저장소 코드는 `app`.
+  저장소 밖 코드는 **로거 이름**으로: `celery.*`·`kombu.*` → `celery`, `uvicorn.*` → `uvicorn`, `sqlalchemy.*` →
+  `sqlalchemy`, `alembic.*` → `alembic`, 그 밖은 `ext`. `ContextFilter` 를 거치지 않은 줄도 `TzFormatter` 가 같은
+  함수로 헤더를 채웁니다.
 - `classname` 은 `LoggerMixin`(`self.log`)이면 주입값, 아니면 호출 프레임의 `self`/`cls`, 없으면 `-`.
 - 앱별 로거를 dictConfig 에 등록하지 않습니다(charter §2-4, 가드 `test_dictconfig_has_no_per_app_loggers`).
-  새 기능이 로깅 설정을 건드릴 일이 없는 대신, 앱별·서드파티별 레벨을 따로 줄 수 없습니다.
+  새 기능이 로깅 설정을 건드릴 일이 없습니다. 헤더별 레벨은 로거 대신 필터(`AppLevelFilter`, §9.3)로 줍니다.
 
 ### 9.3 레벨이 정해지는 방식
 
@@ -689,6 +705,13 @@ root 와 console 핸들러의 임계값이 각각 정해지고, 둘 다 통과�
 `[startup] 애플리케이션 자원 초기화 시작 (DEBUG=%s)` 의 `DEBUG` 는 표시값일 뿐 출력 조건이 아닙니다.
 uvicorn 로거 레벨은 `python main.py` 경로에서 root 와 같은 규칙(`LOG_LEVEL`/`DEBUG`)을 따릅니다.
 
+**헤더별 레벨 `LOG_APP_LEVELS`**(`"blog=DEBUG,celery=INFO,sqlalchemy=WARNING"`)는 Django
+`LOGGING["loggers"][name]["level"]` 자리입니다. root·queue·uvicorn 로거 레벨은 `LOG_LEVEL` 과 이 값들 중
+**최솟값**(`config.lowest_level()`)으로 내려 레코드가 필터까지 오게 하고, queue 의 `ContextFilter` 바로 뒤
+`AppLevelFilter` 가 헤더별 최소 레벨(지정 없으면 `LOG_LEVEL`)보다 낮은 레코드를 버립니다. 잘못된 형식·레벨은
+기동 오류, 모르는 헤더는 WARNING 한 줄입니다. 파일은 `LOG_FILE_LEVEL`(없으면 같은 규칙), 에러 파일은 ERROR 고정.
+Celery worker 의 root 레벨은 `celery -l` 이 정합니다.
+
 ### 9.4 SQL 로그 차단
 
 `DEBUG=true` 면 유효 레벨이 DEBUG 라 SQLAlchemy·드라이버가 실행 SQL 과 **바인딩 값**(비밀번호 해시·토큰·
@@ -703,7 +726,8 @@ uvicorn 로거 레벨은 `python main.py` 경로에서 root 와 같은 규칙(`L
 
 | 가리는 형태 | 예 |
 |---|---|
-| DSN 비밀번호 | `mysql+asyncmy://u:***@h/db` · `redis://:***@cache:6379/0` |
+| DSN 계정(사용자명·비밀번호) | `mysql+asyncmy://***:***@h/db` · `redis://:***@cache:6379/0` |
+| 설정 비밀값 원문(`config.LOG_SECRET_SETTINGS` — DB 계정·비밀번호, Redis 비밀번호, JWT·세션 키) | 어디에 나오든 `***`. 4글자 미만 값은 `user=`·`username=` 형태에서만 |
 | `Authorization` 값·`Bearer` 토큰 | `Authorization: Bearer ***` |
 | 이름에 `password`·`passwd`·`pwd`·`secret`·`token`·`api_key` 가 든 키의 값 | `password=***` · `"refresh_token": "***"` |
 
@@ -716,8 +740,9 @@ traceback 은 보통 포매터가 나중에 `exc_info` 에서 만들어 필터�
 | 출력 경로 | 붙는 곳 |
 |---|---|
 | 앱·SQLAlchemy·`python main.py` 의 uvicorn 로거 | root 의 queue 핸들러 필터 `redact` — stdout·stderr·큐 포화 fallback 모두 |
-| `uvicorn main:app` CLI 의 `uvicorn`·`uvicorn.error`·`uvicorn.access` | `configure_logging()` 이 그 **로거**에 붙인다(uvicorn 자기 핸들러로 나가는 경로). 접속 줄의 `?token=…` 도 가려지고 줄 형식은 그대로 |
-| Celery worker | `after_setup_logger`·`after_setup_task_logger` 시그널에서 Celery 가 단 핸들러에 붙인다(`app/celery/lifecycle.py`) |
+| `uvicorn main:app` CLI 의 `uvicorn`·`uvicorn.error`·`uvicorn.access` | 콘솔 핸들러가 공유 queue 로 바뀌어 queue 필터를 탄다. `configure_logging()` 이 그 **로거**에도 붙여 둔다. 접속 줄의 `?token=…` 도 가려지고 요청 줄은 남는다 |
+| Celery worker | 콘솔은 공유 queue, `--logfile` 파일 핸들러에는 `after_setup_logger`·`after_setup_task_logger` 수신자가 같은 필터를 붙인다(`app/celery/lifecycle.py`) |
+| 파일(`LOG_FILE_ENABLED`) | listener 의 출력처라 queue 필터를 이미 거친 레코드만 쓴다 |
 
 형태로 찾는 규칙이라 모든 비밀을 잡지는 못합니다 — 비밀값을 로그·예외 메시지에 넣지 않는 것이 먼저입니다
 (`tests/utils/test_log_redaction.py`).
@@ -745,7 +770,7 @@ listener 는 FastAPI lifespan 보다 **오래** 살아야 합니다. lifespan �
 
 | | `uv run python main.py` | `uv run uvicorn main:app` |
 |---|---|---|
-| uvicorn 로그 | 프로젝트 포맷 + `[app=uvicorn]`, 같은 큐 | uvicorn 기본 포맷(`INFO:     …`). `LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` 을 지정하면 그 포맷, `LOG_CONSOLE_ENABLED=false` 면 출력 없음(§9.2) |
+| uvicorn 로그 | 프로젝트 포맷 + `[app=uvicorn]`, 같은 큐 | 같다 — 앱 import 때 uvicorn 콘솔 핸들러를 공유 큐로 바꾼다(§9.2). 그 전에 나온 줄은 없다(uvicorn 은 앱을 import 한 뒤 `Started server process` 를 쓴다) |
 | 앱 로그 | 프로젝트 포맷 | 프로젝트 포맷 |
 | 오류·traceback | 출력 | 출력 |
 | `SIGTERM` 시 로그 비우기 | 신호 핸들러 + lifespan flush | lifespan flush 만 |
@@ -1181,6 +1206,7 @@ config.set_main_option(
 | 2026-10-19 | 보안·운영(security-ops-hardening): §4.1 `hide_parameters` 회귀 고정, §10 접속 로그 보존(`ACCESS_LOG_RETENTION_DAYS`, beat 매일 03:30 배치 삭제), §12 로그인 폼 CSRF 토큰·`created_at` 날짜 필터(`LocalDateFilter`), §13 beat 등록 구조 |
 | 2026-10-19 | 관리 세션(admin-session-hardening): §12 서명 쿠키 → Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 절대·미사용 만료, 강등·비활성화·삭제 즉시 폐기), 로그인 이후 CSRF(`AdminCsrfMiddleware`·`base.html` meta·스크립트), POST 로그아웃, 기간 필터. 설정 `ADMIN_SESSION_*`, 의존성 `itsdangerous` 제거 |
 | 2026-10-19 | 설정 정리(config-cleanup): 읽는 코드가 없던 `SMTPSettings`·`UploadSettings`·`SESSION_EXPIRE_SECONDS` 삭제(옛 `.env` 줄은 무시), 세션·토큰 만료의 정본을 README 표 하나로, 사용처 계약 테스트 `tests/core/test_settings_usage.py` |
+| 2026-10-19 | 로깅 개편(logging-overhaul): §9.2 모든 실행 경로 같은 형식(`adopt_foreign_handlers`)·필수 필드 검사·헤더를 외부 로거 이름으로도 판별·프로세스별 파일(`attach_log_files`, `DailySizeRotatingFileHandler`), §9.3 `LOG_APP_LEVELS`(`AppLevelFilter`), §9.4.1 DSN 사용자명·설정 비밀값 원문 마스킹. README "로깅" 절이 Django `LOGGING` 대응표 |
 | 2026-10-13 | 접근 수준 선언(access-policy): §11.2 신설 — `Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`, 기동 시 기본 거부 `AccessPolicyGuard`(§7.1·§7.3), home·reports 라우터 단위 인가를 뷰 단위 선언으로, §11.1 표 갱신. OpenAPI 불변 |
 | 2026-10-13 | 로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 `RedactingFilter`(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(`REDIS_MIN_VERSION`), §10 접속 로그 원문 저장은 사용자 결정으로 유지 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
@@ -1228,11 +1254,14 @@ config.set_main_option(
 
 | 키 | 기본값 | 비고 |
 |---|---|---|
-| `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` | 없음 | §9.3 |
+| `LOG_LEVEL` / `LOG_CONSOLE_LEVEL` / `LOG_FILE_LEVEL` | 없음 | §9.3 |
+| `LOG_APP_LEVELS` | 빈 값 | 헤더별 최소 레벨 `blog=DEBUG,sqlalchemy=WARNING` — §9.3 |
 | `LOG_SQL_ECHO_ENABLED` | `false` | §9.4 |
-| `LOG_CONSOLE_ENABLED` | `true` | false 면 콘솔 핸들러 없음(앱·uvicorn CLI·Celery), 기동 시 경고 한 줄 — §9.2 |
-| `LOG_CONSOLE_FORMAT` | `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}` | 콘솔 포매터 fmt, 잘못되면 기동 오류 — §9.2 |
-| `LOG_DATE_FORMAT` | `%Y-%m-%d %H:%M:%S` | 콘솔 포매터 datefmt(빈 값 금지) — §9.2 |
+| `LOG_CONSOLE_ENABLED` | `true` | false 면 콘솔 핸들러 없음(앱·uvicorn CLI·Celery), 파일도 꺼져 있으면 기동 시 경고 한 줄 — §9.2 |
+| `LOG_CONSOLE_FORMAT` / `LOG_FILE_FORMAT` | `[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}` | 콘솔 / 파일 포매터 fmt, 잘못되거나 필수 필드가 빠지면 기동 오류 — §9.2 |
+| `LOG_DATE_FORMAT` | `%Y-%m-%d %H:%M:%S` | 포매터 datefmt(빈 값 금지) — §9.2 |
+| `LOG_FILE_ENABLED` / `LOG_DIR` | `false` / `logs` | 프로세스별 파일 출력 — §9.2 |
+| `LOG_MAX_SIZE_MB` / `LOG_RETENTION_DAYS` | `10` / `30` | 하루 안 분할 크기(1 이상) / 회전 파일 보관 일수(0 = 지우지 않음) — §9.2 |
 
 **MiddlewareSettings** — §10 표
 
