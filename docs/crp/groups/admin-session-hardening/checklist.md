@@ -14,4 +14,11 @@
 - [x] 이전 그룹 상태 덧붙임: admin-login R-001, security-ops-hardening R-001·R-004, log-redaction-fixes R-002
 - [x] 공통 게이트 그린 · fail-on-revert · 실기동 스모크 · run-log 갱신
 
+## Round 2 — 2026-10-19 · 후속 (R-004 해소 — 관리 화면 경로의 refresh 폐기)
+- [x] 요청 기록(REQ-004), ADR-008
+- [x] (F-006) `UserAdmin` `_revoke_credentials` — refresh `revoke_user` + 관리 세션 `revoke_user`, `AdminSessionStore.redis`
+- [x] 테스트 갱신(관리 화면 8건 — 네 조건 refresh 폐기·일반 수정 유지·두 저장소 각각 실패 시 미저장), 변이 2건
+- [x] 안내서 폐기 표·수명주기 표, README, residual-risk R-004 상태, docs/review 상태
+- [x] 공통 게이트 그린(작업 트리·`.env` 없는 클론)
+
 > 미닫힘(`[ ]`) 항목이 1개라도 있으면 그 라운드는 GATE 5 Done 이 아니다.
