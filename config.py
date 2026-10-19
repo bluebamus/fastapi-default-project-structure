@@ -608,10 +608,10 @@ class LogSettings(BaseSettings):
     """
     로깅 설정
 
-    출력은 stdout/stderr 로만 나가며 저장·rotation 은 컨테이너 런타임이나 운영
-    agent 가 담당한다(NFR-009). 애플리케이션 파일 핸들러와 rotation 설정은
-    제거됐다 — 요청 event loop 에서 동기 파일 write/flush 가 일어나지 않게 하려는
-    것이다. 실제 쓰기는 QueueListener 스레드가 수행한다.
+    기본 출력은 stdout/stderr 이고 저장·rotation 은 컨테이너 런타임이나 운영 agent 가
+    담당한다(NFR-009). ``LOG_FILE_ENABLED=true`` 면 프로세스별 파일도 쓴다(logging-overhaul
+    L5·L6). 실제 쓰기는 콘솔·파일 모두 QueueListener 스레드가 수행한다 — 요청 event loop
+    에서 동기 write/flush/rotation 이 일어나지 않는다.
 
     DEBUG 모드에 따라 로그 레벨이 자동 결정됩니다.
 
@@ -632,9 +632,9 @@ class LogSettings(BaseSettings):
     # === 출력 대상 설정 ===
     # false 면 콘솔(stdout/stderr) 핸들러를 하나도 붙이지 않는다 — 앱 로거(listener 의 console·
     # error_console), ``uvicorn main:app`` CLI 의 uvicorn 핸들러, Celery worker 의 콘솔 핸들러 모두.
-    # 판단은 app/utils/logs/config.py 의 console_enabled() 한 곳에서 한다. 파일 핸들러(Celery
-    # --logfile)는 그대로 둔다. 앱에는 파일 출력이 없으므로 false 면 앱 로그는 버려지고, 기동 때
-    # stderr 에 경고 한 줄을 남긴다.
+    # 판단은 app/utils/logs/config.py 의 console_enabled() 한 곳에서 한다. 파일 출력(LOG_FILE_ENABLED·
+    # Celery --logfile)은 그대로 둔다. 파일 출력도 꺼져 있으면 앱 로그는 버려지고, 기동 때 stderr 에
+    # 경고 한 줄을 남긴다.
     LOG_CONSOLE_ENABLED: bool = Field(
         default=True,
         description="콘솔(stdout/stderr) 로그 출력 — false 면 콘솔 핸들러를 붙이지 않는다",

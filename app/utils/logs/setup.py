@@ -232,8 +232,8 @@ def _add_record_filters(handler: logging.Handler) -> None:
 
 
 def _warn_if_no_output() -> None:
-    """콘솔이 꺼지면 앱 로그를 받을 곳이 없다 — 조용히 잃지 않게 stderr 에 한 줄 남긴다."""
-    if console_enabled():
+    """콘솔도 파일도 꺼지면 앱 로그를 받을 곳이 없다 — 조용히 잃지 않게 stderr 에 한 줄 남긴다."""
+    if console_enabled() or log_settings.LOG_FILE_ENABLED:
         return
     stream = sys.__stderr__
     if stream is None:  # pragma: no cover - pythonw 등 stderr 가 없는 환경

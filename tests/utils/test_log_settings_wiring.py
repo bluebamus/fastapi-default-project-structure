@@ -209,6 +209,14 @@ def test_console_disabled_app_logger_writes_nothing_and_warns_once(tmp_path, env
     assert len([ln for ln in proc.stderr.splitlines() if DISABLED_WARNING in ln]) == 1
 
 
+def test_console_disabled_with_files_on_does_not_warn(tmp_path):
+    """파일 로그가 켜져 있으면 로그는 버려지지 않는다 — '기록되지 않는다' 경고를 내지 않는다."""
+    proc = _run(
+        APP_PROBE.format(env="test"), tmp_path, LOG_CONSOLE_ENABLED="false", LOG_FILE_ENABLED="true"
+    )
+    assert DISABLED_WARNING not in proc.stderr
+
+
 def test_console_disabled_builds_no_console_handlers(monkeypatch):
     from app.utils.logs import config as logs_config
 

@@ -51,7 +51,7 @@ class DailySizeRotatingFileHandler(TimedRotatingFileHandler):
     def doRollover(self) -> None:
         if self.stream:
             self.stream.close()
-            self.stream = None  # type: ignore[assignment]
+            self.stream = None
         now = time.time()
         if now >= self.rolloverAt:
             closed = datetime.fromtimestamp(self.rolloverAt - 1, self.tz).date()

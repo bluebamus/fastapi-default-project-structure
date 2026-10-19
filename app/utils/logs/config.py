@@ -13,8 +13,9 @@ ENV(development/test/staging/production)에 따라 레벨·출력·타임존을 
 **출력 경로는 항상 queue 를 거친다** (NFR-009). root 로거에는
 ``BoundedQueueHandler`` 하나만 붙고, 실제 stdout/stderr 쓰기는 ``QueueListener``
 스레드가 수행한다. 요청 event loop 에서 동기 write/flush 가 일어나지 않게 하려는
-것이고, 그래서 애플리케이션 파일 handler 와 rotation 설정은 제거했다 — 저장과
-rotation 은 Docker/Kubernetes/운영 agent 가 담당한다.
+것이다. 기본은 콘솔뿐이고(저장·rotation 은 Docker/Kubernetes/운영 agent), ``LOG_FILE_ENABLED``
+면 진입점이 ``setup.attach_log_files()`` 로 파일 핸들러를 **listener** 에 더한다 — 파일 쓰기·회전도
+listener 스레드에서 일어난다(logging-overhaul L5·L6).
 
 ``context`` 필터는 **queue 핸들러에** 붙는다. ``ContextFilter`` 가 호출 스택에서
 classname 을 뽑기 때문에, listener 스레드에서 돌리면 스택이 이미 사라져 값이 항상
@@ -35,13 +36,11 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
     판별은 등록 누락이라는 실패 모드 자체를 없앤다. 로거 이름을 잘못 줘도(복사·붙여넣기)
     ``app=`` 라벨은 항상 맞다.
 
-이 선택이 포기한 것 (수용된 잔여 위험 — 결함으로 재보고하지 말 것):
-    · **앱별 로그 레벨을 따로 줄 수 없다.** 레벨은 root 하나뿐이고
-      ``LogSettings`` 에도 전역 레벨(``LOG_LEVEL``·``LOG_CONSOLE_LEVEL``)만 있다.
-    · **서드파티 로거(sqlalchemy·aiomysql 등)를 개별 제어할 수 없다.** 아래 dict 에
-      해당 항목이 없어 전부 root 레벨을 따른다.
-    둘 중 하나가 실제로 필요해지면 그때 ``loggers`` 키를 추가한다 —
-    그 시점에 charter 비목표를 먼저 개정한다.
+앱별·서드파티별 레벨 (logging-overhaul L4):
+    ``loggers`` 키 대신 **필터 하나**(``AppLevelFilter``)로 준다. ``LOG_APP_LEVELS`` 의 키는 로거 이름이
+    아니라 헤더(``app=``)다 — 서드파티는 로거 이름으로 ``celery``·``uvicorn``·``sqlalchemy``·``alembic``·
+    ``ext`` 헤더가 붙는다. 로거·queue 레벨은 전체 최솟값(``lowest_level()``)으로 내려 레코드가 필터까지 온다.
+    그래서 위 "손댈 곳이 0" 과 "등록 누락 없음" 은 그대로다.
 """
 
 from __future__ import annotations
