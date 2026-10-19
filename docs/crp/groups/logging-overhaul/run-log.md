@@ -83,5 +83,7 @@ fakeredis 는 Lua(`EVALSHA`)가 없어 Celery worker 종료 때 `Unrecoverable e
   빈 사용자명 세 건 실패.
 - 접속 줄 포매터: `uvicorn.access` 레코드의 메시지가 이미 `client - "GET /p HTTP/1.1" 200` 이라 프로젝트 형식의 `{message}` 로
   충분하다 — `TzAccessFormatter` 는 두지 않는다(ADR-001). `python main.py` 경로가 원래 그렇게 출력했고 CLI 경로도 같은 queue 로 바뀌었다.
+- 재검사(`8d72447`): `pytest -m "not mysql"` 작업 트리·`.env` 없는 저장소 밖 클론 모두 **1318 passed · 0 skipped · 19 deselected**(DSN 모양 4건 추가),
+  ruff·format 330 파일·mypy 205 파일 이상 없음, `review_gate` 네트워크 없는 검사 9종 통과.
 
 - **수렴 판정:** `CONVERGED`
