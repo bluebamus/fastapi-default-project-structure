@@ -24,4 +24,11 @@
 - [x] 추가 확인: `python main.py` 경로의 uvicorn 접속 로그 — 결함 없음, 회귀 테스트 3건(`eae4a99`)
 - [x] 공통 게이트 그린 · fail-on-revert · run-log 갱신
 
+## Round 3 — 2026-10-19 · fix/redaction-keeps-args (마스킹이 args 모양을 지킨다)
+- [x] 요청을 design-baseline §2 에 기록(REQ-007)
+- [x] 두 실행 경로(`python main.py`·`uvicorn main:app`) × 비밀값 유무를 실제 레코드로 재현 — run-log
+- [x] (F-008) `RedactingFilter._mask_args_only`, `uvicorn.access` 로거에 필터
+- [x] ARCHITECTURE §9.4.1·server-lifecycle 안내서
+- [x] 공통 게이트 그린 · fail-on-revert · run-log 갱신
+
 > 미닫힘(`[ ]`) 항목이 1개라도 있으면 그 라운드는 GATE 5 Done 이 아니다.

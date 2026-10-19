@@ -107,3 +107,38 @@
 - HTML 안내서 2편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 로컬 review 문서 2편 `html.parser` 파싱 확인.
 
 - **수렴 판정:** `CONVERGED`
+
+### Round 3 — 2026-10-19 · fix/redaction-keeps-args (마스킹이 args 모양을 지킨다)
+- **트리거:** REQ-007(감독자 후속 — 다른 곳에서 나온 형제 결함 확인). 기준선 main `c9eeae6`, 브랜치 `fix/redaction-keeps-args`,
+  코드 커밋 `f52ef4f`.
+- **재현(변경 전, 실제 접속 레코드 `'%s - "%s %s HTTP/%s" %d'` + args 5개):**
+
+| 경로 | 비밀값 없음 | `?token=…&password=…` |
+|---|---|---|
+| `python main.py`(`setup_uvicorn_logging()`, 공유 queue·`TzFormatter`) | 정상 | 가려짐·정상(`TzFormatter` 는 `{message}` 만 쓴다) |
+| `uvicorn main:app` CLI(uvicorn `AccessFormatter`) | 정상 | **원문 노출** — `uvicorn.access` 에 필터가 없다 |
+| 같은 CLI 에 필터만 붙이면 | 정상 | **`--- Logging error --- TypeError: cannot unpack non-iterable NoneType object`, 줄 소실** |
+| Celery(`ColorFormatter`·`TaskFormatter`) | 정상 | 가려짐·정상(`%(message)s` 만 쓴다) |
+
+  형제 결함(줄 소실)은 이 저장소에서 **겉으로 드러나지 않았다** — log-redaction ADR-001 이 바로 그 이유로 `uvicorn.access` 를
+  제외했기 때문이다. 대신 CLI 접속 줄의 비밀값이 원문으로 나갔다(F-008). 원인은 하나 — 필터가 `args` 를 통째로 비운다.
+- **결정:** ADR-008
+- **신규 finding:** MED 1(F-008) — Fixed.
+
+#### fail-on-revert
+
+| 변이 | 실패 |
+|---|---|
+| 테스트 먼저(구현 전) | `test_filter_masks_inside_one_argument_and_keeps_args_shape`·`test_uvicorn_cli_access_line_is_masked_and_not_lost`(원문 노출). 걸침 회귀 가드 `test_filter_falls_back_when_secret_spans_template_and_argument` 는 통과 |
+| `filters.py` 만 변경 전으로 | 위 2건 — CLI 테스트는 `--- Logging error ---`(형제 결함 그대로) |
+| `setup.py` 만 변경 전으로 | `test_uvicorn_cli_access_line_is_masked_and_not_lost`(원문 노출) |
+
+#### 검사
+
+- `ruff check .` 통과 · `ruff format --check .` · mypy(격리 실행) 이상 없음.
+- `pytest -m "not mysql"`(fakeredis TCP, `REDIS_PORT`·`REDIS_TEST_PORT` 함께): 작업 트리 **1268 passed · 0 skipped · 19 deselected** · `.env` 없는 저장소 밖
+  클론(`f52ef4f`, `uv sync --frozen`): **1268 passed · 0 skipped · 19 deselected** (Round 2 의 1265 + 새 3건).
+- `pytest -m mysql --collect-only`: 19 수집. `review_gate --fast` 전건 통과. alembic 변경 없음. `server-lifecycle-guide.html`
+  `html.parser` 파싱 확인.
+
+- **수렴 판정:** `CONVERGED`

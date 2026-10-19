@@ -1,4 +1,4 @@
-# Charter — config-cleanup  (Charter v0.2 / 2026-10-19)
+# Charter — config-cleanup  (Charter v0.3 / 2026-10-19)
 
 > 검수의 **닫힌 정의**. 여기 적힌 것이 범위와 합격 기준의 전부다.
 > **상위 기준:** `design-baseline.md` 의 Active 요구사항·불가침 제약과 모순될 수 없다.
@@ -17,6 +17,8 @@
 | 2 | `.env.example` | 설정 견본 | API 절 삭제, LOG_* 주석을 실제 동작대로 |
 | 2 | `tests/utils/test_log_settings_wiring.py`(신규), `tests/core/test_settings_usage.py` | 테스트 | 출력 줄·콘솔 끄기·검증·마스킹 / 예외 목록 삭제·`API_VERSION` 무시 |
 | 2 | `README.md`, `docs/guides/ARCHITECTURE.md`·`server-lifecycle-guide.html`·`feature-development-guide.html` | 문서 | 환경 변수 표, 로깅 절(§9.2·§9.6), 부록, 버전 설정 서술 |
+| 3 | `app/utils/logs/filters.py`·`setup.py`, `tests/utils/test_log_redaction.py` | 코드·테스트 | 마스킹이 `args` 모양을 지킨다, `uvicorn.access` 로거에도 필터 |
+| 3 | `docs/guides/ARCHITECTURE.md`(§9.4.1)·`server-lifecycle-guide.html` | 문서 | 마스킹 붙는 곳·`args` 처리 |
 
 과거 그룹 문서(`orm-raw-repository` design-baseline 의 REQ-017·ADR-030·ADR-045·v0.16 등)에 남은 `SMTP_PASSWORD` 언급은
 **이력**이다 — append-only 라 고치지 않는다. 현재 동작은 이 그룹과 코드를 따른다.
@@ -43,6 +45,8 @@
 - **INV-5**: 콘솔 출력 여부는 `console_enabled()` 한 곳에서 판단하고, 콘솔 핸들러를 만드는 모든 경로(앱 dictConfig·uvicorn CLI·
   Celery)가 따른다. 파일 핸들러는 건드리지 않는다. 출력이 모두 꺼지면 기동 때 stderr 에 경고 한 줄을 남긴다.
 - **INV-6**: 비밀값 마스킹은 로그 포맷과 무관하다(사용자 포맷에서도 메시지·traceback·stack_info 가 가려진다).
+- **INV-7**: 마스킹은 로그 줄을 없애지 않는다 — `args` 를 직접 푸는 외부 포매터(uvicorn `AccessFormatter`)로 나가는 줄도
+  logging 오류 없이 그 형식대로 나오고 비밀값은 가려진다(Round 3).
 
 ## 3. 인수 기준 — 전부 그린
 
@@ -64,7 +68,15 @@ Round 2 (config-cleanup-2):
 - [x] **예외 목록 없음** — `UNUSED_ALLOWED` 삭제, `test_every_settings_field_is_read_somewhere` 가 예외 없이 그린
 - [x] **공통 게이트·fail-on-revert** — run-log Round 2
 
+Round 3 (fix/redaction-keeps-args):
+
+- [x] **두 실행 경로 × 비밀값 유무 재현** — run-log Round 3
+- [x] **`args` 모양 유지** — `test_filter_masks_inside_one_argument_and_keeps_args_shape`, 걸침은 기존 방식 `test_filter_falls_back_when_secret_spans_template_and_argument`
+- [x] **CLI 접속 줄 마스킹·유지** — `test_uvicorn_cli_access_line_is_masked_and_not_lost`
+- [x] **공통 게이트·fail-on-revert** — run-log Round 3
+
 ## 4. 변경 이력
 
 - v0.1 (2026-10-19): 최초 작성(명세 §1~§6).
+- v0.3 (2026-10-19): Round 3(fix/redaction-keeps-args) — 인벤토리, INV-7, 인수 기준.
 - v0.2 (2026-10-19): Round 2(config-cleanup-2) — 인벤토리, INV-1 예외 목록 삭제, INV-2 에 `API_VERSION`, INV-4~6, 인수 기준.
