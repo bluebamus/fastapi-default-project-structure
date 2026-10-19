@@ -17,6 +17,7 @@
 
 import logging
 import os
+import string
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -571,6 +572,38 @@ class CORSSettings(BaseSettings):
 # =============================================================================
 # 로깅 설정
 # =============================================================================
+# 확정 포맷 (#3): [시간 TZ] LEVEL [app=..] [module:class:func:line] message
+_DEFAULT_LOG_FORMAT = (
+    "[{asctime} {tzname}] {levelname:5} [app={appname}] "
+    "[{module}:{classname}:{funcName}:{lineno}] {message}"
+)
+
+# 모든 로그 줄에 반드시 있어야 하는 자리표시자 (logging-overhaul L3).
+LOG_REQUIRED_FIELDS = (
+    "asctime",
+    "levelname",
+    "appname",
+    "module",
+    "classname",
+    "funcName",
+    "message",
+)
+
+
+def parse_app_levels(raw: str) -> dict[str, int]:
+    """``"blog=DEBUG,celery=INFO"`` → ``{"blog": 10, "celery": 20}``. 잘못되면 ValueError."""
+    levels: dict[str, int] = {}
+    if not raw.strip():
+        return levels
+    names = logging.getLevelNamesMapping()
+    for item in raw.split(","):
+        app, sep, level = (part.strip() for part in item.partition("="))
+        if not sep or not app or level.upper() not in names:
+            raise ValueError(f"'헤더=레벨' 형식이 아니거나 모르는 레벨입니다: {item.strip()!r}")
+        levels[app] = names[level.upper()]
+    return levels
+
+
 class LogSettings(BaseSettings):
     """
     로깅 설정
@@ -638,11 +671,56 @@ class LogSettings(BaseSettings):
     # uvicorn CLI·Celery 의 콘솔 핸들러는 두 값 중 하나라도 **직접 지정했을 때만** 이 포맷으로
     # 바꾼다(기본이면 각 도구의 기본 출력 그대로). 비밀값 마스킹은 포맷과 무관하게 적용된다.
     LOG_CONSOLE_FORMAT: str = Field(
-        default=(
-            "[{asctime} {tzname}] {levelname:5} [app={appname}] "
-            "[{module}:{classname}:{funcName}:{lineno}] {message}"
-        ),
+        default=_DEFAULT_LOG_FORMAT,
         description="콘솔 로그 포맷 (str.format 스타일 '{field}')",
+    )
+
+    # 파일 포매터의 fmt. 콘솔과 같은 TzFormatter·LOG_DATE_FORMAT 을 쓰고 기본값도 같다.
+    LOG_FILE_FORMAT: str = Field(
+        default=_DEFAULT_LOG_FORMAT,
+        description="파일 로그 포맷 (str.format 스타일 '{field}')",
+    )
+
+    # === 헤더(app=)별 최소 레벨 — Django LOGGING["loggers"][name]["level"] 자리 ===
+    # "blog=DEBUG,celery=INFO,sqlalchemy=WARNING". 키는 헤더 이름, 값은 표준 레벨 이름.
+    # 지정이 없는 헤더는 LOG_LEVEL 을 따른다. 잘못된 레벨·형식은 기동 오류, 모르는 헤더는 경고만.
+    LOG_APP_LEVELS: str = Field(
+        default="",
+        description="헤더별 최소 레벨 (예: blog=DEBUG,sqlalchemy=WARNING)",
+    )
+
+    # === 파일 출력 (logging-overhaul L5·L6) ===
+    # 켜면 LOG_DIR 아래에 프로세스별 파일(웹 app.log·error.log / Celery celery.log·celery-error.log)을
+    # 쓴다. 매일 자정(로그 시각과 같은 시간대)에 app.log.YYYY-MM-DD 로 넘기고, 하루 안에서
+    # LOG_MAX_SIZE_MB 를 넘으면 app.log.YYYY-MM-DD.1·.2… 로 나눈다. 여러 프로세스(uvicorn
+    # --workers 2 이상)가 같은 파일을 쓰면 회전이 엇갈리므로 그때는 끄고 콘솔+수집기를 쓴다.
+    LOG_FILE_ENABLED: bool = Field(
+        default=False,
+        description="파일 로그 출력 (기본 false — 콘솔+수집기 운영)",
+    )
+
+    LOG_DIR: str = Field(
+        default="logs",
+        description="로그 파일 디렉터리 (작업 디렉터리 기준 상대 경로 가능)",
+    )
+
+    # 파일 로그 레벨 (None이면 DEBUG 설정에 따라 자동 결정)
+    LOG_FILE_LEVEL: str | None = Field(
+        default=None,
+        description="파일 로그 레벨",
+    )
+
+    LOG_MAX_SIZE_MB: int = Field(
+        default=100,
+        gt=0,
+        description="하루 안에서 파일을 나누는 크기(MB)",
+    )
+
+    # 이보다 오래된 날짜의 회전 파일을 회전 시점에 지운다. 0 이면 지우지 않는다.
+    LOG_RETENTION_DAYS: int = Field(
+        default=30,
+        ge=0,
+        description="회전 파일 보관 일수 (0 = 삭제 안 함)",
     )
 
     # strftime 형식. development 에서는 그 뒤에 밀리초(.123)가 붙고, staging/production 은 UTC 로 렌더한다.
@@ -651,13 +729,14 @@ class LogSettings(BaseSettings):
         description="로그 시각 형식 (strftime)",
     )
 
-    @field_validator("LOG_CONSOLE_FORMAT")
+    @field_validator("LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT")
     @classmethod
     def _console_format_must_render(cls, value: str) -> str:
         """샘플 레코드를 실제로 한 번 포맷해 본다 — 모르는 필드·괄호 불일치·잘못된 서식을 기동 시 잡는다.
 
         TzFormatter 를 import 하면 순환(formatters → config)이라, 그것이 채우는 tzname·appname·
         classname 을 직접 넣은 표준 Formatter(같은 style="{")로 같은 검사를 한다.
+        렌더가 되더라도 필수 자리표시자(``LOG_REQUIRED_FIELDS``)가 빠지면 거부한다(logging-overhaul L3).
         """
         record = logging.LogRecord("check", logging.INFO, __file__, 1, "msg", None, None, "check")
         record.tzname, record.appname, record.classname = "UTC", "app", "-"
@@ -665,7 +744,21 @@ class LogSettings(BaseSettings):
             logging.Formatter(value, style="{").format(record)
         except Exception as exc:
             raise ValueError(f"로그 포맷을 적용할 수 없습니다: {exc}") from exc
+        used = {field for _, field, _, _ in string.Formatter().parse(value) if field}
+        missing = [field for field in LOG_REQUIRED_FIELDS if field not in used]
+        if missing:
+            raise ValueError("로그 포맷에 필수 필드가 없습니다: " + ", ".join(missing))
         return value
+
+    @field_validator("LOG_APP_LEVELS")
+    @classmethod
+    def _app_levels_must_parse(cls, value: str) -> str:
+        parse_app_levels(value)
+        return value
+
+    def app_levels(self) -> dict[str, int]:
+        """``LOG_APP_LEVELS`` 를 {헤더: 레벨 번호} 로 돌려준다."""
+        return parse_app_levels(self.LOG_APP_LEVELS)
 
     @field_validator("LOG_DATE_FORMAT")
     @classmethod
@@ -694,6 +787,12 @@ class LogSettings(BaseSettings):
         """
         if self.LOG_CONSOLE_LEVEL is not None:
             return self.LOG_CONSOLE_LEVEL
+        return "DEBUG" if debug else "INFO"
+
+    def get_effective_file_level(self, debug: bool) -> str:
+        """실제 적용할 파일 로그 레벨 — LOG_FILE_LEVEL, 미설정 시 debug 면 DEBUG 아니면 INFO."""
+        if self.LOG_FILE_LEVEL is not None:
+            return self.LOG_FILE_LEVEL
         return "DEBUG" if debug else "INFO"
 
 

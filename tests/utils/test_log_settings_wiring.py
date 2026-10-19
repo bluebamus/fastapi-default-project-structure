@@ -28,10 +28,10 @@ OLD_HARDCODED_FORMAT = (
     "[{module}:{classname}:{funcName}:{lineno}] {message}"
 )
 CUSTOM = {
-    "LOG_CONSOLE_FORMAT": "CUSTOM|{levelname}|{asctime}|{message}",
+    "LOG_CONSOLE_FORMAT": "CUSTOM|{levelname}|{asctime}|{appname}|{module}|{classname}|{funcName}|{message}",
     "LOG_DATE_FORMAT": "%Y/%m/%d",
 }
-CUSTOM_LINE = r"CUSTOM\|{level}\|\d{{4}}/\d{{2}}/\d{{2}}\|{msg}"
+CUSTOM_LINE = r"CUSTOM\|{level}\|\d{{4}}/\d{{2}}/\d{{2}}\|[^|]+\|[^|]+\|[^|]+\|[^|]+\|{msg}"
 DISABLED_WARNING = "LOG_CONSOLE_ENABLED=false"
 
 APP_PROBE = """
@@ -140,7 +140,7 @@ def test_custom_format_and_datefmt_apply_to_app_logger(tmp_path, env):
     # development 의 밀리초는 날짜 형식 뒤에 붙는다(기존 동작 유지).
     suffix = r"\.\d{3}" if env == "development" else ""
     _line(
-        r"CUSTOM\|WARNING\|\d{4}/\d{2}/\d{2}" + suffix + r"\|hello-app",
+        r"CUSTOM\|WARNING\|\d{4}/\d{2}/\d{2}" + suffix + r"\|\w+\|<string>\|-\|<module>\|hello-app",
         proc.stdout,
     )
 
@@ -159,10 +159,14 @@ def test_custom_format_applies_to_celery_console_handler_not_file(tmp_path):
 
 def test_redaction_holds_with_custom_format(tmp_path):
     """사용자 포맷에서도 메시지·traceback·stack_info 의 비밀값이 가려진다(log-redaction ADR-001)."""
-    proc = _run(PIPELINE_PROBE, tmp_path, LOG_CONSOLE_FORMAT="USERFMT {levelname} {message}")
+    proc = _run(
+        PIPELINE_PROBE,
+        tmp_path,
+        LOG_CONSOLE_FORMAT="USERFMT {levelname} {asctime} {appname} {module} {classname} {funcName} {message}",
+    )
     for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
         assert (
-            "USERFMT ERROR probe failed for" in stream
+            "<module> probe failed for" in stream and "USERFMT ERROR" in stream
         ), f"{name} 에 사용자 포맷 줄이 없다:\n{stream}"
         _assert_redacted_traceback(stream)
         assert "Stack (most recent call last)" in stream
@@ -229,6 +233,75 @@ def test_valid_custom_format_is_accepted():
     assert s.LOG_CONSOLE_FORMAT == CUSTOM["LOG_CONSOLE_FORMAT"]
 
 
+@pytest.mark.parametrize("key", ["LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT"])
+def test_format_missing_required_fields_is_a_settings_error(key):
+    """모든 줄에 시각·레벨·헤더·모듈·클래스·함수·메시지가 있어야 한다(logging-overhaul L3)."""
+    with pytest.raises(ValidationError, match=key) as exc:
+        LogSettings(_env_file=None, **{key: "{asctime} {levelname} {message}"})
+    for missing in ("appname", "module", "classname", "funcName"):
+        assert missing in str(exc.value)
+
+
+def test_default_formats_have_every_required_field():
+    s = LogSettings(_env_file=None)
+    assert s.LOG_FILE_FORMAT == s.LOG_CONSOLE_FORMAT
+
+
+# =============================================================================
+# LOG_APP_LEVELS (logging-overhaul L4)
+# =============================================================================
+def test_app_levels_parse_to_a_mapping():
+    s = LogSettings(_env_file=None, LOG_APP_LEVELS=" blog=debug, celery=INFO ,sqlalchemy=WARNING")
+    assert s.app_levels() == {"blog": 10, "celery": 20, "sqlalchemy": 30}
+    assert LogSettings(_env_file=None, LOG_APP_LEVELS="").app_levels() == {}
+
+
+APP_LEVEL_PROBE = """
+import logging
+from app.utils.logs import setup
+setup.configure_logging(force=True)
+logging.getLogger("probe").debug("ext-debug")
+logging.getLogger("sqlalchemy.pool").warning("sa-warning")
+logging.getLogger("sqlalchemy.pool").error("sa-error")
+setup.stop_log_listener()
+"""
+
+
+def test_app_levels_filter_real_output(tmp_path):
+    """LOG_LEVEL=INFO 여도 ext=DEBUG 면 그 헤더의 DEBUG 가 나오고, sqlalchemy=ERROR 면 WARNING 이 빠진다."""
+    proc = _run(
+        APP_LEVEL_PROBE, tmp_path, LOG_LEVEL="INFO", LOG_APP_LEVELS="ext=DEBUG,sqlalchemy=ERROR"
+    )
+    assert "[app=ext]" in proc.stdout and "ext-debug" in proc.stdout, proc.stdout
+    assert "sa-warning" not in proc.stdout
+    assert "[app=sqlalchemy]" in proc.stdout and "sa-error" in proc.stdout
+
+
+@pytest.mark.parametrize("raw", ["blog=LOUD", "blog", "=INFO", "blog=INFO,,"])
+def test_bad_app_levels_are_a_settings_error(raw):
+    with pytest.raises(ValidationError, match="LOG_APP_LEVELS"):
+        LogSettings(_env_file=None, LOG_APP_LEVELS=raw)
+
+
+# =============================================================================
+# 파일 로그 설정 (logging-overhaul L5·L6)
+# =============================================================================
+def test_file_settings_defaults():
+    s = LogSettings(_env_file=None)
+    assert s.LOG_FILE_ENABLED is False
+    assert s.LOG_DIR == "logs"
+    assert s.LOG_RETENTION_DAYS == 30
+    assert s.LOG_MAX_SIZE_MB > 0
+
+
+@pytest.mark.parametrize(
+    ("key", "value"), [("LOG_RETENTION_DAYS", -1), ("LOG_MAX_SIZE_MB", 0)]
+)
+def test_bad_file_rotation_values_are_settings_errors(key, value):
+    with pytest.raises(ValidationError, match=key):
+        LogSettings(_env_file=None, **{key: value})
+
+
 # =============================================================================
 # python main.py 경로의 uvicorn 접속 로그 — 회귀
 #
@@ -251,12 +324,15 @@ ACCESS_LINE = r'127\.0\.0\.1:5000 - "GET /x\?password=\*\*\* HTTP/1\.1" 200'
 
 @pytest.mark.parametrize("custom", [False, True], ids=["default", "custom"])
 def test_main_py_access_log_renders_without_logging_error(tmp_path, custom):
-    overrides = {"LOG_CONSOLE_FORMAT": "U|{asctime}|{tzname}|{message}", "LOG_DATE_FORMAT": "%H:%M"}
+    overrides = {
+        "LOG_CONSOLE_FORMAT": "U|{asctime}|{tzname}|{levelname}{appname}{module}{classname}{funcName}|{message}",
+        "LOG_DATE_FORMAT": "%H:%M",
+    }
     proc = _run(ACCESS_PROBE, tmp_path, **(overrides if custom else {}))
     assert "Logging error" not in proc.stderr, proc.stderr
     assert "secret42" not in proc.stdout + proc.stderr
     if custom:
-        _line(rf"U\|\d{{2}}:\d{{2}}\|\w+\|{ACCESS_LINE}", proc.stdout)
+        _line(rf"U\|\d{{2}}:\d{{2}}\|\w+\|\S+\|{ACCESS_LINE}", proc.stdout)
     else:
         _line(
             rf"\[\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}} \w+\] INFO  \[app=uvicorn\] \[\S+\] {ACCESS_LINE}",

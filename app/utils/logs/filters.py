@@ -62,6 +62,15 @@ def _app_from_path(pathname: str, logger_name: str = "") -> str:
     return _EXTERNAL_LOGGER_APPS.get(logger_name.split(".", 1)[0], "ext")
 
 
+def known_app_names() -> set[str]:
+    """``_app_from_path`` 가 낼 수 있는 헤더 이름 — ``LOG_APP_LEVELS`` 의 모르는 키 경고에 쓴다."""
+    features = Path(_REPO_ROOT) / "app" / "features"
+    names = {p.name for p in features.iterdir() if p.is_dir() and not p.name.startswith("_")}
+    return names | {"app", "core", "celery", "utils", "migrations", "ext"} | set(
+        _EXTERNAL_LOGGER_APPS.values()
+    )
+
+
 def _class_from_stack() -> str:
     """호출 스택에서 logging/이 패키지 프레임을 건너뛰고 첫 사용자 프레임의 클래스명을 찾는다."""
     frame: FrameType | None = sys._getframe(0)
@@ -88,6 +97,24 @@ class ContextFilter(logging.Filter):
         if not getattr(record, "classname", None):
             record.classname = _class_from_stack()
         return True
+
+
+class AppLevelFilter(logging.Filter):
+    """헤더(``app=``)별 최소 레벨로 거른다 — ``LOG_APP_LEVELS`` (logging-overhaul L4).
+
+    Django 의 ``LOGGING["loggers"][name]["level"]`` 자리다. 로거를 등록하지 않는 설계(ADR-019)를
+    지키려고 로거가 아니라 **필터 하나**로 한다. ``ContextFilter`` 바로 뒤에 둔다(appname 이 필요).
+    지정이 없는 헤더는 ``default``(``LOG_LEVEL``)를 따른다.
+    """
+
+    def __init__(self, levels: dict[str, int], default: int | str) -> None:
+        super().__init__()
+        self.levels = levels
+        self.default = logging.getLevelNamesMapping()[default] if isinstance(default, str) else default
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        appname = getattr(record, "appname", None) or _app_from_path(record.pathname, record.name)
+        return record.levelno >= self.levels.get(appname, self.default)
 
 
 # SQL 본문과 바인딩 파라미터를 저레벨 로그로 내보내는 로거들.

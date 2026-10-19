@@ -188,7 +188,8 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
         # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
         # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001). redact 는 메시지·traceback·
         # stack 의 비밀값을 적재 전에 가린다(log-redaction ADR-001).
-        assert queue_handler["filters"] == ["sql_noise", "redact", "context"]
+        # app_levels 는 헤더가 채워진 **뒤**(context 바로 뒤)에 헤더별 레벨로 거른다(logging-overhaul L4).
+        assert queue_handler["filters"] == ["sql_noise", "redact", "context", "app_levels"]
 
 
 def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
@@ -203,6 +204,55 @@ def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
             assert "File" not in handler.get(
                 "class", ""
             ), f"ENV={env} 에 파일 핸들러 {name} 이 생겼다"
+
+
+def test_app_level_filter_applies_per_header_minimum():
+    from app.utils.logs.filters import AppLevelFilter
+
+    f = AppLevelFilter(levels={"blog": logging.DEBUG, "sqlalchemy": logging.WARNING}, default="INFO")
+
+    def rec(app, level):
+        r = logging.LogRecord("x", level, "x.py", 1, "m", (), None)
+        r.appname = app
+        return r
+
+    assert f.filter(rec("blog", logging.DEBUG))
+    assert not f.filter(rec("core", logging.DEBUG)), "지정 없는 헤더는 LOG_LEVEL 을 따른다"
+    assert f.filter(rec("core", logging.INFO))
+    assert not f.filter(rec("sqlalchemy", logging.INFO))
+    assert f.filter(rec("sqlalchemy", logging.WARNING))
+
+
+def test_logger_level_is_lowered_to_the_lowest_app_level(monkeypatch, tmp_path):
+    """레코드가 필터까지 오도록 root·queue 레벨은 전체 최솟값이다."""
+    cfg = _build_with(monkeypatch, tmp_path, LOG_LEVEL="INFO", LOG_APP_LEVELS="blog=DEBUG")
+    assert cfg["root"]["level"] == "DEBUG"
+    assert cfg["handlers"]["queue"]["level"] == "DEBUG"
+    assert cfg["filters"]["app_levels"]["levels"] == {"blog": logging.DEBUG}
+    assert cfg["filters"]["app_levels"]["default"] == "INFO"
+
+
+def test_unknown_app_level_header_warns_but_starts(tmp_path):
+    code = (
+        "from app.utils.logs import setup\n"
+        "setup.configure_logging(force=True)\n"
+        "setup.stop_log_listener()\n"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LOG_")}
+    env.update(
+        PYTHONPATH=str(pathlib.Path(__file__).resolve().parents[2]),
+        PYTHONIOENCODING="utf-8",
+        ENV="test",
+        LOG_APP_LEVELS="nosuchapp=DEBUG,blog=INFO",
+    )
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code], cwd=tmp_path, env=env, capture_output=True,
+        text=True, encoding="utf-8", errors="replace", timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout + proc.stderr
+    assert "nosuchapp" in out and "WARNING" in out, out
+    assert "blog" not in out.split("nosuchapp", 1)[1].splitlines()[0]
 
 
 def test_production_separates_errors_to_stderr(monkeypatch, tmp_path):

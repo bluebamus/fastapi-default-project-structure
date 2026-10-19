@@ -45,6 +45,8 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
 
 from __future__ import annotations
 
+import logging
+
 from config import LogSettings, app_settings, log_settings
 
 # 확정 포맷 (#3): [시간 TZ] LEVEL [app=..] [module:class:func:line] message
@@ -64,6 +66,16 @@ def _env() -> str:
 
 def _level() -> str:
     return log_settings.get_effective_log_level(app_settings.DEBUG)
+
+
+def lowest_level() -> str:
+    """``LOG_LEVEL`` 과 ``LOG_APP_LEVELS`` 중 가장 낮은 레벨 — 로거·queue 레벨.
+
+    로거 레벨이 높으면 ``AppLevelFilter`` 가 보기 전에 레코드가 버려진다. 로거는 최솟값까지 열고
+    헤더별 판단은 필터가 한다(logging-overhaul L4).
+    """
+    names = [_level(), *(logging.getLevelName(n) for n in log_settings.app_levels().values())]
+    return min(names, key=lambda name: logging.getLevelNamesMapping()[name.upper()])
 
 
 def console_enabled() -> bool:
@@ -95,7 +107,7 @@ def listener_handler_names(env: str | None = None) -> list[str]:
 
 def build_dictconfig() -> dict:
     env = _env()
-    level = _level()
+    level = lowest_level()
 
     # listener 스레드가 소유하는 출력 핸들러. root 에는 붙이지 않는다.
     handlers: dict = {
@@ -119,7 +131,8 @@ def build_dictconfig() -> dict:
             # sql_noise 는 SQL 본문·바인딩 파라미터가 로그로 새는 것을 막는다.
             # redact 는 메시지·traceback·stack 의 비밀값을 적재 **전에** 가린다 — queue 가 가득 찬
             # ERROR 의 stderr fallback 도 이 뒤라 가려진 값을 쓴다(log-redaction ADR-001).
-            "filters": ["sql_noise", "redact", "context"],
+            # app_levels 는 헤더가 채워진 뒤 LOG_APP_LEVELS 로 거른다(logging-overhaul L4).
+            "filters": ["sql_noise", "redact", "context", "app_levels"],
             "level": level,
         },
     }
@@ -145,6 +158,11 @@ def build_dictconfig() -> dict:
         "disable_existing_loggers": False,
         "filters": {
             "context": {"()": "app.utils.logs.filters.ContextFilter"},
+            "app_levels": {
+                "()": "app.utils.logs.filters.AppLevelFilter",
+                "levels": log_settings.app_levels(),
+                "default": _level(),
+            },
             "redact": {"()": "app.utils.logs.filters.RedactingFilter"},
             "sql_noise": {
                 "()": "app.utils.logs.filters.SqlNoiseFilter",

@@ -37,13 +37,13 @@ from logging.handlers import QueueListener
 from app.utils.logs.config import (
     LOG_FORMAT,
     _env,
-    _level,
     build_dictconfig,
     console_enabled,
     console_formatter_kwargs,
     log_settings,
+    lowest_level,
 )
-from app.utils.logs.filters import add_redacting_filter
+from app.utils.logs.filters import add_redacting_filter, known_app_names
 from app.utils.logs.formatters import TzFormatter
 from app.utils.logs.queue_handler import (
     LOG_FLUSH_TIMEOUT_SECONDS,
@@ -205,6 +205,12 @@ def configure_logging(force: bool = False) -> None:
 
     dictConfig(build_dictconfig())
     _warn_if_no_output()
+    unknown = sorted(set(log_settings.app_levels()) - known_app_names())
+    if unknown:
+        # 나중에 생길 기능일 수 있어 기동은 막지 않는다(logging-overhaul L4).
+        logging.getLogger(__name__).warning(
+            "LOG_APP_LEVELS 에 모르는 헤더가 있습니다: %s", ", ".join(unknown)
+        )
 
     # dictConfig 직후에만 이름 레지스트리가 우리 것이다 — 지금 붙잡는다.
     _queue_handler = next(
@@ -349,7 +355,7 @@ def setup_uvicorn_logging() -> dict:
 
     ``app=uvicorn`` 헤더는 판별 함수(``filters._app_from_path``)가 로거 이름으로 붙인다.
     """
-    level = _level()
+    level = lowest_level()
     return {
         "version": 1,
         "disable_existing_loggers": False,
