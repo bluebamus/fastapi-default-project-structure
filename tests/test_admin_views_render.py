@@ -8,6 +8,10 @@ sqladmin 0.32 의 ``column_filters`` 는 필터 **객체**(``sqladmin.filters``)
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
+from decimal import Decimal
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -49,11 +53,19 @@ FILTER_CASES = [
 
 
 @pytest_asyncio.fixture
-async def logged_in(tmp_path):
+async def views_maker(tmp_path):
+    """SQLite 파일 DB 의 세션 팩토리(로그인 사용자를 만들고 기간 필터 테스트가 행을 넣는다)."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'views.db'}", poolclass=NullPool)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
+    yield async_sessionmaker(engine, expire_on_commit=False)
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def logged_in(views_maker):
+    maker = views_maker
+    engine = maker.kw["bind"]
     async with maker() as session:
         user = User(
             username="root",
@@ -76,7 +88,6 @@ async def logged_in(tmp_path):
         assert login.status_code == 302
         yield client, user_id
     await app.state.redis.aclose()
-    await engine.dispose()
 
 
 def test_every_view_declares_filters_as_filter_objects():
@@ -166,3 +177,70 @@ async def test_date_filter_narrows_the_list_and_renders_quick_ranges(logged_in):
     assert "root@example.com" in shown.text
     assert "root@example.com" not in hidden.text
     assert 'type="date"' in shown.text and "최근 7일" in shown.text
+
+
+# =============================================================================
+# 기간 필터 (admin-session-hardening ADR-005) — created_at 이 있는 모든 뷰
+# =============================================================================
+def _seed_values(model, created_at: datetime) -> dict:
+    """NOT NULL·기본값 없는 컬럼을 타입별 아무 값으로 채운다(SQLite 는 FK 를 강제하지 않는다)."""
+    values: dict = {"created_at": created_at}
+    for column in model.__table__.columns:
+        if column.name in values or column.nullable or column.default is not None:
+            continue
+        if column.server_default is not None or column.primary_key:
+            continue
+        python_type = column.type.python_type
+        if python_type is bool:
+            values[column.key] = True
+        elif python_type in (int, float, Decimal):
+            values[column.key] = 1
+        elif python_type is str:
+            values[column.key] = f"x{uuid.uuid4().hex[:8]}"
+        else:
+            raise AssertionError(
+                f"{model.__name__}.{column.key}: 시드 값 규칙이 없다 ({python_type})"
+            )
+    return values
+
+
+@pytest.mark.parametrize("view", DATE_FILTER_VIEWS, ids=lambda v: v.identity)
+async def test_range_filter_narrows_every_created_at_view(logged_in, views_maker, view):
+    client, _ = logged_in
+    model = view.model
+    old_at = datetime(2020, 1, 15, 3, 0, tzinfo=UTC)  # 2020-01-15 12:00 KST
+    async with views_maker() as session:
+        old = model(**_seed_values(model, old_at))
+        new = model(**_seed_values(model, datetime(2021, 6, 1, 3, 0, tzinfo=UTC)))
+        session.add_all([old, new])
+        await session.commit()
+        old_pk, new_pk = str(old.id), str(new.id)
+
+    def listed(response) -> set[str]:
+        assert response.status_code == 200, response.text[-500:]
+        return {pk for pk in (old_pk, new_pk) if f"/details/{pk}" in response.text}
+
+    async def query(value: str) -> set[str]:
+        params = {"created_at": value, "created_at_op": "between"}
+        return listed(await client.get(f"/admin/{view.identity}/list", params=params))
+
+    assert await query("2020-01-15~2020-01-15") == {old_pk}  # 양 끝 포함, 하루
+    assert await query("2020-01-01~2021-12-31") == {old_pk, new_pk}
+    assert await query("2021-01-01~") == {new_pk}  # 시작일만 — 이후
+    assert await query("~2020-12-31") == {old_pk}  # 종료일만 — 그날까지
+    assert await query("2021-12-31~2020-01-01") == {old_pk, new_pk}  # 역순 — 미적용
+    assert await query("2020-01-xx~2020-02-01") == {old_pk, new_pk}  # 형식 오류 — 미적용
+
+
+async def test_range_filter_form_renders_and_keeps_the_current_range(logged_in):
+    client, _ = logged_in
+    response = await client.get(
+        "/admin/user/list",
+        params={"created_at": "2020-01-01~2020-01-31", "created_at_op": "between"},
+    )
+    html = response.text
+    assert response.status_code == 200
+    assert 'name="created_at_op" value="between"' in html
+    assert 'data-range="start"' in html and 'value="2020-01-01"' in html
+    assert 'data-range="end"' in html and 'value="2020-01-31"' in html
+    assert "기간(양 끝 포함)" in html
