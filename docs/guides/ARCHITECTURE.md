@@ -258,8 +258,10 @@ startup 예외는 HTTP 핸들러가 처리하지 않습니다(§7.3).
 | `read_engines` | replica 마다 20+20 | `DB_ROUTER_ENABLED` 와 `DB_REPLICATION_ENABLED` 가 모두 true 일 때만 생성 |
 | `background_engine` | `pool_size=10`, `max_overflow=10`, `pool_timeout=60` | 접속 로그 sink, `background_db_session()`, Celery |
 
-공통: `pool_recycle=280`, `pool_pre_ping=True`, `pool_reset_on_return="rollback"`,
-`connect_timeout=10`, `charset=utf8mb4`. 세션 팩토리는 `expire_on_commit=False`, `autoflush=False`.
+공통: `pool_recycle=280`, `pool_pre_ping=True`, `pool_reset_on_return="rollback"`, `hide_parameters=True`,
+`connect_timeout=10`, `charset=utf8mb4`. `hide_parameters` 는 드라이버 예외의 `str()`·echo 로그에서 바인드 값을 뺀다 —
+SQL 문은 남고 값(이메일·해시·토큰)만 `[SQL parameters hidden due to hide_parameters=True]` 로 바뀐다. 앱의 엔진 생성
+지점은 이 파일의 셋뿐이고, 새 지점이 생기면 `tests/core/test_db_hide_parameters.py` 가 실패한다(security-ops-hardening ADR-001). 세션 팩토리는 `expire_on_commit=False`, `autoflush=False`.
 
 **연결 예산**(NFR-007): API 프로세스 하나가 최대 `40 + 20 + 40 × replica 수` 개를 엽니다.
 uvicorn worker·reload 프로세스마다 곱해지고, Celery worker 프로세스도 import 한 엔진을 따로 가집니다.
@@ -784,6 +786,7 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
 | `ACCESS_LOG_EXCLUDE_PATHS` | `["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]` (정확히 일치) |
 | `ACCESS_LOG_EXCLUDE_EXTENSIONS` | `[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]` (접미사) |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]` (대소문자 무시, 값을 `***` 로 저장) |
+| `ACCESS_LOG_RETENTION_DAYS` | `365` (보존 일수. `0` 이면 지우지 않는다, 음수는 기동 시 검증 오류 — 아래 "보존") |
 | `TRUSTED_PROXY_HOPS` | `0` (앞단 신뢰 프록시 수 — 0 이면 전달 헤더를 보지 않는다. **프록시 뒤 배포는 단 수만큼** — 0 이면 전원이 프록시 IP 하나로 보여 접속 로그·로그인 레이트 리밋이 한 사람으로 취급하고, 크게 잡으면 IP 위조) |
 
 - 수집: `ip_address`(아래 IP 결정 규칙), `forwarded_for`·`real_ip`(원본 헤더 — 감사용),
@@ -805,7 +808,12 @@ uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/
 - `user_access_logs` 테이블의 `country`·`country_code`·`city` 컬럼은 채우는 코드가 없습니다.
   인덱스: `created_at`·`ip_address`·`os_name`·`browser_name`·`device_type`·`country`·`session_id`·`user_id`.
 - `session_id` 쿠키 값·`referer`·`forwarded_for`(`X-Forwarded-For`)·`real_ip` 는 **원문 그대로** 저장합니다 —
-  사용자 결정으로 유지합니다(log-redaction ADR-004). 조회 API 는 슈퍼유저 전용이고, 보존 기간 정책은 없습니다.
+  사용자 결정으로 유지합니다(log-redaction ADR-004). 조회 API 는 슈퍼유저 전용입니다.
+- **보존**(security-ops-hardening ADR-002·ADR-003) — Celery beat 가 매일 03:30(`TIME_ZONE` 기준) `home.purge_expired_access_logs` 를
+  실행해 `created_at < 지금(UTC) − ACCESS_LOG_RETENTION_DAYS 일` 인 행을 지웁니다(정확히 N일 전 행은 남는다). 정책은
+  `AccessLogRetentionService`(보존 일수·시계 주입), 쿼리는 `UserAccessLogRepository.delete_created_before` — `created_at`
+  인덱스로 id 를 최대 5,000개 고른 뒤 `DELETE ... WHERE id IN (...)` 하고 **배치마다 커밋**합니다(긴 잠금·거대 트랜잭션
+  방지, MySQL·SQLite 공통 쿼리). `0` 이면 쿼리 없이 끝납니다. beat 를 띄우지 않으면 아무것도 지워지지 않습니다(§13).
 - `X-Forwarded-For` 는 클라이언트가 위조할 수 있으므로 신뢰 프록시 홉 수(`TRUSTED_PROXY_HOPS`) 밖의 값은
   믿지 않습니다. 이전에는 맨 왼쪽 값을 무조건 믿었습니다 — 기본값 0 은 이 동작을 바꾼 것이니 프록시 뒤 배포는
   홉 수를 설정해야 실제 클라이언트 IP 가 기록됩니다.
@@ -996,12 +1004,18 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
 - **로그인**(admin-login ADR-001~003): `/admin` 은 **활성 슈퍼유저**만 들어갑니다. `AdminAuthBackend`
   (`app/features/auth/admin_backend.py`)가 SQLAdmin `AuthenticationBackend` 를 구현합니다 — `login` 은 레이트 리밋
   (`admin:rl:login:` 키, `AUTH_LOGIN_*` 한도) → API 로그인과 같은 `AuthService.authenticate`(bcrypt→Argon2 재해시 포함)
-  → `is_superuser` 확인 → `session.clear()` 후 `user_id` 만 저장. 실패 사유는 구분하지 않고(400), 한도 초과는 로그인 화면을
+  → `is_superuser` 확인 → `session.clear()` 후 `user_id` 만 저장. 그 앞에 **CSRF 토큰 대조**가 있습니다(아래). 실패 사유는 구분하지 않고(400), 한도 초과는 로그인 화면을
   429 + `Retry-After` 로 다시 그립니다. `authenticate` 는 **요청마다 DB** 에서 활성·슈퍼유저를 확인해 강등·비활성화를 즉시
   반영하고, `logout` 은 세션을 비웁니다.
 - **세션 쿠키** `admin_session` — `SESSION_SECRET_KEY` 로 서명(starlette `SessionMiddleware` + itsdangerous), `Path=/admin`,
   `SameSite=Strict`, HttpOnly, 8시간, `ENV` 가 staging/production 이면 `Secure`. 세션 미들웨어는 SQLAdmin **하위 앱에만**
   있어 API 인증과 섞이지 않습니다(`tests/test_admin_session_scope.py`).
+- **로그인 폼 CSRF**(security-ops-hardening ADR-004) — synchronizer token. 로그인 화면을 그릴 때 Jinja 전역 `csrf_token(request)`
+  (`AdminAuthBackend.csrf_token`, `create_admin_interface` 가 연결)가 관리 세션에 `csrf_token`(`secrets.token_urlsafe(32)`)을
+  두고 hidden 필드로 싣습니다. `login` 은 레이트 리밋·자격 확인보다 **먼저** 폼 값과 세션 값을 `hmac.compare_digest` 로
+  대조하고, 없거나 다르면 로그인 화면을 403 으로 다시 그립니다(시도 한도도 깎지 않는다). 성공 시 `session.clear()` 가 토큰을
+  버리므로 로그인마다 회전하고, 실패 화면은 같은 토큰을 유지해 바로 재시도할 수 있습니다. 로그인 **이후** sqladmin 이 그리는
+  생성·수정·삭제 폼과 GET 로그아웃은 토큰이 없고 `SameSite=Strict`·`Path=/admin` 이 막습니다(security-ops-hardening R-001).
 - **로그인 화면** — `app/templates/admin/sqladmin/login.html`(Bootstrap 5.3.8 CSS, jsDelivr + SRI, JS 없음)이 SQLAdmin 기본
   화면을 덮어씁니다. `templates_dir` 의 FileSystemLoader 가 패키지 템플릿보다 먼저 찾아지기 때문입니다.
 - **끄기** — `ADMIN_DISABLED=true` 면 sqladmin·백엔드·세션 미들웨어를 만들지 않고 `/admin` 이하가 404 이며, 앱 응답·기동
@@ -1013,8 +1027,11 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
 - 기능 `__init__.py` 로 `admin_views` 를 재노출하지 않습니다 — 재노출하면 라우터 import 만으로 sqladmin 이
   로드되어 `ADMIN_DISABLED=true` 가 "라우트만 안 붙임" 이 됩니다(`ADMIN_DISABLED=true` 미로드 검사).
 - `column_filters` 에는 `sqladmin.filters` 객체(`BooleanFilter`·`OperationColumnFilter`)를 넣습니다 — 모델 컬럼을 그대로
-  넣으면 sqladmin 0.32 의 목록 화면이 500 입니다. 생성 시각(`UTCDateTime`)에는 연산 필터를 걸지 않습니다(날짜 형으로 인식되지 않아
-  문자열이 바인딩된다). 모든 뷰의 목록·필터·상세 화면은 `tests/test_admin_views_render.py` 가 로그인 상태로 확인합니다(admin-login F-005).
+  넣으면 sqladmin 0.32 의 목록 화면이 500 입니다. 생성 시각(`UTCDateTime`)에는 sqladmin 연산 필터 대신 `LocalDateFilter`
+  (`app/core/admin_filters.py`, 템플릿 `app/templates/admin/sqladmin/filters/local_date_filter.html`)를 겁니다 — 날짜
+  `YYYY-MM-DD` 를 `TIME_ZONE` 의 로컬 자정으로 해석해 UTC aware 범위로 질의하고(같은 날 / 이후(포함) / 이전(미포함)),
+  빠른 선택(오늘·최근 7일·최근 30일)을 함께 그립니다. 형식이 틀린 입력은 필터를 적용하지 않고 WARNING 만 남깁니다(500 아님).
+  `created_at` 이 있는 모든 뷰가 이 필터를 가집니다(security-ops-hardening ADR-005). 모든 뷰의 목록·필터·상세 화면은 `tests/test_admin_views_render.py` 가 로그인 상태로 확인합니다(admin-login F-005).
 - 배포 전 확인은 [README 운영 배포 체크리스트](../../README.md#운영-배포-체크리스트)에 있습니다.
 - `User` 뷰는 `hashed_password` 를 목록·상세·폼·내보내기에서 제외하고 `can_create = False` 입니다
   (비밀번호 없이 만든 계정은 로그인할 수 없습니다). 이 제외 설정을 지우면 해시가 노출됩니다
@@ -1024,6 +1041,13 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
 
 - 앱: `app/celery/app.py` 의 `celery_app` — broker·backend 모두 `REDIS_URL`, `include=iter_task_modules()`,
   JSON 직렬화, `timezone=TIME_ZONE`, `enable_utc=True`(내부 시각은 UTC, crontab 은 TIME_ZONE 으로 해석), 빈 `beat_schedule`.
+- **주기 작업(beat)** — 중앙 앱은 빈 `beat_schedule` 만 두고, 기능의 `tasks.py` 가 import 될 때 자기 항목을
+  `celery_app.conf.beat_schedule[...]` 에 더합니다(security-ops-hardening ADR-003 — 중앙이 기능을 import 하지 않는 태스크 자동 발견과 같은
+  철학). beat 도 기동 시 include 모듈을 import 하므로(`loader.init_worker`) 그 등록이 보입니다. 현재 항목은
+  `home.purge_expired_access_logs`(매일 03:30 `TIME_ZONE`, §10 보존) 하나입니다. 실행:
+  `uv run python -m celery -A app.celery.app:celery_app beat --loglevel=INFO` — worker 와 **별도 프로세스 하나만** 띄웁니다
+  (beat 가 둘이면 같은 작업이 두 번 실행된다). beat 는 실행 시각을 `celerybeat-schedule` 파일에 기록하므로 쓰기 가능한
+  작업 디렉터리가 필요합니다.
 - 태스크는 각 기능의 `app/features/<name>/tasks.py` 에 둡니다(예: `app/features/home/tasks.py` 의
   `home.aggregate_access_stats`). include 는 모델 등록과 같은 기능 패키지 탐색(`app/core/db/models_registry.py` 의
   `iter_task_modules()`)이 만듭니다 — `tasks.py` 가 있는 기능만 들어가고, 탐색은 `find_spec` 으로 존재만 확인해
@@ -1119,6 +1143,7 @@ config.set_main_option(
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
 | 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./admin-auth-guide.html) 신설 |
+| 2026-10-19 | 보안·운영(security-ops-hardening): §4.1 `hide_parameters` 회귀 고정, §10 접속 로그 보존(`ACCESS_LOG_RETENTION_DAYS`, beat 매일 03:30 배치 삭제), §12 로그인 폼 CSRF 토큰·`created_at` 날짜 필터(`LocalDateFilter`), §13 beat 등록 구조 |
 | 2026-10-13 | 접근 수준 선언(access-policy): §11.2 신설 — `Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`, 기동 시 기본 거부 `AccessPolicyGuard`(§7.1·§7.3), home·reports 라우터 단위 인가를 뷰 단위 선언으로, §11.1 표 갱신. OpenAPI 불변 |
 | 2026-10-13 | 로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 `RedactingFilter`(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(`REDIS_MIN_VERSION`), §10 접속 로그 원문 저장은 사용자 결정으로 유지 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |

@@ -12,3 +12,5 @@
 | R-005 | `INFO` 를 막은 관리형 Redis 는 버전을 확인하지 못한 채 WARNING 만 남기고 기동한다 — 6.2 미만이면 refresh 회전에서야 실패한다 | LOW | ADR-003 · 명세 "INFO 가 막힌 관리형 Redis 면 WARNING 을 남기고 계속" | 2026-10-13 | 관리형 Redis 를 쓰는 배포가 생기면 — 운영 체크리스트 9번으로 확인 |
 
 > R-004 상태(2026-10-13): **해소** — access-policy 그룹 F-001. 모든 API 뷰가 접근 수준(`Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`)을 선언해야 하고, 선언 없는 뷰가 있으면 `AccessPolicyGuard` 가 기동을 멈춘다(`app/core/security/access.py`). 잘못 고른 수준은 access-policy R-001 로 이어진다.
+
+> R-001 상태(2026-10-19): **보존 기간 부분 해소** — security-ops-hardening F-002. `ACCESS_LOG_RETENTION_DAYS`(기본 365일, `.env` 설정, 0=보존)가 지난 행을 Celery beat 가 매일 03:30(`TIME_ZONE`) 배치로 지운다. 원문 저장(`session_id`·Referer·XFF)은 사용자 결정으로 그대로다.

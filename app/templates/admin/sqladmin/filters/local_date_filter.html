@@ -1,0 +1,41 @@
+{% extends "sqladmin/filters/base_filter.html" %}
+{# app/core/admin_filters.py 의 LocalDateFilter — 업무 시간대 날짜 + 연산, 빠른 선택(security-ops-hardening ADR-005). #}
+
+{% block filter_body %}
+  {% set name = filter.parameter_name %}
+  {% set current_filter = request.query_params.get(name, '') %}
+  {% set current_op = request.query_params.get(name + '_op', '') %}
+  {% set base_url = request.url.remove_query_params(name).remove_query_params(name + '_op') %}
+
+  {% if current_filter %}
+  <div class="mb-2 text-muted small">
+    {% for op_value, op_label in filter.get_operation_options_for_model(model_view.model) %}{% if op_value == current_op %}{{ op_label }}{% endif %}{% endfor %}
+    {{ current_filter }}
+    <a href="{{ base_url }}" class="text-decoration-none">[Clear]</a>
+  </div>
+  {% endif %}
+
+  <div class="d-flex flex-wrap gap-2 mb-2">
+    {% for label, op_value, day in filter.quick_ranges() %}
+    <a href="{{ base_url.include_query_params(**{name: day, name + '_op': op_value}) }}" class="small text-decoration-none">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <form method="get" class="d-flex flex-column filter-form">
+    {% for key, value in request.query_params.items() %}
+      {% if key != name and key != name + '_op' and key != 'error' %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endif %}
+    {% endfor %}
+
+    <select name="{{ name }}_op" class="form-select form-select-sm" required>
+      {% for op_value, op_label in filter.get_operation_options_for_model(model_view.model) %}
+      <option value="{{ op_value }}" {% if current_op == op_value %}selected{% endif %}>{{ op_label }}</option>
+      {% endfor %}
+    </select>
+
+    <input type="date" name="{{ name }}" class="form-control form-control-sm" value="{{ current_filter }}" required>
+
+    <button type="submit" class="btn btn-sm btn-outline-primary">{{ _("Apply Filter") }}</button>
+  </form>
+{% endblock %}

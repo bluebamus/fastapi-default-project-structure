@@ -8,6 +8,7 @@ sqladmin 이 딸려 와 ADMIN_DISABLED=true 가 무의미해진다.
 from sqladmin import ModelView
 from sqladmin.filters import BooleanFilter
 
+from app.core.admin_filters import LocalDateFilter
 from app.features.catalog.models.models import Product
 
 
@@ -32,9 +33,9 @@ class ProductAdmin(ModelView, model=Product):
 
     column_searchable_list = [Product.name]
     # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다(admin-login F-005).
-    # 생성 시각은 필터하지 않는다: 연산 필터가 UTCDateTime(TypeDecorator)을 날짜 형으로 보지 못해 입력 문자열을
-    # 그대로 바인딩한다(500). 시각은 목록 정렬로 본다.
-    column_filters = [BooleanFilter(Product.is_active)]
+    # 생성 시각은 LocalDateFilter(업무 시간대 날짜 → UTC 범위)로 거른다 — sqladmin 연산 필터는 UTCDateTime 을
+    # 날짜형으로 보지 못해 500 이었다(security-ops-hardening ADR-005).
+    column_filters = [BooleanFilter(Product.is_active), LocalDateFilter(Product.created_at)]
 
     column_details_list = [
         Product.id,

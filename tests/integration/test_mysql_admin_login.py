@@ -19,6 +19,7 @@ from fakeredis import FakeAsyncRedis
 from fastapi import FastAPI
 
 from app.features import admin as admin_module
+from tests.admin_csrf import admin_login
 from tests.integration.conftest import (
     MYSQL_DATABASE,
     MYSQL_HOST,
@@ -82,10 +83,8 @@ async def test_superuser_from_script_logs_into_admin(mysql_session_maker):
     try:
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             assert (await client.get("/admin/")).status_code == 302
-            wrong = {"username": username, "password": "wrong-password"}
-            assert (await client.post("/admin/login", data=wrong)).status_code == 400
-            right = {"username": username, "password": PASSWORD}
-            assert (await client.post("/admin/login", data=right)).status_code == 302
+            assert (await admin_login(client, username, "wrong-password")).status_code == 400
+            assert (await admin_login(client, username, PASSWORD)).status_code == 302
             assert (await client.get("/admin/")).status_code == 200
             assert (await client.get("/admin/logout")).status_code == 302
             assert (await client.get("/admin/")).status_code == 302

@@ -16,12 +16,14 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.core.admin_filters import LocalDateFilter
 from app.core.db.models_registry import import_all_models
 from app.core.db.session import Base
 from app.core.security.dependencies import get_password_hasher
 from app.features import admin as admin_module
 from app.features.admin import ADMIN_VIEWS
 from app.features.user.models.models import User
+from tests.admin_csrf import admin_login
 
 import_all_models()
 
@@ -31,6 +33,8 @@ PASSWORD = "s3cret-pass-word"
 def _filter_params(filter_) -> dict[str, str]:
     """필터 하나를 실제로 걸어 보는 쿼리 파라미터."""
     name = filter_.parameter_name
+    if isinstance(filter_, LocalDateFilter):
+        return {name: "2026-10-19", f"{name}_op": "on"}
     if getattr(filter_, "has_operator", False):
         return {name: "1", f"{name}_op": "equals"}
     return {name: "true"}
@@ -68,7 +72,7 @@ async def logged_in(tmp_path):
     admin_module.register_admin_views(admin)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        login = await client.post("/admin/login", data={"username": "root", "password": PASSWORD})
+        login = await admin_login(client, "root", PASSWORD)
         assert login.status_code == 302
         yield client, user_id
     await app.state.redis.aclose()
@@ -109,3 +113,56 @@ async def test_detail_page_renders(logged_in):
     response = await client.get(f"/admin/user/details/{user_id}")
     assert response.status_code == 200, response.text[-500:]
     assert "root@example.com" in response.text
+
+
+# =============================================================================
+# created_at 날짜 필터 (security-ops-hardening ADR-005)
+# =============================================================================
+DATE_FILTER_VIEWS = [
+    view
+    for view in ADMIN_VIEWS
+    if any(isinstance(f, LocalDateFilter) for f in getattr(view, "column_filters", []))
+]
+
+
+def test_every_view_with_created_at_has_the_date_filter():
+    missing = [
+        view.__name__
+        for view in ADMIN_VIEWS
+        if hasattr(view.model, "created_at") and view not in DATE_FILTER_VIEWS
+    ]
+    assert not missing, f"created_at 날짜 필터가 없는 뷰: {missing}"
+
+
+@pytest.mark.parametrize("view", DATE_FILTER_VIEWS, ids=lambda v: v.identity)
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"created_at": "2026-13-45", "created_at_op": "on"},
+        {"created_at": "not-a-date", "created_at_op": "before"},
+        {"created_at": "9999-12-31", "created_at_op": "on"},
+        {"created_at": "2026-10-19", "created_at_op": "unknown"},
+    ],
+    ids=["bad-month", "garbage", "overflow", "unknown-op"],
+)
+async def test_bad_date_filter_input_is_ignored_not_500(logged_in, view, params):
+    client, _ = logged_in
+    response = await client.get(f"/admin/{view.identity}/list", params=params)
+    assert response.status_code == 200, response.text[-500:]
+
+
+async def test_date_filter_narrows_the_list_and_renders_quick_ranges(logged_in):
+    """user 목록 — 오늘 만든 root 는 '오늘 이전'에서 빠지고 '오늘'에서는 보인다."""
+    client, _ = logged_in
+    today = LocalDateFilter(None, parameter_name="created_at").quick_ranges()[0][2]
+
+    shown = await client.get(
+        "/admin/user/list", params={"created_at": today, "created_at_op": "on"}
+    )
+    hidden = await client.get(
+        "/admin/user/list", params={"created_at": today, "created_at_op": "before"}
+    )
+
+    assert "root@example.com" in shown.text
+    assert "root@example.com" not in hidden.text
+    assert 'type="date"' in shown.text and "최근 7일" in shown.text

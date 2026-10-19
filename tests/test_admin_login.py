@@ -35,6 +35,7 @@ from app.features.user.models.models import User
 from config import jwt_settings, session_settings
 from scripts.create_superuser import EXIT_OK
 from scripts.create_superuser import main as create_superuser_main
+from tests.admin_csrf import CSRF_INPUT, admin_csrf_token, admin_login
 
 import_all_models()
 
@@ -110,7 +111,7 @@ async def _set_flags(maker, user_id: str, **flags) -> None:
 
 
 async def _login(client, username: str, password: str = PASSWORD) -> httpx.Response:
-    return await client.post("/admin/login", data={"username": username, "password": password})
+    return await admin_login(client, username, password)
 
 
 def _session_data(client) -> dict:
@@ -157,7 +158,7 @@ async def test_failed_login_is_400_with_one_generic_message(
     assert response.status_code == 400
     assert admin_backend.INVALID_LOGIN_MESSAGE in response.text
     assert "alert alert-danger" in response.text
-    assert _session_data(client) == {}
+    assert "user_id" not in _session_data(client)
     assert (await client.get("/admin/")).status_code == 302
 
 
@@ -364,3 +365,117 @@ def test_main_app_admin_requires_login():
     assert main.admin.templates_dir == str(admin_module.ADMIN_TEMPLATES_DIR)
     assert (admin_module.ADMIN_TEMPLATES_DIR / "sqladmin" / "login.html").is_file()
     assert config.session_settings.SESSION_SECRET_KEY  # 서명 키는 기존 설정
+
+
+# =============================================================================
+# 로그인 폼 CSRF — synchronizer token (security-ops-hardening ADR-004)
+# =============================================================================
+def _refuse_credentials(backend: AdminAuthBackend) -> None:
+    """자격 확인에 닿으면 실패하게 한다 — CSRF 거부는 그보다 먼저여야 한다."""
+
+    def boom(*_args):
+        raise AssertionError("CSRF 거부 전에 자격 확인을 했다")
+
+    backend._auth_service_factory = boom
+
+
+async def _post(client, csrf_token: str | None, username: str = "root") -> httpx.Response:
+    data = {"username": username, "password": PASSWORD}
+    if csrf_token is not None:
+        data["csrf_token"] = csrf_token
+    return await client.post("/admin/login", data=data)
+
+
+async def test_login_page_renders_hidden_csrf_field_bound_to_session(client):
+    token = await admin_csrf_token(client)
+
+    assert len(token) >= 43  # token_urlsafe(32)
+    assert _session_data(client)["csrf_token"] == token
+    assert await admin_csrf_token(client) == token  # 다시 그려도 같은 토큰
+
+
+@pytest.mark.parametrize("submitted", [None, "", "wrong-token"], ids=["missing", "empty", "wrong"])
+async def test_post_without_matching_csrf_token_is_403_before_rate_limit_and_credentials(
+    client, admin_app, maker, redis, submitted
+):
+    _, backend = admin_app
+    await _add_user(maker, "root")
+    await admin_csrf_token(client)
+    _refuse_credentials(backend)
+
+    response = await _post(client, submitted)
+
+    assert response.status_code == 403
+    assert admin_backend.CSRF_FAILED_MESSAGE in response.text
+    assert 'name="password"' in response.text  # 로그인 화면을 다시 그린다
+    assert await redis.keys("*") == []  # 레이트 리밋 카운터도 늘지 않는다
+    assert "user_id" not in _session_data(client)
+
+
+async def test_post_without_any_session_is_403(client, admin_app, maker):
+    _, backend = admin_app
+    await _add_user(maker, "root")
+    _refuse_credentials(backend)
+
+    response = await _post(client, "forged-token")
+
+    assert response.status_code == 403
+    # 다시 그린 화면은 새 토큰을 싣는다 — 사용자가 바로 재시도할 수 있다.
+    assert CSRF_INPUT.search(response.text).group(1) == _session_data(client)["csrf_token"]
+
+
+async def test_token_from_another_session_is_rejected(admin_app, maker):
+    app, backend = admin_app
+    await _add_user(maker, "root")
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://testserver") as victim,
+        httpx.AsyncClient(transport=transport, base_url="http://testserver") as attacker,
+    ):
+        attacker_token = await admin_csrf_token(attacker)
+        await admin_csrf_token(victim)
+        _refuse_credentials(backend)
+
+        response = await _post(victim, attacker_token)
+
+    assert response.status_code == 403
+
+
+async def test_failed_login_keeps_token_so_the_user_can_retry(client, maker):
+    await _add_user(maker, "root")
+    token = await admin_csrf_token(client)
+
+    failed = await _post(client, token, username="nobody")
+    assert failed.status_code == 400
+    assert CSRF_INPUT.search(failed.text).group(1) == token
+
+    assert (await _post(client, token)).status_code == 302
+
+
+async def test_successful_login_rotates_csrf_token(client, maker):
+    user_id = await _add_user(maker, "root")
+    before = await admin_csrf_token(client)
+
+    assert (await _post(client, before)).status_code == 302
+    assert _session_data(client) == {"user_id": user_id}  # 이전 토큰은 버려졌다
+
+    after = await admin_csrf_token(client)
+    assert after != before
+    assert (await _post(client, before)).status_code == 403  # 옛 토큰은 다시 못 쓴다
+
+
+async def test_csrf_comparison_is_constant_time(client, maker, monkeypatch):
+    await _add_user(maker, "root")
+    token = await admin_csrf_token(client)
+    calls = []
+    real = admin_backend.hmac.compare_digest
+
+    def spy(a, b):
+        calls.append((a, b))
+        return real(a, b)
+
+    monkeypatch.setattr(admin_backend.hmac, "compare_digest", spy)
+
+    assert (await _post(client, token)).status_code == 302
+    # 같은 hmac 모듈을 세션 서명 검증(itsdangerous)도 쓴다 — 토큰 대조 호출이 있는지만 본다.
+    assert (token.encode(), token.encode()) in calls
