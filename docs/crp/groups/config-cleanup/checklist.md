@@ -13,4 +13,15 @@
 - [x] `scripts/review_gate.py` 요구 ID 출처에 이 그룹 추가
 - [x] 공통 게이트 그린 · fail-on-revert · run-log 갱신
 
+## Round 2 — 2026-10-19 · config-cleanup-2 (API_VERSION 삭제 · 로그 설정 연결 · 예외 목록 삭제)
+- [x] 요청을 design-baseline §2 에 기록(REQ-005·006 사용자 결정)
+- [x] 현재 로깅 흐름 조사(앱 dictConfig·uvicorn 두 실행 경로·Celery) — run-log
+- [x] (F-005) `ApiSettings`·`API_VERSION` 삭제, `.env.example`·문서, `REMOVED_KEYS` 에 추가
+- [x] (F-006) `LOG_CONSOLE_ENABLED` — `console_enabled()`·`apply_console_settings()`·경고 한 줄
+- [x] (F-007) `LOG_CONSOLE_FORMAT`·`LOG_DATE_FORMAT` — `console_formatter_kwargs()`, 기본값 = 기존 포맷, validator
+- [x] `UNUSED_ALLOWED`·`test_unused_allowlist_is_not_stale` 삭제(ADR-007)
+- [x] README 환경 변수 표·ARCHITECTURE(§2·§6.2·§9.2·§9.6·부록)·server-lifecycle·feature-development 안내서·`.env.example` 주석
+- [x] 추가 확인: `python main.py` 경로의 uvicorn 접속 로그 — 결함 없음, 회귀 테스트 3건(`eae4a99`)
+- [x] 공통 게이트 그린 · fail-on-revert · run-log 갱신
+
 > 미닫힘(`[ ]`) 항목이 1개라도 있으면 그 라운드는 GATE 5 Done 이 아니다.
