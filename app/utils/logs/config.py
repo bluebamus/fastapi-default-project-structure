@@ -7,13 +7,15 @@ ENV(development/test/staging/production)에 따라 레벨·출력·타임존을 
 
 포맷·시각 형식·콘솔 출력 여부는 ``LogSettings`` 의 ``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT``·
 ``LOG_CONSOLE_ENABLED`` 가 정한다. 콘솔 출력 여부는 ``console_enabled()`` **한 곳**에서 판단하고,
-앱 dictConfig·uvicorn CLI 핸들러·Celery 핸들러(``setup.apply_console_settings``)가 모두 그것을 본다.
+앱 dictConfig 가 그것을 보고, uvicorn CLI·Celery 의 콘솔 핸들러는 ``setup.adopt_foreign_handlers`` 가
+공유 queue 로 바꿔 같은 결정을 따르게 한다(logging-overhaul L1).
 
 **출력 경로는 항상 queue 를 거친다** (NFR-009). root 로거에는
 ``BoundedQueueHandler`` 하나만 붙고, 실제 stdout/stderr 쓰기는 ``QueueListener``
 스레드가 수행한다. 요청 event loop 에서 동기 write/flush 가 일어나지 않게 하려는
-것이고, 그래서 애플리케이션 파일 handler 와 rotation 설정은 제거했다 — 저장과
-rotation 은 Docker/Kubernetes/운영 agent 가 담당한다.
+것이다. 기본은 콘솔뿐이고(저장·rotation 은 Docker/Kubernetes/운영 agent), ``LOG_FILE_ENABLED``
+면 진입점이 ``setup.attach_log_files()`` 로 파일 핸들러를 **listener** 에 더한다 — 파일 쓰기·회전도
+listener 스레드에서 일어난다(logging-overhaul L5·L6).
 
 ``context`` 필터는 **queue 핸들러에** 붙는다. ``ContextFilter`` 가 호출 스택에서
 classname 을 뽑기 때문에, listener 스레드에서 돌리면 스택이 이미 사라져 값이 항상
@@ -34,16 +36,16 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
     판별은 등록 누락이라는 실패 모드 자체를 없앤다. 로거 이름을 잘못 줘도(복사·붙여넣기)
     ``app=`` 라벨은 항상 맞다.
 
-이 선택이 포기한 것 (수용된 잔여 위험 — 결함으로 재보고하지 말 것):
-    · **앱별 로그 레벨을 따로 줄 수 없다.** 레벨은 root 하나뿐이고
-      ``LogSettings`` 에도 전역 레벨(``LOG_LEVEL``·``LOG_CONSOLE_LEVEL``)만 있다.
-    · **서드파티 로거(sqlalchemy·aiomysql 등)를 개별 제어할 수 없다.** 아래 dict 에
-      해당 항목이 없어 전부 root 레벨을 따른다.
-    둘 중 하나가 실제로 필요해지면 그때 ``loggers`` 키를 추가한다 —
-    그 시점에 charter 비목표를 먼저 개정한다.
+앱별·서드파티별 레벨 (logging-overhaul L4):
+    ``loggers`` 키 대신 **필터 하나**(``AppLevelFilter``)로 준다. ``LOG_APP_LEVELS`` 의 키는 로거 이름이
+    아니라 헤더(``app=``)다 — 서드파티는 로거 이름으로 ``celery``·``uvicorn``·``sqlalchemy``·``alembic``·
+    ``ext`` 헤더가 붙는다. 로거·queue 레벨은 전체 최솟값(``lowest_level()``)으로 내려 레코드가 필터까지 온다.
+    그래서 위 "손댈 곳이 0" 과 "등록 누락 없음" 은 그대로다.
 """
 
 from __future__ import annotations
+
+import logging
 
 from config import LogSettings, app_settings, log_settings
 
@@ -66,6 +68,16 @@ def _level() -> str:
     return log_settings.get_effective_log_level(app_settings.DEBUG)
 
 
+def lowest_level() -> str:
+    """``LOG_LEVEL`` 과 ``LOG_APP_LEVELS`` 중 가장 낮은 레벨 — 로거·queue 레벨.
+
+    로거 레벨이 높으면 ``AppLevelFilter`` 가 보기 전에 레코드가 버려진다. 로거는 최솟값까지 열고
+    헤더별 판단은 필터가 한다(logging-overhaul L4).
+    """
+    names = [_level(), *(logging.getLevelName(n) for n in log_settings.app_levels().values())]
+    return min(names, key=lambda name: logging.getLevelNamesMapping()[name.upper()])
+
+
 def console_enabled() -> bool:
     """콘솔(stdout/stderr) 핸들러를 붙일지 — 콘솔 핸들러를 만드는 모든 경로가 이것만 본다."""
     return log_settings.LOG_CONSOLE_ENABLED
@@ -82,6 +94,11 @@ def console_formatter_kwargs(env: str | None = None) -> dict:
     }
 
 
+def file_formatter_kwargs(env: str | None = None) -> dict:
+    """파일 포매터 인자 — 콘솔과 같은 ``TzFormatter``·날짜 형식·시간대에 fmt 만 ``LOG_FILE_FORMAT``."""
+    return {**console_formatter_kwargs(env), "fmt": log_settings.LOG_FILE_FORMAT}
+
+
 def listener_handler_names(env: str | None = None) -> list[str]:
     """QueueListener 가 위임할 출력 핸들러 이름 목록(콘솔이 꺼졌으면 빈 목록)."""
     env = env if env is not None else _env()
@@ -95,7 +112,7 @@ def listener_handler_names(env: str | None = None) -> list[str]:
 
 def build_dictconfig() -> dict:
     env = _env()
-    level = _level()
+    level = lowest_level()
 
     # listener 스레드가 소유하는 출력 핸들러. root 에는 붙이지 않는다.
     handlers: dict = {
@@ -119,7 +136,8 @@ def build_dictconfig() -> dict:
             # sql_noise 는 SQL 본문·바인딩 파라미터가 로그로 새는 것을 막는다.
             # redact 는 메시지·traceback·stack 의 비밀값을 적재 **전에** 가린다 — queue 가 가득 찬
             # ERROR 의 stderr fallback 도 이 뒤라 가려진 값을 쓴다(log-redaction ADR-001).
-            "filters": ["sql_noise", "redact", "context"],
+            # app_levels 는 헤더가 채워진 뒤 LOG_APP_LEVELS 로 거른다(logging-overhaul L4).
+            "filters": ["sql_noise", "redact", "context", "app_levels"],
             "level": level,
         },
     }
@@ -145,6 +163,11 @@ def build_dictconfig() -> dict:
         "disable_existing_loggers": False,
         "filters": {
             "context": {"()": "app.utils.logs.filters.ContextFilter"},
+            "app_levels": {
+                "()": "app.utils.logs.filters.AppLevelFilter",
+                "levels": log_settings.app_levels(),
+                "default": _level(),
+            },
             "redact": {"()": "app.utils.logs.filters.RedactingFilter"},
             "sql_noise": {
                 "()": "app.utils.logs.filters.SqlNoiseFilter",

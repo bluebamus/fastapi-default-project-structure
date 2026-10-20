@@ -1,7 +1,7 @@
 """로그 컨텍스트 필터.
 
 record 에 두 필드를 주입한다.
-- appname: 소스 파일 **경로**에서 앱 식별. 로거 이름이 아니라 경로를 쓰는 이유는
+- appname: 우리 코드는 소스 파일 **경로**, 저장소 밖 코드는 **로거 이름**으로 식별. 경로를 쓰는 이유는
   ``app/utils/logs/config.py`` 상단 참고. 산출값은 아래 ``_app_from_path`` 참조.
 - classname:
     · 방식 C — LoggerAdapter/extra 로 이미 주입돼 있으면 그대로 존중(오버헤드 0).
@@ -17,20 +17,33 @@ import sys
 from pathlib import Path
 from types import FrameType
 
+from config import log_secret_values
+
 # 이 파일은 <저장소루트>/app/utils/logs/filters.py 다. parents[3] 이 저장소 루트.
 # 파일을 옮기면 이 계산이 조용히 어긋나므로, tests/utils/test_logs.py 가
 # main.py -> "app" 을 단언해 이동을 즉시 잡는다.
 _REPO_ROOT = str(Path(__file__).resolve().parents[3]).replace("\\", "/").rstrip("/").lower() + "/"
 
 
-def _app_from_path(pathname: str) -> str:
-    """소스 경로에서 앱 라벨을 만든다.
+# 저장소 밖 코드의 출처 — **로거 이름** 첫 조각 → 헤더 (logging-overhaul L2). 표에 없으면 ``ext``.
+_EXTERNAL_LOGGER_APPS = {
+    "celery": "celery",
+    "kombu": "celery",
+    "uvicorn": "uvicorn",
+    "sqlalchemy": "sqlalchemy",
+    "alembic": "alembic",
+}
+
+
+def _app_from_path(pathname: str, logger_name: str = "") -> str:
+    """앱 라벨(헤더 ``app=``)을 만든다 — 출처 판별의 **유일한** 함수.
 
     반환값:
         ``<기능명>``  — ``app/features/<name>/**``
         ``core`` · ``celery`` · ``utils`` · ``migrations`` — 해당 하위 시스템
         ``app``  — 그 밖의 **이 저장소 안** 코드(``main.py`` · ``config.py`` · ``tests/**`` 등)
-        ``ext``  — **저장소 밖** 코드(설치된 서드파티 패키지)
+        저장소 밖 코드 — 로거 이름으로 ``celery``(celery·kombu) · ``uvicorn`` · ``sqlalchemy`` ·
+        ``alembic``, 표에 없으면 ``ext``
 
     ``ext`` 는 "우리 코드가 아님"을 뜻한다. 예전에는 경로에 ``/app/`` 조각이 있는지로만
     판별해서 저장소 루트의 ``main.py``·``config.py``·``migrations/`` 가 ``ext`` 로 빠졌다.
@@ -43,11 +56,21 @@ def _app_from_path(pathname: str) -> str:
         if seg in p:
             return seg.strip("/").rsplit("/", 1)[-1]
     # .venv 는 저장소 루트 **안**에 있으므로 루트 판정보다 먼저 걸러야 한다.
-    if "/site-packages/" in p or "/dist-packages/" in p:
-        return "ext"
-    if "/app/" in p:
-        return "app"
-    return "app" if p.lower().startswith(_REPO_ROOT) else "ext"
+    if "/site-packages/" not in p and "/dist-packages/" not in p:
+        if "/app/" in p or p.lower().startswith(_REPO_ROOT):
+            return "app"
+    return _EXTERNAL_LOGGER_APPS.get(logger_name.split(".", 1)[0], "ext")
+
+
+def known_app_names() -> set[str]:
+    """``_app_from_path`` 가 낼 수 있는 헤더 이름 — ``LOG_APP_LEVELS`` 의 모르는 키 경고에 쓴다."""
+    features = Path(_REPO_ROOT) / "app" / "features"
+    names = {p.name for p in features.iterdir() if p.is_dir() and not p.name.startswith("_")}
+    return (
+        names
+        | {"app", "core", "celery", "utils", "migrations", "ext"}
+        | set(_EXTERNAL_LOGGER_APPS.values())
+    )
 
 
 def _class_from_stack() -> str:
@@ -72,10 +95,30 @@ class ContextFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, "appname", None):
-            record.appname = _app_from_path(record.pathname)
+            record.appname = _app_from_path(record.pathname, record.name)
         if not getattr(record, "classname", None):
             record.classname = _class_from_stack()
         return True
+
+
+class AppLevelFilter(logging.Filter):
+    """헤더(``app=``)별 최소 레벨로 거른다 — ``LOG_APP_LEVELS`` (logging-overhaul L4).
+
+    Django 의 ``LOGGING["loggers"][name]["level"]`` 자리다. 로거를 등록하지 않는 설계(ADR-019)를
+    지키려고 로거가 아니라 **필터 하나**로 한다. ``ContextFilter`` 바로 뒤에 둔다(appname 이 필요).
+    지정이 없는 헤더는 ``default``(``LOG_LEVEL``)를 따른다.
+    """
+
+    def __init__(self, levels: dict[str, int], default: int | str) -> None:
+        super().__init__()
+        self.levels = levels
+        self.default = (
+            logging.getLevelNamesMapping()[default] if isinstance(default, str) else default
+        )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        appname = getattr(record, "appname", None) or _app_from_path(record.pathname, record.name)
+        return record.levelno >= self.levels.get(appname, self.default)
 
 
 # SQL 본문과 바인딩 파라미터를 저레벨 로그로 내보내는 로거들.
@@ -130,8 +173,11 @@ REDACTED = "***"
 # 로그 메시지·traceback·stack·DEBUG 500 응답 detail 이 모두 ``redact()`` 하나를 쓴다 —
 # 패턴을 다른 곳에 복제하지 않는다.
 _SECRET_PATTERNS = (
-    # DSN 의 비밀번호: scheme://user:<password>@host
-    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s@/]+(?=@)"),
+    # DSN 의 비밀번호: scheme://user:<password>@host — 사용자명은 비어도 된다(redis://:pw@h).
+    # 인코딩하지 않은 `@` 가 든 비밀번호도 덮도록 **마지막** `@` 까지 잡는다(탐욕 + 되돌림).
+    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s/]+(?=@)"),
+    # DSN 의 사용자명: scheme://<user>[:password]@host (logging-overhaul L7)
+    re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://)[^\s:/@]+(?=(?::[^\s@/]*)?@)"),
     # Authorization 헤더 값: "Authorization: Bearer <token>" · "authorization=<token>"
     re.compile(
         r"(?i)(?P<keep>\b(?:proxy-)?authorization\b[\"']?\s*[:=]\s*[\"']?"
@@ -147,8 +193,24 @@ _SECRET_PATTERNS = (
 )
 
 
+# 설정된 비밀값 원문(``config.LOG_SECRET_SETTINGS``). 이보다 짧은 값(주로 계정명)은 일반 단어를
+# 가리는 오탐을 막으려고 원문 일치로 가리지 않고 ``user=``·``username=`` 형태에서만 가린다 —
+# DSN 의 사용자명은 위 패턴이 따로 가린다.
+SECRET_VALUES: tuple[str, ...] = log_secret_values()
+_LITERAL_MIN_LENGTH = 4
+
+
 def redact(text: str) -> str:
-    """문자열 안의 비밀값(DSN 비밀번호·Authorization·password= 류)을 ``***`` 로 가린다."""
+    """문자열 안의 비밀값(DSN 계정·Authorization·password= 류·설정 비밀값 원문)을 ``***`` 로 가린다."""
+    for value in SECRET_VALUES:
+        if len(value) >= _LITERAL_MIN_LENGTH:
+            text = text.replace(value, REDACTED)
+        else:
+            text = re.sub(
+                rf"(?i)(\buser(?:name)?[\"']?\s*[:=]\s*[\"']?){re.escape(value)}(?![\w])",
+                lambda m: m.group(1) + REDACTED,
+                text,
+            )
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub(lambda m: m.group("keep") + REDACTED, text)
     return text
@@ -209,20 +271,3 @@ def add_redacting_filter(target: logging.Logger | logging.Handler) -> None:
     """``RedactingFilter`` 를 한 번만 붙인다(여러 번 불러도 중복되지 않는다)."""
     if not any(isinstance(existing, RedactingFilter) for existing in target.filters):
         target.addFilter(RedactingFilter())
-
-
-class StaticAppFilter(logging.Filter):
-    """appname 을 고정값으로 미리 찍는다 — 서드파티 로거용.
-
-    uvicorn 처럼 소스가 site-packages 에 있는 로거는 경로 판별이 ``ext`` 로 떨어져
-    "어느 앱의 로그인지"를 잃는다. 해당 로거에 이 필터를 붙이면 ``ContextFilter``
-    가 이미 채워진 값을 존중하므로(``if not getattr(...)``) 라벨이 유지된다.
-    """
-
-    def __init__(self, appname: str) -> None:
-        super().__init__()
-        self.appname = appname
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.appname = self.appname
-        return True

@@ -16,3 +16,5 @@
 > R-001 상태(2026-10-19): **보존 기간 부분 해소** — security-ops-hardening F-002. `ACCESS_LOG_RETENTION_DAYS`(기본 365일, `.env` 설정, 0=보존)가 지난 행을 Celery beat 가 매일 03:30(`TIME_ZONE`) 배치로 지운다. 원문 저장(`session_id`·Referer·XFF)은 사용자 결정으로 그대로다.
 
 > R-002 상태(2026-10-19): **사용자 결정으로 수용(2026-10-19)** — admin-session-hardening ADR-006 "405 문제는 현행 유지한다". 기능·보안 영향이 없고, 고치려면 FastAPI 내부 라우터 구조에 의존해야 한다.
+
+> R-003 상태(2026-10-19): **부분 해소** — logging-overhaul L7. 설정 비밀값(`config.LOG_SECRET_SETTINGS` — DB 계정·비밀번호, Redis 비밀번호, JWT·세션 키)은 형태와 무관하게 **원문 일치**로 가린다(4글자 미만은 DSN·`user=` 형태에서만). DSN 사용자명도 가린다. 설정에 없는 비밀(요청으로 받은 토큰 값 등)은 여전히 형태 규칙에 기댄다.

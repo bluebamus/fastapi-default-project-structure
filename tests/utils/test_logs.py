@@ -64,6 +64,38 @@ def test_installed_packages_are_external():
     assert _app_from_path("/opt/py/lib/python3.14/site-packages/httpx/_client.py") == "ext"
 
 
+@pytest.mark.parametrize(
+    ("logger_name", "expected"),
+    [
+        ("celery.worker.strategy", "celery"),
+        ("celery", "celery"),
+        ("kombu.connection", "celery"),
+        ("uvicorn.access", "uvicorn"),
+        ("uvicorn.error", "uvicorn"),
+        ("sqlalchemy.engine.Engine", "sqlalchemy"),
+        ("alembic.runtime.migration", "alembic"),
+        ("httpx", "ext"),
+        ("celeryish", "ext"),
+    ],
+)
+def test_external_code_is_labeled_by_logger_name(logger_name, expected):
+    """저장소 밖 코드는 **로거 이름**으로 출처를 붙인다(logging-overhaul L2)."""
+    site = "/opt/py/lib/python3.14/site-packages/pkg/mod.py"
+    assert _app_from_path(site, logger_name) == expected
+
+
+def test_our_code_keeps_path_label_whatever_the_logger_name():
+    assert _app_from_path("/x/app/features/blog/tasks.py", "celery.task") == "blog"
+
+
+def test_formatter_labels_records_that_skipped_the_context_filter():
+    """남이 만든 핸들러(uvicorn CLI·Celery)로 나가는 줄도 같은 판별 함수로 헤더가 붙는다."""
+    rec = logging.LogRecord(
+        "uvicorn.error", logging.INFO, "/opt/site-packages/uvicorn/server.py", 1, "hi", (), None
+    )
+    assert "[app=uvicorn]" in TzFormatter(LOG_FORMAT).format(rec)
+
+
 class _Caller:
     def run(self) -> str:
         rec = _rec()
@@ -156,14 +188,16 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
         # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
         # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001). redact 는 메시지·traceback·
         # stack 의 비밀값을 적재 전에 가린다(log-redaction ADR-001).
-        assert queue_handler["filters"] == ["sql_noise", "redact", "context"]
+        # app_levels 는 헤더가 채워진 **뒤**(context 바로 뒤)에 헤더별 레벨로 거른다(logging-overhaul L4).
+        assert queue_handler["filters"] == ["sql_noise", "redact", "context", "app_levels"]
 
 
 def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
-    """어느 환경에도 애플리케이션 파일 핸들러를 만들지 않는다 (NFR-009).
+    """dictConfig 에는 파일 핸들러가 없다 (NFR-009).
 
-    저장·rotation 은 Docker/Kubernetes/운영 agent 가 담당한다. 파일 핸들러가
-    다시 생기면 요청 스레드가 동기 rotation 을 수행하게 되므로 이 테스트가 관문이다.
+    파일 로그(``LOG_FILE_ENABLED``)는 진입점이 ``attach_log_files()`` 로 **listener** 에 더한다
+    (logging-overhaul L5) — 요청 스레드가 동기 rotation 을 하지 않게. dictConfig 에 파일 핸들러가
+    생기면 root·요청 스레드 쪽에 붙을 수 있으므로 이 테스트가 관문이다.
     """
     for env in ("development", "test", "staging", "production"):
         cfg = _build_with(monkeypatch, tmp_path, env=env)
@@ -171,6 +205,63 @@ def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
             assert "File" not in handler.get(
                 "class", ""
             ), f"ENV={env} 에 파일 핸들러 {name} 이 생겼다"
+
+
+def test_app_level_filter_applies_per_header_minimum():
+    from app.utils.logs.filters import AppLevelFilter
+
+    f = AppLevelFilter(
+        levels={"blog": logging.DEBUG, "sqlalchemy": logging.WARNING}, default="INFO"
+    )
+
+    def rec(app, level):
+        r = logging.LogRecord("x", level, "x.py", 1, "m", (), None)
+        r.appname = app
+        return r
+
+    assert f.filter(rec("blog", logging.DEBUG))
+    assert not f.filter(rec("core", logging.DEBUG)), "지정 없는 헤더는 LOG_LEVEL 을 따른다"
+    assert f.filter(rec("core", logging.INFO))
+    assert not f.filter(rec("sqlalchemy", logging.INFO))
+    assert f.filter(rec("sqlalchemy", logging.WARNING))
+
+
+def test_logger_level_is_lowered_to_the_lowest_app_level(monkeypatch, tmp_path):
+    """레코드가 필터까지 오도록 root·queue 레벨은 전체 최솟값이다."""
+    cfg = _build_with(monkeypatch, tmp_path, LOG_LEVEL="INFO", LOG_APP_LEVELS="blog=DEBUG")
+    assert cfg["root"]["level"] == "DEBUG"
+    assert cfg["handlers"]["queue"]["level"] == "DEBUG"
+    assert cfg["filters"]["app_levels"]["levels"] == {"blog": logging.DEBUG}
+    assert cfg["filters"]["app_levels"]["default"] == "INFO"
+
+
+def test_unknown_app_level_header_warns_but_starts(tmp_path):
+    code = (
+        "from app.utils.logs import setup\n"
+        "setup.configure_logging(force=True)\n"
+        "setup.stop_log_listener()\n"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LOG_")}
+    env.update(
+        PYTHONPATH=str(pathlib.Path(__file__).resolve().parents[2]),
+        PYTHONIOENCODING="utf-8",
+        ENV="test",
+        LOG_APP_LEVELS="nosuchapp=DEBUG,blog=INFO",
+    )
+    proc = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout + proc.stderr
+    assert "nosuchapp" in out and "WARNING" in out, out
+    assert "blog" not in out.split("nosuchapp", 1)[1].splitlines()[0]
 
 
 def test_production_separates_errors_to_stderr(monkeypatch, tmp_path):
@@ -224,8 +315,7 @@ def test_uvicorn_shares_the_app_queue(monkeypatch):
     """uvicorn 3종 로거가 앱과 **같은** queue 로 나가고 root 로 전파하지 않는다.
 
     propagate=True 면 앱 root 핸들러가 같은 줄을 한 번 더 찍어 중복 출력이 된다.
-    핸들러는 앱과 공유하므로 ``app=uvicorn`` 라벨은 **로거** 필터로 찍어야 한다 —
-    공유 핸들러에 붙이면 앱 로그까지 uvicorn 으로 라벨링된다.
+    ``app=uvicorn`` 라벨은 로거 이름으로 판별 함수가 붙인다(logging-overhaul L2) — 별도 필터가 없다.
     """
     cfg = setup_uvicorn_logging()
 
@@ -233,10 +323,8 @@ def test_uvicorn_shares_the_app_queue(monkeypatch):
     for name, spec in cfg["loggers"].items():
         assert spec["propagate"] is False, f"{name} 이 root 로 전파되면 로그가 중복된다"
         assert spec["handlers"] == ["queue"], f"{name} 이 공유 queue 를 쓰지 않는다"
-        assert spec["filters"] == ["uvicorn_app"], f"{name} 의 app 라벨 필터가 없다"
 
     assert cfg["handlers"]["queue"]["()"] == "app.utils.logs.setup.get_shared_queue_handler"
-    assert cfg["filters"]["uvicorn_app"]["appname"] == "uvicorn"
     # 공유 핸들러를 오염시키면 안 되므로 핸들러에는 필터를 두지 않는다.
     assert "filters" not in cfg["handlers"]["queue"]
 

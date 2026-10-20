@@ -27,36 +27,44 @@ from __future__ import annotations
 import asyncio
 import atexit
 import logging
+import os
 import queue as queue_module
 import signal
 import sys
 import threading
 from logging.config import dictConfig
 from logging.handlers import QueueListener
+from zoneinfo import ZoneInfo
 
 from app.utils.logs.config import (
     LOG_FORMAT,
     _env,
     _level,
+    app_settings,
     build_dictconfig,
     console_enabled,
-    console_formatter_kwargs,
+    file_formatter_kwargs,
     log_settings,
+    lowest_level,
 )
-from app.utils.logs.filters import add_redacting_filter
+from app.utils.logs.filters import (
+    AppLevelFilter,
+    ContextFilter,
+    add_redacting_filter,
+    known_app_names,
+)
 from app.utils.logs.formatters import TzFormatter
+from app.utils.logs.handlers import DailySizeRotatingFileHandler
 from app.utils.logs.queue_handler import (
     LOG_FLUSH_TIMEOUT_SECONDS,
     BoundedQueueHandler,
     wait_until_written,
 )
+from config import timezone_settings
 
 # traceback 을 남기는 uvicorn 로거 — CLI 실행에서는 우리 queue 를 거치지 않는다.
 UVICORN_TRACEBACK_LOGGERS = ("uvicorn", "uvicorn.error")
 UVICORN_LOGGERS = (*UVICORN_TRACEBACK_LOGGERS, "uvicorn.access")
-
-# 이 중 하나라도 직접 지정했을 때만 남이 만든 콘솔 핸들러(uvicorn CLI·Celery)의 포맷을 바꾼다.
-_CONSOLE_FORMAT_SETTINGS = frozenset({"LOG_CONSOLE_FORMAT", "LOG_DATE_FORMAT"})
 
 _configured = False
 _queue_handler: BoundedQueueHandler | None = None
@@ -154,29 +162,78 @@ def _register_process_exit_hook() -> None:
     _exit_hook_registered = True
 
 
-def apply_console_settings(logger: logging.Logger) -> None:
-    """**남이 만든** 콘솔 핸들러(uvicorn CLI·Celery worker)에 콘솔 설정을 적용한다.
+def adopt_foreign_handlers(logger: logging.Logger) -> None:
+    """**남이 만든** 핸들러(uvicorn CLI·Celery worker)를 프로젝트 출력으로 바꾼다 (logging-overhaul L1).
 
-    - ``LOG_CONSOLE_ENABLED=false`` → stdout/stderr ``StreamHandler`` 를 떼어 낸다.
-    - ``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT`` 를 직접 지정했으면 앱과 같은 ``TzFormatter`` 로 바꾼다.
-      지정하지 않았으면 각 도구의 기본 포맷을 그대로 둔다(기본 출력 불변).
-
-    파일 핸들러(``FileHandler`` 계열 — Celery ``--logfile``)와 queue 핸들러는 건드리지 않는다.
+    - 콘솔 핸들러(파일이 아닌 것)는 떼고 공유 queue 핸들러를 단다 — 그러면 앱과 **같은** 콘솔·파일
+      출력처·필터(마스킹·헤더·헤더별 레벨)·``TzFormatter`` 를 쓴다. ``LOG_CONSOLE_ENABLED=false`` 면
+      queue 에 콘솔 출력처가 없으므로 콘솔에 아무것도 나가지 않는다.
+    - 파일 핸들러(Celery ``--logfile``)는 존중해 남기고 ``LOG_FILE_FORMAT`` 과 같은 필터만 입힌다.
+    - 핸들러가 하나도 없던 로거(uvicorn ``--no-access-log``)는 그대로 둔다 — 꺼 둔 출력을 켜지 않는다.
     """
-    for handler in list(logger.handlers):
-        if not isinstance(handler, logging.StreamHandler) or isinstance(
-            handler, logging.FileHandler
-        ):
-            continue
-        if not console_enabled():
+    # 재구성(``configure_logging(force=True)``) 전의 옛 queue 핸들러도 남의 것으로 본다 — 그 listener 는 멈췄다.
+    foreign = [h for h in logger.handlers if h is not _queue_handler]
+    for handler in foreign:
+        if isinstance(handler, logging.FileHandler):
+            handler.setFormatter(TzFormatter(**file_formatter_kwargs()))
+            _add_record_filters(handler)
+        else:
             logger.removeHandler(handler)
-        elif _CONSOLE_FORMAT_SETTINGS & log_settings.model_fields_set:
-            handler.setFormatter(TzFormatter(**console_formatter_kwargs()))
+    if foreign and _queue_handler is not None and _queue_handler not in logger.handlers:
+        logger.addHandler(_queue_handler)
+
+
+# 프로세스 종류 → (주 파일, 에러 파일). 에러 파일도 프로세스별로 나눈다 — 웹과 워커가 한 파일을
+# 회전시키면 서로의 회전이 엇갈린다(logging-overhaul ADR).
+LOG_FILES = {"app": ("app.log", "error.log"), "celery": ("celery.log", "celery-error.log")}
+
+
+def attach_log_files(process: str) -> None:
+    """``LOG_FILE_ENABLED`` 면 프로세스별 파일 핸들러를 listener 에 더한다 (logging-overhaul L5).
+
+    프로세스 종류는 **진입점**이 정해 부른다 — 웹은 ``main.py``(앱 import 시점, uvicorn 의 기동
+    줄보다 먼저), Celery 는 worker 의 ``after_setup_logger`` 수신자. 판단은 이 한 곳이다.
+    쓰기는 listener 스레드에서 일어나 요청 event loop 를 막지 않는다(NFR-009). 여러 번 불러도
+    처음 한 번만 붙는다.
+    """
+    listener = getattr(_queue_handler, "listener", None)
+    if not log_settings.LOG_FILE_ENABLED or listener is None:
+        return
+    if any(isinstance(h, DailySizeRotatingFileHandler) for h in listener.handlers):
+        return
+    kwargs = file_formatter_kwargs()
+    tz = ZoneInfo("UTC") if kwargs["use_utc"] else timezone_settings.tz
+    handlers = []
+    for filename, level in zip(
+        LOG_FILES[process],
+        (log_settings.get_effective_file_level(app_settings.DEBUG), "ERROR"),
+        strict=True,
+    ):
+        handler = DailySizeRotatingFileHandler(
+            os.path.join(log_settings.LOG_DIR, filename),
+            tz=tz,
+            max_bytes=log_settings.LOG_MAX_SIZE_MB * 1024 * 1024,
+            retention_days=log_settings.LOG_RETENTION_DAYS,
+        )
+        handler.setLevel(level)
+        handler.setFormatter(TzFormatter(**kwargs))
+        handlers.append(handler)
+    # listener 는 매 레코드마다 ``self.handlers`` 를 읽는다 — 튜플을 통째로 바꿔 끼운다.
+    listener.handlers = (*listener.handlers, *handlers)
+
+
+def _add_record_filters(handler: logging.Handler) -> None:
+    """queue 핸들러와 같은 필터(마스킹 → 헤더 → 헤더별 레벨)를 한 번만 붙인다."""
+    add_redacting_filter(handler)
+    if not any(isinstance(f, ContextFilter) for f in handler.filters):
+        handler.addFilter(ContextFilter())
+    if not any(isinstance(f, AppLevelFilter) for f in handler.filters):
+        handler.addFilter(AppLevelFilter(log_settings.app_levels(), _level()))
 
 
 def _warn_if_no_output() -> None:
-    """콘솔이 꺼지면 앱 로그를 받을 곳이 없다 — 조용히 잃지 않게 stderr 에 한 줄 남긴다."""
-    if console_enabled():
+    """콘솔도 파일도 꺼지면 앱 로그를 받을 곳이 없다 — 조용히 잃지 않게 stderr 에 한 줄 남긴다."""
+    if console_enabled() or log_settings.LOG_FILE_ENABLED:
         return
     stream = sys.__stderr__
     if stream is None:  # pragma: no cover - pythonw 등 stderr 가 없는 환경
@@ -205,6 +262,12 @@ def configure_logging(force: bool = False) -> None:
 
     dictConfig(build_dictconfig())
     _warn_if_no_output()
+    unknown = sorted(set(log_settings.app_levels()) - known_app_names())
+    if unknown:
+        # 나중에 생길 기능일 수 있어 기동은 막지 않는다(logging-overhaul L4).
+        logging.getLogger(__name__).warning(
+            "LOG_APP_LEVELS 에 모르는 헤더가 있습니다: %s", ", ".join(unknown)
+        )
 
     # dictConfig 직후에만 이름 레지스트리가 우리 것이다 — 지금 붙잡는다.
     _queue_handler = next(
@@ -220,10 +283,11 @@ def configure_logging(force: bool = False) -> None:
     # 쿼리 비밀값을 가리고, 필터가 args 모양을 지켜 AccessFormatter 가 깨지지 않는다(config-cleanup F-008).
     for name in UVICORN_LOGGERS:
         add_redacting_filter(logging.getLogger(name))
-    # 같은 CLI 경로의 uvicorn 콘솔 핸들러도 LOG_CONSOLE_* 를 따른다. ``python main.py`` 경로에서는
-    # 이 로거들이 공유 queue 핸들러를 쓰므로 여기서 바뀌는 것이 없다.
+    # 같은 CLI 경로(``uvicorn main:app``·``fastapi dev``)의 uvicorn 핸들러를 공유 queue 로 바꾼다 —
+    # 앱과 같은 형식·출력처(logging-overhaul L1). ``python main.py`` 경로에서는 이 로거들이 이미
+    # 공유 queue 핸들러를 쓰므로 바뀌는 것이 없다.
     for name in UVICORN_LOGGERS:
-        apply_console_settings(logging.getLogger(name))
+        adopt_foreign_handlers(logging.getLogger(name))
 
     _register_process_exit_hook()
     start_log_listener()
@@ -347,29 +411,18 @@ def get_shared_queue_handler() -> logging.Handler:
 def setup_uvicorn_logging() -> dict:
     """Uvicorn(log_config)용 dictConfig — 앱과 동일한 queue 출력 경로를 쓴다.
 
-    uvicorn 로거는 소스가 site-packages 라 경로 판별이 ``ext`` 로 떨어진다.
-    로거 단에서 ``StaticAppFilter`` 로 ``app=uvicorn`` 을 먼저 찍어두면 공유
-    핸들러의 ``ContextFilter`` 가 이미 채워진 값을 존중한다. 필터를 핸들러가 아닌
-    **로거**에 붙이는 이유는 핸들러가 앱과 공유되기 때문이다 — 핸들러에 붙이면
-    앱 로그까지 uvicorn 으로 라벨링된다.
+    ``app=uvicorn`` 헤더는 판별 함수(``filters._app_from_path``)가 로거 이름으로 붙인다.
     """
-    level = _level()
+    level = lowest_level()
     return {
         "version": 1,
         "disable_existing_loggers": False,
-        "filters": {
-            "uvicorn_app": {
-                "()": "app.utils.logs.filters.StaticAppFilter",
-                "appname": "uvicorn",
-            },
-        },
         "handlers": {
             "queue": {"()": "app.utils.logs.setup.get_shared_queue_handler"},
         },
         "loggers": {
             name: {
                 "handlers": ["queue"],
-                "filters": ["uvicorn_app"],
                 "level": level,
                 "propagate": False,
             }
@@ -381,7 +434,8 @@ def setup_uvicorn_logging() -> dict:
 __all__ = [
     "LOG_FORMAT",
     "_env",
-    "apply_console_settings",
+    "adopt_foreign_handlers",
+    "attach_log_files",
     "configure_logging",
     "flush_log_queue",
     "get_logger",

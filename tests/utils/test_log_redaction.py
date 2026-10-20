@@ -46,7 +46,7 @@ def _assert_redacted_traceback(text: str) -> None:
         assert secret not in text, f"비밀값 {secret!r} 이 출력에 남았다:\n{text}"
     assert REDACTED in text, f"마스킹 표식이 없다:\n{text}"
     # 진단 정보는 남는다: 예외 타입·체인·파일·줄·stack.
-    assert "ValueError: connect failed mysql+asyncmy://u:***@h/db password=***" in text
+    assert "ValueError: connect failed mysql+asyncmy://***:***@h/db password=***" in text
     assert "RuntimeError: upstream said Authorization: Bearer ***" in text
     assert "The above exception was the direct cause of the following exception" in text
     assert "test_log_redaction.py" in text
@@ -59,8 +59,16 @@ def _assert_redacted_traceback(text: str) -> None:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        (DSN, "mysql+asyncmy://u:***@h/db"),
+        # DSN 은 사용자명도 가린다(logging-overhaul L7) — 계정명도 공격 표면이다.
+        (DSN, "mysql+asyncmy://***:***@h/db"),
+        ("mysql://admin@h/db", "mysql://***@h/db"),
         ("redis://:p%40ss@cache:6379/0", "redis://:***@cache:6379/0"),
+        # 사용자명이 빈 꼴 — config.RedisSettings.REDIS_URL 이 만드는 모양 그대로
+        ("redis://:Redis-Pass-9@127.0.0.1:6379/0", "redis://:***@127.0.0.1:6379/0"),
+        # 인코딩하지 않은 `@`·`:` 가 든 비밀번호 — 마지막 `@` 까지가 비밀번호다
+        ("mysql://u:p@ss@h/db", "mysql://***:***@h/db"),
+        ("redis://:p@ss:w@cache:6379/0", "redis://:***@cache:6379/0"),
+        ("mysql://u:pa:ss@h:3306/db", "mysql://***:***@h:3306/db"),
         ("password=secret42 next", "password=*** next"),
         ("MYSQL_PASSWORD: 'secret42'", "MYSQL_PASSWORD: '***'"),
         ('{"refresh_token": "abc.def"}', '{"refresh_token": "***"}'),
@@ -123,7 +131,7 @@ def test_filter_masks_message_arguments():
     record = _record("db url %s", (DSN,))
     RedactingFilter().filter(record)
 
-    assert record.getMessage() == "db url mysql+asyncmy://u:***@h/db"
+    assert record.getMessage() == "db url mysql+asyncmy://***:***@h/db"
 
 
 def test_filter_keeps_args_when_nothing_to_mask():
@@ -157,6 +165,83 @@ def test_filter_falls_back_when_secret_spans_template_and_argument():
     RedactingFilter().filter(record)
 
     assert record.getMessage() == "password=***"
+
+
+# =============================================================================
+# 설정 비밀값 원문 (logging-overhaul L7)
+# =============================================================================
+def test_configured_secret_values_are_masked_anywhere(monkeypatch):
+    """설정된 비밀번호·사용자명·키의 **원문**은 형태와 무관하게 가린다."""
+    from app.utils.logs import filters
+
+    monkeypatch.setattr(filters, "SECRET_VALUES", ("Sup3r-pass", "dbadmin"))
+    assert redact("login dbadmin with Sup3r-pass failed") == "login *** with *** failed"
+
+
+def test_short_account_name_is_masked_only_in_account_shapes(monkeypatch):
+    """4글자 미만 값(주로 계정명)은 원문 일치로 가리지 않는다 — 일반 단어 오탐 방지.
+
+    ``user=``·``username=`` 와 DSN 에서만 가린다.
+    """
+    from app.utils.logs import filters
+
+    monkeypatch.setattr(filters, "SECRET_VALUES", ("app",))
+    assert redact("application app started") == "application app started"
+    assert redact("user=app username: 'app'") == "user=*** username: '***'"
+    assert redact("mysql://app@h/db") == "mysql://***@h/db"
+
+
+def test_secret_value_inside_exception_chain_is_masked(monkeypatch):
+    from app.utils.logs import filters
+
+    monkeypatch.setattr(filters, "SECRET_VALUES", ("Sup3r-pass",))
+    try:
+        try:
+            raise OSError("auth failed: Sup3r-pass")
+        except OSError as exc:
+            raise RuntimeError("wrapped") from exc
+    except RuntimeError:
+        record = logging.LogRecord("t", logging.ERROR, __file__, 1, "x", None, sys.exc_info())
+    RedactingFilter().filter(record)
+
+    text = logging.Formatter().format(record)
+    assert "Sup3r-pass" not in text
+    assert "OSError: auth failed: ***" in text
+
+
+def test_secret_values_come_from_settings(monkeypatch):
+    """대상 값은 config 의 목록(``LOG_SECRET_SETTINGS``)이 정한다. 빈 값은 뺀다."""
+    import config
+
+    monkeypatch.setattr(config.db_settings, "MYSQL_PASSWORD", "db-pass-1")
+    monkeypatch.setattr(config.db_settings, "MYSQL_REPLICA_PASSWORD", None)
+    monkeypatch.setattr(config.redis_settings, "REDIS_PASSWORD", "")
+    values = config.log_secret_values()
+    assert "db-pass-1" in values
+    assert "" not in values and None not in values
+    assert config.jwt_settings.ACCESS_TOKEN_SECRET_KEY in values
+
+
+def test_every_secret_like_setting_is_in_the_log_secret_list():
+    """새 비밀 설정이 생기면 ``LOG_SECRET_SETTINGS`` 에 넣어야 한다 — 이름 규칙으로 감시한다."""
+    import re
+
+    from pydantic_settings import BaseSettings
+
+    import config
+
+    rule = re.compile(r"(_USER|_PASSWORD|SECRET|_KEY)$|SECRET")
+    secret_like = {
+        name
+        for cls in vars(config).values()
+        if isinstance(cls, type) and issubclass(cls, BaseSettings) and cls is not BaseSettings
+        for name in cls.model_fields
+        if rule.search(name)
+    }
+    assert secret_like, "규칙이 아무것도 못 찾으면 계약이 무의미하다"
+    assert secret_like <= set(config.LOG_SECRET_SETTINGS), secret_like - set(
+        config.LOG_SECRET_SETTINGS
+    )
 
 
 # =============================================================================
@@ -218,7 +303,7 @@ def test_queue_overflow_fallback_is_masked():
 
     assert handler.fallbacks == 1
     assert "secret42" not in sink.getvalue()
-    assert "u:***@h" in sink.getvalue()
+    assert "://***:***@h" in sink.getvalue()
 
 
 def test_uvicorn_cli_loggers_are_masked():
@@ -249,16 +334,19 @@ def test_uvicorn_cli_loggers_are_masked():
     _assert_redacted_traceback(buf.getvalue())
 
 
-def test_celery_worker_handlers_are_masked():
-    """Celery worker 가 root 에 단 핸들러에도 필터가 붙는다(``after_setup_logger``)."""
+def test_celery_worker_handlers_are_masked(tmp_path):
+    """Celery worker 가 남긴 ``--logfile`` 핸들러에도 필터가 붙는다(``after_setup_logger``).
+
+    콘솔 핸들러는 공유 queue 로 바뀌어 queue 의 필터를 탄다(logging-overhaul L1).
+    """
     from celery.app.log import ColorFormatter
     from celery.signals import after_setup_logger, after_setup_task_logger
 
     import app.celery.lifecycle  # noqa: F401 - 시그널 수신자 등록
 
     for signal in (after_setup_logger, after_setup_task_logger):
-        buf = io.StringIO()
-        handler = logging.StreamHandler(buf)
+        logfile = tmp_path / f"{signal.name}.log"
+        handler = logging.FileHandler(logfile, encoding="utf-8")
         handler.setFormatter(ColorFormatter("%(levelname)s %(message)s", use_color=False))
         logger = logging.getLogger(f"test.redaction.celery.{signal.name}")
         logger.addHandler(handler)
@@ -277,10 +365,12 @@ def test_celery_worker_handlers_are_masked():
             except RuntimeError:
                 logger.exception("Task failed")
         finally:
-            logger.removeHandler(handler)
+            for attached in list(logger.handlers):  # 수신자가 단 공유 queue 핸들러까지 뗀다
+                logger.removeHandler(attached)
+            handler.close()
             logger.propagate = True
 
-        _assert_redacted_traceback(buf.getvalue())
+        _assert_redacted_traceback(logfile.read_text(encoding="utf-8"))
 
 
 async def test_debug_500_detail_is_masked(monkeypatch):
@@ -296,7 +386,7 @@ async def test_debug_500_detail_is_masked(monkeypatch):
     body = bytes(response.body).decode()
     assert response.status_code == 500
     assert "secret42" not in body
-    assert "mysql+asyncmy://u:***@h/db" in body
+    assert "mysql+asyncmy://***:***@h/db" in body
 
 
 ACCESS_CLI_PROBE = """
@@ -312,7 +402,10 @@ setup.stop_log_listener()
 
 
 def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
-    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 줄은 uvicorn 형식 그대로 남는다(config-cleanup F-008)."""
+    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 요청 줄은 남는다(config-cleanup F-008).
+
+    시각·헤더는 프로젝트 형식이다(logging-overhaul L1).
+    """
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LOG_")}
     env.update(PYTHONPATH=str(PROJECT_ROOT), PYTHONIOENCODING="utf-8")
     proc = subprocess.run(  # noqa: S603
@@ -327,8 +420,10 @@ def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "Logging error" not in proc.stderr, proc.stderr
-    assert (
-        'INFO:     127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200 OK' in proc.stdout
-    ), proc.stdout + proc.stderr
+    line = next((ln for ln in proc.stdout.splitlines() if "127.0.0.1:5000" in ln), "")
+    assert line.endswith('127.0.0.1:5000 - "GET /x?token=***&password=*** HTTP/1.1" 200'), (
+        proc.stdout + proc.stderr
+    )
+    assert "[app=uvicorn]" in line
     for secret in ("tok-9f3e7a", "secret42"):
         assert secret not in proc.stdout + proc.stderr
