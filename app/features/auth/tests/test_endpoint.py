@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.db.session import Base
 from app.core.redis import get_redis
 from app.features.user.models.models import User
-from config import jwt_settings
+from config import jwt_settings, middleware_settings
 from main import app
 from tests.session_overrides import override_db_sessions
 
@@ -196,8 +196,10 @@ async def test_login_rate_limit_ignores_username_case(client):
     assert (await _login(client, username="Alice")).status_code == 429
 
 
-async def test_login_rate_limit_is_not_bypassed_by_forwarded_for(client):
+async def test_login_rate_limit_is_not_bypassed_by_forwarded_for(client, monkeypatch):
     """신뢰 프록시 홉이 0 이면 X-Forwarded-For 를 바꿔도 같은 IP 로 센다(ADR-006)."""
+    # 전제(홉 0)를 못 박는다 — 로컬 .env 가 홉을 1 이상으로 두면 XFF 가 신뢰돼 결과가 바뀐다.
+    monkeypatch.setattr(middleware_settings, "TRUSTED_PROXY_HOPS", 0)
     await _register(client)
     for i in range(jwt_settings.AUTH_LOGIN_MAX_ATTEMPTS):
         headers = {"X-Forwarded-For": f"198.51.100.{i}"}

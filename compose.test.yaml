@@ -58,8 +58,8 @@ services:
 
   # startup 필수 자원인 Redis — 실제 uvicorn 수명 테스트
   # (tests/integration/test_uvicorn_lifecycle.py)가 여기에 붙는다. Redis 가 없으면 그 모듈이
-  # skip 되고, CI 는 skip 을 실패로 본다. 포트는 앱 기본값(REDIS_HOST=localhost,
-  # REDIS_PORT=6379)과 같게 둬서 환경변수 없이 붙는다. 로컬 6379 가 이미 쓰이고 있으면
+  # skip 되고, CI 는 skip 을 실패로 본다. 테스트는 REDIS_HOST·REDIS_PORT 를 **명시해야** 붙는다 —
+  # 기본값으로 붙으면 남의 Redis 에 접속할 수 있어 미지정이면 실패한다(integration-e2e W0). 로컬 6379 가 이미 쓰이고 있으면
   # `REDIS_TEST_PORT=6380 docker compose ... up` 후 테스트에 `REDIS_PORT=6380` 을 준다.
   #
   #   docker compose -f compose.test.yaml up -d --wait redis-test   # Redis 만

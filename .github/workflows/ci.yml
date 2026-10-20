@@ -99,7 +99,12 @@ jobs:
       # 커버리지는 측정·출력만 한다. 하한은 pyproject.toml 의 fail_under 하나(기본 0)가 정하고 여기에
       # --cov-fail-under 를 두지 않는다. term-missing:skip-covered 는 쓰지 않는다 — 그 "N files skipped"
       # 줄이 아래 SKIP 판정에 걸린다(log-redaction ADR-005).
+      # Redis 접속 대상은 명시한다 — 없으면 Redis 가 필요한 fixture 가 실패한다
+      # (integration-e2e W0: 기본값 6379 로 남의 Redis 에 붙던 구조 제거).
       - name: pytest (mysql 마커 제외)
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
         run: |
           set -o pipefail
           uv run python -m pytest -m "not mysql" -q -rsxX --cov=app --cov-branch --cov-report=term-missing | tee pytest.log
@@ -174,3 +179,58 @@ jobs:
       - name: MySQL 정리
         if: always()
         run: docker compose -f compose.test.yaml down -v
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # E2E 통합 (integration-e2e) — MySQL 8.4 primary + GTID replica, Redis 7.4, 실제 uvicorn·Celery
+  # worker·Chromium 위에서 API 전수 매트릭스·관리 화면·장애 주입·운영 도구를 돈다.
+  # 스택은 하네스(tests/e2e/stack.py)가 실행마다 무작위 비밀값으로 compose.e2e.yaml 을 띄우고 내린다.
+  # 다른 job 과 같은 skip·xfail 0 판정을 하고, 실패하면 앱·worker·도구 출력과 프로세스 로그를 올린다.
+  # ──────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: E2E 통합 (compose.e2e.yaml)
+    runs-on: ubuntu-24.04  # ubuntu-latest 는 2026-10-19 부터 Ubuntu 26 으로 바뀐다 — 검증 전까지 고정
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 의존성 설치
+        run: uv sync --locked
+
+      - name: Chromium 설치 (Playwright)
+        run: uv run python -m playwright install --with-deps chromium
+
+      - name: pytest -m e2e (skip·xfail 금지)
+        run: |
+          set -o pipefail
+          uv run python -m pytest -m e2e -q -rsxX -p no:cacheprovider | tee e2e.log
+          if grep -qE '[1-9][0-9]* (skipped|xfailed|xpassed)' e2e.log; then
+            echo "::error::E2E 에 조용한 SKIP/xfail 이 있습니다."
+            exit 1
+          fi
+          if grep -q 'no tests ran' e2e.log; then
+            echo "::error::e2e 마커가 붙은 테스트가 0건입니다."
+            exit 1
+          fi
+
+      - name: 실패 시 로그 업로드
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: e2e-logs
+          path: |
+            e2e.log
+            .pytest_tmp/e2e/
+          retention-days: 7
+
+      # 하네스가 이미 내리지만, 하네스 밖에서 죽었을 때를 대비한다. 비밀번호 변수는 compose 파일의
+      # 필수 치환(:?)을 통과시키기 위한 자리 값이다 — down 은 그 값을 쓰지 않는다. 데이터는 tmpfs 다.
+      - name: E2E 스택 정리
+        if: always()
+        run: E2E_MYSQL_ROOT_PASSWORD=change-this-unused E2E_MYSQL_PASSWORD=change-this-unused docker compose -p itest-default -f compose.e2e.yaml down
