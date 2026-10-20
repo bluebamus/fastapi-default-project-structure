@@ -15,6 +15,14 @@
 - [x] W6 CI job `e2e`
 - [x] W7 README·DEVELOPMENT·ARCHITECTURE·CRP 6파일, `review_gate` 요구 ID 출처
 - [x] W9 `docs/review` 병합 표에 "병합 대기" 덧붙임(커밋하지 않음)
-- [ ] (F-003) 프로세스 파일에 import 중 줄이 빠짐 — **결정 필요**(보고)
-- [ ] (F-004) Redis 장애 시 API 500·연결 종료 — **결정 필요**(보고)
-- [ ] (R-004) replica 장애 시 읽기 실패·`/ready` 200 — **결정 필요**(보고)
+- [x] (F-003) 프로세스 파일에 import 중 줄이 빠짐 — **결정 필요**(보고) → Round 2 에서 사용자 결정으로 해결
+- [x] (F-004) Redis 장애 시 API 500·연결 종료 — **결정 필요**(보고) → Round 2 에서 사용자 결정으로 해결
+- [x] (R-004) replica 장애 시 읽기 실패·`/ready` 200 — **결정 필요**(보고) → Round 2 에서 사용자 결정으로 해결
+
+## Round 2 — 2026-10-20 · 사용자 결정 반영(F-004·R-004·F-003)
+- [x] 결정을 design-baseline 에 기록(REQ-007, ADR-009~011), logging-overhaul ADR-002 판정 시점 부분 Superseded
+- [x] (F-004) Redis 연결 오류 → 503 `SERVICE_UNAVAILABLE`, traceback 한 번, keep-alive 유지 — 단위·e2e 테스트, fail-on-revert, `9cff14c`
+- [x] (R-004) 읽기 전용 세션의 replica 연결 오류 → primary 한 번 재시도 + WARNING — 단위·e2e 테스트, fail-on-revert, `a8be33a`
+- [x] (F-003) 설정 로드 직후 프로세스 파일 부착 — 단위(실행 경로 5종)·e2e 테스트, fail-on-revert, `3d30859`
+- [x] README·ARCHITECTURE 장애 동작 설명을 실제 동작으로
+- [x] Round 1 의 결정 필요 3건 닫음 — F-003·F-004 Fixed(ledger), R-004 해소(residual-risk)
