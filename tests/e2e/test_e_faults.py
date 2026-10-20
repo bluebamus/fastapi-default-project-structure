@@ -142,12 +142,19 @@ def test_worker_down_does_not_affect_api_and_backlog_runs_after_restart(stack, c
 
 
 def test_replica_down_and_back(stack, cover):
-    """replica 가 없으면 읽기(replica 경로)는 실패한다 — 코드에 primary 대체가 없다. 쓰기와 /ready 는 primary 만 본다."""
+    """replica 가 없으면 읽기(replica 경로)는 primary 로 한 번 재시도해 200 이다(ADR-010, R-004).
+
+    재시도마다 WARNING 이 남는다. 쓰기와 /ready 는 primary 만 본다(/ready 는 바꾸지 않았다).
+    """
     user = new_user(stack)
     stack.stop_service("mysql-replica")
     try:
+        warned = stack.app.output.count("replica 연결 실패")
         with client(stack, user["access"]) as c:
-            _no_internals(c.get("/api/v1/blog/posts"))
+            listed = c.get("/api/v1/blog/posts")
+            assert listed.status_code == 200, listed.text
+            # 로그는 큐 listener 를 거쳐 조금 늦게 파일에 닿는다
+            _wait(lambda: stack.app.output.count("replica 연결 실패") > warned, timeout=10)
             created = c.post("/api/v1/blog/posts", json={"title": "t", "content": "c"})
             assert created.status_code == 201
             assert (

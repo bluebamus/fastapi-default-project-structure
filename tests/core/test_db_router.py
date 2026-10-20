@@ -5,9 +5,13 @@
 (모킹이 아니라 실제 바인딩 동작을 검증한다.)
 """
 
+import logging
+import socket
+
 import pytest
 from sqlalchemy import String, insert, select
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
@@ -235,6 +239,71 @@ async def test_read_only_session_rejects_writes():
         session.add(Probe(id=2, origin="written"))
         with pytest.raises(ReadOnlyRoutingError):
             await session.flush()
+
+    await writer.dispose()
+    await reader.dispose()
+
+
+# =============================================================================
+# replica 연결 장애 → primary 재시도 (integration-e2e ADR-010, R-004)
+# =============================================================================
+def _dead_reader() -> AsyncEngine:
+    """닫힌 포트를 가리키는 MySQL 엔진 — 접속하면 OperationalError(2003)."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    return create_async_engine(
+        f"mysql+aiomysql://u:p@127.0.0.1:{port}/x", connect_args={"connect_timeout": 2}
+    )
+
+
+async def test_read_only_session_retries_on_writer_when_replica_is_unreachable(caplog):
+    """읽기 전용 세션의 replica 연결 오류는 primary 로 한 번 재시도하고 WARNING 을 남긴다.
+
+    재시도 뒤 세션은 primary 에 남는다 — 같은 세션의 다음 읽기가 죽은 replica 를 다시 두드리지 않는다.
+    """
+    writer = await _make_engine("writer")
+    reader = _dead_reader()
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+
+    with caplog.at_level(logging.WARNING):
+        async with maker() as session:
+            mark_read_only(session)
+            assert await _origins(session) == ["writer"]
+            assert await _origins(session) == ["writer"]
+
+    warnings = [r for r in caplog.records if "replica" in r.getMessage()]
+    assert len(warnings) == 1 and warnings[0].levelno == logging.WARNING
+    assert ":p@" not in warnings[0].getMessage()
+
+    await writer.dispose()
+    await reader.dispose()
+
+
+async def test_routed_session_does_not_retry_replica_failure():
+    """읽기 전용이 아닌 세션(투명 라우팅)은 재시도하지 않는다 — 쓰기와 섞일 수 있다."""
+    writer = await _make_engine("writer")
+    reader = _dead_reader()
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+
+    async with maker() as session:
+        with pytest.raises(OperationalError):
+            await _origins(session)
+
+    await writer.dispose()
+    await reader.dispose()
+
+
+async def test_read_only_session_does_not_retry_query_errors():
+    """연결이 아닌 오류(없는 테이블 등)는 replica 에서 그대로 실패한다."""
+    writer = await _make_engine("writer")
+    reader = create_async_engine("sqlite+aiosqlite:///:memory:")  # routing_probe 테이블 없음
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+
+    async with maker() as session:
+        mark_read_only(session)
+        with pytest.raises(OperationalError, match="no such table"):
+            await _origins(session)
 
     await writer.dispose()
     await reader.dispose()

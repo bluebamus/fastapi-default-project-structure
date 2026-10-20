@@ -313,6 +313,12 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 `mark_read_only()` 가 걸린 세션에서는 ORM flush·Core DML·Raw `text()` DML 이 `ReadOnlyRoutingError`
 로 거부됩니다. 판정은 default-deny 이고 절차는 DEVELOPMENT §7.2 에 있습니다.
 
+- **replica 장애:** 읽기 전용 세션(`get_read_only_db_session`)의 읽기가 replica **연결** 오류(MySQL 2002·2003·2006·2013
+  또는 SQLAlchemy 가 연결을 무효화한 오류 — 접속 불가·연결 끊김·타임아웃)로 실패하면 `RoutingSession` 의
+  `do_orm_execute` 리스너가 같은 구문을 primary 로 **한 번** 다시 실행하고 WARNING `[database] replica 연결 실패(<타입>(code=…))`
+  를 남깁니다(호스트·DSN 없음). 그 세션은 이후 primary 에 고정됩니다. 쿼리 문법·제약 오류는 재시도하지 않고,
+  읽기 전용이 아닌 세션(writer·투명 라우팅)도 재시도하지 않습니다 — 쓰기와 한 트랜잭션에 섞일 수 있어서입니다.
+  replica 가 없으면(단일 DB) 동작 변화가 없습니다. `/ready` 는 그대로 writer·Redis 만 봅니다(integration-e2e ADR-010).
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다(`URL.render_as_string(hide_password=True)`).
