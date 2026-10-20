@@ -112,6 +112,7 @@ __all__ = ["router"]
 4. migration 후보를 만들고 검토·적용한다(§8).
 5. DTO 검증 → 커밋 순서, 롤백·취소·background 세션 경계를 점검한다(§4).
 6. 단위·엔드포인트·트랜잭션·등록 테스트와 필요한 MySQL 테스트를 쓰고, `uv run python -m scripts.review_gate` 로 확인한다.
+   E2E 인벤토리에 새 칸을 채우고 `uv run python -m pytest -m e2e` 로 확인한다(§12.1).
 7. README API 표와 관련 문서를 함께 고친다.
 
 ## 3. 세션과 의존성 선택
@@ -827,6 +828,14 @@ except Exception:
 - SQLite 통과는 MySQL 방언·Decimal 정밀도·시간대·잠금의 근거가 아닙니다. MySQL 전용 동작은
   `@pytest.mark.mysql` 로 `tests/integration/` 에 두고, `mysql_session_maker` fixture 가 테스트마다
   스키마를 다시 만듭니다.
+- 전수 통합(`tests/e2e/`, `uv run python -m pytest -m e2e`)은 실제 MySQL 복제·Redis·uvicorn·Celery·Chromium
+  위에서 돕니다(README "E2E 전수 통합"). **새 API·관리 뷰·태스크·Redis 키를 더하면 여기에도 칸이 생깁니다.**
+  `tests/e2e/test_zz_inventory.py` 가 실제 앱에서 operation·관리 뷰·Celery 태스크·Redis 접두어를 뽑아, 각 칸을 실행한
+  테스트(`cover(...)`)나 N/A 사유가 없으면 실패합니다.
+  - 새 operation: `tests/e2e/test_b_api_matrix.py` 의 `SPECS` 에 칸별 요청(정상·검증 오류·권한 부족·없음)을 더한다.
+    미인증·잘못된 메서드·접근 정책 칸은 선언에서 자동으로 만든다. 해당 없는 칸은 문자열(사유)로 적는다.
+  - 새 관리 뷰: `tests/e2e/test_d_admin.py` 의 `VIEWS` 에 테이블·생성 폼·수정 필드를 더한다.
+  - 새 태스크·beat 일정·Redis 키 접두어: 그것을 실제로 쓰는 시나리오를 `test_c_flows.py` 에 두고 `cover(...)` 한다.
 
 ### 12.2 무엇을 검증하나
 

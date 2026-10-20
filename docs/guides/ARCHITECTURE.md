@@ -1190,6 +1190,7 @@ config.set_main_option(
 
 | 날짜 | 변경 |
 |---|---|
+| 2026-10-20 | 전수 통합(integration-e2e): `tests/e2e/`(마커 `e2e`) + `compose.e2e.yaml`(MySQL primary·GTID replica·Redis 7.4, `-p itest-default`) — API 전수 매트릭스·연동 시나리오·관리 화면(Playwright)·장애 주입·운영, 인벤토리 대조·비밀값 grep, CI job `e2e`. Redis 가 필요한 기존 통합 테스트는 `REDIS_HOST`·`REDIS_PORT` 를 명시해야 돈다(W0) |
 | 2026-06-23 | 기능 모델 레지스트리 아키텍처 도입, 이 문서 최초 작성. 곧이어 자동 발견을 제거하고 `app/apps.py` 수동 등록으로 전환 |
 | 2026-07-01 | 표준 FastAPI 배선으로 전환 — `AppRegistry`·`bootstrap.create_app()`·`app/apps.py` 제거, 기능 `__init__.py` 가 `router` 공개 |
 | 2026-08-10 | 외부 검수 후속: mypy 오류 해소, 트랜잭션 경계 회귀 테스트, 모델 import SSOT(`models_registry`), 조회 라우트 읽기 세션 전환, Alembic baseline 복구, FastAPI 0.115 → 0.141(커밋을 핸들러 본문으로 이동), `ORJSONResponse` 제거 |
