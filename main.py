@@ -13,11 +13,18 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.db.session import READINESS_TIMEOUT_SECONDS, engine, ping_writer_db
-from app.core.exception import AppException, ErrorResponse, ValidationException
+from app.core.exception import (
+    AppException,
+    ErrorResponse,
+    ServiceUnavailableException,
+    ValidationException,
+)
 from app.core.middlewares.cors_middleware import CustomCORSMiddleware
 from app.core.middlewares.user_info_middleware import setup_user_info_middleware
 from app.core.redis import get_redis
@@ -50,7 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
-    """4가지 글로벌 예외 핸들러를 등록합니다."""
+    """글로벌 예외 핸들러(4가지 + Redis 연결 오류 503)를 등록합니다."""
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
@@ -146,6 +153,30 @@ def _register_exception_handlers(app: FastAPI) -> None:
             # 401 의 ``WWW-Authenticate: Bearer``(OAuth2PasswordBearer)처럼 예외가 실은 헤더를 보존한다.
             headers=exc.headers,
         )
+
+    async def redis_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Redis 연결 오류 → 503 ``SERVICE_UNAVAILABLE`` (integration-e2e ADR-009, F-004).
+
+        레이트 리밋·refresh 회전·토큰 폐기는 Redis 가 없으면 진행할 수 없다 — fail-closed 로 요청을
+        거부하되 일시 장애임을 503 으로 알린다(관리 화면의 Redis 장애 503 과 같은 의미). 아래
+        ``Exception`` 핸들러로 떨어지면 Starlette ``ServerErrorMiddleware`` 가 응답 뒤 예외를 다시
+        던져 uvicorn 이 traceback 을 한 번 더 남기고 keep-alive 연결을 닫는다 — 여기서 끝낸다.
+        """
+        logger.error(
+            "[RedisUnavailable] %s",
+            type(exc).__name__,
+            exc_info=exc,
+            extra={"path": request.url.path, "method": request.method},
+        )
+        unavailable = ServiceUnavailableException()
+        return JSONResponse(
+            status_code=unavailable.status_code,
+            content=unavailable.to_response().model_dump(mode="json"),
+        )
+
+    # 연결 계열만 — 명령 오류(ResponseError 등)는 코드 결함이라 500 그대로 둔다.
+    app.add_exception_handler(RedisConnectionError, redis_unavailable_handler)
+    app.add_exception_handler(RedisTimeoutError, redis_unavailable_handler)
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:

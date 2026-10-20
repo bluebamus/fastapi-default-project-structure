@@ -219,13 +219,14 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 
 ### 3.3 예외와 오류 응답
 
-`main.py` 의 핸들러 4종이 모든 오류를 `ErrorResponse`(`error_code`·`message`·`detail`)로 바꿉니다.
+`main.py` 의 핸들러 4종(+ Redis 연결 오류 503)이 모든 오류를 `ErrorResponse`(`error_code`·`message`·`detail`)로 바꿉니다.
 
 | 예외 | 응답 |
 |---|---|
 | `AppException` 과 하위(`NotFoundException`·`DuplicateException`·`DatabaseException`…) | 예외가 가진 상태 코드·`error_code`. 로그는 4xx 면 WARNING(detail 없음), 5xx 면 ERROR(detail 포함) — service-hardening ADR-008 ④ |
 | `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록 |
 | Starlette `HTTPException` | 해당 코드, `error_code=HTTP_<코드>` |
+| redis `ConnectionError`·`TimeoutError` | 503 `SERVICE_UNAVAILABLE`(fail-closed — 요청은 거부, 내부 정보 없음). 로그는 ERROR `[RedisUnavailable]` + traceback 한 번. 정상 응답으로 끝나 keep-alive 연결이 유지된다 — 아래 `Exception` 핸들러는 Starlette `ServerErrorMiddleware` 에 걸려 응답 뒤 예외를 다시 던지므로(uvicorn 이 traceback 을 한 번 더 남기고 연결을 닫는다) 그리로 보내지 않는다. 명령 오류(`ResponseError` 등)는 500 그대로 (integration-e2e ADR-009) |
 | 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001) |
 
 `AppException`·`HTTPException` 핸들러는 예외의 `headers` 를 응답에 그대로 싣습니다 — 405 `Allow`(라우팅이 채운다),
@@ -1171,7 +1172,7 @@ config.set_main_option(
 | ORM·Raw Base 독립 | Raw 결과에 ORM 의미가 새지 않게(AR-003) |
 | 로그는 큐 + stdout/stderr, 파일 없음, 앱별 로거 없음 | event loop 비차단(NFR-009), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
-| Redis(서버 6.2 이상 — `GETDEL`)는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011) |
+| Redis(서버 6.2 이상 — `GETDEL`)는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011). 그동안 Redis 를 쓰는 API 는 503 `SERVICE_UNAVAILABLE`(§3.3, integration-e2e ADR-009) |
 | 관리 화면은 기본 켜짐 + 활성 슈퍼유저 로그인, `ADMIN_DISABLED=true` 로 흔적 없이 끈다 | 개발 우선 템플릿이라 받자마자 DB 를 볼 수 있어야 하고, 배포에서는 로그인이 지킨다. 쓰지 않는 배포는 공격 표면 자체를 없앤다. 세션은 `/admin` 하위 앱 전용이라 API 의 Bearer 계약과 섞이지 않는다(admin-login ADR-001~006 — ADR-045 ③ 의 확인 플래그를 대체) |
 | 예시·빈 비밀값, 짧은 키, access==refresh 는 test 외 **모든 ENV** 에서 기동 거부. staging/production 은 `DEBUG=true`·`LOG_LEVEL=DEBUG` 도 거부 | 예시 키로 뜨면 누구나 토큰을 위조하고, debug 는 SQL 과 바인딩 값을 로그로 내보낸다. 잘못된 설정은 개발 단계부터 오류로 드러나야 `.env` 를 고친다(ADR-027·028·030·045) |
 | `.env` 가 없으면 필수 값이 환경 변수로 와야 한다 | 코드 기본값은 유지하되 기본값만으로는 뜨지 않게 한다. 파일 없이 주입하는 컨테이너 배포는 통과(ADR-045 ①) |

@@ -80,20 +80,24 @@ def test_redis_down_admin_fails_closed_and_api_follows_policy(stack, cover):
             stack.query("SELECT is_active FROM users WHERE id=%s", (user["id"],))[0]["is_active"]
             == 1
         )
-        # API: 레이트 리밋·refresh 저장소가 Redis 다 — 내부 정보 없는 5xx(fail-closed, residual R-005).
-        # 처리되지 않은 예외라 uvicorn 이 응답 뒤 연결을 닫는다 — 요청마다 새 연결을 쓴다(관측값은 NOTES).
+        # API: 레이트 리밋·refresh 저장소가 Redis 다 — fail-closed 503, 내부 정보 없음(ADR-009, F-004).
+        # 정상 응답으로 끝나 keep-alive 연결이 살아 있고, uvicorn 의 "Exception in ASGI application" 이 없다.
+        asgi_errors = stack.app.output.count("Exception in ASGI application")
         with client(stack) as c:
             login = c.post(
                 "/api/v1/auth/login",
                 data={"username": user["username"], "password": user["password"]},
             )
-        _no_internals(login)
-        with client(stack) as c:
             refresh = c.post("/api/v1/auth/refresh", json={"refresh_token": user["refresh"]})
-        _no_internals(refresh)
+        for resp in (login, refresh):
+            _no_internals(resp)
+            assert resp.status_code == 503
+            assert resp.json()["error_code"] == "SERVICE_UNAVAILABLE"
+            assert resp.headers.get("connection", "").lower() != "close"
+        assert stack.app.output.count("Exception in ASGI application") == asgi_errors
         NOTES["Redis 정지 · API 로그인/refresh"] = (
             f"{login.status_code} {login.json()['error_code']} / {refresh.status_code} "
-            f"{refresh.json()['error_code']} — 처리되지 않은 redis ConnectionError, 응답 뒤 연결 종료"
+            f"{refresh.json()['error_code']} — keep-alive 유지"
         )
         with client(stack) as c:
             assert (

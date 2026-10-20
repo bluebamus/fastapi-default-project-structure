@@ -210,6 +210,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `설정 ADMIN 은 ADMIN_DISABLED 로 바뀌었습니다` | 환경 변수나 `.env` 에 예전 `ADMIN` 이 남아 있다(옛 `.env.example` 사본) | 그 줄을 지운다. `ADMIN=false` 였다면 대신 `ADMIN_DISABLED=true` |
 | `/admin` 로그인이 계속 로그인 화면으로 돌아온다 | 계정이 슈퍼유저·활성이 아니거나, HTTP 로 접속했는데 `ENV=staging/production` 이라 쿠키가 `Secure` | `scripts.create_superuser` 로 승격, 배포 환경은 HTTPS 로 접속([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html#ops)) |
 | `/admin` 이 503 `관리 세션 저장소를 사용할 수 없습니다` | 관리 세션은 Redis 에 있다 — Redis 장애면 관리 화면은 통과시키지 않는다(fail-closed) | Redis 를 복구한다(`/ready` 로 확인). 복구 뒤 세션이 남아 있으면 그대로 쓴다 |
+| 로그인·refresh·로그아웃·회원가입·사용자 수정/삭제 API 가 503 `SERVICE_UNAVAILABLE` | 레이트 리밋·refresh 회전·토큰 폐기가 Redis 에 있다 — Redis 연결 오류면 요청을 거부한다(fail-closed). Redis 를 쓰지 않는 조회는 그대로 200 | Redis 를 복구한다(`/ready` 로 확인). 서버 로그에 `[RedisUnavailable]` 가 traceback 과 함께 한 번 남는다 |
 | 관리 화면에서 저장·삭제·로그아웃이 403 `요청이 만료되었습니다` | 화면을 연 뒤 세션이 바뀌었거나(다른 탭에서 다시 로그인) 브라우저 JS 가 꺼져 토큰이 붙지 않았다 | 화면을 새로 고쳐 다시 시도. JS 를 켠다([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html#ops)) |
 | `/admin/login` 이 429 | 같은 IP+사용자명 5회·같은 IP 20회(60초 창) 초과 | `Retry-After` 초만큼 기다린다. 프록시 뒤인데 모두가 막히면 `TRUSTED_PROXY_HOPS` |
 | startup INFO 로그가 안 보임 | `LOG_LEVEL`·`LOG_CONSOLE_LEVEL` 명시값이 더 높음 | [ARCHITECTURE §9.3](./docs/guides/ARCHITECTURE.md#93-레벨이-정해지는-방식) |
