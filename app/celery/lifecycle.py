@@ -92,5 +92,6 @@ def _redact_celery_log_handlers(logger: logging.Logger, **_kwargs: object) -> No
     ``adopt_foreign_handlers`` 가 콘솔 핸들러를 공유 queue 로 바꾸고, ``--logfile`` 파일 핸들러는
     남겨 같은 포맷·필터를 입힌다(log-redaction ADR-001 의 마스킹 포함).
     """
-    attach_log_files("celery")  # 이 프로세스가 worker 임을 아는 유일한 지점(logging-overhaul L5)
+    # `celery` 실행이면 설정 로드 직후 이미 붙었다(integration-e2e ADR-011) — 그 밖의 경로용(멱등).
+    attach_log_files("celery")
     adopt_foreign_handlers(logger)

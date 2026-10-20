@@ -34,6 +34,7 @@ import sys
 import threading
 from logging.config import dictConfig
 from logging.handlers import QueueListener
+from pathlib import PurePath
 from zoneinfo import ZoneInfo
 
 from app.utils.logs.config import (
@@ -188,13 +189,25 @@ def adopt_foreign_handlers(logger: logging.Logger) -> None:
 LOG_FILES = {"app": ("app.log", "error.log"), "celery": ("celery.log", "celery-error.log")}
 
 
+def entry_process(argv0: str) -> str | None:
+    """실행 프로그램(``sys.argv[0]``)으로 프로세스 종류를 정한다 (integration-e2e ADR-011, F-003).
+
+    ``python main.py``·``uvicorn``(``-m uvicorn`` 포함) → ``app``, ``celery``(``-m celery``, worker·beat)
+    → ``celery``. 그 밖의 프로그램(pytest·alembic·스크립트)은 ``None`` — 파일을 열지 않는다.
+    """
+    path = PurePath(argv0.replace("\\", "/"))
+    name = path.parent.name if path.stem == "__main__" else path.stem
+    return {"main": "app", "uvicorn": "app", "celery": "celery"}.get(name.lower())
+
+
 def attach_log_files(process: str) -> None:
     """``LOG_FILE_ENABLED`` 면 프로세스별 파일 핸들러를 listener 에 더한다 (logging-overhaul L5).
 
-    프로세스 종류는 **진입점**이 정해 부른다 — 웹은 ``main.py``(앱 import 시점, uvicorn 의 기동
-    줄보다 먼저), Celery 는 worker 의 ``after_setup_logger`` 수신자. 판단은 이 한 곳이다.
-    쓰기는 listener 스레드에서 일어나 요청 event loop 를 막지 않는다(NFR-009). 여러 번 불러도
-    처음 한 번만 붙는다.
+    ``configure_logging()`` 이 설정 로드 직후 ``entry_process(sys.argv[0])`` 로 먼저 부른다 — 그래야
+    import 중 줄(DB 라우팅 구성 등)도 파일에 남는다(integration-e2e ADR-011 이 logging-overhaul ADR-002
+    를 대체). 진입점(``main.py``, Celery ``after_setup_logger`` 수신자)의 호출은 그 판정을 못 하는
+    실행(``python -c``·테스트)을 위한 것이다. 쓰기는 listener 스레드에서 일어나 요청 event loop 를
+    막지 않는다(NFR-009). 여러 번 불러도 처음 한 번만 붙는다.
     """
     listener = getattr(_queue_handler, "listener", None)
     if not log_settings.LOG_FILE_ENABLED or listener is None:
@@ -288,6 +301,10 @@ def configure_logging(force: bool = False) -> None:
     # 공유 queue 핸들러를 쓰므로 바뀌는 것이 없다.
     for name in UVICORN_LOGGERS:
         adopt_foreign_handlers(logging.getLogger(name))
+
+    process = entry_process(sys.argv[0] if sys.argv else "")
+    if process is not None:
+        attach_log_files(process)
 
     _register_process_exit_hook()
     start_log_listener()

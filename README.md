@@ -345,8 +345,9 @@ Celery `--logfile` 파일은 남긴 채 같은 형식만 입힙니다.
 
 ### 파일
 
-`LOG_FILE_ENABLED=true` 면 `LOG_DIR` 아래에 프로세스별로 씁니다. 프로세스 종류는 진입점이 정합니다 —
-웹은 `main.py`, Celery 는 worker 의 `after_setup_logger` 수신자.
+`LOG_FILE_ENABLED=true` 면 `LOG_DIR` 아래에 프로세스별로 씁니다. 프로세스 종류는 설정 로드 직후 실행 프로그램으로
+정합니다 — `python main.py`·`uvicorn` 은 웹, `celery`(worker·beat)는 Celery. 그래서 import 중에 찍히는 기동 줄
+(`[database] 라우팅 구성` 등)도 파일에 남습니다([ARCHITECTURE §9.2](./docs/guides/ARCHITECTURE.md#92-출력-구성과-포맷)).
 
 | 파일 | 내용 |
 |---|---|

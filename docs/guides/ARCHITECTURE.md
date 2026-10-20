@@ -650,9 +650,13 @@ producer 를 막는 선택지는 쓰지 않습니다 — 로그 때문에 API �
 | `staging`·`production` | stdout + **ERROR 이상은 stderr 에도** | UTC |
 
 기본은 파일이 없고 저장·검색·rotation 은 Docker·Kubernetes·수집 agent 가 맡습니다. `LOG_FILE_ENABLED=true` 면
-**진입점**이 프로세스 종류를 정해 `setup.attach_log_files()` 로 listener 에 파일 핸들러를 더합니다 — 웹은
-`main.py` import 시점(`app.log`·`error.log`), Celery 는 worker 의 `after_setup_logger` 수신자(`celery.log`·
-`celery-error.log`). 에러 파일도 프로세스별로 나눈 이유는 웹과 worker 가 한 파일을 회전시키지 않게 하려는 것입니다
+설정 로드 직후(`configure_logging()`, 첫 `get_logger()`) 실행 프로그램 `sys.argv[0]` 으로 프로세스 종류를 정해
+`setup.attach_log_files()` 로 listener 에 파일 핸들러를 더합니다(`setup.entry_process()`) — `python main.py`·`uvicorn`
+(`-m uvicorn` 포함)은 `app.log`·`error.log`, `celery`(`-m celery`, worker·beat)는 `celery.log`·`celery-error.log`.
+그래서 import 중에 찍히는 줄(`[database] 라우팅 구성` 등)도 파일에 남습니다. 그 밖의 프로그램(pytest·alembic·스크립트)은
+파일을 열지 않고, 진입점의 호출(`main.py` import, Celery `after_setup_logger` 수신자)이 그 판정을 못 하는 실행을
+덮습니다 — 여러 번 불러도 한 번만 붙습니다(integration-e2e ADR-011 이 logging-overhaul ADR-002 의 "진입점이 정한다"를
+대체). 에러 파일도 프로세스별로 나눈 이유는 웹과 worker 가 한 파일을 회전시키지 않게 하려는 것입니다
 (logging-overhaul ADR-002). 핸들러는 `DailySizeRotatingFileHandler`(`app/utils/logs/handlers.py`) 하나입니다 —
 매일 자정(포매터와 같은 시간대)에 `app.log.YYYY-MM-DD`, 하루 안에서 `LOG_MAX_SIZE_MB` 초과면 `.1`·`.2`…, 교체 때
 `LOG_RETENTION_DAYS` 보다 오래된 날짜 파일(분할 포함)을 지웁니다. 이미 있는 이름은 덮지 않고 다음 번호를 씁니다.

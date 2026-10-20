@@ -38,8 +38,8 @@ from app.utils.logs.setup import attach_log_files
 from config import app_settings
 
 logger = get_logger("main")
-# 이 프로세스가 웹임을 정하는 지점 — LOG_FILE_ENABLED 면 app.log·error.log (logging-overhaul L5).
-# lifespan 이 아니라 import 시점인 이유: uvicorn 의 기동 줄("Waiting for application startup")이 먼저 나온다.
+# LOG_FILE_ENABLED 면 app.log·error.log (logging-overhaul L5). `python main.py`·`uvicorn` 은 설정 로드 직후
+# 이미 붙었다(integration-e2e ADR-011) — 이 호출은 실행 프로그램으로 판정하지 못한 경우(`python -c`·테스트)용이다.
 attach_log_files("app")
 
 

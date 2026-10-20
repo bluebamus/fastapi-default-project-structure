@@ -78,6 +78,44 @@ def test_web_entry_point_attaches_the_web_files(tmp_path):
     assert not (tmp_path / "logs" / "celery.log").exists()
 
 
+ROUTING_LINE = "[database] 라우팅 구성"
+EARLY_PROBE = """
+import sys
+sys.argv[0] = {argv0!r}
+import {module}
+from app.utils.logs import setup
+setup.attach_log_files({process!r})  # 진입점의 호출 — 두 번째라 아무것도 더하지 않아야 한다
+setup.stop_log_listener()
+"""
+
+
+def test_import_time_lines_reach_the_process_file(tmp_path):
+    """import 중 찍힌 줄(DB 라우팅 구성)도 프로세스 파일에 한 번 남는다 (integration-e2e F-003, ADR-011)."""
+    for i, (argv0, module, process, own, other) in enumerate(
+        (
+            ("main.py", "main", "app", "app.log", "celery.log"),
+            ("/venv/uvicorn/__main__.py", "main", "app", "app.log", "celery.log"),
+            ("/venv/Scripts/uvicorn.exe", "main", "app", "app.log", "celery.log"),
+            ("/venv/celery/__main__.py", "app.celery.app", "celery", "celery.log", "app.log"),
+            ("/venv/bin/celery", "app.celery.app", "celery", "celery.log", "app.log"),
+        )
+    ):
+        run_dir = tmp_path / str(i)
+        run_dir.mkdir(parents=True)
+        code = EARLY_PROBE.format(argv0=argv0, module=module, process=process)
+        proc = _run(code, run_dir, **FILES_ON)
+        text = (run_dir / "logs" / own).read_text(encoding="utf-8")
+        assert text.count(ROUTING_LINE) == 1, f"{argv0}: {own}\n{text}\n{proc.stderr}"
+        assert not (run_dir / "logs" / other).exists(), argv0
+
+
+def test_other_programs_get_no_early_files(tmp_path):
+    """진입점이 아닌 프로그램(pytest·alembic·스크립트)은 파일을 열지 않는다 — 진입점이 정할 때까지."""
+    code = "import sys\nsys.argv[0] = '/venv/bin/alembic'\nimport app.core.db.session\n"
+    _run(code, tmp_path, **FILES_ON)
+    assert not (tmp_path / "logs").exists()
+
+
 def test_file_level_applies_to_the_process_file_only(tmp_path):
     _run(WEB_PROBE, tmp_path, LOG_FILE_LEVEL="ERROR", **FILES_ON)
     lines = _lines(tmp_path / "logs" / "app.log")
