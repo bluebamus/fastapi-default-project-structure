@@ -26,7 +26,9 @@ def test_no_secret_appears_in_any_run_log(stack):
         text = path.read_text(encoding="utf-8", errors="replace")
         hits += [path.name for s in secrets if s in text]  # 값은 출력하지 않는다
     assert not hits, f"비밀값 원문이 로그에 있다: {hits}"
-    # DSN 은 가려진 꼴로만 나온다. 이 줄은 import 중에 찍혀 프로세스 파일(app.log)에는 없고 콘솔에만 있다
-    # (파일 핸들러는 main.py 가 import 를 마친 뒤 붙는다 — 보고서의 관측 항목).
+    # DSN 은 가려진 꼴로만 나온다. 이 줄은 import 중에 찍히지만 콘솔과 프로세스 파일(app.log) 모두에
+    # 남는다 — 파일 핸들러가 설정 로드 직후 붙는다(F-003, ADR-011).
+    masked = "mysql+aiomysql://***:***@127.0.0.1:13321/***"
     console = next(stack.run_dir.glob("*-app.log")).read_text(encoding="utf-8")
-    assert "mysql+aiomysql://***:***@127.0.0.1:13321/***" in console
+    assert masked in console
+    assert masked in (stack.app_log_dir / "app.log").read_text(encoding="utf-8")

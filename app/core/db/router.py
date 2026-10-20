@@ -47,9 +47,14 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import Engine, Select, UpdateBase, event
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import ORMExecuteState, Session
 from sqlalchemy.sql.elements import TextClause
+
+from app.utils.logs import get_logger
+
+logger = get_logger("database")
 
 # 세션 단위 라우팅 상태를 담는 ``Session.info`` 키.
 # (세션 객체에 직접 속성을 붙이지 않고 SQLAlchemy 가 제공하는 info 딕셔너리를 쓴다.)
@@ -260,7 +265,54 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
                 info[_READER_PINNED] = reader
             return reader.sync_engine
 
+    @event.listens_for(RoutingSession, "do_orm_execute")
+    def _retry_unreachable_replica_on_writer(state: ORMExecuteState) -> Any:
+        """읽기 전용 세션의 replica **연결** 오류 → 같은 읽기를 primary 로 한 번 (ADR-010, R-004).
+
+        읽기 전용 세션만 — 쓰기와 한 트랜잭션에 섞일 수 없어 다른 서버에서 다시 읽어도 안전하다.
+        재시도 뒤 세션을 primary 에 고정해 같은 세션의 다음 읽기가 죽은 replica 를 다시 두드리지 않는다.
+        replica 가 없으면(단일 DB) 고른 엔진이 writer 라 아무것도 바뀌지 않는다.
+        """
+        info = state.session.info
+        try:
+            return state.invoke_statement()
+        except DBAPIError as exc:
+            reader = info.get(_READER_PINNED)
+            if not (
+                info.get(_READ_ONLY)
+                and reader is not None
+                and reader is not router.writer
+                and _is_connection_error(exc)
+            ):
+                raise
+            logger.warning(
+                "[database] replica 연결 실패(%s) — primary 로 읽기를 다시 실행한다",
+                _describe(exc),
+            )
+            info[_READER_PINNED] = router.writer
+            return state.invoke_statement()
+
     return RoutingSession
+
+
+# 연결 계열 MySQL 클라이언트 오류: 2002 소켓·2003 TCP 접속 불가, 2006 서버 사라짐, 2013 질의 중 연결 끊김
+# (읽기 타임아웃 포함). 쿼리 문법·제약 오류(1xxx)는 primary 에서도 같으므로 재시도하지 않는다.
+_CONNECTION_ERROR_CODES = frozenset({2002, 2003, 2006, 2013})
+
+
+def _driver_code(exc: DBAPIError) -> int | None:
+    args = getattr(exc.orig, "args", ())
+    return args[0] if args and isinstance(args[0], int) else None
+
+
+def _is_connection_error(exc: DBAPIError) -> bool:
+    return exc.connection_invalidated or _driver_code(exc) in _CONNECTION_ERROR_CODES
+
+
+def _describe(exc: DBAPIError) -> str:
+    """로그용 — 예외 타입과 드라이버 코드만(호스트·DSN·SQL 없음)."""
+    code = _driver_code(exc)
+    return type(exc).__name__ if code is None else f"{type(exc).__name__}(code={code})"
 
 
 def create_routing_sessionmaker(

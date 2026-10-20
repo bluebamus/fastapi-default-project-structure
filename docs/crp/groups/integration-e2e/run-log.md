@@ -89,7 +89,32 @@
 
 관리 화면 모듈은 F-007 수정 뒤 따로 2회(56 passed ×2) 더 돌렸다.
 
+### Round 2 — 2026-10-20 · 사용자 결정 반영(F-004·R-004·F-003) · 브랜치 `fix/e2e-policy`(main `a803b55` 에서)
+
+명세가 곧 계획이라 writing-plans 는 생략했다. 결정마다 TDD(실패 확인 → 구현) · fail-on-revert(수정 전 파일을 넣고 실패 확인 → 복원) · 별도 커밋.
+
+| 결정 | 커밋 | 단위 테스트(수정 전 → 후) | e2e(수정 전 → 후) |
+|---|---|---|---|
+| F-004 Redis 연결 오류 → 503 (ADR-009) | `9cff14c` | `test_redis_connection_error_is_503_logged_once` — 수정 전 TestClient 가 `redis.ConnectionError` 를 올린다(`ServerErrorMiddleware` 재전파) → 503·traceback 1건 | `test_redis_down_admin_fails_closed_and_api_follows_policy` — 수정 전 같은 연결로 보낸 refresh 가 연결 종료로 실패 → 503·503, keep-alive 유지, `Exception in ASGI application` 0 |
+| R-004 replica 연결 오류 → primary 재시도 (ADR-010) | `a8be33a` | `test_read_only_session_retries_on_writer_when_replica_is_unreachable` — 수정 전 `OperationalError(2003)` → `["writer"]`·WARNING 1건. 가드: `test_routed_session_does_not_retry_replica_failure`·`test_read_only_session_does_not_retry_query_errors`(전후 모두 통과 — 재시도 범위 고정) | `test_replica_down_and_back` — 수정 전 500 `DATABASE_ERROR` → 200 + WARNING `replica 연결 실패(OperationalError(code=2003))` |
+| F-003 import 중 줄 → 프로세스 파일 (ADR-011) | `3d30859` | `test_import_time_lines_reach_the_process_file`(`main.py`·`uvicorn/__main__.py`·`uvicorn.exe`·`celery/__main__.py`·`bin/celery` 5종) — 수정 전 `app.log` 에 라우팅 줄 0 → 각 1줄(중복 0), 다른 프로세스 파일 없음. `test_other_programs_get_no_early_files` | `test_process_files_are_separate`·`test_no_secret_appears_in_any_run_log` — `app.log` 14줄·`celery.log` 5줄(재기동 횟수만큼, 연속 중복 0), 가려진 DSN 이 `app.log` 에 있음 |
+
+e2e 의 "수정 전" 은 `main.py`·`router.py` 를 `a803b55` 판으로 바꿔 `-k "redis_down or replica_down"` 로 돌렸다(2 failed) — 끝나고 복원했다.
+Redis 대상은 `REDIS_HOST=127.0.0.1 REDIS_PORT=16391` 로 명시했다. RED 실행 동안 1초 간격 `netstat` 표본에서 6379 ESTABLISHED 0건.
+(전체 실행 중 표본에 `[::1]:6379` TIME_WAIT 가 보였으나 실행이 끝난 뒤에도 새로 생겼다 — 이 저장소의 프로세스가 남아 있지 않은 상태에서다. 같은 머신의 다른 작업이 남의 로컬 Redis(`wslrelay`)에 붙은 것이다.)
+
+| 검사 | 결과 |
+|---|---|
+| `pytest -m e2e -rsxX` (Windows) | **374 passed**, 1347 deselected, skipped·xfailed 0 — 16분 56초. 인벤토리 빈 칸 0, 비밀값 grep 0 |
+| L1 `-m "not mysql"`(스택 Redis 16391, e2e 안의 회귀) | 1328 passed, 393 deselected, skipped 0 |
+| L1 `-m mysql --mysql-required`(스택 primary) | 19 passed, skipped 0 |
+| `ruff check` · `ruff format --check` | 통과 |
+| mypy(격리 실행, 1.20.2) | 205 파일 이상 없음 |
+| `review_gate --fast` | 전건 통과(pip-audit 포함) |
+
 ## 수렴 판정
 
 - Round 1: 실패 0 · skip 0 · xfail 0 · 인벤토리 빈 칸 0 · 비밀값 grep 0. 열린 항목은 결정 필요 3건(F-003·F-004·R-004) — 정책·설계 변경이라 보고만 했다.
   **CONVERGED (결정 대기 3건 제외)**
+- Round 2: 사용자 결정으로 3건 해결(F-003·F-004 Fixed, R-004 해소). 실패 0 · skip 0 · xfail 0 · 인벤토리 빈 칸 0 · 비밀값 grep 0. 열린 항목 0.
+  **CONVERGED**

@@ -219,13 +219,14 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 
 ### 3.3 예외와 오류 응답
 
-`main.py` 의 핸들러 4종이 모든 오류를 `ErrorResponse`(`error_code`·`message`·`detail`)로 바꿉니다.
+`main.py` 의 핸들러 4종(+ Redis 연결 오류 503)이 모든 오류를 `ErrorResponse`(`error_code`·`message`·`detail`)로 바꿉니다.
 
 | 예외 | 응답 |
 |---|---|
 | `AppException` 과 하위(`NotFoundException`·`DuplicateException`·`DatabaseException`…) | 예외가 가진 상태 코드·`error_code`. 로그는 4xx 면 WARNING(detail 없음), 5xx 면 ERROR(detail 포함) — service-hardening ADR-008 ④ |
 | `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록 |
 | Starlette `HTTPException` | 해당 코드, `error_code=HTTP_<코드>` |
+| redis `ConnectionError`·`TimeoutError` | 503 `SERVICE_UNAVAILABLE`(fail-closed — 요청은 거부, 내부 정보 없음). 로그는 ERROR `[RedisUnavailable]` + traceback 한 번. 정상 응답으로 끝나 keep-alive 연결이 유지된다 — 아래 `Exception` 핸들러는 Starlette `ServerErrorMiddleware` 에 걸려 응답 뒤 예외를 다시 던지므로(uvicorn 이 traceback 을 한 번 더 남기고 연결을 닫는다) 그리로 보내지 않는다. 명령 오류(`ResponseError` 등)는 500 그대로 (integration-e2e ADR-009) |
 | 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001) |
 
 `AppException`·`HTTPException` 핸들러는 예외의 `headers` 를 응답에 그대로 싣습니다 — 405 `Allow`(라우팅이 채운다),
@@ -312,6 +313,12 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
 `mark_read_only()` 가 걸린 세션에서는 ORM flush·Core DML·Raw `text()` DML 이 `ReadOnlyRoutingError`
 로 거부됩니다. 판정은 default-deny 이고 절차는 DEVELOPMENT §7.2 에 있습니다.
 
+- **replica 장애:** 읽기 전용 세션(`get_read_only_db_session`)의 읽기가 replica **연결** 오류(MySQL 2002·2003·2006·2013
+  또는 SQLAlchemy 가 연결을 무효화한 오류 — 접속 불가·연결 끊김·타임아웃)로 실패하면 `RoutingSession` 의
+  `do_orm_execute` 리스너가 같은 구문을 primary 로 **한 번** 다시 실행하고 WARNING `[database] replica 연결 실패(<타입>(code=…))`
+  를 남깁니다(호스트·DSN 없음). 그 세션은 이후 primary 에 고정됩니다. 쿼리 문법·제약 오류는 재시도하지 않고,
+  읽기 전용이 아닌 세션(writer·투명 라우팅)도 재시도하지 않습니다 — 쓰기와 한 트랜잭션에 섞일 수 있어서입니다.
+  replica 가 없으면(단일 DB) 동작 변화가 없습니다. `/ready` 는 그대로 writer·Redis 만 봅니다(integration-e2e ADR-010).
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다(`URL.render_as_string(hide_password=True)`).
@@ -643,9 +650,13 @@ producer 를 막는 선택지는 쓰지 않습니다 — 로그 때문에 API �
 | `staging`·`production` | stdout + **ERROR 이상은 stderr 에도** | UTC |
 
 기본은 파일이 없고 저장·검색·rotation 은 Docker·Kubernetes·수집 agent 가 맡습니다. `LOG_FILE_ENABLED=true` 면
-**진입점**이 프로세스 종류를 정해 `setup.attach_log_files()` 로 listener 에 파일 핸들러를 더합니다 — 웹은
-`main.py` import 시점(`app.log`·`error.log`), Celery 는 worker 의 `after_setup_logger` 수신자(`celery.log`·
-`celery-error.log`). 에러 파일도 프로세스별로 나눈 이유는 웹과 worker 가 한 파일을 회전시키지 않게 하려는 것입니다
+설정 로드 직후(`configure_logging()`, 첫 `get_logger()`) 실행 프로그램 `sys.argv[0]` 으로 프로세스 종류를 정해
+`setup.attach_log_files()` 로 listener 에 파일 핸들러를 더합니다(`setup.entry_process()`) — `python main.py`·`uvicorn`
+(`-m uvicorn` 포함)은 `app.log`·`error.log`, `celery`(`-m celery`, worker·beat)는 `celery.log`·`celery-error.log`.
+그래서 import 중에 찍히는 줄(`[database] 라우팅 구성` 등)도 파일에 남습니다. 그 밖의 프로그램(pytest·alembic·스크립트)은
+파일을 열지 않고, 진입점의 호출(`main.py` import, Celery `after_setup_logger` 수신자)이 그 판정을 못 하는 실행을
+덮습니다 — 여러 번 불러도 한 번만 붙습니다(integration-e2e ADR-011 이 logging-overhaul ADR-002 의 "진입점이 정한다"를
+대체). 에러 파일도 프로세스별로 나눈 이유는 웹과 worker 가 한 파일을 회전시키지 않게 하려는 것입니다
 (logging-overhaul ADR-002). 핸들러는 `DailySizeRotatingFileHandler`(`app/utils/logs/handlers.py`) 하나입니다 —
 매일 자정(포매터와 같은 시간대)에 `app.log.YYYY-MM-DD`, 하루 안에서 `LOG_MAX_SIZE_MB` 초과면 `.1`·`.2`…, 교체 때
 `LOG_RETENTION_DAYS` 보다 오래된 날짜 파일(분할 포함)을 지웁니다. 이미 있는 이름은 덮지 않고 다음 번호를 씁니다.
@@ -1171,7 +1182,7 @@ config.set_main_option(
 | ORM·Raw Base 독립 | Raw 결과에 ORM 의미가 새지 않게(AR-003) |
 | 로그는 큐 + stdout/stderr, 파일 없음, 앱별 로거 없음 | event loop 비차단(NFR-009), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
-| Redis(서버 6.2 이상 — `GETDEL`)는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011) |
+| Redis(서버 6.2 이상 — `GETDEL`)는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011). 그동안 Redis 를 쓰는 API 는 503 `SERVICE_UNAVAILABLE`(§3.3, integration-e2e ADR-009) |
 | 관리 화면은 기본 켜짐 + 활성 슈퍼유저 로그인, `ADMIN_DISABLED=true` 로 흔적 없이 끈다 | 개발 우선 템플릿이라 받자마자 DB 를 볼 수 있어야 하고, 배포에서는 로그인이 지킨다. 쓰지 않는 배포는 공격 표면 자체를 없앤다. 세션은 `/admin` 하위 앱 전용이라 API 의 Bearer 계약과 섞이지 않는다(admin-login ADR-001~006 — ADR-045 ③ 의 확인 플래그를 대체) |
 | 예시·빈 비밀값, 짧은 키, access==refresh 는 test 외 **모든 ENV** 에서 기동 거부. staging/production 은 `DEBUG=true`·`LOG_LEVEL=DEBUG` 도 거부 | 예시 키로 뜨면 누구나 토큰을 위조하고, debug 는 SQL 과 바인딩 값을 로그로 내보낸다. 잘못된 설정은 개발 단계부터 오류로 드러나야 `.env` 를 고친다(ADR-027·028·030·045) |
 | `.env` 가 없으면 필수 값이 환경 변수로 와야 한다 | 코드 기본값은 유지하되 기본값만으로는 뜨지 않게 한다. 파일 없이 주입하는 컨테이너 배포는 통과(ADR-045 ①) |
@@ -1190,6 +1201,7 @@ config.set_main_option(
 
 | 날짜 | 변경 |
 |---|---|
+| 2026-10-20 | 장애 동작 결정(integration-e2e ADR-009~011): §3.3 Redis 연결 오류 → 503 `SERVICE_UNAVAILABLE`(traceback 한 번, keep-alive 유지), §4.3 읽기 전용 세션의 replica 연결 오류 → primary 한 번 재시도 + WARNING, §9.2 프로세스 파일을 설정 로드 직후 실행 프로그램으로 붙여 import 중 줄도 기록 |
 | 2026-10-20 | 전수 통합(integration-e2e): `tests/e2e/`(마커 `e2e`) + `compose.e2e.yaml`(MySQL primary·GTID replica·Redis 7.4, `-p itest-default`) — API 전수 매트릭스·연동 시나리오·관리 화면(Playwright)·장애 주입·운영, 인벤토리 대조·비밀값 grep, CI job `e2e`. Redis 가 필요한 기존 통합 테스트는 `REDIS_HOST`·`REDIS_PORT` 를 명시해야 돈다(W0) |
 | 2026-06-23 | 기능 모델 레지스트리 아키텍처 도입, 이 문서 최초 작성. 곧이어 자동 발견을 제거하고 `app/apps.py` 수동 등록으로 전환 |
 | 2026-07-01 | 표준 FastAPI 배선으로 전환 — `AppRegistry`·`bootstrap.create_app()`·`app/apps.py` 제거, 기능 `__init__.py` 가 `router` 공개 |

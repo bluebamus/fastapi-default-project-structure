@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 
 import pytest
+from fakeredis import FakeAsyncRedis, FakeServer
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.core.exception import (
@@ -18,6 +20,7 @@ from app.core.exception import (
     NotFoundException,
     ValidationException,
 )
+from app.core.redis import get_redis
 from main import app
 from main import logger as main_logger
 
@@ -58,3 +61,28 @@ async def test_server_errors_log_error_with_detail(caplog):
 
     assert [r.levelno for r in records] == [logging.ERROR]
     assert records[0].detail == {"model": "T"}
+
+
+def test_redis_connection_error_is_503_logged_once(caplog):
+    """Redis 연결 오류 → 503 ``SERVICE_UNAVAILABLE``, traceback 한 번 (integration-e2e F-004).
+
+    ``Exception`` 핸들러는 Starlette 의 ``ServerErrorMiddleware`` 에 걸려 응답 뒤 예외를 다시
+    던진다 — uvicorn 이 traceback 을 한 번 더 남기고 연결을 닫는다. TestClient 는 그 재전파를
+    예외로 올리므로, 여기서 응답이 돌아오면 재전파가 없다는 뜻이다.
+    """
+    server = FakeServer()
+    server.connected = False  # 모든 명령이 redis.ConnectionError
+    app.dependency_overrides[get_redis] = lambda: FakeAsyncRedis(server=server)
+    try:
+        with caplog.at_level(logging.DEBUG, logger=main_logger.name):
+            resp = TestClient(app).post(
+                "/api/v1/auth/login", data={"username": "u", "password": "p"}
+            )
+    finally:
+        app.dependency_overrides.pop(get_redis)
+
+    assert resp.status_code == 503
+    assert resp.json()["error_code"] == "SERVICE_UNAVAILABLE"
+    assert "redis" not in resp.text.lower()
+    tracebacks = [r for r in caplog.records if r.exc_info]
+    assert len(tracebacks) == 1, [r.getMessage() for r in tracebacks]

@@ -80,20 +80,24 @@ def test_redis_down_admin_fails_closed_and_api_follows_policy(stack, cover):
             stack.query("SELECT is_active FROM users WHERE id=%s", (user["id"],))[0]["is_active"]
             == 1
         )
-        # API: 레이트 리밋·refresh 저장소가 Redis 다 — 내부 정보 없는 5xx(fail-closed, residual R-005).
-        # 처리되지 않은 예외라 uvicorn 이 응답 뒤 연결을 닫는다 — 요청마다 새 연결을 쓴다(관측값은 NOTES).
+        # API: 레이트 리밋·refresh 저장소가 Redis 다 — fail-closed 503, 내부 정보 없음(ADR-009, F-004).
+        # 정상 응답으로 끝나 keep-alive 연결이 살아 있고, uvicorn 의 "Exception in ASGI application" 이 없다.
+        asgi_errors = stack.app.output.count("Exception in ASGI application")
         with client(stack) as c:
             login = c.post(
                 "/api/v1/auth/login",
                 data={"username": user["username"], "password": user["password"]},
             )
-        _no_internals(login)
-        with client(stack) as c:
             refresh = c.post("/api/v1/auth/refresh", json={"refresh_token": user["refresh"]})
-        _no_internals(refresh)
+        for resp in (login, refresh):
+            _no_internals(resp)
+            assert resp.status_code == 503
+            assert resp.json()["error_code"] == "SERVICE_UNAVAILABLE"
+            assert resp.headers.get("connection", "").lower() != "close"
+        assert stack.app.output.count("Exception in ASGI application") == asgi_errors
         NOTES["Redis 정지 · API 로그인/refresh"] = (
             f"{login.status_code} {login.json()['error_code']} / {refresh.status_code} "
-            f"{refresh.json()['error_code']} — 처리되지 않은 redis ConnectionError, 응답 뒤 연결 종료"
+            f"{refresh.json()['error_code']} — keep-alive 유지"
         )
         with client(stack) as c:
             assert (
@@ -138,12 +142,19 @@ def test_worker_down_does_not_affect_api_and_backlog_runs_after_restart(stack, c
 
 
 def test_replica_down_and_back(stack, cover):
-    """replica 가 없으면 읽기(replica 경로)는 실패한다 — 코드에 primary 대체가 없다. 쓰기와 /ready 는 primary 만 본다."""
+    """replica 가 없으면 읽기(replica 경로)는 primary 로 한 번 재시도해 200 이다(ADR-010, R-004).
+
+    재시도마다 WARNING 이 남는다. 쓰기와 /ready 는 primary 만 본다(/ready 는 바꾸지 않았다).
+    """
     user = new_user(stack)
     stack.stop_service("mysql-replica")
     try:
+        warned = stack.app.output.count("replica 연결 실패")
         with client(stack, user["access"]) as c:
-            _no_internals(c.get("/api/v1/blog/posts"))
+            listed = c.get("/api/v1/blog/posts")
+            assert listed.status_code == 200, listed.text
+            # 로그는 큐 listener 를 거쳐 조금 늦게 파일에 닿는다
+            _wait(lambda: stack.app.output.count("replica 연결 실패") > warned, timeout=10)
             created = c.post("/api/v1/blog/posts", json={"title": "t", "content": "c"})
             assert created.status_code == 201
             assert (

@@ -278,6 +278,12 @@ def test_process_files_are_separate(stack, cover):
     celery_log = (logs / "celery.log").read_text(encoding="utf-8")
     assert "[app=uvicorn]" in app_log and "[app=celery]" not in app_log
     assert "[app=celery]" in celery_log and "[app=uvicorn]" not in celery_log
+    # import 중 줄도 프로세스 파일에 남고(F-003, ADR-011), 파일 핸들러가 두 번 붙어 겹치지 않는다.
+    routing = "[database] 라우팅 구성"
+    for text in (app_log, celery_log):
+        lines = text.splitlines()
+        assert any(routing in line for line in lines)
+        assert not any(routing in a and a == b for a, b in zip(lines, lines[1:], strict=False))
     error_log = (logs / "error.log").read_text(encoding="utf-8")  # 장애 주입(L5)이 남긴 ERROR
     assert error_log and all(
         re.search(r"\] (ERROR|CRITICAL)\s", line) for line in _project_lines(error_log)

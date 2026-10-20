@@ -58,7 +58,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   한 번 호출하고 응답을 반환합니다. 의존성·Repository 는 커밋하지 않습니다(UnitOfWork 없음).
 - **읽기/쓰기 세션 분리** — 조회는 `get_read_only_db_session`, 쓰기는 `get_writer_db_session`.
   읽기 세션의 쓰기 차단은 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하고,
-  `DB_ROUTER_ENABLED=true` 면 여기에 replica 라우팅이 더해집니다.
+  `DB_ROUTER_ENABLED=true` 면 여기에 replica 라우팅이 더해집니다. replica 에 접속할 수 없으면 읽기 세션의
+  읽기는 primary 로 한 번 다시 실행되고 WARNING 이 남습니다([ARCHITECTURE §4.3](./docs/guides/ARCHITECTURE.md#43-읽기쓰기-라우팅)).
 - **ORM·Raw SQL 두 가지 Repository** — `BaseRepository`(ORM)와 `RawRepositoryBase`(Raw SQL)는
   상속 관계가 없는 평행 계층입니다. 참조 예제: `app/features/catalog/`(ORM),
   `app/features/reports/`(Raw).
@@ -210,6 +211,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `설정 ADMIN 은 ADMIN_DISABLED 로 바뀌었습니다` | 환경 변수나 `.env` 에 예전 `ADMIN` 이 남아 있다(옛 `.env.example` 사본) | 그 줄을 지운다. `ADMIN=false` 였다면 대신 `ADMIN_DISABLED=true` |
 | `/admin` 로그인이 계속 로그인 화면으로 돌아온다 | 계정이 슈퍼유저·활성이 아니거나, HTTP 로 접속했는데 `ENV=staging/production` 이라 쿠키가 `Secure` | `scripts.create_superuser` 로 승격, 배포 환경은 HTTPS 로 접속([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html#ops)) |
 | `/admin` 이 503 `관리 세션 저장소를 사용할 수 없습니다` | 관리 세션은 Redis 에 있다 — Redis 장애면 관리 화면은 통과시키지 않는다(fail-closed) | Redis 를 복구한다(`/ready` 로 확인). 복구 뒤 세션이 남아 있으면 그대로 쓴다 |
+| 로그인·refresh·로그아웃·회원가입·사용자 수정/삭제 API 가 503 `SERVICE_UNAVAILABLE` | 레이트 리밋·refresh 회전·토큰 폐기가 Redis 에 있다 — Redis 연결 오류면 요청을 거부한다(fail-closed). Redis 를 쓰지 않는 조회는 그대로 200 | Redis 를 복구한다(`/ready` 로 확인). 서버 로그에 `[RedisUnavailable]` 가 traceback 과 함께 한 번 남는다 |
 | 관리 화면에서 저장·삭제·로그아웃이 403 `요청이 만료되었습니다` | 화면을 연 뒤 세션이 바뀌었거나(다른 탭에서 다시 로그인) 브라우저 JS 가 꺼져 토큰이 붙지 않았다 | 화면을 새로 고쳐 다시 시도. JS 를 켠다([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html#ops)) |
 | `/admin/login` 이 429 | 같은 IP+사용자명 5회·같은 IP 20회(60초 창) 초과 | `Retry-After` 초만큼 기다린다. 프록시 뒤인데 모두가 막히면 `TRUSTED_PROXY_HOPS` |
 | startup INFO 로그가 안 보임 | `LOG_LEVEL`·`LOG_CONSOLE_LEVEL` 명시값이 더 높음 | [ARCHITECTURE §9.3](./docs/guides/ARCHITECTURE.md#93-레벨이-정해지는-방식) |
@@ -343,8 +345,9 @@ Celery `--logfile` 파일은 남긴 채 같은 형식만 입힙니다.
 
 ### 파일
 
-`LOG_FILE_ENABLED=true` 면 `LOG_DIR` 아래에 프로세스별로 씁니다. 프로세스 종류는 진입점이 정합니다 —
-웹은 `main.py`, Celery 는 worker 의 `after_setup_logger` 수신자.
+`LOG_FILE_ENABLED=true` 면 `LOG_DIR` 아래에 프로세스별로 씁니다. 프로세스 종류는 설정 로드 직후 실행 프로그램으로
+정합니다 — `python main.py`·`uvicorn` 은 웹, `celery`(worker·beat)는 Celery. 그래서 import 중에 찍히는 기동 줄
+(`[database] 라우팅 구성` 등)도 파일에 남습니다([ARCHITECTURE §9.2](./docs/guides/ARCHITECTURE.md#92-출력-구성과-포맷)).
 
 | 파일 | 내용 |
 |---|---|
