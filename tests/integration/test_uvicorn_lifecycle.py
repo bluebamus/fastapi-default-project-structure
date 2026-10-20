@@ -41,15 +41,30 @@ STOP_TIMEOUT_SECONDS = 30.0
 
 
 @pytest.fixture(scope="module", autouse=True)
-def require_redis() -> None:
-    """이 모듈의 본래 검증 대상인 Uvicorn lifecycle에 도달할 수 있어야 한다."""
-    host = os.getenv("REDIS_HOST", "localhost")
-    port = int(os.getenv("REDIS_PORT", "6379"))
+def require_redis() -> tuple[str, int]:
+    """이 모듈의 본래 검증 대상인 Uvicorn lifecycle에 도달할 수 있어야 한다.
+
+    접속 대상은 **명시해야 한다** (integration-e2e W0). 기본값(localhost:6379)으로 붙으면
+    그 포트의 남의 Redis 에 접속한다 — 실제로 그런 사고가 있었다. 명시됐는데 닿지 않을
+    때만 skip 한다(CI 는 skip 을 실패로 본다).
+    """
+    missing = [name for name in ("REDIS_HOST", "REDIS_PORT") if not os.environ.get(name)]
+    if missing:
+        pytest.fail(
+            f"{', '.join(missing)} 가 설정되지 않았습니다. 기본값(localhost:6379)으로 붙으면 "
+            "다른 프로젝트의 Redis 에 접속할 수 있어 막습니다. 테스트용 Redis 를 띄우고 "
+            "REDIS_HOST·REDIS_PORT 를 함께 주세요 "
+            "(예: REDIS_HOST=127.0.0.1 REDIS_PORT=6379 — compose.test.yaml 의 redis-test).",
+            pytrace=False,
+        )
+    host = os.environ["REDIS_HOST"]
+    port = int(os.environ["REDIS_PORT"])
     try:
         with socket.create_connection((host, port), timeout=0.5):
             pass
     except OSError:
         pytest.skip(f"Redis가 준비되지 않음: {host}:{port}")
+    return host, port
 
 
 def _free_port() -> int:
@@ -69,8 +84,9 @@ class ServerProcess:
     검증이 불가능하다 — 우리가 보려는 것이 바로 그 순서다.
     """
 
-    def __init__(self, argv: list[str], port: int) -> None:
+    def __init__(self, argv: list[str], port: int, redis_target: tuple[str, int]) -> None:
         env = os.environ.copy()
+        redis_host, redis_port = redis_target
         # 부모(pytest)는 pytest-env 로 DEBUG=true 를 쓴다. 그대로 물려주면 reloader 가
         # 붙어 server process 가 둘이 되고 startup 이 테이블을 자동 생성하려 든다.
         env.update(
@@ -80,6 +96,11 @@ class ServerProcess:
                 "SERVER_HOST": "127.0.0.1",
                 "SERVER_PORT": str(port),
                 "PYTHONPATH": str(PROJECT_ROOT),
+                # 접속 대상은 fixture 가 확인한 값으로 못 박는다. 비워 두면 자식의 설정이
+                # 저장소 .env 를 읽어 다른 Redis 로 간다(W0). 비밀번호도 부모가 준 것만 쓴다.
+                "REDIS_HOST": redis_host,
+                "REDIS_PORT": str(redis_port),
+                "REDIS_PASSWORD": os.environ.get("REDIS_PASSWORD", ""),
                 # 자식 출력 인코딩을 UTF-8 로 못 박는다. 지정하지 않으면 Windows 가
                 # 콘솔 코드페이지(cp949)로 쓰는데 아래에서 UTF-8 로 디코딩하므로,
                 # 한글 로그가 대체문자가 되어 "이 줄이 있는가" 검증이 조용히 실패한다.
@@ -163,7 +184,7 @@ class ServerProcess:
 
 
 @pytest.fixture
-def server_process():
+def server_process(require_redis):
     """자식 서버를 띄우는 팩토리. 테스트가 어떻게 끝나든 프로세스를 남기지 않는다."""
     started: list[ServerProcess] = []
 
@@ -172,7 +193,7 @@ def server_process():
         # uvicorn CLI 는 포트를 환경변수가 아니라 인자로 받는다. argv 안의 "{port}" 를
         # 할당된 포트로 채운다.
         resolved = [arg.format(port=port) for arg in argv]
-        proc = ServerProcess([sys.executable, *resolved], port)
+        proc = ServerProcess([sys.executable, *resolved], port, require_redis)
         started.append(proc)
         return proc
 

@@ -391,8 +391,8 @@ Celery worker 의 루트 레벨은 `celery -l` 이 정하므로 그보다 낮은
 ### 실행
 
 ```bash
-uv run python -m pytest                        # 전체. MySQL·Redis 가 없으면 해당 테스트는 skip
-uv run python -m pytest -m "not mysql"         # CI gate job 과 같은 집합
+REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest   # 전체. Redis 접속 대상은 명시 필수
+REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest -m "not mysql"   # CI gate job 과 같은 집합
 uv run ruff check . && uv run ruff format --check .
 uv run mypy .                                  # 판정용은 콜드 캐시(CI 는 캐시를 복원하지 않는다)
 
@@ -407,7 +407,9 @@ docker compose -f compose.test.yaml down -v        # 정리(MySQL 데이터는 t
 - 테스트 위치: 기능 테스트는 `app/features/<name>/tests/`, core 계약·배선·교차 기능·통합 테스트는
   최상위 `tests/`. `pyproject.toml` 이 `DEBUG=true`, `ENV=test` 로 실행합니다.
 - **skip 은 통과가 아닙니다.** 결과 줄의 `skipped` 를 확인하세요. 실제 uvicorn 수명 테스트
-  (`tests/integration/test_uvicorn_lifecycle.py`)는 `REDIS_HOST`/`REDIS_PORT` 에 닿지 못하면,
+  (`tests/integration/test_uvicorn_lifecycle.py`)는 `REDIS_HOST`·`REDIS_PORT` 를 **둘 다 명시하지 않으면
+  실패**합니다(기본값 6379 로 남의 Redis 에 붙지 않게 — 자식 서버도 이 값을 받아 `.env` 를 따르지
+  않습니다). 명시했는데 닿지 못하면,
   `-m mysql` 테스트는 3308 에 MySQL 이 없으면 skip 됩니다. 통합 결과를 근거로 쓰는 자리에서는
   `--mysql-required` 를 붙입니다.
 - 3308 이 이미 쓰이면 `MYSQL_TEST_PORT=3311` 을 compose 와 pytest 에 함께 줍니다. 로컬 6379 가

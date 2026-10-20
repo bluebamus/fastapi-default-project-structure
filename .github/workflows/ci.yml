@@ -99,7 +99,12 @@ jobs:
       # 커버리지는 측정·출력만 한다. 하한은 pyproject.toml 의 fail_under 하나(기본 0)가 정하고 여기에
       # --cov-fail-under 를 두지 않는다. term-missing:skip-covered 는 쓰지 않는다 — 그 "N files skipped"
       # 줄이 아래 SKIP 판정에 걸린다(log-redaction ADR-005).
+      # Redis 접속 대상은 명시한다 — 없으면 Redis 가 필요한 fixture 가 실패한다
+      # (integration-e2e W0: 기본값 6379 로 남의 Redis 에 붙던 구조 제거).
       - name: pytest (mysql 마커 제외)
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
         run: |
           set -o pipefail
           uv run python -m pytest -m "not mysql" -q -rsxX --cov=app --cov-branch --cov-report=term-missing | tee pytest.log

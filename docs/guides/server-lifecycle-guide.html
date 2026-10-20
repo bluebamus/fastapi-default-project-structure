@@ -177,8 +177,9 @@ dbDispose --&gt; logFinish[&quot;로그 정책에 따른 마무리&quot;]</code>
 }
 uv run python -m pytest tests/core/test_resources.py
 uv run python -m pytest tests/core/test_settings_contract.py
-# 실제 uvicorn 프로세스 종료 순서 — Redis(REDIS_HOST/REDIS_PORT)가 없으면 skip
+# 실제 uvicorn 프로세스 종료 순서 — REDIS_HOST·REDIS_PORT 를 명시해야 한다(미지정이면 실패, 닿지 않으면 skip)
 docker compose -f compose.test.yaml up -d --wait redis-test
+$env:REDIS_HOST = '127.0.0.1'; $env:REDIS_PORT = '6379'
 uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/test_logs.py -rs</code></pre><p>이 안내서는 소스·기존 테스트 계약과 대조했다. 정상 Redis/MySQL 연결·배포 인프라·모든 신호 조합을 새로 검증했다는 의미는 아니다. 설치·실행은 <a href="../../README.md#빠른-시작">README 빠른 시작</a>, 구조·런타임 상세는 <a href="ARCHITECTURE.md">ARCHITECTURE</a>, 신규 기능은 <a href="feature-development-guide.html">개발 안내서</a>와 <a href="DEVELOPMENT.md">DEVELOPMENT</a>로 연결한다.</p><p class="source">코드 근거: <a data-source="tests/core/test_resources.py" href="../../tests/core/test_resources.py">tests/core/test_resources.py</a> · <a data-source="tests/core/test_settings_contract.py" href="../../tests/core/test_settings_contract.py">tests/core/test_settings_contract.py</a></p>
 </section>
 <section id="config-reference"><h2>16. 부록: Settings 클래스 요약</h2>

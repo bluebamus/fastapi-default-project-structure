@@ -802,14 +802,14 @@ import 합니다. 스냅샷에는 `SIG_DFL` 이 찍혀 있어 복구 순간 프�
 
 ```
 tests/integration/test_uvicorn_lifecycle.py   정상 종료 순서 · startup 실패 원인 출력 · uvicorn CLI 꼬리
-                                              (DEBUG=false 로 띄워 MySQL 불필요, Redis 없으면 모듈 skip)
+                                              (DEBUG=false 로 띄워 MySQL 불필요, REDIS_HOST·REDIS_PORT 미지정이면 실패, 닿지 않으면 skip)
 tests/utils/test_logs.py                      신호 종료 경로의 flush
 tests/core/test_resources.py                  취소·기동 실패 정리, 예산
 ```
 
 ```bash
 docker compose -f compose.test.yaml up -d --wait redis-test
-uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/test_logs.py -rs
+REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest tests/integration/test_uvicorn_lifecycle.py tests/utils/test_logs.py -rs
 ```
 
 ## 10. 접속 로그 미들웨어
