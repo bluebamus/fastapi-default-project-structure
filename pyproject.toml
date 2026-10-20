@@ -57,6 +57,7 @@ dev = [
     # 게이트의 의존성 감사 단계(scripts/review_gate.py)가 쓴다.
     "pip-audit>=2.7",
     "fakeredis>=2.39.0",
+    "playwright>=1.64.0",
 ]
 
 
@@ -116,6 +117,9 @@ markers = [
     #   docker compose -f compose.test.yaml up -d --wait
     #   uv run python -m pytest -m mysql --mysql-required
     "mysql: MySQL 8.4 통합 테스트 (compose.test.yaml 필요)",
+    # compose.e2e.yaml 스택(Docker)을 하네스가 띄운다. 마커식에 e2e 가 없으면 deselect 된다
+    # (tests/e2e/conftest.py).   uv run python -m pytest -m e2e
+    "e2e: 실제 MySQL 복제·Redis·uvicorn·Celery 위의 전수 통합 테스트 (Docker 필요)",
 ]
 
 # 환경 변수 설정

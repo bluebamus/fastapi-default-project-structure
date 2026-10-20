@@ -1,0 +1,78 @@
+# E2E 통합 스위트 전용 스택 — MySQL 8.4 primary + GTID replica + Redis 7.4 (integration-e2e W1).
+#
+# compose.test.yaml(단위·mysql 마커용, 단일 MySQL)과 **분리한다**(ADR-001). 이 파일은
+# 복제·장애 주입을 위해 컨테이너를 멈췄다 켜고, 실행마다 무작위 비밀번호를 받는다 — 기존
+# mysql 마커 테스트의 고정 계정·포트와 섞이면 서로를 깨뜨린다.
+#
+# 직접 띄우지 않는다. tests/e2e 하네스가 실행마다 비밀번호를 만들어 이 파일로 띄우고
+# (`-p itest-default`), 끝나면 `down` 한다. 데이터는 전부 tmpfs 라 `down` 만으로 사라진다
+# (`down -v` 가 필요 없다 — 볼륨을 만들지 않는다).
+#
+#   uv run python -m pytest -m e2e      # 하네스가 up → 복제 구성 → 테스트 → down
+#
+# 포트는 127.0.0.1 에만 열고 고정이다(primary 13321 · replica 13322 · Redis 16391, 앱 18091 은 하네스).
+# 하네스가 시작 전에 비어 있는지, 접속 대상이 이 값인지 검사한다 — 바꾸면 tests/e2e/stack.py 도 함께.
+
+name: itest-default
+
+services:
+  mysql-primary:
+    image: mysql:8.4
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-flush-log-at-trx-commit=2
+    environment: &mysql-env
+      MYSQL_ROOT_PASSWORD: ${E2E_MYSQL_ROOT_PASSWORD:?set by the tests/e2e harness}
+      MYSQL_DATABASE: fastapi_e2e
+      MYSQL_USER: fastapi_e2e
+      MYSQL_PASSWORD: ${E2E_MYSQL_PASSWORD:?set by the tests/e2e harness}
+      TZ: Asia/Seoul
+    ports:
+      - "127.0.0.1:13321:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck: &mysql-health
+      # 비밀번호를 명령줄에 싣지 않는다 — MYSQL_PWD 는 컨테이너 환경에서 읽는다.
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  mysql-replica:
+    image: mysql:8.4
+    command:
+      - --server-id=2
+      - --log-bin=mysql-bin
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-flush-log-at-trx-commit=2
+      # 앱 계정(SUPER 없음)의 쓰기를 막는다 — 앱이 replica 에 쓰면 즉시 오류로 드러난다.
+      - --read-only=ON
+      # 복제는 하네스가 GTID 초기화 뒤에 시작한다(START REPLICA).
+      - --skip-replica-start
+    environment: *mysql-env
+    ports:
+      - "127.0.0.1:13322:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck: *mysql-health
+
+  redis:
+    # 앱 최소 버전은 6.2(GETDEL). 계획서 §0 의 7.4 를 쓴다.
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:16391:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
