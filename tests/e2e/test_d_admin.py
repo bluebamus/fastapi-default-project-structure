@@ -252,9 +252,11 @@ def test_delete_from_the_row_modal(admin, stack, owner, su, cover, view):
         return
     page.goto(f"/admin/{view}/list?created_at=2003-03-03&created_at_op=on")
     page.locator(f'a[data-pk="{rid}"][data-bs-target="#modal-delete"]').click()
-    with page.expect_response(
-        lambda r: "/delete" in r.url and r.request.method == "DELETE"
-    ) as info:
+    # 성공하면 sqladmin 스크립트가 목록으로 이동한다 — 이동이 끝난 뒤에 페이지를 닫는다(닫다가 멈춘 적 있다).
+    with (
+        page.expect_navigation(),
+        page.expect_response(lambda r: "/delete" in r.url and r.request.method == "DELETE") as info,
+    ):
         page.click("#modal-delete-button")
     assert info.value.status == 200, info.value.text()
     assert not _exists(stack, view, rid)
@@ -272,9 +274,11 @@ def test_bulk_delete(admin, stack, owner, su, cover, view):
         page.locator(f'input[type=hidden][value="{rid}"] + input.select-box').check()
     page.click("#dropdownMenuButton")
     page.click("#action-delete")
-    with page.expect_response(
-        lambda r: "/delete" in r.url and r.request.method == "DELETE"
-    ) as info:
+    # 성공하면 sqladmin 스크립트가 목록으로 이동한다 — 이동이 끝난 뒤에 페이지를 닫는다(닫다가 멈춘 적 있다).
+    with (
+        page.expect_navigation(),
+        page.expect_response(lambda r: "/delete" in r.url and r.request.method == "DELETE") as info,
+    ):
         page.click("#modal-delete-button")
     assert info.value.status == 200, info.value.text()
     assert not any(_exists(stack, view, rid) for rid in rids)
@@ -448,7 +452,7 @@ def test_admin_screen_change_kills_the_other_browsers_session(browser, stack, su
     if action == "delete":
         page.goto("/admin/user/list?search=" + name)
         page.locator(f'a[data-pk="{target}"][data-bs-target="#modal-delete"]').click()
-        with page.expect_response(lambda r: "/delete" in r.url) as info:
+        with page.expect_navigation(), page.expect_response(lambda r: "/delete" in r.url) as info:
             page.click("#modal-delete-button")
         assert info.value.status == 200
     else:
