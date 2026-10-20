@@ -399,6 +399,9 @@ uv run mypy .                                  # 판정용은 콜드 캐시(CI �
 docker compose -f compose.test.yaml up -d --wait   # MySQL 8.4(127.0.0.1:3308) + Redis 7(6379, 앱 최소 6.2)
 uv run python -m pytest -m mysql --mysql-required  # MySQL 에 닿지 못하면 skip 이 아니라 실패
 docker compose -f compose.test.yaml down -v        # 정리(MySQL 데이터는 tmpfs)
+
+uv run python -m playwright install chromium       # E2E 의 관리 화면 테스트용(처음 한 번)
+uv run python -m pytest -m e2e -rsxX               # E2E 전수 통합 — 스택은 하네스가 띄우고 내린다
 ```
 
 - `pytest` 콘솔 스크립트 대신 `python -m pytest` 를 씁니다. 콘솔 스크립트가 다른 인터프리터를 집어
@@ -409,11 +412,35 @@ docker compose -f compose.test.yaml down -v        # 정리(MySQL 데이터는 t
 - **skip 은 통과가 아닙니다.** 결과 줄의 `skipped` 를 확인하세요. 실제 uvicorn 수명 테스트
   (`tests/integration/test_uvicorn_lifecycle.py`)는 `REDIS_HOST`·`REDIS_PORT` 를 **둘 다 명시하지 않으면
   실패**합니다(기본값 6379 로 남의 Redis 에 붙지 않게 — 자식 서버도 이 값을 받아 `.env` 를 따르지
-  않습니다). 명시했는데 닿지 못하면,
+  않습니다). 명시했는데 닿지 못하면 skip 되고,
   `-m mysql` 테스트는 3308 에 MySQL 이 없으면 skip 됩니다. 통합 결과를 근거로 쓰는 자리에서는
   `--mysql-required` 를 붙입니다.
 - 3308 이 이미 쓰이면 `MYSQL_TEST_PORT=3311` 을 compose 와 pytest 에 함께 줍니다. 로컬 6379 가
   쓰이면 `REDIS_TEST_PORT=6380` 으로 올리고 테스트에 `REDIS_PORT=6380` 을 줍니다.
+
+#### E2E 전수 통합 (`tests/e2e/`, 마커 `e2e`)
+
+실제 MySQL 8.4 primary + GTID replica, Redis 7.4, `uvicorn main:app`, Celery worker, Chromium(Playwright) 위에서
+API 전 operation × {정상·422·401·403·404·405·접근 정책}, 연동 시나리오(토큰 회전·레이트 리밋·소유권·폐기·접속 로그·
+보존 삭제·매출·읽기/쓰기 분리), 관리 화면 7 뷰(목록·상세·생성·수정·삭제·일괄 삭제·내보내기·날짜 필터 4종)와 CSRF·
+로그아웃·세션 만료, 장애 주입(Redis·replica·primary·worker 정지), 운영(Alembic 왕복·`create_superuser`·기동 거부·
+로깅 형식·회전)을 돕니다. 마지막에 **인벤토리 대조**(실제 앱에서 뽑은 operation·관리 뷰·Celery 태스크·Redis 접두어마다
+그것을 실행한 테스트 또는 N/A 사유가 있는가)와 **비밀값 grep**(실행마다 만든 비밀값이 모든 로그에 0건)이 돕니다.
+
+- **스택은 하네스가 띄웁니다.** `compose.e2e.yaml` 을 `-p itest-default` 로, 실행마다 무작위 DB·JWT·세션 비밀값으로
+  올리고 끝나면 `down` 합니다(데이터는 tmpfs). 포트는 고정이고 `127.0.0.1` 에만 엽니다 — MySQL 13321(primary)·
+  13322(replica), Redis 16391, 앱 18091. 시작 전에 비어 있는지와 모든 DSN·Redis 대상이 이 값인지 검사해 아니면
+  멈춥니다(남의 서버에 붙지 않게).
+- Docker 가 PATH 에 없고 Windows 면 WSL 안의 `docker` 를 씁니다. WSL 은 붙잡는 프로세스가 없으면 VM 이 내려가며
+  컨테이너를 죽이므로 하네스가 실행 동안 keepalive(`wsl -e sleep`)를 띄우고 끝나면 끕니다.
+- 앱·워커는 **빈 작업 디렉터리**에서 띄웁니다 — 개발자의 `.env` 를 읽지 않습니다. 출력·프로세스 로그·인벤토리 표
+  (`inventory.md`)는 `.pytest_tmp/e2e/<시각>/` 에 남습니다(CI 는 실패 시 artifact 로 올립니다).
+- 마커식에 `e2e` 가 없으면 이 테스트들은 **deselect** 됩니다(skip 아님) — 기본 실행·`-m "not mysql"`·게이트는 Docker 가
+  필요 없습니다. 일부만 돌리면(`-k`) 인벤토리 대조는 빈 칸으로 실패합니다.
+- 하네스 밖에서 죽어 스택이 남았으면
+  `E2E_MYSQL_ROOT_PASSWORD=change-this-unused E2E_MYSQL_PASSWORD=change-this-unused docker compose -p itest-default -f compose.e2e.yaml down` 으로 내립니다(`-v` 불필요).
+- 새 API 를 추가하면 `tests/e2e/test_b_api_matrix.py` 의 `SPECS` 에 그 operation 의 칸별 요청을 더합니다 — 없으면
+  `test_every_operation_has_a_spec` 와 인벤토리 대조가 실패합니다([DEVELOPMENT §12.1](./docs/guides/DEVELOPMENT.md#121-위치와-실행)).
 
 ### 검수 게이트
 
@@ -441,8 +468,9 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 |---|---|
 | `gate` | `uv sync --locked`(락이 `pyproject.toml` 과 어긋나면 실패) → ruff(lint·format) → mypy(콜드 캐시) → bandit(MEDIUM 이상, `app`·`main.py`·`config.py`) → `review_gate --fast`(위 표의 구조 검사·의존성 감사) → compose 의 `redis-test` 기동 → `pytest -m "not mysql" -rsxX --cov=app --cov-branch --cov-report=term-missing`(커버리지는 측정·출력만) → **skipped/xfailed/xpassed 가 있으면 실패** → `alembic heads` 단일 head 확인 |
 | `mysql` | `uv sync --locked` → compose 의 `mysql-test` 기동 → `pytest -m mysql --mysql-required` → skip 또는 0건이면 실패 |
+| `e2e` | `uv sync --locked` → `playwright install --with-deps chromium` → `pytest -m e2e`(하네스가 `compose.e2e.yaml` 스택을 띄우고 내린다) → skip·xfail 또는 0건이면 실패, 실패하면 `.pytest_tmp/e2e/`(앱·worker·도구 출력, 프로세스 로그, `inventory.md`)를 artifact 로 업로드 |
 
-두 job 은 테스트 집합이 정확히 상보입니다. push 외에 매주 월요일 09:00(KST)에도 실행해, 코드 변경이 없는 주에 새로 공개된
+`gate`·`mysql` 두 job 은 테스트 집합이 정확히 상보이고, `e2e` 집합은 두 job 에서 deselect 됩니다. push 외에 매주 월요일 09:00(KST)에도 실행해, 코드 변경이 없는 주에 새로 공개된
 의존성 권고를 잡습니다. 배포·이미지 빌드는 이 저장소 범위 밖입니다.
 커밋 전 훅(`.pre-commit-config.yaml`)은 저장소가 추적하지 않는 로컬 선택 설정입니다 — 같은 검사는 CI 가 합니다.
 

@@ -22,6 +22,7 @@ from tests.e2e.support import NOTES
 pytestmark = pytest.mark.e2e
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
+SUMMARY = re.compile(r"^=+ .+ in [0-9.]+s")
 
 
 def _pytest(stack, marker: str, *extra: str, **env: str) -> str:
@@ -49,7 +50,9 @@ def _pytest(stack, marker: str, *extra: str, **env: str) -> str:
     )
     out = ANSI.sub("", done.stdout + done.stderr)
     (stack.run_dir / f"regression-{marker.replace(' ', '_')}.txt").write_text(out, encoding="utf-8")
-    summary = out.strip().splitlines()[-1] if out.strip() else ""
+    # 요약 줄을 찾는다 — 마지막 줄이 아닐 수 있다(로그 listener 의 종료 줄이 뒤에 붙는다, Linux 실측).
+    summaries = [line for line in out.splitlines() if SUMMARY.match(line)]
+    summary = summaries[-1] if summaries else ""
     assert done.returncode == 0, out[-4000:]
     assert not re.search(r"\d+ (failed|error|errors|skipped|xfailed|xpassed)\b", summary), summary
     NOTES[f"L1 회귀 · -m {marker!r}"] = summary
