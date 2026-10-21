@@ -548,6 +548,19 @@ async def test_redis_outage_is_503_not_a_pass(client, maker, server):
     assert STORE_UNAVAILABLE_MESSAGE in response.text
 
 
+@pytest.mark.parametrize("path", ["/admin/login", "/admin/"])
+async def test_first_request_without_cookie_is_503_when_the_session_cannot_be_saved(
+    client, server, path
+):
+    """쿠키 없는 첫 요청은 Redis 를 읽지 않고 들어가 응답 직전에 세션(CSRF 토큰)을 저장한다 — 그 저장이
+    실패해도 다른 Redis 장애와 같은 503 이다(e2e-policy-2 결정 6). 500 이나 끊긴 연결이 아니다."""
+    server.connected = False
+    response = await client.get(path, follow_redirects=True)
+
+    assert response.status_code == 503
+    assert STORE_UNAVAILABLE_MESSAGE in response.text
+
+
 async def test_missing_redis_client_is_503(app, client):
     app.state.redis = None
     response = await client.get("/admin/login")

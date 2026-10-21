@@ -46,7 +46,7 @@ STATIC = {
         "revoke-on-delete",
     ),
     ("admin-auth", "admin-disabled"): ("404",),
-    ("fault", "redis"): ("stop-start",),
+    ("fault", "redis"): ("stop-start", "admin-first-request-503"),
     ("fault", "worker"): ("stop-start",),
     ("fault", "replica"): ("stop-start", "lag-auth-primary"),
     ("fault", "primary"): ("stop-start",),

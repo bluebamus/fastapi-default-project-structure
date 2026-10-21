@@ -67,6 +67,10 @@ def test_redis_down_admin_fails_closed_and_api_follows_policy(stack, cover):
         assert (
             blocked.status_code == 503 and "관리 세션 저장소를 사용할 수 없습니다" in blocked.text
         )
+        # 쿠키 없는 첫 요청: 응답 직전 세션(CSRF 토큰) 저장이 실패하는 경로도 503 (결정 6)
+        with client(stack) as fresh:
+            first = fresh.get("/admin/login")
+        assert first.status_code == 503 and "관리 세션 저장소를 사용할 수 없습니다" in first.text
         change = admin.post(
             f"/admin/user/edit/{user['id']}",
             data={
@@ -120,6 +124,7 @@ def test_redis_down_admin_fails_closed_and_api_follows_policy(stack, cover):
     admin.close()
     _admin(stack).close()  # 새 로그인으로 관리 화면도 회복
     cover("fault", "redis", "stop-start")
+    cover("fault", "redis", "admin-first-request-503")
 
 
 def test_worker_down_does_not_affect_api_and_backlog_runs_after_restart(stack, cover):
