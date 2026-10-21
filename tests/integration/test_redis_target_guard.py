@@ -53,7 +53,7 @@ def _run_lifecycle(env_overrides: dict[str, str | None]) -> str:
 def test_missing_redis_port_fails_instead_of_defaulting_to_6379() -> None:
     out = _run_lifecycle({"REDIS_PORT": None, "REDIS_HOST": "127.0.0.1"})
 
-    assert "3 errors" in out, out
+    assert "4 errors" in out, out
     assert "skipped" not in out, out
     assert "REDIS_PORT" in out, out
 
@@ -61,14 +61,14 @@ def test_missing_redis_port_fails_instead_of_defaulting_to_6379() -> None:
 def test_missing_redis_host_fails_too() -> None:
     out = _run_lifecycle({"REDIS_PORT": str(_closed_port()), "REDIS_HOST": None})
 
-    assert "3 errors" in out, out
+    assert "4 errors" in out, out
     assert "REDIS_HOST" in out, out
 
 
 def test_explicit_but_unreachable_target_keeps_the_skip_policy() -> None:
     out = _run_lifecycle({"REDIS_PORT": str(_closed_port()), "REDIS_HOST": "127.0.0.1"})
 
-    assert "3 skipped" in out, out
+    assert "4 skipped" in out, out
     assert "error" not in out.strip().splitlines()[-1], out
 
 
