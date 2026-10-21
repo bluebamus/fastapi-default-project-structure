@@ -333,11 +333,12 @@ class ProductRepository(BaseRepository[Product, str]):
         statement = (
             select(Product)
             .where(Product.is_active.is_(True))       # 문자열 컬럼명이 아니라 속성으로
-            .order_by(Product.created_at.desc())
+            .order_by(Product.created_at.desc(), Product.id.desc())  # 동률은 PK 로 고정
             .offset(skip)
             .limit(limit)
         )
-        return (await self.db_session.execute(statement)).scalars().all()
+        result = await self._execute(statement, "list_active")  # DB 오류 → 공통 예외
+        return result.scalars().all()
 ```
 
 - Base 의 8개(ARCHITECTURE §5.2)로 안 되는 조회만 명시적 메서드로 추가합니다. 같은 필터로 `count` 도
@@ -857,7 +858,9 @@ except Exception:
 CI 는 `--cov=app --cov-branch --cov-report=term-missing` 으로 수치를 출력합니다. CI·게이트 명령줄에 `--cov-fail-under` 를 두지 않습니다
 (`tests/test_coverage_contract.py` 가 지킨다). 올리고 싶으면:
 
-1. `uv run python -m pytest -m "not mysql" --cov=app --cov-branch --cov-report=term-missing` 로 지금 수치를 잰다.
+1. 테스트용 Redis 를 띄우고(`docker compose -f compose.test.yaml up -d --wait redis-test`)
+   `REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest -m "not mysql" --cov=app --cov-branch --cov-report=term-missing`
+   로 지금 수치를 잰다(CI gate job 과 같은 명령 — 두 변수가 없으면 실제 uvicorn 수명 테스트가 실패한다).
 2. 그보다 조금 낮은 값을 `fail_under` 에 적는다(흔들림 여유). 다른 곳은 고치지 않는다.
 3. 테스트가 쌓이면 같은 방법으로 조금씩 올린다.
 

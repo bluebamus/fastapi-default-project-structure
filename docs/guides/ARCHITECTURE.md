@@ -41,11 +41,12 @@
 ```
 .
 ├── main.py                 # FastAPI 조립: 미들웨어·예외 핸들러·라우터·health/ready·Scalar·Admin, run_server()
-├── config.py               # Pydantic Settings 12종 — 환경 변수를 읽는 유일한 모듈
+├── config.py               # Pydantic Settings 9종 — 환경 변수를 읽는 유일한 모듈
 ├── conftest.py             # pytest 전역 옵션 --mysql-required (루트에 있어야 인식된다)
 ├── pyproject.toml / uv.lock / .python-version
 ├── alembic.ini / migrations/        # env.py 가 import_all_models() 로 전 기능 모델 수집
 ├── compose.test.yaml       # 테스트용 MySQL 8.4(127.0.0.1:3308, tmpfs) + Redis 7(6379, 앱 최소 6.2)
+├── compose.e2e.yaml        # E2E 스택 — MySQL primary·GTID replica·Redis 7.4(-p itest-default, 하네스가 띄우고 내린다)
 ├── scripts/review_gate.py  # 결정적 검수 게이트
 ├── .github/workflows/ci.yml
 ├── app/
@@ -82,9 +83,9 @@
 │   ├── celery/                      # app.py(중앙 앱, include 는 기능 tasks.py 자동 발견)·task.py(run_async)·lifecycle.py
 │   ├── templates/admin/sqladmin/            # login.html(Bootstrap 로그인 화면)·base.html(원본 확장 + CSRF meta·스크립트)·filters/ — §12
 │   └── utils/                       # logs/ · pagination/ · validators.py
-├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
+├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL) / e2e(전수 통합, 마커 e2e)
 ├── docs/                   # guides/ · specs/ · crp/  (색인은 README)
-└── media/ static/ poc/ logs/   # 예약 디렉터리 (추적하지 않음, 파일 로그는 쓰지 않는다)
+└── media/ static/ poc/ logs/   # 예약 디렉터리 (추적하지 않음, logs/ 는 LOG_FILE_ENABLED=true 일 때 프로세스별 파일 — §9.2)
 ```
 
 ### 1.2 의존 방향과 기능 간 참조
@@ -103,7 +104,7 @@ features → core → utils        (config 는 누구나 import)
 
 | 파일 | 역할 |
 |---|---|
-| `main.py` | `FastAPI(...)` 생성(lifespan·태그·문서 URL), `CustomCORSMiddleware`·`UserInfoMiddleware` 등록, 예외 핸들러 4종, 기능 라우터 8개 `include_router(prefix="/api")`, `/health`·`/ready`·Scalar `/docs`, `ADMIN_DISABLED` 가 아니면 `register_admin(app, engine)` |
+| `main.py` | `FastAPI(...)` 생성(lifespan·태그·문서 URL), `CustomCORSMiddleware`·`UserInfoMiddleware` 등록, 예외 핸들러 4종 + Redis 연결 오류 503 + 가장 바깥 `unhandled_exception_middleware`(§3.3), 기능 라우터 8개 `include_router(prefix="/api")`, `/health`·`/ready`·Scalar `/docs`, 422 문서 후처리(`_openapi_with_actual_422`), `ADMIN_DISABLED` 가 아니면 `register_admin(app, engine)`, 마지막에 `AccessPolicyGuard().verify(app)`(§11.2) |
 | `app/core/resources.py` | `manage_application_resources()` — Redis 확인, 개발용 테이블 생성, 역순 정리 (§7·§8) |
 | `app/core/db/session.py` | 엔진 3종, 세션 의존성 5종, `create_db_tables()`, `ping_writer_db()`, `dispose_engine()` (§4) |
 | `app/utils/logs/` | 큐 기반 로깅과 listener 수명 (§9). **손대기 전에 §9 를 읽는다** |
@@ -160,7 +161,7 @@ app.include_router(catalog.router, prefix="/api")
 ### 3.1 한 요청의 경로
 
 ```
-요청 → UserInfoMiddleware → CORSMiddleware → 라우트
+요청 → unhandled_exception_middleware → UserInfoMiddleware → CORSMiddleware → 라우트
      → Depends: 세션 의존성(get_writer_db_session / get_read_only_db_session)
               → 기능 의존성 get_<name>_service[_readonly] → Service(db_session)
      → View 본문: Service 유스케이스 호출 → (쓰기면) await service.commit() → 응답 DTO
@@ -176,7 +177,8 @@ app.include_router(catalog.router, prefix="/api")
 | Repository | ORM 쿼리 또는 Raw SQL, `flush` 까지 | 커밋, HTTP 응답, 비즈니스 규칙 |
 | Schema | 입력 검증·응답 공개 필드·문서 | DB 접근 |
 
-미들웨어는 나중에 등록한 것이 바깥이라 `UserInfoMiddleware` 가 가장 바깥입니다.
+미들웨어는 나중에 등록한 것이 바깥이라 `_register_exception_handlers` 가 마지막에 등록하는
+`unhandled_exception_middleware` 가 가장 바깥이고, 그 안이 `UserInfoMiddleware` 입니다(§3.3).
 같은 요청 안에서 같은 의존성 함수는 FastAPI 기본(`use_cache=True`)으로 한 번만 실행되지만,
 writer 와 read-only 는 다른 함수라 서로 다른 세션입니다.
 
@@ -224,15 +226,15 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 | 예외 | 응답 |
 |---|---|
 | `AppException` 과 하위(`NotFoundException`·`DuplicateException`·`DatabaseException`…) | 예외가 가진 상태 코드·`error_code`. 로그는 4xx 면 WARNING(detail 없음), 5xx 면 ERROR(detail 포함) — service-hardening ADR-008 ④ |
-| `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록. OpenAPI 의 422 도 이 `ErrorResponse` 로 광고한다 — FastAPI 기본 `HTTPValidationError` 는 앱 생성 시 후처리(`main._openapi_with_actual_422`)로 바꾼다(e2e-policy-2 결정 1, `tests/test_openapi_contract.py`) |
+| `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록. OpenAPI 의 422 도 이 `ErrorResponse` 로 광고한다 — FastAPI 기본 `HTTPValidationError` 는 앱 생성 시 후처리(`main._openapi_with_actual_422`)로 바꾼다(integration-e2e ADR-012, `tests/test_openapi_contract.py`) |
 | Starlette `HTTPException` | 해당 코드, `error_code=HTTP_<코드>` |
 | redis `ConnectionError`·`TimeoutError` | 503 `SERVICE_UNAVAILABLE`(fail-closed — 요청은 거부, 내부 정보 없음). 로그는 ERROR `[RedisUnavailable]` + traceback 한 번. 정상 응답으로 끝나 keep-alive 연결이 유지된다 — 아래 `Exception` 핸들러는 Starlette `ServerErrorMiddleware` 에 걸려 응답 뒤 예외를 다시 던지므로(uvicorn 이 traceback 을 한 번 더 남기고 연결을 닫는다) 그리로 보내지 않는다. 명령 오류(`ResponseError` 등)는 500 그대로 (integration-e2e ADR-009) |
-| 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001). `DEBUG=false` 에서는 가장 바깥 사용자 미들웨어 `unhandled_exception_middleware`(`@app.middleware("http")`, 미들웨어 등록의 마지막)가 예외를 받아 같은 처리기로 응답을 끝낸다 — 로그 `[UnhandledException]` 한 번, uvicorn `Exception in ASGI application` 없음, keep-alive 유지. CORS·UserInfo 안에서 난 예외도 받는다. `DEBUG=true` 는 다시 던져 `ServerErrorMiddleware` 까지 간다. 응답 본문 전송 중의 예외는 기존대로(e2e-policy-2 결정 2, `tests/test_unhandled_exception.py`) |
+| 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001). `DEBUG=false` 에서는 가장 바깥 사용자 미들웨어 `unhandled_exception_middleware`(`@app.middleware("http")`, 미들웨어 등록의 마지막)가 예외를 받아 같은 처리기로 응답을 끝낸다 — 로그 `[UnhandledException]` 한 번, uvicorn `Exception in ASGI application` 없음, keep-alive 유지. CORS·UserInfo 안에서 난 예외도 받는다. `DEBUG=true` 는 다시 던져 `ServerErrorMiddleware` 까지 간다. 응답 본문 전송 중의 예외는 기존대로(integration-e2e ADR-016, `tests/test_unhandled_exception.py`) |
 
 `AppException`·`HTTPException` 핸들러는 예외의 `headers` 를 응답에 그대로 싣습니다 — 405 `Allow`(라우팅이 채운다),
 401 `WWW-Authenticate: Bearer`, 429 `Retry-After`(log-redaction ADR-002, `tests/test_exception_headers.py`).
 401 은 예외가 헤더를 싣지 않았어도 두 핸들러가 `WWW-Authenticate: Bearer` 를 보탭니다(`main._with_bearer_challenge`) —
-로그인 실패(`InvalidCredentialsException`)·refresh·logout·틀린 토큰(`InvalidTokenException`)까지 모든 401 이 같다(e2e-policy-2 결정 3).
+로그인 실패(`InvalidCredentialsException`)·refresh·logout·틀린 토큰(`InvalidTokenException`)까지 모든 401 이 같다(integration-e2e ADR-013).
 405 의 `Allow` 는 Starlette 가 **처음 걸린 라우트의 메서드**로 채웁니다 — 같은 경로를 메서드별 함수로 나눈 곳
 (`GET`·`POST /api/v1/blog/posts`)에서는 그 경로의 메서드 전부가 아니라 하나만 실립니다.
 
@@ -323,7 +325,7 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
   replica 가 없으면(단일 DB) 동작 변화가 없습니다. `/ready` 는 그대로 writer·Redis 만 봅니다(integration-e2e ADR-010).
 - **인증 사용자 조회는 primary:** `get_current_user`(`/me`)는 읽기 전용 세션에 `using_writer()` 를 더해 primary 에서 읽습니다 —
   복제 지연 동안 막 가입한 사용자의 유효한 토큰이 401 이 되지 않고, 비활성화·삭제가 즉시 반영됩니다. 쓰기 차단은 그대로이고
-  나머지 읽기 라우팅은 바뀌지 않습니다(e2e-policy-2 결정 5).
+  나머지 읽기 라우팅은 바뀌지 않습니다(integration-e2e ADR-014).
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다(`URL.render_as_string(hide_password=True)`).
@@ -432,7 +434,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 
 ### 6.1 로딩 규칙
 
-- `config.py` 의 10개 `BaseSettings` 는 각각 `env_file=".env"`, `extra="ignore"` 로 자기 필드를 읽습니다.
+- `config.py` 의 9개 `BaseSettings` 는 각각 `env_file=".env"`, `extra="ignore"` 로 자기 필드를 읽습니다.
   우선순위는 **프로세스 환경 변수 → 작업 디렉터리의 `.env` → 코드 기본값**입니다.
 - `get_*_settings()` 는 `@lru_cache` 이고, 파일 끝의 `app_settings = get_app_settings()` 등이 import 시점에
   전역 객체를 만듭니다. 실행 중 `.env` 를 바꿔도 반영되지 않습니다. 테스트에서 캐시만 비워도 이미 가져간
@@ -467,7 +469,7 @@ async def execute(statement, params=None, *, query_name) -> int     # 영향 행
 | `log_settings` | `build_dictconfig()` — `LOG_LEVEL`·`LOG_APP_LEVELS`·`LOG_CONSOLE_LEVEL`·`LOG_SQL_ECHO_ENABLED`, `console_formatter_kwargs()`·`file_formatter_kwargs()`(`LOG_CONSOLE_FORMAT`·`LOG_FILE_FORMAT`·`LOG_DATE_FORMAT`), `console_enabled()`(`LOG_CONSOLE_ENABLED`), `setup.attach_log_files()`(`LOG_FILE_*`·`LOG_DIR`·`LOG_MAX_SIZE_MB`·`LOG_RETENTION_DAYS`) — §9.2 |
 | `middleware_settings` | `UserInfoMiddleware` 활성·제외 규칙 |
 | `redis_settings` | startup ping client(`REDIS_URL`), Celery broker/backend |
-| `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도 |
+| `jwt_settings` | `app/core/security/dependencies.py` 의 provider(`TokenService`·`RefreshTokenStore` 생성), `app/features/auth/dependencies/auth_dependencies.py` 의 레이트 리밋 한도, 관리 화면 로그인 레이트 리밋(`AdminAuthBackend.login`, §12) |
 | `session_settings` | `SESSION_SECRET_KEY` — 관리 세션 ID → Redis 키 HMAC(`new_admin_session_store`, §12). `ADMIN_SESSION_MAX_AGE_SECONDS`·`ADMIN_SESSION_IDLE_SECONDS` — 관리 세션 절대·미사용 만료(§12, 기본값은 README [세션·토큰 만료](../../README.md#세션토큰-만료)). `SESSION_COOKIE_NAME` — 접속 로그의 `session_id` 기록(§10, 인증에 쓰지 않음). |
 
 읽는 코드가 없는 필드는 `tests/core/test_settings_usage.py` 가 막습니다 — 예외 목록은 없습니다.
@@ -1083,7 +1085,7 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
 - **CSRF**(ADR-003·004) — `AdminCsrfMiddleware`(하위 앱, 세션 미들웨어 안쪽)가 `/admin` 의 POST·PUT·PATCH·DELETE 전부
   (로그인·로그아웃 포함)에서 세션의 `csrf_token` 과 요청 토큰(헤더 `X-CSRF-Token` 또는 폼 필드 `csrf_token`)을
   `hmac.compare_digest` 로 대조합니다. 폼 본문은 버퍼링해 읽고 같은 바이트를 sqladmin 에 다시 흘립니다 — 본문 10 MiB 초과는 413(`Content-Length` 로
-  먼저, 없거나 거짓이면 읽는 도중 누적 크기로), 필드 하나 1 MiB 초과·깨진 폼은 400(e2e-policy-2 결정 7, 상수 `MAX_FORM_BODY_BYTES`·`MAX_FORM_FIELD_BYTES`). 실패는
+  먼저, 없거나 거짓이면 읽는 도중 누적 크기로), 필드 하나 1 MiB 초과·깨진 폼은 400(integration-e2e ADR-015, 상수 `MAX_FORM_BODY_BYTES`·`MAX_FORM_FIELD_BYTES`). 실패는
   403 — 로그인 POST 는 로그인 화면(새 토큰), 그 밖은 관리 화면 오류 화면(`AdminAuthBackend.csrf_rejected`). 엔드포인트보다
   먼저라 위조 로그인 POST 는 레이트 리밋·자격 확인에 닿지 않습니다(security-ops-hardening ADR-004 의 검사를 여기로 옮겼다).
   화면은 `app/templates/admin/sqladmin/base.html` 이 원본(`sqladmin_original/base.html`)을 확장해 `<meta name="csrf-token">`
@@ -1165,7 +1167,8 @@ config.set_main_option(
 - revision 체인(단일 head, CI 가 확인): `f4adf0ae24ea`(baseline — 기존 5개 테이블) → `b2f1a9c0d3e4`
   (`users.hashed_password`) → `c3d5e7f9a1b2`(`catalog_products`) → `d4e6f8a0b2c3`(`sales_orders`) →
   `e5f7a9b1c4d5`(`sales_daily_snapshots`) → `a7c9e1f3b5d6`(시각 컬럼 전부 MySQL `DATETIME(6)` + 기존 값
-  KST→UTC 변환, SQLite 는 no-op — service-hardening ADR-010). **배포 전:** 이 리비전은 기존 MySQL 값을 모두 +09:00 으로
+  KST→UTC 변환, SQLite 는 no-op — service-hardening ADR-010) → `c9e1a3b5d7f0`(`users.is_superuser`·작성자 `author_id`
+  소유권 컬럼 — head). **배포 전:** `a7c9e1f3b5d6` 은 기존 MySQL 값을 모두 +09:00 으로
   가정합니다 — 다른 시간대였다면 적용 전에 리비전의 `_LEGACY_OFFSET` 을 바꾸고, 값을 고쳐 쓰므로 적용 전에 백업합니다.
 - `env.py` 는 `app/core/models/types.py` 의 `compare_type`(MySQL `UTCDateTime` 의 소수 초 자릿수 비교 — 기본 비교는
   `DATETIME` 과 `DATETIME(6)` 을 같다고 본다)과 `render_item`(autogenerate 가 앱 import 없는
@@ -1186,7 +1189,7 @@ config.set_main_option(
 | UnitOfWork 없음 — 쓰기 핸들러가 커밋 | FastAPI 0.141 의 yield 의존성 종료 시점 변화에서 커밋 실패가 2xx 로 둔갑했다(§3.2) |
 | `BaseRepository` 를 최소 CRUD 8개로 | 사용처 0건인 고급 메서드 20종을 제거했다. 공통성은 두 기능 이상에서 확인될 때만 올린다(ADR-007) |
 | ORM·Raw Base 독립 | Raw 결과에 ORM 의미가 새지 않게(AR-003) |
-| 로그는 큐 + stdout/stderr, 파일 없음, 앱별 로거 없음 | event loop 비차단(NFR-009), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
+| 로그는 큐 + stdout/stderr, 파일은 기본 꺼짐(`LOG_FILE_ENABLED` 로 프로세스별 파일), 앱별 로거 없음 | event loop 비차단(NFR-009 — 파일 쓰기도 listener 스레드), 수집은 런타임 책임, 새 기능이 로깅 설정을 건드리지 않게 |
 | 표준 라이브러리 우선 · 자원은 소유자가 닫는다 · 실패와 취소를 구분한다 · 테스트 없는 보장은 문서에 쓰지 않는다 | 종료 신뢰성 작업(REQ-010)의 원칙 |
 | Redis(서버 6.2 이상 — `GETDEL`)는 필수 startup 조건이자 `/ready` 판정 대상 | Celery broker 와 같은 서버가 준비됐는지 기동 시점에 드러낸다(REQ-011). 기동 후 Redis 가 끊기면 `/ready` 가 503 으로 트래픽을 뺀다(service-hardening ADR-011). 그동안 Redis 를 쓰는 API 는 503 `SERVICE_UNAVAILABLE`(§3.3, integration-e2e ADR-009) |
 | 관리 화면은 기본 켜짐 + 활성 슈퍼유저 로그인, `ADMIN_DISABLED=true` 로 흔적 없이 끈다 | 개발 우선 템플릿이라 받자마자 DB 를 볼 수 있어야 하고, 배포에서는 로그인이 지킨다. 쓰지 않는 배포는 공격 표면 자체를 없앤다. 세션은 `/admin` 하위 앱 전용이라 API 의 Bearer 계약과 섞이지 않는다(admin-login ADR-001~006 — ADR-045 ③ 의 확인 플래그를 대체) |
@@ -1203,35 +1206,36 @@ config.set_main_option(
 
 ## 16. 변경 이력
 
-현재 동작은 본문과 코드를 따릅니다. 아래는 전환 기록입니다.
+현재 동작은 본문과 코드를 따릅니다. 아래는 전환 기록입니다(최신순).
 
 | 날짜 | 변경 |
 |---|---|
+| 2026-10-21 | 안내서 검수 반영(docs-guide-review): 미들웨어 순서(가장 바깥 = `unhandled_exception_middleware`)·설정 클래스 9종·revision head `c9e1a3b5d7f0`·파일 로그·`/ready` Redis·관리 세션(Redis 서버 세션)·e2e 실행·경로 수 24/39 등 HTML 안내서·DEVELOPMENT·README 를 코드에 맞춤, 결정 인용을 ADR 번호로, 이 표를 최신순으로 |
 | 2026-10-21 | e2e 정책 결정 2차(integration-e2e ADR-012~017): §3.3 OpenAPI 422 = `ErrorResponse`, 모든 401 에 `WWW-Authenticate: Bearer`, 처리기 없는 예외는 가장 바깥 사용자 미들웨어(로그 1번·keep-alive), §4.3 인증 사용자 조회 primary, 관리 화면 CSRF 상한(413 `Content-Length` 선판정·필드 1 MiB 400), 의존성 `aiomysql[rsa]` |
 | 2026-10-20 | 장애 동작 결정(integration-e2e ADR-009~011): §3.3 Redis 연결 오류 → 503 `SERVICE_UNAVAILABLE`(traceback 한 번, keep-alive 유지), §4.3 읽기 전용 세션의 replica 연결 오류 → primary 한 번 재시도 + WARNING, §9.2 프로세스 파일을 설정 로드 직후 실행 프로그램으로 붙여 import 중 줄도 기록 |
 | 2026-10-20 | 전수 통합(integration-e2e): `tests/e2e/`(마커 `e2e`) + `compose.e2e.yaml`(MySQL primary·GTID replica·Redis 7.4, `-p itest-default`) — API 전수 매트릭스·연동 시나리오·관리 화면(Playwright)·장애 주입·운영, 인벤토리 대조·비밀값 grep, CI job `e2e`. Redis 가 필요한 기존 통합 테스트는 `REDIS_HOST`·`REDIS_PORT` 를 명시해야 돈다(W0) |
-| 2026-06-23 | 기능 모델 레지스트리 아키텍처 도입, 이 문서 최초 작성. 곧이어 자동 발견을 제거하고 `app/apps.py` 수동 등록으로 전환 |
-| 2026-07-01 | 표준 FastAPI 배선으로 전환 — `AppRegistry`·`bootstrap.create_app()`·`app/apps.py` 제거, 기능 `__init__.py` 가 `router` 공개 |
-| 2026-08-10 | 외부 검수 후속: mypy 오류 해소, 트랜잭션 경계 회귀 테스트, 모델 import SSOT(`models_registry`), 조회 라우트 읽기 세션 전환, Alembic baseline 복구, FastAPI 0.115 → 0.141(커밋을 핸들러 본문으로 이동), `ORJSONResponse` 제거 |
-| 2026-08-11 | `app/features/` 명칭 확정, SQLAdmin ModelView 를 기능 소유로 이전 + 명시 취합(`app/features/admin.py`), 중앙 목록 순회 → 명시 `include_router`, `scripts/new_app.py` 제거, 문서 드리프트 정정 |
-| 2026-08-13 | ORM/Raw Repository 이원화(REQ-001): `app/core/resources.py`, 큐 기반 로깅, 모델 Mixin, `BaseRepository` 823→185줄, `RawRepositoryBase`, 참조 예제 `catalog`·`reports`, MySQL 8.4 통합 환경, OpenAPI 규칙 테스트 |
-| 2026-08-20 | Raw 쓰기 예제(스냅샷 적재, ADR-010~013), 세션 옛 이름 제거, 게이트 요구 ID·INV-10 검사 |
-| 2026-08-25 | 종료 조립을 `AsyncExitStack` → 평문 `try/finally`(ADR-016) — 이후 취소 안전성 손실이 확인됨 |
-| 2026-08-27 | 종료 신뢰성(REQ-010): 중첩 `async with`(ADR-017), listener 프로세스 소유(ADR-018), `run_server(log_config=…)`(ADR-020), dictConfig 네이티브 큐(ADR-021), 신호 핸들러(ADR-022), lifespan 끝 flush(ADR-023), 실제 uvicorn 통합 테스트, `--mysql-required` |
-| 2026-09-17 | Redis startup 검증과 종료 순서 확장(`_redis`), 가이드를 `docs/guides/` 로 이동, 착수 명세를 `docs/specs/` 로 추적, CI 에 Redis·MySQL job(ADR-024) |
-| 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
-| 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
-| 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
-| 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./workflows/admin-authentication.html) 신설 |
 | 2026-10-19 | 보안·운영(security-ops-hardening): §4.1 `hide_parameters` 회귀 고정, §10 접속 로그 보존(`ACCESS_LOG_RETENTION_DAYS`, beat 매일 03:30 배치 삭제), §12 로그인 폼 CSRF 토큰·`created_at` 날짜 필터(`LocalDateFilter`), §13 beat 등록 구조 |
 | 2026-10-19 | 관리 세션(admin-session-hardening): §12 서명 쿠키 → Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 절대·미사용 만료, 강등·비활성화·삭제 즉시 폐기), 로그인 이후 CSRF(`AdminCsrfMiddleware`·`base.html` meta·스크립트), POST 로그아웃, 기간 필터. 설정 `ADMIN_SESSION_*`, 의존성 `itsdangerous` 제거 |
 | 2026-10-19 | 설정 정리(config-cleanup): 읽는 코드가 없던 `SMTPSettings`·`UploadSettings`·`SESSION_EXPIRE_SECONDS` 삭제(옛 `.env` 줄은 무시), 세션·토큰 만료의 정본을 README 표 하나로, 사용처 계약 테스트 `tests/core/test_settings_usage.py` |
 | 2026-10-19 | 로깅 개편(logging-overhaul): §9.2 모든 실행 경로 같은 형식(`adopt_foreign_handlers`)·필수 필드 검사·헤더를 외부 로거 이름으로도 판별·프로세스별 파일(`attach_log_files`, `DailySizeRotatingFileHandler`), §9.3 `LOG_APP_LEVELS`(`AppLevelFilter`), §9.4.1 DSN 사용자명·설정 비밀값 원문 마스킹. README "로깅" 절이 Django `LOGGING` 대응표 |
 | 2026-10-13 | 접근 수준 선언(access-policy): §11.2 신설 — `Public`·`PublicWrite`·`LoginRequired`·`SuperuserRequired`, 기동 시 기본 거부 `AccessPolicyGuard`(§7.1·§7.3), home·reports 라우터 단위 인가를 뷰 단위 선언으로, §11.1 표 갱신. OpenAPI 불변 |
 | 2026-10-13 | 로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 `RedactingFilter`(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(`REDIS_MIN_VERSION`), §10 접속 로그 원문 저장은 사용자 결정으로 유지 |
+| 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
+| 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./workflows/admin-authentication.html) 신설 |
 | 2026-10-12 | 인가(service-hardening 단계 F2): §11.1 신설 — `Principal`·`require_superuser`·`OwnershipPolicy`, access `su` claim, `users.is_superuser`·`author_id` 리비전, 라우트 권한 표, `scripts/create_superuser.py`. `PasswordHasher`·공용 provider 를 core 로 이동. §10 `user_id` 가 이제 채워진다 |
 | 2026-10-07 | 설정 검사 확장(ADR-045): `.env` 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 `ADMIN=true` 는 `ADMIN_ALLOW_UNAUTHENTICATED` 확인 필요. CI 가 `review_gate --fast` 실행(ADR-044) |
+| 2026-09-17 | Redis startup 검증과 종료 순서 확장(`_redis`), 가이드를 `docs/guides/` 로 이동, 착수 명세를 `docs/specs/` 로 추적, CI 에 Redis·MySQL job(ADR-024) |
+| 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
+| 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-09-17 | 배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 `config` import 실패. `.env.example` 비밀 키 예시를 서로 다른 `change-this-...` 로 |
+| 2026-08-27 | 종료 신뢰성(REQ-010): 중첩 `async with`(ADR-017), listener 프로세스 소유(ADR-018), `run_server(log_config=…)`(ADR-020), dictConfig 네이티브 큐(ADR-021), 신호 핸들러(ADR-022), lifespan 끝 flush(ADR-023), 실제 uvicorn 통합 테스트, `--mysql-required` |
+| 2026-08-25 | 종료 조립을 `AsyncExitStack` → 평문 `try/finally`(ADR-016) — 이후 취소 안전성 손실이 확인됨 |
+| 2026-08-20 | Raw 쓰기 예제(스냅샷 적재, ADR-010~013), 세션 옛 이름 제거, 게이트 요구 ID·INV-10 검사 |
+| 2026-08-13 | ORM/Raw Repository 이원화(REQ-001): `app/core/resources.py`, 큐 기반 로깅, 모델 Mixin, `BaseRepository` 823→185줄, `RawRepositoryBase`, 참조 예제 `catalog`·`reports`, MySQL 8.4 통합 환경, OpenAPI 규칙 테스트 |
+| 2026-08-11 | `app/features/` 명칭 확정, SQLAdmin ModelView 를 기능 소유로 이전 + 명시 취합(`app/features/admin.py`), 중앙 목록 순회 → 명시 `include_router`, `scripts/new_app.py` 제거, 문서 드리프트 정정 |
+| 2026-08-10 | 외부 검수 후속: mypy 오류 해소, 트랜잭션 경계 회귀 테스트, 모델 import SSOT(`models_registry`), 조회 라우트 읽기 세션 전환, Alembic baseline 복구, FastAPI 0.115 → 0.141(커밋을 핸들러 본문으로 이동), `ORJSONResponse` 제거 |
+| 2026-07-01 | 표준 FastAPI 배선으로 전환 — `AppRegistry`·`bootstrap.create_app()`·`app/apps.py` 제거, 기능 `__init__.py` 가 `router` 공개 |
+| 2026-06-23 | 기능 모델 레지스트리 아키텍처 도입, 이 문서 최초 작성. 곧이어 자동 발견을 제거하고 `app/apps.py` 수동 등록으로 전환 |
 
 ---
 
