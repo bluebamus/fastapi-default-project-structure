@@ -379,25 +379,24 @@ def _openapi_with_actual_422() -> dict:
     FastAPI 는 매개변수가 있는 operation 마다 422 를 기본 ``HTTPValidationError`` 로 광고하지만, 실제 응답은
     ``validation_exception_handler`` 가 만드는 ``ErrorResponse`` 다. 생성된 문서를 한 번 고쳐 캐시한다.
     """
-    if app.openapi_schema is None:
-        schema = FastAPI.openapi(app)
-        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
-        schemas.setdefault(
-            "ErrorResponse",
-            ErrorResponse.model_json_schema(ref_template="#/components/schemas/{model}"),
-        )
-        for operations in schema.get("paths", {}).values():
-            for operation in operations.values():
-                documented = operation.get("responses", {}).get("422")
-                if documented is not None:
-                    documented["content"] = {
-                        "application/json": {
-                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
-                        }
-                    }
-        schemas.pop("HTTPValidationError", None)
-        schemas.pop("ValidationError", None)
-    return app.openapi_schema
+    if app.openapi_schema is not None:
+        return app.openapi_schema
+    schema = FastAPI.openapi(app)
+    schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+    schemas.setdefault(
+        "ErrorResponse",
+        ErrorResponse.model_json_schema(ref_template="#/components/schemas/{model}"),
+    )
+    for operations in schema.get("paths", {}).values():
+        for operation in operations.values():
+            documented = operation.get("responses", {}).get("422")
+            if documented is not None:
+                documented["content"] = {
+                    "application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}
+                }
+    schemas.pop("HTTPValidationError", None)
+    schemas.pop("ValidationError", None)
+    return schema
 
 
 app.openapi = _openapi_with_actual_422  # type: ignore[method-assign]
