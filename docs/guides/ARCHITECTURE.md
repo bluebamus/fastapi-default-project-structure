@@ -231,6 +231,8 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 
 `AppException`·`HTTPException` 핸들러는 예외의 `headers` 를 응답에 그대로 싣습니다 — 405 `Allow`(라우팅이 채운다),
 401 `WWW-Authenticate: Bearer`, 429 `Retry-After`(log-redaction ADR-002, `tests/test_exception_headers.py`).
+401 은 예외가 헤더를 싣지 않았어도 두 핸들러가 `WWW-Authenticate: Bearer` 를 보탭니다(`main._with_bearer_challenge`) —
+로그인 실패(`InvalidCredentialsException`)·refresh·logout·틀린 토큰(`InvalidTokenException`)까지 모든 401 이 같다(e2e-policy-2 결정 3).
 405 의 `Allow` 는 Starlette 가 **처음 걸린 라우트의 메서드**로 채웁니다 — 같은 경로를 메서드별 함수로 나눈 곳
 (`GET`·`POST /api/v1/blog/posts`)에서는 그 경로의 메서드 전부가 아니라 하나만 실립니다.
 

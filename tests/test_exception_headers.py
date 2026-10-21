@@ -70,3 +70,46 @@ def test_401_keeps_www_authenticate():
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert response.json() == _error_body(401, "Not authenticated")
+
+
+# =============================================================================
+# 401 은 전부 ``WWW-Authenticate: Bearer`` (e2e-policy-2 결정 3, RFC 9110 §15.5.2)
+# =============================================================================
+def test_rejected_bearer_token_carries_the_challenge():
+    """토큰이 **있지만** 틀린 경우(``InvalidTokenException``)도 토큰이 없을 때와 같은 헤더를 낸다."""
+    response = TestClient(main.app).post(
+        "/api/v1/blog/posts", json={}, headers={"Authorization": "Bearer not-a-jwt"}
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def _unauthorized_app() -> FastAPI:
+    from app.core.exception import UnauthorizedException
+    from app.core.security.tokens import InvalidTokenException
+    from app.features.auth.exceptions import InvalidCredentialsException
+
+    app = FastAPI()
+    main._register_exception_handlers(app)
+    raised = {
+        "credentials": InvalidCredentialsException(),  # 로그인 실패
+        "token": InvalidTokenException(),  # refresh·logout·보호 라우트
+        "plain": UnauthorizedException(),
+        "app-401": AppException(status_code=401, error_code="X"),
+        "http-401": HTTPException(status_code=401, detail="no"),
+    }
+
+    @app.get("/{kind}")
+    async def boom(kind: str) -> None:
+        raise raised[kind]
+
+    return app
+
+
+@pytest.mark.parametrize("kind", ["credentials", "token", "plain", "app-401", "http-401"])
+def test_every_401_carries_www_authenticate_bearer(kind):
+    response = TestClient(_unauthorized_app()).get(f"/{kind}")
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"

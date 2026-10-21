@@ -502,7 +502,7 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 | Reports | `GET /api/v1/reports/sales/daily` · `POST /api/v1/reports/sales/daily/snapshots` | Raw SQL 참조 예제(조회·적재) |
 
 DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은 `{"error_code", "message", "detail"}` 형식입니다 — 422 도 같고, OpenAPI 문서의 422 도 이 형식(`ErrorResponse`)입니다.
-예외가 실은 헤더는 그대로 실립니다 — 405 `Allow`, 401 `WWW-Authenticate: Bearer`, 429 `Retry-After`.
+예외가 실은 헤더는 그대로 실립니다 — 405 `Allow`, 429 `Retry-After`. 401 은 로그인 실패·refresh·logout·보호 라우트 어디서 나든 `WWW-Authenticate: Bearer` 가 붙습니다.
 
 인증 흐름 — `register` → `login`(form) 으로 `{access_token, refresh_token, token_type, expires_in}` 를 받고, API 는
 `Authorization: Bearer <access_token>` 으로 부릅니다. access 가 만료되면 `refresh` 에 refresh 토큰을 보내 **새 쌍**을 받습니다 —

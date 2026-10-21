@@ -5,7 +5,7 @@
 """
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -56,6 +56,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         yield
 
 
+def _with_bearer_challenge(
+    status_code: int, headers: Mapping[str, str] | None
+) -> dict[str, str] | None:
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 보탠다 — 로그인·refresh·logout·보호 라우트 전부 (e2e-policy-2 결정 3).
+
+    RFC 9110 §15.5.2: 401 은 challenge 를 하나 이상 실어야 한다. 예외가 이미 실은 값은 그대로 둔다.
+    """
+    if status_code != 401:
+        return dict(headers) if headers is not None else None
+    return {"WWW-Authenticate": "Bearer", **(headers or {})}
+
+
 def _register_exception_handlers(app: FastAPI) -> None:
     """글로벌 예외 핸들러(4가지 + Redis 연결 오류 503)를 등록합니다."""
 
@@ -88,7 +100,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_response().model_dump(mode="json"),
-            headers=exc.headers,
+            headers=_with_bearer_challenge(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -151,7 +163,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=None,
             ).model_dump(mode="json"),
             # 401 의 ``WWW-Authenticate: Bearer``(OAuth2PasswordBearer)처럼 예외가 실은 헤더를 보존한다.
-            headers=exc.headers,
+            headers=_with_bearer_challenge(exc.status_code, exc.headers),
         )
 
     async def redis_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
