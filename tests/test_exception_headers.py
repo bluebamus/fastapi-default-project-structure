@@ -73,7 +73,7 @@ def test_401_keeps_www_authenticate():
 
 
 # =============================================================================
-# 401 은 전부 ``WWW-Authenticate: Bearer`` (e2e-policy-2 결정 3, RFC 9110 §15.5.2)
+# 401 은 전부 ``WWW-Authenticate: Bearer`` (integration-e2e ADR-013, RFC 9110 §15.5.2)
 # =============================================================================
 def test_rejected_bearer_token_carries_the_challenge():
     """토큰이 **있지만** 틀린 경우(``InvalidTokenException``)도 토큰이 없을 때와 같은 헤더를 낸다."""

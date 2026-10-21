@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 def _with_bearer_challenge(
     status_code: int, headers: Mapping[str, str] | None
 ) -> dict[str, str] | None:
-    """401 이면 ``WWW-Authenticate: Bearer`` 를 보탠다 — 로그인·refresh·logout·보호 라우트 전부 (e2e-policy-2 결정 3).
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 보탠다 — 로그인·refresh·logout·보호 라우트 전부 (integration-e2e ADR-013).
 
     RFC 9110 §15.5.2: 401 은 challenge 를 하나 이상 실어야 한다. 예외가 이미 실은 값은 그대로 둔다.
     """
@@ -225,7 +225,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     async def unhandled_exception_middleware(
         request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받는다 (e2e-policy-2 결정 2).
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받는다 (integration-e2e ADR-016).
 
         위 ``Exception`` 처리기만 두면 Starlette 가 그것을 ``ServerErrorMiddleware`` 에서 부르고 응답 뒤 예외를
         다시 던진다 — uvicorn 이 traceback 을 한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기로
@@ -396,7 +396,7 @@ _add_health_and_docs(app)
 
 
 def _openapi_with_actual_422() -> dict:
-    """422 문서를 실제 본문(``ErrorResponse``)으로 바꾼 OpenAPI (e2e-policy-2 결정 1).
+    """422 문서를 실제 본문(``ErrorResponse``)으로 바꾼 OpenAPI (integration-e2e ADR-012).
 
     FastAPI 는 매개변수가 있는 operation 마다 422 를 기본 ``HTTPValidationError`` 로 광고하지만, 실제 응답은
     ``validation_exception_handler`` 가 만드는 ``ErrorResponse`` 다. 생성된 문서를 한 번 고쳐 캐시한다.
@@ -447,9 +447,10 @@ def run_server(target: str = "main:app") -> None:
     로거를 심어 두는 방법도 동작하지만, 그건 *우리 설정이 uvicorn 것보다 나중에
     적용된다* 는 uvicorn 내부 순서에 기대는 것이라 이 파일만 봐서는 검증할 수 없다.
 
-    ``uvicorn main:app`` CLI 로 띄우면 uvicorn 로그는 uvicorn 기본 포맷으로 나온다.
-    오류·traceback 은 그대로 다 보인다(로그 유실은 listener 를 프로세스가 소유하게 한
-    ADR-018 에서 이미 해결했다) — 달라지는 건 포맷뿐이다.
+    ``uvicorn main:app`` CLI 로 띄워도 uvicorn 로그는 같은 포맷으로 나온다 — 앱 import 때
+    ``configure_logging()`` 이 uvicorn 이 단 콘솔 핸들러를 공유 큐 핸들러로 바꾼다(logging-overhaul L1).
+    오류·traceback 도 그대로 다 보인다(로그 유실은 listener 를 프로세스가 소유하게 한 ADR-018 에서
+    해결했다). 두 경로의 차이는 SIGTERM 때 로그를 비우는 경로뿐이다.
 
     Args:
         target: 기동할 ASGI 앱의 import 문자열. Wave 7 의 subprocess 테스트가 정상

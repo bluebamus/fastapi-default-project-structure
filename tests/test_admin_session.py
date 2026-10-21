@@ -553,7 +553,7 @@ async def test_first_request_without_cookie_is_503_when_the_session_cannot_be_sa
     client, server, path
 ):
     """쿠키 없는 첫 요청은 Redis 를 읽지 않고 들어가 응답 직전에 세션(CSRF 토큰)을 저장한다 — 그 저장이
-    실패해도 다른 Redis 장애와 같은 503 이다(e2e-policy-2 결정 6). 500 이나 끊긴 연결이 아니다."""
+    실패해도 다른 Redis 장애와 같은 503 이다(integration-e2e REQ-008 결정 6). 500 이나 끊긴 연결이 아니다."""
     server.connected = False
     response = await client.get(path, follow_redirects=True)
 

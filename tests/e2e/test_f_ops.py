@@ -316,7 +316,7 @@ def test_size_rotation_and_retention(stack, cover):
     cover("logging", "files", "rotation-retention")
 
 
-# ── 5. CSRF 본문 버퍼링 상한(e2e-policy-2 결정 7) ─────────────────────────
+# ── 5. CSRF 본문 버퍼링 상한(integration-e2e ADR-015) ─────────────────────────
 MIB = 1024 * 1024
 
 

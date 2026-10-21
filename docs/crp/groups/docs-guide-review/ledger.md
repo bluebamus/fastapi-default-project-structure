@@ -39,3 +39,12 @@
 | M3 | 누락 | feature-development #security-tests, server-lifecycle #operations | e2e 실행·CI 세 job·새 API 시 `SPECS`·라우트 인벤토리 갱신 | Fixed | `011efa8` |
 | M4 | 누락 | server-lifecycle #app-assembly | `AccessPolicyGuard`·422 후처리(F16 과 함께) | Fixed | `011efa8` |
 | M5 | 누락 | ARCH §1.1 | e2e 파일(F19 와 함께) | Fixed | `e6cbd3d` |
+
+## 후속 (2026-10-21, 사용자 "고쳐줘")
+
+| ID | 구분 | 위치 | 내용 | 상태 |
+|---|---|---|---|---|
+| R-001 | 코드 docstring | `main.run_server` | CLI 경로도 같은 로그 포맷 — docstring 을 실제 동작으로 | Fixed |
+| R-002 | 코드 주석 | app·tests 18곳 | `e2e-policy-2 결정 N` 인용 → `integration-e2e ADR-012~017`(결정 6 은 REQ-008) | Fixed |
+| N-01 | README | 특징 로깅·운영 체크리스트 5번 | 마스킹 대상에 DSN 사용자명·설정 비밀값 원문 추가 | Fixed |
+| N-02 | README | 관리 화면 보안 문단 | `SESSION_SECRET_KEY` 는 HMAC 키(유출돼도 쿠키 위조 불가, 교체 시 전 세션 무효) — "열쇠" 표현 정정 | Fixed |

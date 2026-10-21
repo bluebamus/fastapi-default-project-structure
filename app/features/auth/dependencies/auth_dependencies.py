@@ -129,7 +129,7 @@ async def get_current_user(
     (service-hardening ADR-017). 회전 저장소(Redis)·해시기가 필요 없으므로 ``AuthService`` 를
     조립하지 않는다 — 조회 하나를 위해 Redis 를 요청 경로에 끌어들이지 않는다.
 
-    세션은 읽기 전용(쓰기 차단, P4-3)이지만 조회는 **primary** 에서 한다(e2e-policy-2 결정 5). replica 에서
+    세션은 읽기 전용(쓰기 차단, P4-3)이지만 조회는 **primary** 에서 한다(integration-e2e ADR-014). replica 에서
     읽으면 복제 지연 동안 막 가입한 사용자의 유효한 토큰이 401 이 되고, 비활성화·삭제가 지연만큼 늦게
     반영된다. 요청마다 1건이라 primary 부하는 작다. 다른 읽기 라우팅은 그대로다.
 
