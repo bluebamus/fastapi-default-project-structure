@@ -227,7 +227,7 @@ DB 커밋과 HTTP 전송은 하나의 원자적 작업이 아닙니다. 커밋 �
 | `RequestValidationError` | 422, `detail` 에 `field`·`message`·`type` 목록. OpenAPI 의 422 도 이 `ErrorResponse` 로 광고한다 — FastAPI 기본 `HTTPValidationError` 는 앱 생성 시 후처리(`main._openapi_with_actual_422`)로 바꾼다(e2e-policy-2 결정 1, `tests/test_openapi_contract.py`) |
 | Starlette `HTTPException` | 해당 코드, `error_code=HTTP_<코드>` |
 | redis `ConnectionError`·`TimeoutError` | 503 `SERVICE_UNAVAILABLE`(fail-closed — 요청은 거부, 내부 정보 없음). 로그는 ERROR `[RedisUnavailable]` + traceback 한 번. 정상 응답으로 끝나 keep-alive 연결이 유지된다 — 아래 `Exception` 핸들러는 Starlette `ServerErrorMiddleware` 에 걸려 응답 뒤 예외를 다시 던지므로(uvicorn 이 traceback 을 한 번 더 남기고 연결을 닫는다) 그리로 보내지 않는다. 명령 오류(`ResponseError` 등)는 500 그대로 (integration-e2e ADR-009) |
-| 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001) |
+| 그 밖의 `Exception` | 500 `INTERNAL_SERVER_ERROR`. **`DEBUG=true` 면 `detail` 에 예외 문자열**이 실린다 — 로그와 같은 `redact()` 로 비밀값을 가린 뒤(log-redaction ADR-001). `DEBUG=false` 에서는 가장 바깥 사용자 미들웨어 `unhandled_exception_middleware`(`@app.middleware("http")`, 미들웨어 등록의 마지막)가 예외를 받아 같은 처리기로 응답을 끝낸다 — 로그 `[UnhandledException]` 한 번, uvicorn `Exception in ASGI application` 없음, keep-alive 유지. CORS·UserInfo 안에서 난 예외도 받는다. `DEBUG=true` 는 다시 던져 `ServerErrorMiddleware` 까지 간다. 응답 본문 전송 중의 예외는 기존대로(e2e-policy-2 결정 2, `tests/test_unhandled_exception.py`) |
 
 `AppException`·`HTTPException` 핸들러는 예외의 `headers` 를 응답에 그대로 싣습니다 — 405 `Allow`(라우팅이 채운다),
 401 `WWW-Authenticate: Bearer`, 429 `Retry-After`(log-redaction ADR-002, `tests/test_exception_headers.py`).

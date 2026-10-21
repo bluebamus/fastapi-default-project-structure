@@ -17,6 +17,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from app.core.db.session import READINESS_TIMEOUT_SECONDS, engine, ping_writer_db
 from app.core.exception import (
@@ -218,6 +220,26 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=detail,
             ).model_dump(mode="json"),
         )
+
+    @app.middleware("http")
+    async def unhandled_exception_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받는다 (e2e-policy-2 결정 2).
+
+        위 ``Exception`` 처리기만 두면 Starlette 가 그것을 ``ServerErrorMiddleware`` 에서 부르고 응답 뒤 예외를
+        다시 던진다 — uvicorn 이 traceback 을 한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기로
+        응답을 끝내면 로그 1번·연결 유지·본문 그대로다. 사용자 미들웨어 중 **가장 바깥**이어야 CORS·UserInfo
+        안에서 난 예외도 받는다 — 이 함수를 등록하는 이 호출이 미들웨어 등록의 마지막이다(테스트로 고정).
+        ``DEBUG=true`` 는 지금처럼 다시 던진다. 응답 본문을 보내는 중의 예외는 ``call_next`` 가 이미 돌아온 뒤라
+        여기 오지 않는다(기존대로 — 시작된 응답은 덧쓸 수 없다).
+        """
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            if app_settings.DEBUG:
+                raise
+            return await general_exception_handler(request, exc)
 
 
 class HealthResponse(BaseModel):
