@@ -321,6 +321,9 @@ ROLLBACK 을 보내므로 중복이었고, 명시 `except Exception` 은 `Cancel
   를 남깁니다(호스트·DSN 없음). 그 세션은 이후 primary 에 고정됩니다. 쿼리 문법·제약 오류는 재시도하지 않고,
   읽기 전용이 아닌 세션(writer·투명 라우팅)도 재시도하지 않습니다 — 쓰기와 한 트랜잭션에 섞일 수 있어서입니다.
   replica 가 없으면(단일 DB) 동작 변화가 없습니다. `/ready` 는 그대로 writer·Redis 만 봅니다(integration-e2e ADR-010).
+- **인증 사용자 조회는 primary:** `get_current_user`(`/me`)는 읽기 전용 세션에 `using_writer()` 를 더해 primary 에서 읽습니다 —
+  복제 지연 동안 막 가입한 사용자의 유효한 토큰이 401 이 되지 않고, 비활성화·삭제가 즉시 반영됩니다. 쓰기 차단은 그대로이고
+  나머지 읽기 라우팅은 바뀌지 않습니다(e2e-policy-2 결정 5).
 - 복제만 켜고 라우터를 끄거나 replica 목록이 비면 `DatabaseSettings` 가 기동 시 거부합니다.
   replica 주소는 `host`·`host:port`·`[IPv6]:port` 만 허용합니다.
 - 기동 로그 `[database] 라우팅 구성: {...}` 에 모드와 비밀번호를 가린 DSN 이 남습니다(`URL.render_as_string(hide_password=True)`).
@@ -972,7 +975,7 @@ get_current_user(principal=get_current_principal, session=get_read_only_db_sessi
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` |
 
 - 비활성 사용자(`is_active=false`)는 로그인·회전·`me` 에서 막힙니다. 비활성화·삭제는 `revoke_user` 로 refresh 를 모두 폐기합니다.
-- `get_current_user` 는 `get_current_principal` 위에서 읽기 세션의 `UserRepository` 로 조회합니다 — Redis 를 쓰지 않습니다.
+- `get_current_user` 는 `get_current_principal` 위에서 읽기 세션(primary 고정, §4.3)의 `UserRepository` 로 조회합니다 — Redis 를 쓰지 않습니다.
 
 ### 11.1 인가 — Principal · 슈퍼유저 · 소유권
 

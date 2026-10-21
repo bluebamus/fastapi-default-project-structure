@@ -60,6 +60,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   읽기 세션의 쓰기 차단은 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하고,
   `DB_ROUTER_ENABLED=true` 면 여기에 replica 라우팅이 더해집니다. replica 에 접속할 수 없으면 읽기 세션의
   읽기는 primary 로 한 번 다시 실행되고 WARNING 이 남습니다([ARCHITECTURE §4.3](./docs/guides/ARCHITECTURE.md#43-읽기쓰기-라우팅)).
+  예외: 토큰의 사용자를 확인하는 조회(`/me` 의 `get_current_user`)는 복제 지연 때 유효한 토큰이 401 이 되지 않도록 primary 에서 읽습니다.
 - **ORM·Raw SQL 두 가지 Repository** — `BaseRepository`(ORM)와 `RawRepositoryBase`(Raw SQL)는
   상속 관계가 없는 평행 계층입니다. 참조 예제: `app/features/catalog/`(ORM),
   `app/features/reports/`(Raw).

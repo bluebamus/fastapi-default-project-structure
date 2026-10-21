@@ -174,6 +174,32 @@ def test_replica_down_and_back(stack, cover):
     cover("fault", "replica", "stop-start")
 
 
+def test_replication_lag_does_not_401_a_valid_token(stack, cover):
+    """인증 사용자 조회는 primary (e2e-policy-2 결정 5).
+
+    replica 의 SQL 스레드를 멈춰 복제 지연을 만든 뒤 가입·로그인한 사용자의 ``/me`` 가 200 이고, primary 에서
+    비활성화하면 replica 가 따라오기 전에도 401 이다. 그동안 다른 읽기(replica 경로)는 그대로 replica 를 본다.
+    """
+    stack.sql("mysql-replica", "STOP REPLICA SQL_THREAD;")
+    try:
+        user = new_user(stack)
+        assert not stack.query("SELECT id FROM users WHERE id=%s", (user["id"],), replica=True)
+        with client(stack, user["access"]) as c:
+            me = c.get("/api/v1/auth/me")
+            assert me.status_code == 200, me.text
+            stack.execute("UPDATE users SET is_active=0 WHERE id=%s", (user["id"],))
+            gone = c.get("/api/v1/auth/me")
+            assert gone.status_code == 401, gone.text
+            assert gone.headers["www-authenticate"] == "Bearer"
+        NOTES["복제 지연 · /me"] = (
+            f"가입 직후 {me.status_code}, primary 비활성화 직후 {gone.status_code}"
+        )
+    finally:
+        stack.sql("mysql-replica", "START REPLICA SQL_THREAD;")
+        stack.wait_replica(timeout=120)
+    cover("fault", "replica", "lag-auth-primary")
+
+
 def test_primary_down_ready_503_health_200_and_clean_500(stack, cover):
     user = new_user(stack)
     stack.stop_service("mysql-primary")

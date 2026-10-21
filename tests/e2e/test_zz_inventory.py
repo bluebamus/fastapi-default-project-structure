@@ -48,7 +48,7 @@ STATIC = {
     ("admin-auth", "admin-disabled"): ("404",),
     ("fault", "redis"): ("stop-start",),
     ("fault", "worker"): ("stop-start",),
-    ("fault", "replica"): ("stop-start",),
+    ("fault", "replica"): ("stop-start", "lag-auth-primary"),
     ("fault", "primary"): ("stop-start",),
     ("ops", "alembic"): ("round-trip",),
     ("ops", "create_superuser"): ("create-promote-reject",),
