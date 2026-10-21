@@ -87,7 +87,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 |---|---|
 | Python | 3.14 (`.python-version`, CI 동일). 최소 3.13 — `TypeVar(default=...)` 사용 |
 | Web | FastAPI 0.141, Uvicorn 0.54 |
-| DB | SQLAlchemy 2.0 async + aiomysql(MySQL), Alembic(pymysql), 테스트는 aiosqlite |
+| DB | SQLAlchemy 2.0 async + aiomysql(MySQL — `aiomysql[rsa]`: MySQL 8.4 `caching_sha2_password` 전체 인증의 RSA 암호화용 cryptography 포함), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
 | Redis | 필수 — **서버 6.2 이상**(`GETDEL` 이 쓰는 명령 중 가장 높은 요구치, 기동 시 `INFO server` 로 확인해 미만이면 기동 거부) · startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) + Celery broker/backend (클라이언트 redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
 | 작업 큐 | Celery 5 (앱 `app/celery/`, 태스크는 기능별 `app/features/<name>/tasks.py` 자동 발견) |
