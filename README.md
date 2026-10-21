@@ -67,7 +67,8 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 - **검증된 기동·종료** — Redis 연결을 startup 에서 확인하고, 종료는 background task → Redis →
   DB 풀 → 로그 큐 flush 순입니다. 정상 종료·startup 실패·취소·`SIGTERM` 모두에서 끝까지 시도하며,
   실제 uvicorn 프로세스를 띄우는 통합 테스트가 이 순서를 고정합니다.
-- **비차단 로깅** — 큐 기반 핸들러 + listener 스레드, 출력은 stdout/stderr 뿐(파일 로그 없음).
+- **비차단 로깅** — 큐 기반 핸들러 + listener 스레드, 출력은 stdout/stderr. 파일은 기본 꺼짐이고
+  `LOG_FILE_ENABLED=true` 면 프로세스별 파일(웹·Celery)을 같은 listener 스레드가 쓴다([파일](#파일)).
   메시지·traceback(체인 예외 포함)·`stack_info` 의 비밀값(DSN 비밀번호·`password=`·`Authorization`)은 출력 전에
   `***` 로 가립니다 — `uvicorn main:app` CLI 와 Celery worker 의 핸들러도 같은 규칙입니다.
 - **인증** — OAuth2 password flow + JWT access/refresh. Argon2id 해시(기존 bcrypt 는 로그인 때 재해시),
@@ -89,7 +90,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | Web | FastAPI 0.141, Uvicorn 0.54 |
 | DB | SQLAlchemy 2.0 async + aiomysql(MySQL — `aiomysql[rsa]`: MySQL 8.4 `caching_sha2_password` 전체 인증의 RSA 암호화용 cryptography 포함), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
-| Redis | 필수 — **서버 6.2 이상**(`GETDEL` 이 쓰는 명령 중 가장 높은 요구치, 기동 시 `INFO server` 로 확인해 미만이면 기동 거부) · startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) + Celery broker/backend (클라이언트 redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
+| Redis | 필수 — **서버 6.2 이상**(`GETDEL` 이 쓰는 명령 중 가장 높은 요구치, 기동 시 `INFO server` 로 확인해 미만이면 기동 거부) · startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) · 관리 세션·관리 로그인 레이트 리밋 + Celery broker/backend (클라이언트 redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
 | 작업 큐 | Celery 5 (앱 `app/celery/`, 태스크는 기능별 `app/features/<name>/tasks.py` 자동 발견) |
 | 인증 | PyJWT, pwdlib[argon2](Argon2id), bcrypt(이전 해시 검증 전용) — 테스트는 fakeredis |
 | 관리·문서 | SQLAdmin(로그인 화면 Bootstrap 5.3 — CDN·SRI, 관리 세션은 Redis 서버 세션), Scalar |
@@ -107,7 +108,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 |---|---|---|---|
 | `DEBUG=false` | 필요 | 없어도 기동 | `/health` 200, `/ready` 503, DB 를 쓰는 API 는 500, `/docs` 404 |
 | `DEBUG=true` (기본값) | 필요 | **필요** | startup 에서 개발용 테이블 생성을 시도하므로 MySQL 이 없으면 기동 실패 |
-| 단위 테스트 | 불필요* | 불필요* | *실제 uvicorn 수명 테스트는 Redis, `-m mysql` 테스트는 MySQL 이 없으면 skip |
+| 단위 테스트 | 불필요* | 불필요* | *실제 uvicorn 수명 테스트는 `REDIS_HOST`·`REDIS_PORT` 를 명시하지 않으면 실패, 명시했는데 닿지 않으면 skip. `-m mysql` 테스트는 MySQL 이 없으면 skip([실행](#실행)) |
 
 Redis 는 끌 수 없는 startup 조건이고 서버는 **6.2 이상**이어야 합니다(`DEBUG` 와 무관). API 문서(`/docs`)는 `DEBUG=true` 에서만
 열리고, `DEBUG=true` 는 MySQL 을 요구합니다 — 첫 실행에서 가장 헷갈리는 조합입니다.
@@ -173,8 +174,8 @@ uv run python main.py                                  # run_server(): SERVER_HO
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준 CLI
 ```
 
-두 명령 모두 정상이며 오류·traceback 도 똑같이 출력됩니다. 차이는 uvicorn 자신의 로그 포맷뿐입니다
-(`python main.py` 는 프로젝트 포맷 + `[app=uvicorn]`). 이유는
+두 명령 모두 정상이며 오류·traceback 도 똑같이 출력되고, uvicorn 로그도 둘 다 프로젝트 포맷 + `[app=uvicorn]` 입니다
+(CLI 는 앱 import 때 uvicorn 핸들러를 공유 큐로 바꾼다). 차이는 `SIGTERM` 때 로그를 비우는 경로뿐입니다. 이유는
 [ARCHITECTURE §9.6](./docs/guides/ARCHITECTURE.md#96-실행-명령에-따른-차이).
 `--lifespan off` 는 Redis 확인과 자원 정리를 통째로 건너뛰므로 쓰지 않습니다.
 
@@ -249,7 +250,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `SERVER_HOST` / `SERVER_PORT` | `0.0.0.0` / `8000` | `python main.py` 전용 바인딩 |
 | `MYSQL_HOST`·`MYSQL_PORT`·`MYSQL_USER`·`MYSQL_PASSWORD`·`MYSQL_DATABASE` | `localhost`·`3306`·`root`·`""`·`fastapi_db` | primary(writer) |
 | `DB_ROUTER_ENABLED` / `DB_REPLICATION_ENABLED` | `false` / `false` | 읽기/쓰기 라우팅, replica 사용(모순 조합은 기동 시 거부) |
-| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·버전 확인(6.2 이상)·`/ready` 대상 + refresh 회전 기록·레이트 리밋 + Celery broker/backend |
+| `REDIS_HOST`·`REDIS_PORT`·`REDIS_DB`·`REDIS_PASSWORD` | `localhost`·`6379`·`0`·없음 | startup ping·버전 확인(6.2 이상)·`/ready` 대상 + refresh 회전 기록·레이트 리밋 + 관리 세션(`admin:sess:*`) + Celery broker/backend |
 | `ACCESS_TOKEN_SECRET_KEY` / `REFRESH_TOKEN_SECRET_KEY` / `SESSION_SECRET_KEY` | `change-this-...` | access·refresh 토큰 서명 키와 관리 세션 키(쿠키의 세션 ID 를 Redis 키 `admin:sess:<HMAC-SHA256>` 로 바꾼다) — 예시 값·32자 미만·access==refresh 면 test 외 **기동 거부**. `SESSION_SECRET_KEY` 를 바꾸면 관리 세션이 모두 끊긴다 |
 | `ADMIN_SESSION_*` · `*_TOKEN_EXPIRE_*` | 아래 표 | [세션·토큰 만료](#세션토큰-만료) |
 | `JWT_ALGORITHM` / `JWT_ISSUER` / `JWT_AUDIENCE` / `JWT_LEEWAY_SECONDS` | `HS256` / 프로젝트 이름 / 프로젝트 이름`-api` / `10` | 알고리즘은 `HS256`·`HS384`·`HS512` 만. `iss`·`aud` 는 검증 시 일치 필수 |
