@@ -69,7 +69,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   실제 uvicorn 프로세스를 띄우는 통합 테스트가 이 순서를 고정합니다.
 - **비차단 로깅** — 큐 기반 핸들러 + listener 스레드, 출력은 stdout/stderr. 파일은 기본 꺼짐이고
   `LOG_FILE_ENABLED=true` 면 프로세스별 파일(웹·Celery)을 같은 listener 스레드가 쓴다([파일](#파일)).
-  메시지·traceback(체인 예외 포함)·`stack_info` 의 비밀값(DSN 비밀번호·`password=`·`Authorization`)은 출력 전에
+  메시지·traceback(체인 예외 포함)·`stack_info` 의 비밀값(DSN 계정의 사용자명·비밀번호, `.env` 의 비밀 설정값 원문, `password=`·`Authorization`)은 출력 전에
   `***` 로 가립니다 — `uvicorn main:app` CLI 와 Celery worker 의 핸들러도 같은 규칙입니다.
 - **인증** — OAuth2 password flow + JWT access/refresh. Argon2id 해시(기존 bcrypt 는 로그인 때 재해시),
   refresh 회전·재사용 탐지·로그아웃(Redis), 로그인·가입 레이트 리밋(429 + `Retry-After`).
@@ -577,7 +577,7 @@ admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않�
 | 3 | 관리 화면을 켰다면 HTTPS 로만 접속하는가(배포 환경 쿠키는 `Secure`), 가능하면 리버스 프록시·VPN 으로 `/admin` 접근 출처도 좁혔는가 | HTTP 로는 로그인이 유지되지 않는다. 출처 제한은 로그인 화면 자체를 숨기는 추가 방어선이다 |
 | 4 | `ACCESS_TOKEN_SECRET_KEY`·`REFRESH_TOKEN_SECRET_KEY`(서로 다른 값)·`SESSION_SECRET_KEY`·`MYSQL_PASSWORD` 를 교체했는가 (쓰는 경우 `REDIS_PASSWORD` 도) | 예시 값·빈 값·32자 미만이면 test 외 모든 `ENV` 에서 기동 거부(`RuntimeError`, 이름만 표시) |
 | 4-1 | `ENV=production`(또는 `staging`)을 **명시**했는가 | 기본값 `development` 로 뜨면 `DEBUG`·`LOG_LEVEL` 검사가 빠지고 관리 세션 쿠키에 `Secure` 가 붙지 않는다. `.env` 없이 환경 변수로 주입하는 배포는 `ENV` 가 없으면 기동 거부 |
-| 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출(DSN 비밀번호·`password=`·`Authorization` 형태만 `***` 로 가려진다), worker 마다 startup 에서 `create_all` 시도 |
+| 5 | `DEBUG=false` 인가 | `/docs`·`/openapi.json` 공개, 500 응답에 예외 문자열 노출(DSN 계정의 사용자명·비밀번호, 비밀 설정값 원문, `password=`·`Authorization` 형태만 `***` 로 가려진다), worker 마다 startup 에서 `create_all` 시도 |
 | 6 | 스키마를 `alembic upgrade head` 로 먼저 적용했는가 | `DEBUG=false` 는 테이블을 만들지 않는다 |
 | 7 | `CORS_ALLOW_ORIGINS` 를 실제 출처로 좁혔는가 | 기본값 `["*"]` |
 | 8 | `LOG_SQL_ECHO_ENABLED=false` 인가 | SQL 바인딩 값(해시·토큰·검색어)이 로그 수집기로 나간다 |
@@ -587,7 +587,7 @@ admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않�
 
 관리 화면의 기본값은 "켜짐 + 슈퍼유저 로그인" 이고 `SERVER_HOST` 기본값은 `0.0.0.0` 이라, 아무것도 설정하지 않은
 배포는 **로그인 화면이 네트워크에 열린** 상태입니다. 로그인한 슈퍼유저는 API 의 [권한](#권한) 표와 별개로 모든 모델을
-고칠 수 있으므로 슈퍼유저 계정·`SESSION_SECRET_KEY` 가 곧 관리 화면의 열쇠입니다. refresh 토큰은 Redis 에 회전 기록이 남아
+고칠 수 있으므로 슈퍼유저 계정이 곧 관리 화면의 열쇠입니다. `SESSION_SECRET_KEY` 는 세션 ID 를 Redis 키로 바꾸는 HMAC 키라 유출돼도 쿠키를 만들 수 없지만, 바꾸면 모든 관리 세션이 끊깁니다. refresh 토큰은 Redis 에 회전 기록이 남아
 로그아웃·재사용 탐지로 폐기되지만, access 토큰은 폐기 목록이 없어 만료(`ACCESS_TOKEN_EXPIRE_MINUTES`, [세션·토큰 만료](#세션토큰-만료))까지
 유효합니다 — 관리 세션은 반대로 Redis 서버 세션이라 로그아웃·강등·비활성화·삭제 즉시 폐기되고, 요청마다 DB 도 확인합니다.
 

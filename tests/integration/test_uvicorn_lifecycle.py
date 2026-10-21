@@ -317,7 +317,7 @@ def test_uvicorn_cli_also_flushes_the_shutdown_tail(server_process):
 
 
 def test_unhandled_exception_keeps_the_connection_and_logs_once(server_process):
-    """버그(처리기 없는 예외) 500 뒤에도 같은 연결로 다음 요청이 된다 (e2e-policy-2 결정 2).
+    """버그(처리기 없는 예외) 500 뒤에도 같은 연결로 다음 요청이 된다 (integration-e2e ADR-016).
 
     전에는 ``ServerErrorMiddleware`` 가 응답 뒤 예외를 다시 던져 uvicorn 이 ``Exception in ASGI application``
     traceback 을 한 번 더 남기고 연결을 닫았다. 지금은 앱 로그 1건, uvicorn 의 그 줄 0건이다.

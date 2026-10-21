@@ -312,7 +312,7 @@ async def test_logout_with_invalid_token_401(client):
 
 
 # =============================================================================
-# 인증 사용자 조회는 primary (e2e-policy-2 결정 5)
+# 인증 사용자 조회는 primary (integration-e2e ADR-014)
 # =============================================================================
 async def test_current_user_is_read_from_primary_not_a_lagging_replica():
     """replica 에 아직 없는(복제 지연) 사용자의 유효한 토큰이 401 이 되지 않는다.

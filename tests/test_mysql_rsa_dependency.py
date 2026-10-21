@@ -1,4 +1,4 @@
-"""MySQL 8.4 ``caching_sha2_password`` 전체 인증의 RSA — ``aiomysql[rsa]`` 로 선언한다 (e2e-policy-2 의존성 통일).
+"""MySQL 8.4 ``caching_sha2_password`` 전체 인증의 RSA — ``aiomysql[rsa]`` 로 선언한다 (integration-e2e ADR-017).
 
 TLS 아닌 연결의 전체 인증은 비밀번호를 서버 공개키(RSA)로 암호화해 보낸다. PyMySQL(aiomysql 의 하부)은 그 RSA 를
 ``cryptography`` 로 하고, 없으면 접속이 "'cryptography' package is required" 로 실패한다. 이 저장소에서

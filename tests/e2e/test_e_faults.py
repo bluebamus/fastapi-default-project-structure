@@ -180,7 +180,7 @@ def test_replica_down_and_back(stack, cover):
 
 
 def test_replication_lag_does_not_401_a_valid_token(stack, cover):
-    """인증 사용자 조회는 primary (e2e-policy-2 결정 5).
+    """인증 사용자 조회는 primary (integration-e2e ADR-014).
 
     replica 의 SQL 스레드를 멈춰 복제 지연을 만든 뒤 가입·로그인한 사용자의 ``/me`` 가 200 이고, primary 에서
     비활성화하면 replica 가 따라오기 전에도 401 이다. 그동안 다른 읽기(replica 경로)는 그대로 replica 를 본다.

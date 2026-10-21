@@ -248,7 +248,7 @@ def _resolve(schema: dict, node: dict) -> dict:
 
 
 def test_422_documents_the_body_the_app_actually_sends(schema):
-    """모든 operation 의 422 문서가 실제 422 본문(``ErrorResponse``)을 설명한다 (e2e-policy-2 결정 1).
+    """모든 operation 의 422 문서가 실제 422 본문(``ErrorResponse``)을 설명한다 (integration-e2e ADR-012).
 
     FastAPI 는 422 를 기본 ``HTTPValidationError``(``{"detail": [...]}``)로 광고하지만, 전역
     ``RequestValidationError`` 핸들러는 ``ErrorResponse``(``error_code``·``message``·``detail``)를 보낸다.

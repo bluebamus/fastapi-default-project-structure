@@ -360,7 +360,7 @@ class AdminCsrfMiddleware:
                 ("application/x-www-form-urlencoded", "multipart/form-data")
             )
         ):
-            # 413 판정은 Content-Length 로 먼저(읽지 않고), 없거나 거짓이면 읽는 도중 누적 크기로 (e2e-policy-2 결정 7).
+            # 413 판정은 Content-Length 로 먼저(읽지 않고), 없거나 거짓이면 읽는 도중 누적 크기로 (integration-e2e ADR-015).
             declared = request.headers.get("content-length", "")
             try:
                 if declared.isdigit() and int(declared) > MAX_FORM_BODY_BYTES:
@@ -380,7 +380,7 @@ class AdminCsrfMiddleware:
                     submitted = value if isinstance(value, str) else None
             except (
                 HTTPException
-            ) as exc:  # 필드 1 MiB 초과·깨진 multipart — 400 (e2e-policy-2 결정 7)
+            ) as exc:  # 필드 1 MiB 초과·깨진 multipart — 400 (integration-e2e ADR-015)
                 await PlainTextResponse(
                     "요청 폼이 올바르지 않거나 필드가 너무 큽니다.", status_code=exc.status_code
                 )(scope, receive, send)
