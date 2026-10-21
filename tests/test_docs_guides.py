@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-GUIDES = sorted((REPO_ROOT / "docs" / "guides").glob("*.md")) + sorted(
-    (REPO_ROOT / "docs" / "guides").glob("*.html")
+GUIDES = sorted((REPO_ROOT / "docs" / "guides").rglob("*.md")) + sorted(
+    (REPO_ROOT / "docs" / "guides").rglob("*.html")
 )
 #: 경로 검사 대상 — 가이드 전부 + 루트 README.
 CHECKED_DOCS = [REPO_ROOT / "README.md", *GUIDES]
@@ -29,6 +29,7 @@ _PATH = re.compile(
     r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\.(?:py|ya?ml|toml|json|ini|cfg|txt|md|html))`"
 )
 _HTML_CODE = re.compile(r"<code>([^<]+)</code>")
+_HTML_HREF = re.compile(r'<a\s+[^>]*href="([^"]+)"')
 _HISTORY = re.compile(r"^(#{1,6}) [^\n]*변경 이력[^\n]*\n.*?(?=^#{1,6} |\Z)", re.M | re.S)
 _RELATIVE_PREFIX = re.compile(r"^(?:\.\.?/)+")
 _IGNORED_DIRS = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
@@ -73,6 +74,19 @@ def test_rule_catches_missing_and_skips_history():
 
 def test_guides_exist():
     assert GUIDES, "docs/guides 가 비어 있다 — 검사가 아무것도 보지 않는다"
+
+
+@pytest.mark.parametrize("guide", [path for path in GUIDES if path.suffix == ".html"], ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_html_guide_links_exist(guide: Path):
+    """모든 HTML 가이드의 저장소 내부 링크가 실제 파일을 가리킨다."""
+    broken = []
+    for href in _HTML_HREF.findall(guide.read_text(encoding="utf-8")):
+        target = href.split("#", 1)[0]
+        if target and not target.startswith(("http://", "https://", "mailto:")):
+            if not (guide.parent / target).resolve().exists():
+                broken.append(href)
+
+    assert not broken, f"깨진 상대 링크: {broken}"
 
 
 @pytest.mark.parametrize("guide", CHECKED_DOCS, ids=lambda p: p.name)

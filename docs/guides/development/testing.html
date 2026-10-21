@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>테스트와 검증</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>테스트와 검증</h1><p>단위·계약·통합·E2E 테스트의 역할과 실행 기준을 설명합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>기본 명령</h2><pre><code>uv run pytest
+uv run pytest -m "not integration and not e2e"
+uv run ruff check .</code></pre><p>정확한 marker와 검사 옵션은 <a data-source="pyproject.toml" href="../../../pyproject.toml"><code>pyproject.toml</code></a> 및 테스트 파일을 기준으로 합니다.</p></section>
+<section><h2>검증 층</h2><div class="mermaid">flowchart TD
+Unit[단위: 서비스·정책·유틸] --&gt; Contract[계약: 라우트·OpenAPI·문서]
+Contract --&gt; Integration[통합: DB·Redis·migration]
+Integration --&gt; E2E[E2E: 실제 프로세스·종료·프록시]
+E2E --&gt; Deploy[배포 승인]</div><details><summary>Mermaid 원문</summary><pre><code>flowchart TD
+Unit[단위: 서비스·정책·유틸] --&gt; Contract[계약: 라우트·OpenAPI·문서]
+Contract --&gt; Integration[통합: DB·Redis·migration]
+Integration --&gt; E2E[E2E: 실제 프로세스·종료·프록시]
+E2E --&gt; Deploy[배포 승인]</code></pre></details></section>
+<section><h2>무엇을 어디서 검증하나</h2><div class="table-wrap"><table><thead><tr><th>대상</th><th>우선 검증</th><th>실패 의미</th></tr></thead><tbody><tr><td>서비스 규칙</td><td>가짜/격리 저장소 단위 테스트</td><td>업무 규칙 회귀</td></tr><tr><td>저장소·migration</td><td>실제 지원 DB 통합 테스트</td><td>SQL·dialect·스키마 불일치</td></tr><tr><td>인증·rate limit</td><td>Redis 포함 통합 테스트</td><td>회전·폐기·원자성 회귀</td></tr><tr><td>라우트·문서</td><td>OpenAPI와 링크 계약 테스트</td><td>외부 계약 또는 문서 드리프트</td></tr><tr><td>종료·keep-alive</td><td>프로세스 E2E</td><td>운영 수명주기 회귀</td></tr></tbody></table></div></section>
+<section><h2>변경 완료 조건</h2><p>성공 경로만이 아니라 잘못된 입력, 미인증, 권한 부족, 없음, 충돌, 저장소 실패를 검증합니다. 외부 서비스가 필요한 테스트를 생략했다면 결과에 명시하고 CI에서 보완합니다.</p></section>
+<section><h2>관련 문서</h2><ul><li><a href="index.html">개발 가이드</a></li><li><a href="../operations/deployment.html">배포 전 점검</a></li><li><a href="../DEVELOPMENT.md">상세 체크리스트</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

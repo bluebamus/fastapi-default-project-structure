@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>배포와 운영</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>배포와 운영</h1><p>설정, migration, readiness, 관측, 정상 종료를 연결한 운영 체크리스트입니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>배포 전 필수 확인</h2><ul><li>운영용 DB·Redis URL과 충분히 긴 서명 키를 비밀 저장소에서 주입합니다.</li><li>debug와 불필요한 관리자 기능을 끄고 CORS·trusted proxy 범위를 실제 인프라에 맞춥니다.</li><li><code>alembic upgrade head</code>를 애플리케이션 rollout과 호환되는 순서로 실행합니다.</li><li>웹 프로세스와 Celery worker/beat의 설정·코드 버전을 맞춥니다.</li><li><code>/health</code>는 생존, <code>/ready</code>는 트래픽 수신 가능 여부에 사용합니다.</li></ul></section>
+<section><h2>배포 흐름</h2><div class="mermaid">flowchart LR
+Build[잠금 파일로 빌드] --&gt; Test[테스트·정적 검사]
+Test --&gt; Migrate[호환 migration]
+Migrate --&gt; Rollout[애플리케이션 rollout]
+Rollout --&gt; Ready{/ready 통과?}
+Ready --&gt;|예| Traffic[트래픽 전환]
+Ready --&gt;|아니오| Halt[전환 중단·원인 조사]
+Traffic --&gt; Observe[로그·지표·오류 관측]</div><details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Build[잠금 파일로 빌드] --&gt; Test[테스트·정적 검사]
+Test --&gt; Migrate[호환 migration]
+Migrate --&gt; Rollout[애플리케이션 rollout]
+Rollout --&gt; Ready{/ready 통과?}
+Ready --&gt;|예| Traffic[트래픽 전환]
+Ready --&gt;|아니오| Halt[전환 중단·원인 조사]
+Traffic --&gt; Observe[로그·지표·오류 관측]</code></pre></details></section>
+<section><h2>운영 관측과 장애 대응</h2><ul><li>request id를 기준으로 접근 로그와 예외 로그를 연결합니다.</li><li>5xx 증가, readiness 실패, DB pool 고갈, Redis 오류, task 적체를 알림 대상으로 둡니다.</li><li>DB/Redis 장애 시 기능별 영향 범위를 확인하고, 인증 저장소 오류를 무조건 허용으로 우회하지 않습니다.</li><li>종료 grace 기간은 실제 가장 긴 정상 요청과 background 정리 시간을 근거로 정합니다.</li></ul></section>
+<section><h2>코드 근거</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="config.py" href="../../../config.py"><code>config.py</code></a></li><li><a data-source="app/core/resources.py" href="../../../app/core/resources.py"><code>app/core/resources.py</code></a></li><li><a data-source="alembic.ini" href="../../../alembic.ini"><code>alembic.ini</code></a></li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="../getting-started/index.html">부팅</a></li><li><a href="../reference/configuration.html">환경 설정</a></li><li><a href="../development/testing.html">테스트</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

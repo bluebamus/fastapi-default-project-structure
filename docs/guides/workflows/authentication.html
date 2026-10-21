@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>API JWT 인증</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>API JWT 인증</h1><p>가입·로그인·보호 API·refresh 회전·로그아웃의 경계와 실패 원칙을 설명합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>인증 모델</h2><p>API는 Bearer JWT를 사용하고, 짧은 수명의 access token과 서버 저장소에서 상태를 관리하는 refresh token을 분리합니다. 관리자 화면의 쿠키 세션은 별도 경계이므로 서로 대체하지 않습니다.</p></section>
+<section><h2>로그인과 보호 API</h2><div class="mermaid">sequenceDiagram
+participant C as Client
+participant A as Auth API
+participant L as Rate limiter
+participant U as User store
+participant T as Token service
+C-&gt;&gt;A: POST /auth/login
+A-&gt;&gt;L: IP/계정 제한 확인
+A-&gt;&gt;U: 사용자·비밀번호 검증
+U--&gt;&gt;A: User
+A-&gt;&gt;T: access + refresh 발급
+T--&gt;&gt;C: token pair
+C-&gt;&gt;A: GET /auth/me + Bearer access
+A-&gt;&gt;T: 서명·만료·타입 검증
+A-&gt;&gt;U: 현재 사용자 재조회
+U--&gt;&gt;C: 사용자 응답</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant C as Client
+participant A as Auth API
+participant L as Rate limiter
+participant U as User store
+participant T as Token service
+C-&gt;&gt;A: POST /auth/login
+A-&gt;&gt;L: IP/계정 제한 확인
+A-&gt;&gt;U: 사용자·비밀번호 검증
+U--&gt;&gt;A: User
+A-&gt;&gt;T: access + refresh 발급
+T--&gt;&gt;C: token pair
+C-&gt;&gt;A: GET /auth/me + Bearer access
+A-&gt;&gt;T: 서명·만료·타입 검증
+A-&gt;&gt;U: 현재 사용자 재조회
+U--&gt;&gt;C: 사용자 응답</code></pre></details></section>
+<section><h2>회전과 로그아웃</h2><div class="mermaid">sequenceDiagram
+participant C as Client
+participant A as Auth API
+participant R as Refresh store
+participant T as Token service
+C-&gt;&gt;A: POST /auth/refresh
+A-&gt;&gt;T: refresh token 검증
+A-&gt;&gt;R: 기존 토큰 원자적 소비
+R--&gt;&gt;A: 유효 / 재사용 감지
+A-&gt;&gt;T: 새 token pair 발급
+T--&gt;&gt;C: 새 token pair
+C-&gt;&gt;A: POST /auth/logout
+A-&gt;&gt;R: token family 폐기
+R--&gt;&gt;C: 로그아웃 완료</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant C as Client
+participant A as Auth API
+participant R as Refresh store
+participant T as Token service
+C-&gt;&gt;A: POST /auth/refresh
+A-&gt;&gt;T: refresh token 검증
+A-&gt;&gt;R: 기존 토큰 원자적 소비
+R--&gt;&gt;A: 유효 / 재사용 감지
+A-&gt;&gt;T: 새 token pair 발급
+T--&gt;&gt;C: 새 token pair
+C-&gt;&gt;A: POST /auth/logout
+A-&gt;&gt;R: token family 폐기
+R--&gt;&gt;C: 로그아웃 완료</code></pre></details></section>
+<section><h2>보안 의도와 확장</h2><ul><li>refresh token 회전은 탈취 토큰의 재사용 창을 줄입니다. 저장소 오류를 성공으로 간주하지 않습니다.</li><li>로그인·가입은 공개 쓰기이지만 rate limit 대상입니다.</li><li>라우트 접근 수준과 리소스 소유권을 분리해 <code>owner/superuser</code> 정책을 재사용합니다.</li><li>외부 IdP를 추가할 때도 내부 <code>Principal</code>과 접근 수준 계약은 유지합니다.</li></ul></section>
+<section><h2>코드 근거</h2><ul><li><a data-source="app/features/auth/api/routers/v1/auth.py" href="../../../app/features/auth/api/routers/v1/auth.py"><code>app/features/auth/api/routers/v1/auth.py</code></a></li><li><a data-source="app/features/auth/dependencies/auth_dependencies.py" href="../../../app/features/auth/dependencies/auth_dependencies.py"><code>app/features/auth/dependencies/auth_dependencies.py</code></a></li><li><a data-source="app/core/security/tokens.py" href="../../../app/core/security/tokens.py"><code>app/core/security/tokens.py</code></a></li><li><a data-source="app/core/security/refresh_store.py" href="../../../app/core/security/refresh_store.py"><code>app/core/security/refresh_store.py</code></a></li><li><a data-source="app/core/security/rate_limit.py" href="../../../app/core/security/rate_limit.py"><code>app/core/security/rate_limit.py</code></a></li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="admin-authentication.html">관리자 세션 인증</a></li><li><a href="../features/auth.html">auth 기능 상세</a></li><li><a href="../reference/api.html">API 목록</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

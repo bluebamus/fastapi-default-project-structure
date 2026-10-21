@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SNS 기능</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>SNS 기능</h1><p>피드형 게시물 CRUD를 독립 기능 경계로 제공합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>목적과 책임</h2><p>피드형 게시물 CRUD를 독립 기능 경계로 제공합니다.</p><div class="callout"><strong>핵심 패턴:</strong> 기능별 수직 슬라이스</div></section>
+<section><h2>API와 권한</h2><div class="table-wrap"><table><thead><tr><th>메서드</th><th>경로</th><th>권한</th><th>용도</th></tr></thead><tbody><tr><td><span class="method">POST</span></td><td><code>/api/v1/sns/posts</code></td><td>login</td><td>SNS 게시물 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/sns/posts</code></td><td>public</td><td>SNS 게시물 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>public</td><td>SNS 게시물 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>owner/superuser</td><td>SNS 게시물 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>owner/superuser</td><td>SNS 게시물 삭제</td></tr></tbody></table></div></section>
+<section><h2>내부 흐름</h2><div class="mermaid">flowchart LR
+Client --&gt; Router[SNS router]
+Router --&gt; Policy[Access policy]
+Router --&gt; Service[SNS service]
+Service --&gt; Repo[Repository]
+Repo --&gt; DB[(Database)]
+DB --&gt; Repo --&gt; Service --&gt; Router</div><details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Client --&gt; Router[SNS router]
+Router --&gt; Policy[Access policy]
+Router --&gt; Service[SNS service]
+Service --&gt; Repo[Repository]
+Repo --&gt; DB[(Database)]
+DB --&gt; Repo --&gt; Service --&gt; Router</code></pre></details><p>라우터는 입력과 HTTP 상태를, 서비스는 업무 규칙과 트랜잭션을, 저장소는 DB 표현을 책임집니다. 권한 검사를 생략한 내부 호출 경로를 만들지 않습니다.</p></section>
+<section><h2>주요 소스</h2><ul><li><a data-source="app/features/sns/api/routers/router.py" href="../../../app/features/sns/api/routers/router.py"><code>app/features/sns/api/routers/router.py</code></a></li><li><a data-source="app/features/sns/api/routers/v1/sns.py" href="../../../app/features/sns/api/routers/v1/sns.py"><code>app/features/sns/api/routers/v1/sns.py</code></a></li><li><a data-source="app/features/sns/services/sns_service.py" href="../../../app/features/sns/services/sns_service.py"><code>app/features/sns/services/sns_service.py</code></a></li><li><a data-source="app/features/sns/repositories/sns_post_repository.py" href="../../../app/features/sns/repositories/sns_post_repository.py"><code>app/features/sns/repositories/sns_post_repository.py</code></a></li><li><a data-source="app/features/sns/models/models.py" href="../../../app/features/sns/models/models.py"><code>app/features/sns/models/models.py</code></a></li><li><a data-source="app/features/sns/schemas/sns_schema.py" href="../../../app/features/sns/schemas/sns_schema.py"><code>app/features/sns/schemas/sns_schema.py</code></a></li><li><a data-source="app/features/sns/dependencies/sns_dependencies.py" href="../../../app/features/sns/dependencies/sns_dependencies.py"><code>app/features/sns/dependencies/sns_dependencies.py</code></a></li><li><a data-source="app/features/sns/admin.py" href="../../../app/features/sns/admin.py"><code>app/features/sns/admin.py</code></a></li><li><a data-source="app/features/sns/exceptions.py" href="../../../app/features/sns/exceptions.py"><code>app/features/sns/exceptions.py</code></a></li><li><a data-source="app/features/sns/tests/conftest.py" href="../../../app/features/sns/tests/conftest.py"><code>app/features/sns/tests/conftest.py</code></a></li><li><a data-source="app/features/sns/tests/test_db.py" href="../../../app/features/sns/tests/test_db.py"><code>app/features/sns/tests/test_db.py</code></a></li><li><a data-source="app/features/sns/tests/test_endpoint.py" href="../../../app/features/sns/tests/test_endpoint.py"><code>app/features/sns/tests/test_endpoint.py</code></a></li></ul></section>
+<section><h2>사용과 확장</h2><p>클라이언트는 API 레퍼런스의 접근 수준을 만족한 뒤 OpenAPI 스키마에 맞춰 호출합니다. 팔로우·피드는 읽기 부하가 커지므로 별도 조회 모델이나 캐시를 검토합니다.</p><ol><li>요구사항과 접근 정책을 먼저 정합니다.</li><li>스키마 → 서비스 규칙 → 저장소 → 라우터 순서로 책임을 배치합니다.</li><li>마이그레이션과 단위·통합 테스트를 같은 변경에 포함합니다.</li><li>API 또는 운영 흐름이 달라지면 이 문서와 전체 API 표를 함께 갱신합니다.</li></ol></section>
+<section><h2>주의점</h2><ul><li>라우터에서 직접 commit하거나 쿼리를 조립하지 않습니다.</li><li>목록 API는 정렬·페이지 경계를 안정적으로 유지합니다.</li><li>삭제·수정은 존재 여부와 권한 실패를 구분하되 내부 정보를 과도하게 노출하지 않습니다.</li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="index.html">기능 목록</a></li><li><a href="../reference/api.html">전체 API</a></li><li><a href="../development/index.html">개발 절차</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>개발 가이드</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>개발 가이드</h1><p>기능을 추가·변경할 때 계층, DI, 트랜잭션, 문서를 함께 완성하는 순서입니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>변경 절차</h2><div class="mermaid">flowchart LR
+Req[요구·권한 정의] --&gt; Schema[스키마/모델]
+Schema --&gt; Repo[저장소]
+Repo --&gt; Service[서비스/트랜잭션]
+Service --&gt; Router[라우터/DI]
+Router --&gt; Wire[앱 조립]
+Wire --&gt; Test[테스트]
+Test --&gt; Docs[문서 갱신]</div><details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Req[요구·권한 정의] --&gt; Schema[스키마/모델]
+Schema --&gt; Repo[저장소]
+Repo --&gt; Service[서비스/트랜잭션]
+Service --&gt; Router[라우터/DI]
+Router --&gt; Wire[앱 조립]
+Wire --&gt; Test[테스트]
+Test --&gt; Docs[문서 갱신]</code></pre></details></section>
+<section><h2>새 기능 추가</h2><ol><li><code>app/features/&lt;name&gt;</code> 안에 기존 기능과 같은 수직 구조를 만듭니다.</li><li>읽기/쓰기 세션, 공개/로그인/관리자 접근 수준, 소유권 규칙을 명시합니다.</li><li>명시적 조립형의 조립 규칙에 맞춰 라우터와 관리자 화면을 등록합니다.</li><li>모델 변경이면 Alembic migration을 만들고 upgrade/downgrade를 검증합니다.</li><li>단위 테스트 후 문서·링크·OpenAPI operation 수를 확인합니다.</li></ol></section>
+<section><h2>코드 리뷰 기준</h2><ul><li>업무 규칙이 라우터나 저장소로 새지 않았는가</li><li>트랜잭션의 commit/rollback 소유자가 하나인가</li><li>인증 실패, 권한 실패, 없음, 충돌이 일관된 오류 계약을 따르는가</li><li>비동기 함수 안에 블로킹 I/O가 추가되지 않았는가</li><li>새 공개 API와 설정이 문서화되었는가</li></ul></section>
+<section><h2>코드 근거</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="app/core/services/services_base.py" href="../../../app/core/services/services_base.py"><code>app/core/services/services_base.py</code></a></li><li><a data-source="app/core/repositories/repository_base.py" href="../../../app/core/repositories/repository_base.py"><code>app/core/repositories/repository_base.py</code></a></li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="../DEVELOPMENT.md">상세 개발 가이드</a></li><li><a href="../workflows/feature-development.html">기능 개발 시각 흐름</a></li><li><a href="testing.html">테스트 전략</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

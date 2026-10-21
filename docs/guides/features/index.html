@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>주요 기능 안내</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>주요 기능 안내</h1><p>8개 기능의 책임과 구현·확장 지점을 각각 분리해 설명합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>기능 경계</h2><p>각 기능은 자체 라우터·서비스·저장소·스키마를 한 디렉터리에 모읍니다. 다른 기능의 저장소를 직접 호출하기보다 공개된 서비스 계약이나 명시적 통합 계층을 사용합니다.</p></section><section class="grid"><article class="card"><h2>접근 로그</h2><p>요청 관측 정보를 비동기 저장하고 운영 조회 API로 노출합니다.</p><a href="home.html">상세 보기 →</a></article><article class="card"><h2>블로그</h2><p>게시물 CRUD와 소유권 기반 쓰기 권한의 기준 구현입니다.</p><a href="blog.html">상세 보기 →</a></article><article class="card"><h2>댓글</h2><p>댓글 CRUD와 작성자 소유권 검사를 제공합니다.</p><a href="reply.html">상세 보기 →</a></article><article class="card"><h2>SNS</h2><p>피드형 게시물 CRUD를 독립 기능 경계로 제공합니다.</p><a href="sns.html">상세 보기 →</a></article><article class="card"><h2>사용자</h2><p>사용자 관리와 자기 정보 접근 규칙을 담당합니다.</p><a href="user.html">상세 보기 →</a></article><article class="card"><h2>API 인증</h2><p>가입, 로그인, 토큰 회전, 로그아웃, 현재 사용자 확인을 담당합니다.</p><a href="auth.html">상세 보기 →</a></article><article class="card"><h2>상품 카탈로그</h2><p>ORM 저장소를 이용한 상품 CRUD 예시입니다.</p><a href="catalog.html">상세 보기 →</a></article><article class="card"><h2>매출 보고서</h2><p>Raw SQL 저장소를 이용해 집계 조회를 수행합니다.</p><a href="reports.html">상세 보기 →</a></article></section>
+<section><h2>선택 기준</h2><div class="mermaid">flowchart TD
+Change[새 요구사항] --&gt; Owns{어느 도메인이 소유?}
+Owns --&gt;|기존 기능| Feature[해당 features/name 확장]
+Owns --&gt;|새 도메인| New[새 feature 패키지]
+Feature --&gt; Shared{둘 이상이 안정적으로 공유?}
+New --&gt; Shared
+Shared --&gt;|아니오| Local[기능 내부 유지]
+Shared --&gt;|예| Core[작은 공통 계약만 core로 이동]</div><details><summary>Mermaid 원문</summary><pre><code>flowchart TD
+Change[새 요구사항] --&gt; Owns{어느 도메인이 소유?}
+Owns --&gt;|기존 기능| Feature[해당 features/name 확장]
+Owns --&gt;|새 도메인| New[새 feature 패키지]
+Feature --&gt; Shared{둘 이상이 안정적으로 공유?}
+New --&gt; Shared
+Shared --&gt;|아니오| Local[기능 내부 유지]
+Shared --&gt;|예| Core[작은 공통 계약만 core로 이동]</code></pre></details></section>
+<section><h2>관련 문서</h2><ul><li><a href="../development/index.html">기능 개발</a></li><li><a href="../reference/api.html">전체 API</a></li><li><a href="../architecture/index.html">아키텍처</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

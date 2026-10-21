@@ -1,9 +1,16 @@
 # Residual Risk — docs-guide-review (잔여 위험 등록부)
 
-> 의도적으로 고치지 않은 것. 고쳐야 하면 새 결함이 아니라 범위 변경 — charter 를 먼저 바꾼다.
+> 코드와 문서를 다시 대조한 결과입니다. 해결된 항목은 재검수 근거와 함께 아래에 보존합니다.
 
-| ID | 항목 | Severity | 왜 비범위인가 | 수용일 | 재평가 조건 |
+## 남은 위험
+
+| ID | 항목 | Severity | 미검증 사유 | 수용일 | 재평가 조건 |
 |---|---|---|---|---|---|
-| R-001 | `main.run_server` docstring 이 "`uvicorn main:app` CLI 면 uvicorn 기본 포맷" 이라고 적는다 — 문서(F15)와 코드 동작(`adopt_foreign_handlers`)은 "같은 포맷" | LOW | 코드 파일은 이 그룹 범위 밖(C-1 — 문서만 고친다) | 2026-10-21 | 다음에 `main.py` 를 고치는 작업에서 docstring 한 줄 |
-| R-002 | 코드 주석·docstring 의 "e2e-policy-2 결정 N" 인용(`main.py` 등)은 그대로다 — 가이드 문서만 ADR 번호로 바꿨다(F27) | LOW | 같은 이유(C-1) | 2026-10-21 | 같은 파일을 고칠 때 |
-| R-003 | 실행해야 아는 동작(503 실응답·keep-alive·종료 예산)·sqladmin 화면별 요청 방식·저장소 밖 통계는 검수 보고의 UNVERIFIED 3건으로 남는다 | LOW | 서버·DB·Redis 실행 금지 | 2026-10-21 | CI e2e 결과로 대조할 때 |
+| R-003 | 실제 프로세스가 필요한 동작(503 실응답·keep-alive·종료 예산), sqladmin 화면별 요청 방식, 저장소 밖 통계는 이번 정적·단위 검수에서 확인하지 않았다 | LOW | 외부 DB·Redis·브라우저를 포함한 운영형 E2E 범위 | 2026-10-21 | CI 또는 실환경 E2E 결과와 대조할 때 |
+
+## 해결된 후속 항목
+
+| ID | 해결 내용 | 근거 |
+|---|---|---|
+| R-001 | `main.run_server` docstring을 실제 `adopt_foreign_handlers` 동작과 일치하도록 수정했다 | `main.py`의 현재 docstring, commit `8cb0438` |
+| R-002 | 코드의 오래된 `e2e-policy-2 결정 N` 인용을 제거·정리했다 | 현재 Python 소스 검색 결과 0건, commit `8cb0438` |

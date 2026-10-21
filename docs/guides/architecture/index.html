@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>아키텍처 — 명시적 조립형</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>아키텍처 — 명시적 조립형</h1><p>기능 경계, 계층 책임, 의존 방향과 조립 방식을 설명합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>설계 의도</h2><p>main.py가 라우터, 미들웨어, 관리자 화면을 명시적으로 조립합니다. 실행 순서가 한 파일에 드러나므로 추적과 디버깅이 단순합니다.</p><p>기능은 <code>app/features/&lt;name&gt;</code> 아래에서 API, 서비스, 저장소, 모델, 스키마를 함께 소유합니다. 공통 인프라만 <code>app/core</code>로 올려 기능 간 결합을 줄입니다.</p></section>
+<section><h2>계층과 의존 방향</h2><div class="mermaid">flowchart LR
+Client --&gt; Router[API Router]
+Router --&gt; Policy[인증·인가 의존성]
+Router --&gt; Service[Application Service]
+Service --&gt; Repo[Repository]
+Repo --&gt; DB[(Database)]
+Service --&gt; Infra[Redis·Task·외부 자원]
+Core[app/core] -. 공통 계약 .-&gt; Router
+Core -. 공통 계약 .-&gt; Service
+Core -. 공통 계약 .-&gt; Repo</div><details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Client --&gt; Router[API Router]
+Router --&gt; Policy[인증·인가 의존성]
+Router --&gt; Service[Application Service]
+Service --&gt; Repo[Repository]
+Repo --&gt; DB[(Database)]
+Service --&gt; Infra[Redis·Task·외부 자원]
+Core[app/core] -. 공통 계약 .-&gt; Router
+Core -. 공통 계약 .-&gt; Service
+Core -. 공통 계약 .-&gt; Repo</code></pre></details><p>라우터는 HTTP 변환과 의존성 선언, 서비스는 유스케이스와 트랜잭션 경계, 저장소는 영속성 세부사항을 담당합니다. 저장소가 HTTP 예외를 만들거나 라우터가 직접 쿼리를 조합하지 않는 것이 핵심입니다.</p></section>
+<section><h2>적용 패턴</h2><div class="table-wrap"><table><thead><tr><th>패턴</th><th>목적</th><th>확장 시 주의</th></tr></thead><tbody><tr><td>수직 슬라이스</td><td>기능별 변경 범위를 한 디렉터리에 모음</td><td>공통 코드로 너무 일찍 승격하지 않음</td></tr><tr><td>Repository</td><td>ORM/Raw SQL을 서비스에서 격리</td><td>트랜잭션 소유권은 서비스와 합의</td></tr><tr><td>Dependency Injection</td><td>세션·서비스·Principal을 요청 단위로 제공</td><td>전역 mutable 상태 금지</td></tr><tr><td>Policy/Principal</td><td>인증과 리소스 소유권 판단 분리</td><td>라우트마다 public/login/superuser 의도를 명시</td></tr><tr><td>Lifespan</td><td>시작·종료 자원 관리 일원화</td><td>import 시점 I/O 금지</td></tr></tbody></table></div></section>
+<section><h2>조립 코드</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="../ARCHITECTURE.md">상세 아키텍처 계약</a></li><li><a href="../workflows/request-processing.html">요청 처리 흐름</a></li><li><a href="../development/index.html">기능 개발 절차</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

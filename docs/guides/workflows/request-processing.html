@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>API 요청 처리</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>API 요청 처리</h1><p>클라이언트 요청이 미들웨어, 인증, 서비스, DB 세션을 지나 응답이 되는 순서입니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>설계 목적</h2><p>HTTP 경계의 관측·보안·오류 변환과 기능 유스케이스를 분리합니다. 공통 미들웨어는 모든 요청에 필요한 정보만 다루고, 권한과 비즈니스 규칙은 의존성과 서비스가 맡습니다.</p></section>
+<section><h2>처리 순서</h2><div class="mermaid">sequenceDiagram
+participant C as Client
+participant M as Middleware
+participant A as Auth dependency
+participant R as Router
+participant S as Service
+participant DB as Routed DB session
+C-&gt;&gt;M: HTTP request
+M-&gt;&gt;M: request id·client IP·access context
+M-&gt;&gt;A: route dependency
+A--&gt;&gt;M: Principal / 401 / 403
+M-&gt;&gt;R: validated request
+R-&gt;&gt;S: use case
+S-&gt;&gt;DB: read or write
+DB--&gt;&gt;S: result / translated error
+S--&gt;&gt;R: response schema
+R--&gt;&gt;M: response
+M--&gt;&gt;C: status + headers + JSON</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant C as Client
+participant M as Middleware
+participant A as Auth dependency
+participant R as Router
+participant S as Service
+participant DB as Routed DB session
+C-&gt;&gt;M: HTTP request
+M-&gt;&gt;M: request id·client IP·access context
+M-&gt;&gt;A: route dependency
+A--&gt;&gt;M: Principal / 401 / 403
+M-&gt;&gt;R: validated request
+R-&gt;&gt;S: use case
+S-&gt;&gt;DB: read or write
+DB--&gt;&gt;S: result / translated error
+S--&gt;&gt;R: response schema
+R--&gt;&gt;M: response
+M--&gt;&gt;C: status + headers + JSON</code></pre></details></section>
+<section><h2>트랜잭션과 오류</h2><ul><li>읽기는 읽기 라우팅 세션을 사용할 수 있고 쓰기 유스케이스는 writer 문맥에서 원자적으로 처리합니다.</li><li>예상 가능한 애플리케이션 오류는 공통 오류 응답으로 변환합니다.</li><li>처리하지 못한 예외의 마지막 방어선은 <code>main.py의 unhandled_exception_middleware</code>입니다. 내부 정보는 응답에 노출하지 않고 서버 로그에 추적 정보를 남깁니다.</li><li>접근 로그 저장 실패가 주 요청의 성공 응답을 뒤집지 않도록 비동기 sink 경계를 둡니다.</li></ul></section>
+<section><h2>코드 근거</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="app/core/security/dependencies.py" href="../../../app/core/security/dependencies.py"><code>app/core/security/dependencies.py</code></a></li><li><a data-source="app/core/exception.py" href="../../../app/core/exception.py"><code>app/core/exception.py</code></a></li><li><a data-source="app/core/db/session.py" href="../../../app/core/db/session.py"><code>app/core/db/session.py</code></a></li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="../reference/api.html">API 목록</a></li><li><a href="authentication.html">JWT 인증 흐름</a></li><li><a href="server-lifecycle.html">서버 수명주기</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

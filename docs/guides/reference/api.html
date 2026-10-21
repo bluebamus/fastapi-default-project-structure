@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>API 레퍼런스</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>API 레퍼런스</h1><p>OpenAPI 조립 코드 기준 39개 operation과 접근 정책을 한눈에 정리합니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>공통 규칙</h2><ul><li>기능 API는 <code>/api/v1</code> 아래에 있으며 health/readiness는 루트 경로입니다.</li><li>입력은 Pydantic 스키마로 검증되고 도메인·저장소 오류는 공통 오류 응답으로 변환됩니다.</li><li><code>public-write</code>는 익명 호출을 허용하지만 rate limit과 입력 검증을 생략한다는 뜻이 아닙니다.</li><li>정확한 요청·응답 스키마는 실행 중 <code>/docs</code> 또는 <code>/openapi.json</code>에서 확인합니다.</li></ul></section>
+<section><h2>전체 엔드포인트 (39개 operation)</h2><div class="table-wrap"><table><thead><tr><th>메서드</th><th>경로</th><th>권한</th><th>용도</th></tr></thead><tbody><tr><td><span class="method">GET</span></td><td><code>/health</code></td><td>public</td><td>프로세스 생존 확인</td></tr><tr><td><span class="method">GET</span></td><td><code>/ready</code></td><td>public</td><td>서비스 준비 상태 확인</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs</code></td><td>superuser</td><td>접근 로그 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/recent</code></td><td>superuser</td><td>최근 접근 로그</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/by-ip/{ip_address}</code></td><td>superuser</td><td>IP별 조회</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/by-user/{user_id}</code></td><td>superuser</td><td>사용자별 조회</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/stats</code></td><td>superuser</td><td>접근 통계</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/blog/posts</code></td><td>login</td><td>게시물 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts</code></td><td>public</td><td>게시물 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>public</td><td>게시물 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>owner/superuser</td><td>게시물 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>owner/superuser</td><td>게시물 삭제</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/reply/replies</code></td><td>login</td><td>댓글 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/reply/replies</code></td><td>public</td><td>댓글 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/reply/replies/{reply_id}</code></td><td>public</td><td>댓글 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/reply/replies/{reply_id}</code></td><td>owner/superuser</td><td>댓글 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/reply/replies/{reply_id}</code></td><td>owner/superuser</td><td>댓글 삭제</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/sns/posts</code></td><td>login</td><td>SNS 게시물 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/sns/posts</code></td><td>public</td><td>SNS 게시물 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>public</td><td>SNS 게시물 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>owner/superuser</td><td>SNS 게시물 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/sns/posts/{post_id}</code></td><td>owner/superuser</td><td>SNS 게시물 삭제</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/user/users</code></td><td>superuser</td><td>사용자 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/user/users</code></td><td>superuser</td><td>사용자 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td>self/superuser</td><td>사용자 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td>self/superuser</td><td>사용자 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td>superuser</td><td>사용자 삭제</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/register</code></td><td>public-write</td><td>회원 가입</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/login</code></td><td>public-write</td><td>액세스·리프레시 토큰 발급</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/refresh</code></td><td>public-write</td><td>리프레시 토큰 회전</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/auth/logout</code></td><td>public-write</td><td>토큰 계열 폐기</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/auth/me</code></td><td>login</td><td>현재 사용자 조회</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/catalog/products</code></td><td>superuser</td><td>상품 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/catalog/products</code></td><td>public</td><td>상품 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/catalog/products/{product_id}</code></td><td>public</td><td>상품 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/catalog/products/{product_id}</code></td><td>superuser</td><td>상품 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/catalog/products/{product_id}</code></td><td>superuser</td><td>상품 삭제</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/reports/sales/daily</code></td><td>superuser</td><td>일 매출 집계 조회</td></tr><tr><td><span class="method">POST</span></td><td><code>/api/v1/reports/sales/daily/snapshots</code></td><td>superuser</td><td>일 매출 스냅샷 생성</td></tr></tbody></table></div></section>
+<section><h2>호출 흐름</h2><div class="mermaid">sequenceDiagram
+participant C as Client
+participant R as Router
+participant P as Principal/Policy
+participant S as Service
+participant D as Repository
+C-&gt;&gt;R: HTTP 요청 + Bearer token
+R-&gt;&gt;P: 인증·인가
+P--&gt;&gt;R: Principal 또는 거부
+R-&gt;&gt;S: 검증된 명령/조회
+S-&gt;&gt;D: 저장·조회
+D--&gt;&gt;S: 결과
+S--&gt;&gt;R: 응답 모델
+R--&gt;&gt;C: JSON + 상태 코드</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant C as Client
+participant R as Router
+participant P as Principal/Policy
+participant S as Service
+participant D as Repository
+C-&gt;&gt;R: HTTP 요청 + Bearer token
+R-&gt;&gt;P: 인증·인가
+P--&gt;&gt;R: Principal 또는 거부
+R-&gt;&gt;S: 검증된 명령/조회
+S-&gt;&gt;D: 저장·조회
+D--&gt;&gt;S: 결과
+S--&gt;&gt;R: 응답 모델
+R--&gt;&gt;C: JSON + 상태 코드</code></pre></details></section>
+<section><h2>코드 근거</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="app/core/security/access.py" href="../../../app/core/security/access.py"><code>app/core/security/access.py</code></a></li></ul></section>
+<section><h2>관련 문서</h2><ul><li><a href="../workflows/request-processing.html">요청 처리</a></li><li><a href="../workflows/authentication.html">API 인증</a></li><li><a href="../features/index.html">기능별 상세</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>

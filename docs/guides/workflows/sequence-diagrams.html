@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>핵심 시퀀스 다이어그램</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>핵심 시퀀스 다이어그램</h1><p>부팅, 쓰기 트랜잭션, 인증·인가의 상호작용을 모아 봅니다.</p></header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<section><h2>서버 시작·종료</h2><div class="mermaid">sequenceDiagram
+participant P as Process
+participant F as FastAPI lifespan
+participant I as Infrastructure
+P-&gt;&gt;F: startup
+F-&gt;&gt;I: DB/Redis/worker resources 준비
+I--&gt;&gt;F: ready
+F--&gt;&gt;P: 요청 수락
+P-&gt;&gt;F: shutdown signal
+F-&gt;&gt;I: drain·close
+I--&gt;&gt;F: closed</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant P as Process
+participant F as FastAPI lifespan
+participant I as Infrastructure
+P-&gt;&gt;F: startup
+F-&gt;&gt;I: DB/Redis/worker resources 준비
+I--&gt;&gt;F: ready
+F--&gt;&gt;P: 요청 수락
+P-&gt;&gt;F: shutdown signal
+F-&gt;&gt;I: drain·close
+I--&gt;&gt;F: closed</code></pre></details></section>
+<section><h2>쓰기 유스케이스</h2><div class="mermaid">sequenceDiagram
+participant R as Router
+participant S as Service
+participant W as writer session
+participant D as Repository
+R-&gt;&gt;S: validated command
+S-&gt;&gt;W: begin writer context
+S-&gt;&gt;D: mutate
+D--&gt;&gt;S: entity
+S-&gt;&gt;W: commit
+W--&gt;&gt;S: committed
+S--&gt;&gt;R: response model
+Note over S,W: 예외 시 rollback 후 공통 오류 변환</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant R as Router
+participant S as Service
+participant W as writer session
+participant D as Repository
+R-&gt;&gt;S: validated command
+S-&gt;&gt;W: begin writer context
+S-&gt;&gt;D: mutate
+D--&gt;&gt;S: entity
+S-&gt;&gt;W: commit
+W--&gt;&gt;S: committed
+S--&gt;&gt;R: response model
+Note over S,W: 예외 시 rollback 후 공통 오류 변환</code></pre></details></section>
+<section><h2>인증·인가</h2><div class="mermaid">flowchart TD
+Req[요청] --&gt; Level{접근 수준}
+Level --&gt;|public| Route[라우트]
+Level --&gt;|login| Token[JWT 검증]
+Level --&gt;|superuser| Admin[JWT + superuser]
+Token --&gt; Owner{소유권 필요?}
+Owner --&gt;|아니오| Route
+Owner --&gt;|예| Policy[owner 또는 superuser]
+Policy --&gt; Route
+Token --&gt;|실패| E401[401]
+Admin --&gt;|실패| E403[403]
+Policy --&gt;|실패| E403</div><details><summary>Mermaid 원문</summary><pre><code>flowchart TD
+Req[요청] --&gt; Level{접근 수준}
+Level --&gt;|public| Route[라우트]
+Level --&gt;|login| Token[JWT 검증]
+Level --&gt;|superuser| Admin[JWT + superuser]
+Token --&gt; Owner{소유권 필요?}
+Owner --&gt;|아니오| Route
+Owner --&gt;|예| Policy[owner 또는 superuser]
+Policy --&gt; Route
+Token --&gt;|실패| E401[401]
+Admin --&gt;|실패| E403[403]
+Policy --&gt;|실패| E403</code></pre></details></section>
+<section><h2>조립 방식</h2><p>main.py가 라우터, 미들웨어, 관리자 화면을 명시적으로 조립합니다. 실행 순서가 한 파일에 드러나므로 추적과 디버깅이 단순합니다.</p><p>실제 진입점은 <a data-source="main.py" href="../../../main.py"><code>main.py</code></a>와 <a data-source="main.py" href="../../../main.py"><code>main.py</code></a>입니다.</p></section>
+<section><h2>관련 문서</h2><ul><li><a href="server-lifecycle.html">서버 수명주기</a></li><li><a href="request-processing.html">요청 처리</a></li><li><a href="authentication.html">JWT 인증</a></li></ul></section>
+</main>
+<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
+<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+</body>
+</html>
