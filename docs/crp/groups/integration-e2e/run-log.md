@@ -112,9 +112,52 @@ Redis 대상은 `REDIS_HOST=127.0.0.1 REDIS_PORT=16391` 로 명시했다. RED �
 | mypy(격리 실행, 1.20.2) | 205 파일 이상 없음 |
 | `review_gate --fast` | 전건 통과(pip-audit 포함) |
 
+### Round 3 — 2026-10-21 · e2e 정책 결정 2차(결정 1~7 + 의존성) · 브랜치 `fix/e2e-policy-2`(main `d5a51f1` 에서)
+
+명세가 곧 계획이라 writing-plans 는 생략했다. 결정마다 해당 여부를 먼저 확인하고, 있으면 TDD(실패 확인 → 구현) ·
+fail-on-revert(수정 전 파일을 넣고 실패 확인 → 복원) · 별도 커밋. 결정 2 는 한때 보류(사용자가 상세 설명 요청)였다가 같은 날
+①안(미들웨어로 직접 받기)으로 확정됐다. 그 사이 감독자가 `docs/guides` 구조 개편 커밋 2개(`8e40676`·`a874a1a`)를 이 브랜치에 더했다.
+
+| 결정 | 판정 | 커밋 | 테스트(수정 전 → 후) |
+|---|---|---|---|
+| 1 OpenAPI 422 = 실제 본문 | 고침(35 operation 이 `HTTPValidationError`) | `01f1d6a`·`6f479c4`(mypy) | `test_422_documents_the_body_the_app_actually_sends` — 수정 전 35건 불일치 → 통과 |
+| 2 처리기 없는 예외 | 고침 | `0fef02e`·`9f41f4b`(W0 가드 수 3→4) | 단위 `test_unhandled_exception_is_answered_once_without_reraising`(엔드포인트·다른 미들웨어 안) — 수정 전 `RuntimeError` 가 TestClient 로 올라옴, `test_catcher_is_the_outermost_user_middleware` — 수정 전 바깥이 `UserInfoMiddleware`, `test_debug_keeps_reraising`(전후 통과 — 유지할 동작). 실제 uvicorn `test_unhandled_exception_keeps_the_connection_and_logs_once` — 수정 전 같은 연결의 두 번째 요청이 `ConnectionAbortedError` |
+| 3 모든 401 Bearer | 고침(로그인 실패·refresh·logout·틀린 토큰에 헤더 없음) | `98c390d` | `test_every_401_carries_www_authenticate_bearer`(5종)·`test_rejected_bearer_token_carries_the_challenge` — 수정 전 6 failed. e2e `test_token_lifecycle_rotation_reuse_and_logout`·`test_login_and_register_rate_limits_recover_after_the_window` — 수정 전 `KeyError: 'www-authenticate'` |
+| 4 CLI 비밀번호 변경 세션 폐기 | 해당 없음 — `create_superuser` 는 기존 사용자를 승격만 하고 비밀번호를 바꾸지 않는다(`test_promotes_existing_user_without_touching_password`) | — | — |
+| 5 인증 사용자 조회 primary | 고침(`get_current_user` 가 replica) | `db1d3fe` | `test_current_user_is_read_from_primary_not_a_lagging_replica` — 수정 전 `InvalidTokenException`. e2e `test_replication_lag_does_not_401_a_valid_token`(replica SQL 스레드 정지) — 수정 전 `/me` 401 |
+| 6 관리 화면 Redis 장애 모두 503 | 이미 충족 — 계약 고정 | `cce4fdd` | `test_first_request_without_cookie_is_503_when_the_session_cannot_be_saved`(2종) — 변이(`started=True` 를 저장 전에) 시 2 failed. e2e `test_redis_down_…` 에 쿠키 없는 첫 요청 503 추가(수정 전 코드에서도 통과 — 이미 충족). 문서에 500 으로 적힌 곳 없음 |
+| 7 CSRF 상한 | 고침(`Content-Length` 미판정, 1 MiB 초과 필드가 CSRF 거부로 둔갑) | `8f3d269` | `test_declared_body_over_10_mib_is_413_before_reading`·`test_single_field_over_1_mib_is_400_not_a_csrf_rejection`(2종) — 수정 전 3 failed(200·403). e2e `test_admin_csrf_body_and_field_caps` — 수정 전 `Content-Length` 413 대기 중 시간 초과 |
+| 의존성 `aiomysql[rsa]` | 고침 | `9774d68` | `test_rsa_comes_from_the_driver_extra_not_a_direct_dependency` — 수정 전 실패, `test_pymysql_can_do_the_rsa_exchange`(전후 통과). lock 은 표기만(`aiomysql[rsa]`·`pymysql[rsa]` optional), `cryptography` 그대로 |
+
+e2e 의 "수정 전" 은 `main.py`·`auth_dependencies.py`·`admin_session.py` 를 main 판으로 바꿔
+`-k "token_lifecycle or rate_limits_recover or replication_lag or body_and_field_caps or redis_down"` 로 돌렸다 — 4 failed, 1 passed(`redis_down` — 결정 6 이미 충족), 끝나고 복원했다.
+
+**결정 2 재현(수정 전, 실제 uvicorn 0.54):** `main._register_exception_handlers` 를 단 앱의 `RuntimeError` 엔드포인트 → 500 본문은 정상,
+그 뒤 `Exception in ASGI application` 1건(traceback 합계 2), 같은 연결의 다음 요청 `ConnectionAbortedError`. 경로: `Exception` 처리기는
+`starlette/applications.py` `build_middleware_stack`(키 `500`·`Exception` → `ServerErrorMiddleware` 의 handler)로 가장 바깥에 놓이고,
+`starlette/middleware/errors.py` 가 응답 뒤 `raise exc` → `uvicorn/protocols/http/httptools_impl.py` `run_asgi` 가 로그를 남기고
+응답이 시작됐으므로 `transport.close()`. 미들웨어 순서(바깥 → 안): `ServerErrorMiddleware` → (이번 수정) `unhandled_exception_middleware` →
+`UserInfoMiddleware` → CORS → `ExceptionMiddleware`(클래스별 처리기 — 다시 던지지 않음) → 라우터.
+
+**측정(L5, 결정 7):** 앱 RSS(기준 대비 현재/최대) — `Content-Length` 10 MiB+1 → 413 +0.1/+0.1 MiB(본문을 읽지 않음),
+chunked 10 MiB+1 KiB → 413 +0.6/+10.9 MiB(누적 판정까지 버퍼링), 필드 1 MiB+1 → 400 +2.0/+10.9 MiB(최대는 앞 단계 값), 400 뒤 같은 연결 200.
+
+Redis 대상은 `REDIS_HOST=127.0.0.1 REDIS_PORT=16391` 로 명시했다. 전체 실행 동안 1초 간격 `netstat` 표본에서 6379 연결 0건.
+
+| 검사 | 결과 |
+|---|---|
+| `pytest -m e2e -rsxX` (Windows, 최종 `9f41f4b`) | **375 passed**, 1369 deselected, skipped·xfailed 0 — 14분 39초. 인벤토리 빈 칸 0, 비밀값 grep 0 |
+| L1 `-m "not mysql"`(스택 Redis 16391, e2e 안의 회귀) | 1350 passed, 394 deselected, skipped 0 |
+| L1 `-m mysql --mysql-required`(스택 primary) | 19 passed, skipped 0 |
+| `ruff check` · `ruff format --check` | 통과 |
+| mypy(격리 실행, 1.20.2) | 205 파일 이상 없음 |
+| `review_gate --fast` | 전건 통과(pip-audit 포함) |
+
 ## 수렴 판정
 
 - Round 1: 실패 0 · skip 0 · xfail 0 · 인벤토리 빈 칸 0 · 비밀값 grep 0. 열린 항목은 결정 필요 3건(F-003·F-004·R-004) — 정책·설계 변경이라 보고만 했다.
   **CONVERGED (결정 대기 3건 제외)**
 - Round 2: 사용자 결정으로 3건 해결(F-003·F-004 Fixed, R-004 해소). 실패 0 · skip 0 · xfail 0 · 인벤토리 빈 칸 0 · 비밀값 grep 0. 열린 항목 0.
+  **CONVERGED**
+- Round 3: 결정 1~7 + 의존성 — 고침 1·2·3·5·7·의존성, 이미 충족 6, 해당 없음 4. 실패 0 · skip 0 · xfail 0 · 인벤토리 빈 칸 0 · 비밀값 grep 0. 열린 항목 0.
   **CONVERGED**

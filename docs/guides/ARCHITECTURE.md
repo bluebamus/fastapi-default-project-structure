@@ -1207,6 +1207,7 @@ config.set_main_option(
 
 | 날짜 | 변경 |
 |---|---|
+| 2026-10-21 | e2e 정책 결정 2차(integration-e2e ADR-012~017): §3.3 OpenAPI 422 = `ErrorResponse`, 모든 401 에 `WWW-Authenticate: Bearer`, 처리기 없는 예외는 가장 바깥 사용자 미들웨어(로그 1번·keep-alive), §4.3 인증 사용자 조회 primary, 관리 화면 CSRF 상한(413 `Content-Length` 선판정·필드 1 MiB 400), 의존성 `aiomysql[rsa]` |
 | 2026-10-20 | 장애 동작 결정(integration-e2e ADR-009~011): §3.3 Redis 연결 오류 → 503 `SERVICE_UNAVAILABLE`(traceback 한 번, keep-alive 유지), §4.3 읽기 전용 세션의 replica 연결 오류 → primary 한 번 재시도 + WARNING, §9.2 프로세스 파일을 설정 로드 직후 실행 프로그램으로 붙여 import 중 줄도 기록 |
 | 2026-10-20 | 전수 통합(integration-e2e): `tests/e2e/`(마커 `e2e`) + `compose.e2e.yaml`(MySQL primary·GTID replica·Redis 7.4, `-p itest-default`) — API 전수 매트릭스·연동 시나리오·관리 화면(Playwright)·장애 주입·운영, 인벤토리 대조·비밀값 grep, CI job `e2e`. Redis 가 필요한 기존 통합 테스트는 `REDIS_HOST`·`REDIS_PORT` 를 명시해야 돈다(W0) |
 | 2026-06-23 | 기능 모델 레지스트리 아키텍처 도입, 이 문서 최초 작성. 곧이어 자동 발견을 제거하고 `app/apps.py` 수동 등록으로 전환 |
