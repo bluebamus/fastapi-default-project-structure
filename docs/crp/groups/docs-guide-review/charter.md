@@ -23,6 +23,6 @@
 
 - [x] 지적 29건(F01~F29)과 누락 5건(M1~M5) 전부 처리 — 고치지 않은 것은 근거와 함께 ledger 에 남긴다
 - [x] `tests/test_docs_guides.py`·`tests/test_docs_secret_examples.py` 통과
-- [x] 링크·앵커 검사 broken 0(README `pwdlib[argon2](Argon2id)` 오탐 1건 제외)
+- [x] 링크·앵커 검사 broken 0(README 기술 스택 표의 pwdlib 항목 오탐 1건 제외)
 - [x] HTML 4편 `html.parser` 태그 불일치 0
 - [x] `git diff --ignore-cr-at-eol --stat` 이 `git diff --stat` 과 같다(EOL 변화 0)
