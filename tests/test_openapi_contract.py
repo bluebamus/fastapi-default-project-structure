@@ -239,3 +239,42 @@ def test_schema_examples_use_the_openapi_31_keyword(schema):
     assert (
         not offenders
     ), f"`example`(단수)을 쓴 스키마: {sorted(offenders)} — `examples`(배열)로 바꿀 것"
+
+
+def _resolve(schema: dict, node: dict) -> dict:
+    while "$ref" in node:
+        node = schema["components"]["schemas"][node["$ref"].rsplit("/", 1)[-1]]
+    return node
+
+
+def test_422_documents_the_body_the_app_actually_sends(schema):
+    """모든 operation 의 422 문서가 실제 422 본문(``ErrorResponse``)을 설명한다 (e2e-policy-2 결정 1).
+
+    FastAPI 는 422 를 기본 ``HTTPValidationError``(``{"detail": [...]}``)로 광고하지만, 전역
+    ``RequestValidationError`` 핸들러는 ``ErrorResponse``(``error_code``·``message``·``detail``)를 보낸다.
+    실제 요청으로 받은 본문을 각 operation 의 422 스키마(필수 키·허용 키)에 대어 본다.
+    """
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    response = TestClient(app).get("/api/v1/blog/posts", params={"skip": "x"})
+    assert response.status_code == 422
+    body = response.json()
+
+    checked = 0
+    offenders = []
+    for method, path, operation in _operations(schema):
+        documented = operation.get("responses", {}).get("422")
+        if documented is None:
+            continue
+        checked += 1
+        target = _resolve(schema, documented["content"]["application/json"]["schema"])
+        properties = set(target.get("properties", {}))
+        required = set(target.get("required", []))
+        if not (required <= set(body) <= properties):
+            offenders.append(f"{_label(method, path)} -> {sorted(properties)}")
+
+    assert checked >= 30, "422 를 문서화한 operation 이 사라졌다 — 검사가 비었다"
+    assert not offenders, f"422 문서가 실제 본문 {sorted(body)} 과 다르다: {offenders}"
+    assert "HTTPValidationError" not in schema["components"]["schemas"]

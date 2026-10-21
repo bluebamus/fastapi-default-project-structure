@@ -360,6 +360,36 @@ logger.info("라우터 include 완료")
 # 헬스체크 + Scalar 문서
 _add_health_and_docs(app)
 
+
+def _openapi_with_actual_422() -> dict:
+    """422 문서를 실제 본문(``ErrorResponse``)으로 바꾼 OpenAPI (e2e-policy-2 결정 1).
+
+    FastAPI 는 매개변수가 있는 operation 마다 422 를 기본 ``HTTPValidationError`` 로 광고하지만, 실제 응답은
+    ``validation_exception_handler`` 가 만드는 ``ErrorResponse`` 다. 생성된 문서를 한 번 고쳐 캐시한다.
+    """
+    if app.openapi_schema is None:
+        schema = FastAPI.openapi(app)
+        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+        schemas.setdefault(
+            "ErrorResponse",
+            ErrorResponse.model_json_schema(ref_template="#/components/schemas/{model}"),
+        )
+        for operations in schema.get("paths", {}).values():
+            for operation in operations.values():
+                documented = operation.get("responses", {}).get("422")
+                if documented is not None:
+                    documented["content"] = {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                        }
+                    }
+        schemas.pop("HTTPValidationError", None)
+        schemas.pop("ValidationError", None)
+    return app.openapi_schema
+
+
+app.openapi = _openapi_with_actual_422  # type: ignore[method-assign]
+
 # SQLAdmin 관리 화면 (ADMIN_DISABLED=true 면 끈다 — admin-login ADR-005).
 # 끈 경우 sqladmin·인증 백엔드·세션 미들웨어를 import 하지도 만들지도 않고, 로그에도 경로를 싣지 않는다.
 if not app_settings.ADMIN_DISABLED:
