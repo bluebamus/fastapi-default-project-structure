@@ -37,7 +37,7 @@ ADMIN_CELLS = (
 STATIC = {
     ("admin-auth", "login"): ("success", "wrong-password", "csrf-missing", "rate-limit"),
     ("admin-auth", "logout"): ("get-405", "post"),
-    ("admin-auth", "csrf"): ("create", "edit", "delete", "logout", "body-cap-413"),
+    ("admin-auth", "csrf"): ("create", "edit", "delete", "logout", "body-cap-413", "field-cap-400"),
     ("admin-auth", "session"): (
         "idle-expiry",
         "absolute-expiry",

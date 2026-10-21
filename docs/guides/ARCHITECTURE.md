@@ -1082,7 +1082,8 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
   실패하면(Redis) 커밋 전이라 변경도 저장되지 않습니다. 자기 자신을 강등하면 현재 세션도 끊깁니다. 매 요청 DB 확인은 이중 방어로 남깁니다.
 - **CSRF**(ADR-003·004) — `AdminCsrfMiddleware`(하위 앱, 세션 미들웨어 안쪽)가 `/admin` 의 POST·PUT·PATCH·DELETE 전부
   (로그인·로그아웃 포함)에서 세션의 `csrf_token` 과 요청 토큰(헤더 `X-CSRF-Token` 또는 폼 필드 `csrf_token`)을
-  `hmac.compare_digest` 로 대조합니다. 폼 본문은 버퍼링(상한 10 MiB)해 읽고 같은 바이트를 sqladmin 에 다시 흘립니다. 실패는
+  `hmac.compare_digest` 로 대조합니다. 폼 본문은 버퍼링해 읽고 같은 바이트를 sqladmin 에 다시 흘립니다 — 본문 10 MiB 초과는 413(`Content-Length` 로
+  먼저, 없거나 거짓이면 읽는 도중 누적 크기로), 필드 하나 1 MiB 초과·깨진 폼은 400(e2e-policy-2 결정 7, 상수 `MAX_FORM_BODY_BYTES`·`MAX_FORM_FIELD_BYTES`). 실패는
   403 — 로그인 POST 는 로그인 화면(새 토큰), 그 밖은 관리 화면 오류 화면(`AdminAuthBackend.csrf_rejected`). 엔드포인트보다
   먼저라 위조 로그인 POST 는 레이트 리밋·자격 확인에 닿지 않습니다(security-ops-hardening ADR-004 의 검사를 여기로 옮겼다).
   화면은 `app/templates/admin/sqladmin/base.html` 이 원본(`sqladmin_original/base.html`)을 확장해 `<meta name="csrf-token">`

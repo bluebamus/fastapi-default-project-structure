@@ -59,6 +59,8 @@ CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # ponytail: 토큰을 찾으려고 버퍼링하는 폼 본문 상한. 관리 화면에 파일 업로드(import 등)를 켜서 넘치면 올린다.
 MAX_FORM_BODY_BYTES = 10 * 1024 * 1024
+# 폼 필드 하나(이름+값, multipart 는 파일 아닌 파트)의 상한 — Starlette 기본값과 같지만 명시해 둔다. 넘으면 400.
+MAX_FORM_FIELD_BYTES = 1024 * 1024
 
 STORE_UNAVAILABLE_MESSAGE = "관리 세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도하세요."
 _UNAVAILABLE = (RedisError, ServiceUnavailableException, OSError)
@@ -358,7 +360,11 @@ class AdminCsrfMiddleware:
                 ("application/x-www-form-urlencoded", "multipart/form-data")
             )
         ):
+            # 413 판정은 Content-Length 로 먼저(읽지 않고), 없거나 거짓이면 읽는 도중 누적 크기로 (e2e-policy-2 결정 7).
+            declared = request.headers.get("content-length", "")
             try:
+                if declared.isdigit() and int(declared) > MAX_FORM_BODY_BYTES:
+                    raise _BodyTooLarge
                 body = await _read_body(receive)
             except _BodyTooLarge:
                 await PlainTextResponse("요청 본문이 너무 큽니다.", status_code=413)(
@@ -369,11 +375,16 @@ class AdminCsrfMiddleware:
             receive = _replay(body, original)  # 다운스트림(sqladmin)이 같은 본문을 다시 읽는다
             request = Request(scope, _replay(body, original))
             try:
-                async with request.form() as form:
+                async with request.form(max_part_size=MAX_FORM_FIELD_BYTES) as form:
                     value = form.get(CSRF_FORM_FIELD)
                     submitted = value if isinstance(value, str) else None
-            except HTTPException:  # 깨진 multipart — 토큰 없음과 같다
-                submitted = None
+            except (
+                HTTPException
+            ) as exc:  # 필드 1 MiB 초과·깨진 multipart — 400 (e2e-policy-2 결정 7)
+                await PlainTextResponse(
+                    "요청 폼이 올바르지 않거나 필드가 너무 큽니다.", status_code=exc.status_code
+                )(scope, receive, send)
+                return
         if not csrf_valid(request, submitted):
             logger.warning(
                 "[admin] CSRF 토큰 불일치: %s %s", scope["method"], request.url.path[:128]

@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import re
 import secrets
+import socket
 import socketserver
 import subprocess  # noqa: S404
+import sys
 import threading
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
 from tests.e2e.stack import DB_NAME, PORTS, ROOT
-from tests.e2e.support import client
+from tests.e2e.support import NOTES, client
 
 pytestmark = pytest.mark.e2e
 
@@ -313,15 +316,93 @@ def test_size_rotation_and_retention(stack, cover):
     cover("logging", "files", "rotation-retention")
 
 
-# ── 5. CSRF 본문 버퍼링 상한(측정) ───────────────────────────────────────
-def test_admin_csrf_form_body_over_10_mib_is_413(stack, cover):
+# ── 5. CSRF 본문 버퍼링 상한(e2e-policy-2 결정 7) ─────────────────────────
+MIB = 1024 * 1024
+
+
+def _app_memory(stack) -> tuple[int, int]:
+    """앱(uvicorn) 프로세스의 (현재 RSS, 최대 RSS) 바이트 — 측정 기록용.
+
+    Windows 의 venv ``python.exe`` 는 실제 인터프리터를 자식으로 띄우는 런처라 ``popen.pid`` 가 아니라 앱 포트를
+    듣는 프로세스를 잰다.
+    """
+    if sys.platform == "win32":
+        netstat = subprocess.run(  # noqa: S603, S607
+            ["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, check=True
+        ).stdout
+        pid = next(
+            line.split()[-1]
+            for line in netstat.splitlines()
+            if f"127.0.0.1:{PORTS['app']} " in line and "LISTENING" in line
+        )
+        out = subprocess.run(  # noqa: S603, S607
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f'$p = Get-Process -Id {pid}; "$($p.WorkingSet64) $($p.PeakWorkingSet64)"',
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        return int(out[0]), int(out[1])
+    status = Path(f"/proc/{stack.app.popen.pid}/status").read_text()
+    kib = dict(re.findall(r"^(VmRSS|VmHWM):\s+(\d+) kB", status, re.MULTILINE))
+    return int(kib["VmRSS"]) * 1024, int(kib["VmHWM"]) * 1024
+
+
+def _mib(value: int) -> str:
+    return f"{value / MIB:+.1f} MiB"
+
+
+def test_admin_csrf_body_and_field_caps(stack, cover):
+    """10 MiB 초과 본문 413(Content-Length 로 먼저, 없으면 읽는 도중), 1 MiB 초과 필드 400 — 500·연결 종료 없음."""
+    form = {"content-type": "application/x-www-form-urlencoded"}
+    asgi_errors = stack.app.output.count("Exception in ASGI application")
     with client(stack) as c:
         c.get("/admin/login")  # 세션에 CSRF 토큰이 생겨야 본문을 읽는다
-        body = "username=a&password=" + "x" * (10 * 1024 * 1024 + 1)
-        resp = c.post(
+        sid = c.cookies.get("admin_session")
+        base_rss, base_peak = _app_memory(stack)
+
+        # ① Content-Length 가 10 MiB 를 넘으면 본문을 한 바이트도 보내기 전에 413 이다.
+        with socket.create_connection(("127.0.0.1", PORTS["app"]), timeout=30) as raw:
+            raw.sendall(
+                (
+                    "POST /admin/login HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                    f"Content-Type: application/x-www-form-urlencoded\r\n"
+                    f"Content-Length: {10 * MIB + 1}\r\nCookie: admin_session={sid}\r\n\r\n"
+                ).encode()
+            )
+            head = raw.recv(4096).decode("latin-1")
+        assert head.startswith("HTTP/1.1 413 "), head
+        declared_rss, declared_peak = _app_memory(stack)
+
+        # ② Content-Length 없이(chunked) 10 MiB 를 넘기면 읽는 도중 누적 크기로 413 이다.
+        def chunks():
+            for _ in range(10):
+                yield b"x" * MIB
+            yield b"x" * 1024
+
+        streamed = c.post("/admin/login", content=chunks(), headers=form)
+        assert streamed.status_code == 413
+        streamed_rss, streamed_peak = _app_memory(stack)
+
+        # ③ 1 MiB 를 넘는 필드 하나는 400 이고 연결은 유지된다(다음 요청을 같은 연결로 보낸다).
+        big = c.post(
             "/admin/login",
-            content=body,
-            headers={"content-type": "application/x-www-form-urlencoded"},
+            content=b"username=a&password=" + b"x" * (MIB + 1),
+            headers=form,
         )
-    assert resp.status_code == 413
+        assert big.status_code == 400, big.text
+        assert big.headers.get("connection", "").lower() != "close"
+        assert c.get("/admin/login").status_code == 200
+        field_rss, field_peak = _app_memory(stack)
+    assert stack.app.output.count("Exception in ASGI application") == asgi_errors
+    NOTES["CSRF 상한 · 앱 RSS(기준 대비 현재/최대)"] = (
+        f"Content-Length 413 {_mib(declared_rss - base_rss)}/{_mib(declared_peak - base_peak)}, "
+        f"chunked 10 MiB+1 KiB 413 {_mib(streamed_rss - base_rss)}/{_mib(streamed_peak - base_peak)}, "
+        f"필드 1 MiB+1 400 {_mib(field_rss - base_rss)}/{_mib(field_peak - base_peak)}"
+    )
     cover("admin-auth", "csrf", "body-cap-413")
+    cover("admin-auth", "csrf", "field-cap-400")

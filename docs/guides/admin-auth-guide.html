@@ -334,8 +334,8 @@ SQLAdmin 의 <code>login_required</code> 가 모든 관리 라우트에서 <code
 <ul>
 <li><strong>토큰</strong> — 세션에 하나(<code>csrf_token</code>, <code>secrets.token_urlsafe(32)</code>). 화면을 그릴 때 템플릿 전역 <code>csrf_token(request)</code> 가 없으면 만든다.
 로그인 때 세션과 함께 회전한다. 세션이 없으면(토큰이 없으면) 본문을 읽지도 않고 거부한다.</li>
-<li><strong>본문 처리</strong> — 헤더가 없고 폼(<code>application/x-www-form-urlencoded</code>·<code>multipart/form-data</code>)이면 본문을 끝까지 버퍼링해(상한 10 MiB, 넘으면 413)
-Starlette 폼 파서로 읽고, 같은 바이트를 다운스트림 <code>receive</code> 로 다시 흘린다 — sqladmin 이 같은 폼을 다시 읽는다.
+<li><strong>본문 처리</strong> — 헤더가 없고 폼(<code>application/x-www-form-urlencoded</code>·<code>multipart/form-data</code>)이면 본문을 끝까지 버퍼링해(상한 10 MiB, 넘으면 413 — <code>Content-Length</code> 로 먼저, 없거나 거짓이면 읽는 도중 누적 크기로)
+Starlette 폼 파서로 읽고(필드 하나 1 MiB 초과·깨진 폼은 400), 같은 바이트를 다운스트림 <code>receive</code> 로 다시 흘린다 — sqladmin 이 같은 폼을 다시 읽는다.
 헤더로만 통일하지 않은 이유: 생성·수정은 브라우저 네이티브 폼 제출이라 헤더를 붙일 수 없다(admin-session-hardening ADR-003).</li>
 <li><strong>덮어쓴 템플릿</strong> — <code>app/templates/admin/sqladmin/base.html</code> 은 원본을 <strong>복사하지 않고</strong> <code>sqladmin_original/base.html</code>(sqladmin 이
 제공하는 접두사 로더)을 확장해 <code>head_meta</code>·<code>tail</code> 두 블록에만 <code>super()</code> + 추가를 한다. sqladmin 을 올릴 때 원본 블록·로그아웃 링크가

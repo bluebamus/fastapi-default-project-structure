@@ -353,3 +353,113 @@ def test_no_view_registers_a_custom_get_action():
         if hasattr(getattr(view, name, None), "_action")
     ]
     assert offenders == []
+
+
+# =============================================================================
+# 버퍼링 상한 — 본문 10 MiB 초과 413, 필드 1 MiB 초과 400 (e2e-policy-2 결정 7)
+# =============================================================================
+MIB = 1024 * 1024
+FORM = "application/x-www-form-urlencoded"
+
+
+async def _through_csrf(body: bytes, content_type: str = FORM, content_length: str | None = "auto"):
+    """``AdminCsrfMiddleware`` 하나에 요청을 흘려 (상태, 다운스트림 도달 여부, receive 호출 수)를 돌려준다.
+
+    본문은 64 KiB 조각으로 나눠 보낸다. ``content_length`` 가 ``None`` 이면 헤더가 없고, 문자열이면 그 값을 싣는다
+    (``"auto"`` 는 실제 길이 — 거짓 값을 실어 누적 판정을 본다).
+    """
+    from starlette.responses import PlainTextResponse
+
+    from app.core.security.admin_session import AdminCsrfMiddleware
+
+    reached: list[bool] = []
+
+    async def downstream(scope, receive, send):
+        reached.append(True)
+        await PlainTextResponse("ok")(scope, receive, send)
+
+    async def reject(request):
+        return PlainTextResponse("csrf", status_code=403)
+
+    chunks = [body[i : i + 65536] for i in range(0, len(body), 65536)] or [b""]
+    messages = [
+        {"type": "http.request", "body": c, "more_body": i < len(chunks) - 1}
+        for i, c in enumerate(chunks)
+    ]
+    reads = 0
+
+    async def receive():
+        nonlocal reads
+        reads += 1
+        return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+    sent: list[dict] = []
+
+    async def send(message):
+        sent.append(message)
+
+    headers = [(b"content-type", content_type.encode())]
+    if content_length is not None:
+        value = str(len(body)) if content_length == "auto" else content_length
+        headers.append((b"content-length", value.encode()))
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/admin/login",
+        "query_string": b"",
+        "headers": headers,
+        "session": {"csrf_token": "tok"},
+        "app": object(),  # 실제 요청처럼 — Starlette 가 폼 오류를 HTTPException(400)으로 낸다
+    }
+    await AdminCsrfMiddleware(downstream, reject=reject)(scope, receive, send)
+    return sent[0]["status"], bool(reached), reads
+
+
+async def test_declared_body_over_10_mib_is_413_before_reading():
+    status, reached, reads = await _through_csrf(
+        b"csrf_token=tok", content_length=str(10 * MIB + 1)
+    )
+    assert (status, reached, reads) == (413, False, 0)
+
+
+@pytest.mark.parametrize("content_length", [None, "16"], ids=["no-header", "understated"])
+async def test_body_over_10_mib_without_an_honest_length_is_413_while_reading(content_length):
+    body = b"csrf_token=tok&pad=" + b"x" * (10 * MIB)
+    status, reached, _ = await _through_csrf(body, content_length=content_length)
+    assert (status, reached) == (413, False)
+
+
+async def test_body_of_exactly_10_mib_is_not_capped():
+    field = b"&f=" + b"x" * (MIB - 16)
+    body = (b"csrf_token=tok" + field * 11)[: 10 * MIB]
+    status, reached, _ = await _through_csrf(body)
+    assert (status, reached) == (200, True)
+
+
+def _multipart(fields: dict[str, bytes]) -> tuple[bytes, str]:
+    boundary = "csrfboundary"
+    parts = [
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'.encode()
+        + value
+        + b"\r\n"
+        for name, value in fields.items()
+    ]
+    body = b"".join(parts) + f"--{boundary}--\r\n".encode()
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+@pytest.mark.parametrize("kind", ["urlencoded", "multipart"])
+async def test_single_field_over_1_mib_is_400_not_a_csrf_rejection(kind):
+    big = b"x" * (MIB + 1)
+    if kind == "urlencoded":
+        body, content_type = b"csrf_token=tok&big=" + big, FORM
+    else:
+        body, content_type = _multipart({"csrf_token": b"tok", "big": big})
+    status, reached, _ = await _through_csrf(body, content_type)
+    assert (status, reached) == (400, False)
+
+
+async def test_field_of_exactly_1_mib_passes():
+    # Starlette 는 이름과 값을 합쳐 센다 — 이름 3바이트 + 값 = 정확히 1 MiB
+    status, reached, _ = await _through_csrf(b"csrf_token=tok&big=" + b"x" * (MIB - 3))
+    assert (status, reached) == (200, True)
