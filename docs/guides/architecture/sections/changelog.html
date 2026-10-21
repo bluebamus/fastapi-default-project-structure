@@ -1,0 +1,113 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>16. 변경 이력</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>16. 변경 이력</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="16">16. 변경 이력</h2>
+<p>현재 동작은 본문과 코드를 따릅니다. 아래는 전환 기록입니다.</p>
+<table>
+<thead>
+<tr>
+<th>날짜</th>
+<th>변경</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2026-10-20</td>
+<td>장애 동작 결정(integration-e2e ADR-009~011): §3.3 Redis 연결 오류 → 503 <code>SERVICE_UNAVAILABLE</code>(traceback 한 번, keep-alive 유지), §4.3 읽기 전용 세션의 replica 연결 오류 → primary 한 번 재시도 + WARNING, §9.2 프로세스 파일을 설정 로드 직후 실행 프로그램으로 붙여 import 중 줄도 기록</td>
+</tr>
+<tr>
+<td>2026-10-20</td>
+<td>전수 통합(integration-e2e): <code>tests/e2e/</code>(마커 <code>e2e</code>) + <code>compose.e2e.yaml</code>(MySQL primary·GTID replica·Redis 7.4, <code>-p itest-default</code>) — API 전수 매트릭스·연동 시나리오·관리 화면(Playwright)·장애 주입·운영, 인벤토리 대조·비밀값 grep, CI job <code>e2e</code>. Redis 가 필요한 기존 통합 테스트는 <code>REDIS_HOST</code>·<code>REDIS_PORT</code> 를 명시해야 돈다(W0)</td>
+</tr>
+<tr>
+<td>2026-06-23</td>
+<td>기능 모델 레지스트리 아키텍처 도입, 이 문서 최초 작성. 곧이어 자동 발견을 제거하고 <code>app/apps.py</code> 수동 등록으로 전환</td>
+</tr>
+<tr>
+<td>2026-07-01</td>
+<td>표준 FastAPI 배선으로 전환 — <code>AppRegistry</code>·<code>bootstrap.create_app()</code>·<code>app/apps.py</code> 제거, 기능 <code>__init__.py</code> 가 <code>router</code> 공개</td>
+</tr>
+<tr>
+<td>2026-08-10</td>
+<td>외부 검수 후속: mypy 오류 해소, 트랜잭션 경계 회귀 테스트, 모델 import SSOT(<code>models_registry</code>), 조회 라우트 읽기 세션 전환, Alembic baseline 복구, FastAPI 0.115 → 0.141(커밋을 핸들러 본문으로 이동), <code>ORJSONResponse</code> 제거</td>
+</tr>
+<tr>
+<td>2026-08-11</td>
+<td><code>app/features/</code> 명칭 확정, SQLAdmin ModelView 를 기능 소유로 이전 + 명시 취합(<code>app/features/admin.py</code>), 중앙 목록 순회 → 명시 <code>include_router</code>, <code>scripts/new_app.py</code> 제거, 문서 드리프트 정정</td>
+</tr>
+<tr>
+<td>2026-08-13</td>
+<td>ORM/Raw Repository 이원화(REQ-001): <code>app/core/resources.py</code>, 큐 기반 로깅, 모델 Mixin, <code>BaseRepository</code> 823→185줄, <code>RawRepositoryBase</code>, 참조 예제 <code>catalog</code>·<code>reports</code>, MySQL 8.4 통합 환경, OpenAPI 규칙 테스트</td>
+</tr>
+<tr>
+<td>2026-08-20</td>
+<td>Raw 쓰기 예제(스냅샷 적재, ADR-010~013), 세션 옛 이름 제거, 게이트 요구 ID·INV-10 검사</td>
+</tr>
+<tr>
+<td>2026-08-25</td>
+<td>종료 조립을 <code>AsyncExitStack</code> → 평문 <code>try/finally</code>(ADR-016) — 이후 취소 안전성 손실이 확인됨</td>
+</tr>
+<tr>
+<td>2026-08-27</td>
+<td>종료 신뢰성(REQ-010): 중첩 <code>async with</code>(ADR-017), listener 프로세스 소유(ADR-018), <code>run_server(log_config=…)</code>(ADR-020), dictConfig 네이티브 큐(ADR-021), 신호 핸들러(ADR-022), lifespan 끝 flush(ADR-023), 실제 uvicorn 통합 테스트, <code>--mysql-required</code></td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td>Redis startup 검증과 종료 순서 확장(<code>_redis</code>), 가이드를 <code>docs/guides/</code> 로 이동, 착수 명세를 <code>docs/specs/</code> 로 추적, CI 에 Redis·MySQL job(ADR-024)</td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td>문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT</td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td>문서 일관성(ADR-026): HTML 안내서 두 편(<code>server-lifecycle-guide.html</code>·<code>feature-development-guide.html</code>)과 명세 <code>workflow-guide.md</code> 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. <code>API_DESCRIPTION</code>·미사용 설정 설명·<code>requires-python&gt;=3.13</code>(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(<code>tests/test_write_dto_before_commit.py</code>)</td>
+</tr>
+<tr>
+<td>2026-10-12</td>
+<td>인증 코어(service-hardening 단계 F1): <code>app/core/security/</code>(토큰·회전 저장소·레이트 리밋), Argon2 <code>PasswordHasher</code> + bcrypt 점진 이전, <code>POST /auth/logout</code>, 429 <code>Retry-After</code>. <code>app/utils/authenticator/</code> 제거</td>
+</tr>
+<tr>
+<td>2026-10-12</td>
+<td>관리 화면 로그인(admin-login): §12 — <code>AdminAuthBackend</code>(슈퍼유저·요청마다 DB 확인·레이트 리밋)·<code>admin_session</code> 쿠키·Bootstrap 로그인 템플릿, <code>ADMIN</code>→<code>ADMIN_DISABLED</code>(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, <code>session_settings</code> 소비처, 의존성 <code>itsdangerous</code>. <a href="../../workflows/admin-authentication.html">관리 화면 인증 안내서</a> 신설</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td>보안·운영(security-ops-hardening): §4.1 <code>hide_parameters</code> 회귀 고정, §10 접속 로그 보존(<code>ACCESS_LOG_RETENTION_DAYS</code>, beat 매일 03:30 배치 삭제), §12 로그인 폼 CSRF 토큰·<code>created_at</code> 날짜 필터(<code>LocalDateFilter</code>), §13 beat 등록 구조</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td>관리 세션(admin-session-hardening): §12 서명 쿠키 → Redis 서버 세션(<code>AdminSessionStore</code>·<code>RedisSessionMiddleware</code>, 절대·미사용 만료, 강등·비활성화·삭제 즉시 폐기), 로그인 이후 CSRF(<code>AdminCsrfMiddleware</code>·<code>base.html</code> meta·스크립트), POST 로그아웃, 기간 필터. 설정 <code>ADMIN_SESSION_*</code>, 의존성 <code>itsdangerous</code> 제거</td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td>설정 정리(config-cleanup): 읽는 코드가 없던 <code>SMTPSettings</code>·<code>UploadSettings</code>·<code>SESSION_EXPIRE_SECONDS</code> 삭제(옛 <code>.env</code> 줄은 무시), 세션·토큰 만료의 정본을 README 표 하나로, 사용처 계약 테스트 <code>tests/core/test_settings_usage.py</code></td>
+</tr>
+<tr>
+<td>2026-10-19</td>
+<td>로깅 개편(logging-overhaul): §9.2 모든 실행 경로 같은 형식(<code>adopt_foreign_handlers</code>)·필수 필드 검사·헤더를 외부 로거 이름으로도 판별·프로세스별 파일(<code>attach_log_files</code>, <code>DailySizeRotatingFileHandler</code>), §9.3 <code>LOG_APP_LEVELS</code>(<code>AppLevelFilter</code>), §9.4.1 DSN 사용자명·설정 비밀값 원문 마스킹. README "로깅" 절이 Django <code>LOGGING</code> 대응표</td>
+</tr>
+<tr>
+<td>2026-10-13</td>
+<td>접근 수준 선언(access-policy): §11.2 신설 — <code>Public</code>·<code>PublicWrite</code>·<code>LoginRequired</code>·<code>SuperuserRequired</code>, 기동 시 기본 거부 <code>AccessPolicyGuard</code>(§7.1·§7.3), home·reports 라우터 단위 인가를 뷰 단위 선언으로, §11.1 표 갱신. OpenAPI 불변</td>
+</tr>
+<tr>
+<td>2026-10-13</td>
+<td>로그 마스킹·헤더·Redis 버전(log-redaction-fixes): §9.4.1 <code>RedactingFilter</code>(traceback·stack·DEBUG 500 detail, uvicorn CLI·Celery 경로 포함), §3.3 예외 헤더 보존 확인, §7.2 Redis 최소 6.2 확인(<code>REDIS_MIN_VERSION</code>), §10 접속 로그 원문 저장은 사용자 결정으로 유지</td>
+</tr>
+<tr>
+<td>2026-10-12</td>
+<td>인가(service-hardening 단계 F2): §11.1 신설 — <code>Principal</code>·<code>require_superuser</code>·<code>OwnershipPolicy</code>, access <code>su</code> claim, <code>users.is_superuser</code>·<code>author_id</code> 리비전, 라우트 권한 표, <code>scripts/create_superuser.py</code>. <code>PasswordHasher</code>·공용 provider 를 core 로 이동. §10 <code>user_id</code> 가 이제 채워진다</td>
+</tr>
+<tr>
+<td>2026-10-07</td>
+<td>설정 검사 확장(ADR-045): <code>.env</code> 부재 시 필수 환경 변수 요구, 예시 비밀값·짧은 키를 개발 환경에서도 거부, 배포 환경 <code>ADMIN=true</code> 는 <code>ADMIN_ALLOW_UNAUTHENTICATED</code> 확인 필요. CI 가 <code>review_gate --fast</code> 실행(ADR-044)</td>
+</tr>
+<tr>
+<td>2026-09-17</td>
+<td>배포 안전 검사(ADR-027): staging/production 에서 예시 비밀 키·access==refresh 면 <code>config</code> import 실패. <code>.env.example</code> 비밀 키 예시를 서로 다른 <code>change-this-...</code> 로</td>
+</tr>
+</tbody>
+</table>
+<hr><nav class="pager"><a href="design-decisions.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="configuration-2.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

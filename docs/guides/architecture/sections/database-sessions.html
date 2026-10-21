@@ -1,0 +1,159 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>4. DB 엔진·세션·라우팅</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>4. DB 엔진·세션·라우팅</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="4-db">4. DB 엔진·세션·라우팅</h2>
+<h3 id="41">4.1 엔진과 커넥션 풀</h3>
+<p><code>app/core/db/session.py</code> 가 <strong>import 시점</strong>에 엔진을 만듭니다. 엔진 생성은 URL·풀 정책 준비일 뿐
+접속이 아닙니다 — 실제 연결은 DDL·<code>/ready</code>·첫 쿼리에서 생깁니다.</p>
+<table>
+<thead>
+<tr>
+<th>객체</th>
+<th>풀</th>
+<th>용도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>engine</code>(= <code>writer_engine</code>)</td>
+<td><code>pool_size=20</code>, <code>max_overflow=20</code>, <code>pool_timeout=30</code></td>
+<td>요청 세션, 개발 DDL, <code>/ready</code>, SQLAdmin</td>
+</tr>
+<tr>
+<td><code>read_engines</code></td>
+<td>replica 마다 20+20</td>
+<td><code>DB_ROUTER_ENABLED</code> 와 <code>DB_REPLICATION_ENABLED</code> 가 모두 true 일 때만 생성</td>
+</tr>
+<tr>
+<td><code>background_engine</code></td>
+<td><code>pool_size=10</code>, <code>max_overflow=10</code>, <code>pool_timeout=60</code></td>
+<td>접속 로그 sink, <code>background_db_session()</code>, Celery</td>
+</tr>
+</tbody>
+</table>
+<p>공통: <code>pool_recycle=280</code>, <code>pool_pre_ping=True</code>, <code>pool_reset_on_return="rollback"</code>, <code>hide_parameters=True</code>,
+<code>connect_timeout=10</code>, <code>charset=utf8mb4</code>. <code>hide_parameters</code> 는 드라이버 예외의 <code>str()</code>·echo 로그에서 바인드 값을 뺀다 —
+SQL 문은 남고 값(이메일·해시·토큰)만 <code>[SQL parameters hidden due to hide_parameters=True]</code> 로 바뀐다. 앱의 엔진 생성
+지점은 이 파일의 셋뿐이고, 새 지점이 생기면 <code>tests/core/test_db_hide_parameters.py</code> 가 실패한다(security-ops-hardening ADR-001). 세션 팩토리는 <code>expire_on_commit=False</code>, <code>autoflush=False</code>.</p>
+<p><strong>연결 예산</strong>(NFR-007): API 프로세스 하나가 최대 <code>40 + 20 + 40 × replica 수</code> 개를 엽니다.
+uvicorn worker·reload 프로세스마다 곱해지고, Celery worker 프로세스도 import 한 엔진을 따로 가집니다.
+DB <code>max_connections</code> 안에 들어오는지 배포 전에 계산합니다.</p>
+<h3 id="42">4.2 세션 의존성</h3>
+<p>이름에 <code>db_session</code> 을 넣어 사용자·HTTP 세션과 구분합니다(TX-005). 아래 다섯이 공개 이름의 전부이며,
+옛 이름(<code>get_session</code> 등)은 제거됐고 <code>tests/core/test_db_session_naming.py</code> 가 부활을 막습니다.</p>
+<table>
+<thead>
+<tr>
+<th>이름</th>
+<th>용도</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get_read_only_db_session</code></td>
+<td>GET/HEAD·변경 없는 조회</td>
+<td><code>mark_read_only()</code> — 라우터가 켜져 있으면 replica 로, 쓰기 시 <code>ReadOnlyRoutingError</code></td>
+</tr>
+<tr>
+<td><code>get_writer_db_session</code></td>
+<td>쓰기, 조회 후 쓰기</td>
+<td><code>using_writer()</code> — 첫 쿼리부터 primary 고정</td>
+</tr>
+<tr>
+<td><code>get_routed_db_session</code></td>
+<td>승인된 특수 경로</td>
+<td>구문마다 동적 선택(첫 SELECT 가 replica 로 샐 수 있다)</td>
+</tr>
+<tr>
+<td><code>get_background_db_session</code></td>
+<td>DI 안에서 background 풀이 필요할 때</td>
+<td>background 엔진</td>
+</tr>
+<tr>
+<td><code>background_db_session()</code></td>
+<td>요청 밖 컨텍스트(Celery·fire-and-forget)</td>
+<td>예외 시 rollback, 종료 시 close, 커밋은 호출자</td>
+</tr>
+</tbody>
+</table>
+<p>다섯 모두 <code>async with</code> 안에서 세션을 내주고 종료 시 close 합니다. 세션은 풀에서 빌린 연결이므로 반드시 이
+경로로 닫혀야 합니다. <code>get_read_only_db_session</code>·<code>get_writer_db_session</code> 에는 <code>try/except/rollback</code> 이
+<strong>없습니다</strong>(ADR-031) — <code>AsyncSession.__aexit__</code> 이 shield 로 감싼 <code>close()</code> 를 실행하고 <code>close()</code> 가
+ROLLBACK 을 보내므로 중복이었고, 명시 <code>except Exception</code> 은 <code>CancelledError</code> 를 놓쳐 오히려 좁았습니다.
+의존성 넷 중 <code>get_routed_db_session</code>·<code>get_background_db_session</code> 만 <code>except</code> 를 남겨 두었습니다. 그 블록은
+<code>await session.rollback()</code> 을 <strong>여전히 호출하지만</strong>, 그 호출은 위와 같은 이유로 중복입니다 — 블록을
+남긴 이유는 롤백이 아니라 <strong>로그 부수효과</strong>(예외 타입·소요 시간, DEBUG 에서는 전문)입니다.
+예외 <strong>메시지</strong>를 기본 로그에 남기지 않는 것도 의도입니다: DB 예외의 <code>str()</code> 에는 실행된 SQL 과
+바인딩 값이 들어 있고 이 로거 이름(<code>app.core.*</code>)은 SQL 소음 필터를 통과합니다.</p>
+<h3 id="43">4.3 읽기/쓰기 라우팅</h3>
+<p><code>DB_ROUTER_ENABLED=true</code> 면 <code>create_routing_sessionmaker()</code> 의 <code>RoutingSession.get_bind()</code> 가 구문마다
+엔진을 고릅니다(<code>app/core/db/router.py</code>).</p>
+<ol>
+<li>ORM flush·Core DML·<code>text()</code> 의 쓰기 키워드(<code>INSERT</code>·<code>UPDATE</code>·<code>DELETE</code>·<code>CREATE</code>…), CTE 로 감싼 DML
+   (<code>WITH … UPDATE/DELETE</code>), 잠금 읽기(<code>FOR UPDATE</code>·<code>FOR SHARE</code>·<code>LOCK IN SHARE MODE</code>, ORM
+   <code>select(...).with_for_update()</code> 포함) → writer</li>
+<li>그 밖의 SELECT → 세션당 하나의 replica(라운드로빈으로 고른 뒤 고정)</li>
+<li>쓰기가 일어난 세션의 이후 SELECT → writer (<code>DB_READ_STICKY_AFTER_WRITE=true</code>, 기본)</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th><code>routing_mode</code></th>
+<th>조건</th>
+<th>결과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>single</code></td>
+<td><code>DB_ROUTER_ENABLED=false</code>(기본)</td>
+<td>단일 엔진 세션. 라우팅만 없고 <strong>읽기 세션의 쓰기 차단은 동작한다</strong></td>
+</tr>
+<tr>
+<td><code>router-single</code></td>
+<td>라우터만 켬</td>
+<td>전부 primary</td>
+</tr>
+<tr>
+<td><code>router-replicated</code></td>
+<td>라우터 + 복제 + <code>MYSQL_REPLICA_HOSTS</code></td>
+<td>SELECT → replica, 쓰기 → primary</td>
+</tr>
+</tbody>
+</table>
+<p>읽기 세션의 쓰기 차단은 위 모드와 <strong>무관합니다</strong>. <code>app/core/db/router.py</code> 가 <code>Session</code> 기반 클래스에
+<code>before_flush</code>·<code>do_orm_execute</code> 리스너를 전역 등록하므로, 어떤 sessionmaker 로 만든 세션이든
+<code>mark_read_only()</code> 가 걸린 세션에서는 ORM flush·Core DML·Raw <code>text()</code> DML 이 <code>ReadOnlyRoutingError</code>
+로 거부됩니다. 판정은 default-deny 이고 절차는 DEVELOPMENT §7.2 에 있습니다.</p>
+<ul>
+<li><strong>replica 장애:</strong> 읽기 전용 세션(<code>get_read_only_db_session</code>)의 읽기가 replica <strong>연결</strong> 오류(MySQL 2002·2003·2006·2013
+  또는 SQLAlchemy 가 연결을 무효화한 오류 — 접속 불가·연결 끊김·타임아웃)로 실패하면 <code>RoutingSession</code> 의
+  <code>do_orm_execute</code> 리스너가 같은 구문을 primary 로 <strong>한 번</strong> 다시 실행하고 WARNING <code>[database] replica 연결 실패(&lt;타입&gt;(code=…))</code>
+  를 남깁니다(호스트·DSN 없음). 그 세션은 이후 primary 에 고정됩니다. 쿼리 문법·제약 오류는 재시도하지 않고,
+  읽기 전용이 아닌 세션(writer·투명 라우팅)도 재시도하지 않습니다 — 쓰기와 한 트랜잭션에 섞일 수 있어서입니다.
+  replica 가 없으면(단일 DB) 동작 변화가 없습니다. <code>/ready</code> 는 그대로 writer·Redis 만 봅니다(integration-e2e ADR-010).</li>
+<li><strong>인증 사용자 조회는 primary:</strong> <code>get_current_user</code>(<code>/me</code>)는 읽기 전용 세션에 <code>using_writer()</code> 를 더해 primary 에서 읽습니다 —
+  복제 지연 동안 막 가입한 사용자의 유효한 토큰이 401 이 되지 않고, 비활성화·삭제가 즉시 반영됩니다. 쓰기 차단은 그대로이고
+  나머지 읽기 라우팅은 바뀌지 않습니다(e2e-policy-2 결정 5).</li>
+<li>복제만 켜고 라우터를 끄거나 replica 목록이 비면 <code>DatabaseSettings</code> 가 기동 시 거부합니다.
+  replica 주소는 <code>host</code>·<code>host:port</code>·<code>[IPv6]:port</code> 만 허용합니다.</li>
+<li>기동 로그 <code>[database] 라우팅 구성: {...}</code> 에 모드와 비밀번호를 가린 DSN 이 남습니다(<code>URL.render_as_string(hide_password=True)</code>).</li>
+<li>DSN 은 문자열로 조립하지 않고 <code>config.mysql_url()</code> → <code>sqlalchemy.engine.URL.create()</code> 로 만듭니다.
+  <code>MYSQL_URL</code>·<code>MYSQL_WRITER_URL</code>·<code>MYSQL_REPLICA_URLS</code>·<code>ALEMBIC_URL</code> 은 <code>URL</code> 객체이고, 비밀번호의
+  <code>@ : / # % ?</code> 와 IPv6 호스트가 그대로 왕복합니다(<code>tests/core/test_dsn.py</code>, service-hardening ADR-004).</li>
+<li><strong>라우팅</strong> 판별(<code>_text_is_write</code>)과 읽기 세션의 <strong>차단</strong> 판별(<code>_text_is_readable</code>)은 방향이 반대인
+  별개지만 같은 괄호 깊이 0 스캐너(<code>_depth0_words</code>)를 씁니다. 둘 다 <code>WITH … UPDATE/DELETE</code> 를
+  잡습니다(ADR-036). 잠금 읽기도 같은 <code>_LOCKING_READ</code> 정규식 하나로 판정합니다 — <code>FOR UPDATE</code>·<code>FOR SHARE</code>·
+  <code>LOCK IN SHARE MODE</code> 전부입니다. 다만 적용 대상은 다릅니다: 라우팅(<code>_text_is_write</code>)은 깊이 0 단어 목록에
+  적용해 <code>WHERE note = 'for share'</code> 같은 리터럴에 걸리지 않지만(ADR-038), 차단(<code>_text_is_readable</code>)은 주석만
+  걷어낸 원본 문자열에 적용하므로 그런 리터럴도 거부합니다(fail-closed).
+  스캔이 무너지면 라우팅은 writer 로(fail-safe), 차단은 거부로(fail-closed) 기웁니다.</li>
+<li>ORM 잠금 읽기(<code>with_for_update()</code>, <code>read=True</code> 포함)는 문자열이 아니라 <code>Select._for_update_arg</code> 로
+  판정합니다(<code>_is_locking_select</code>). 라우팅은 writer, 읽기 세션은 거부 — text 의 <code>FOR UPDATE</code> 와 같습니다
+  (service-hardening ADR-005).
+  sticky 는 세션 안의 정책이라 다음 요청의 복제 지연까지 없애지 않습니다.
+  읽기 전용 표시는 DB 권한을 대신하지 않으므로 운영에서는 replica 전용 읽기 계정
+  (<code>MYSQL_REPLICA_USER</code>)을 함께 씁니다.</li>
+</ul><nav class="pager"><a href="request-processing.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="data-access.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

@@ -1,0 +1,47 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>설계·워크플로우 시퀀스 다이어그램</title><link rel="stylesheet" href="../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../index.html">프로젝트 가이드</a></strong><a href="../index.html">전체 메뉴</a><a href="../architecture/index.html">아키텍처</a><a href="../development/index.html">개발</a><a href="../reference/api.html">API</a><a href="../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>설계·워크플로우 시퀀스 다이어그램</h1><p>기동, 요청, 인증, 종료, Celery의 프로세스와 자원 경계를 한 페이지에서 비교합니다.</p></header>
+<div class="layout"><main class="content"><section><h2>1. 프로세스 기동</h2><div class="mermaid">sequenceDiagram
+participant U as Uvicorn
+participant C as config.py
+participant W as 명시적 feature import
+participant A as FastAPI app
+participant L as lifespan/resources
+participant R as Redis
+participant D as DB
+U->>C: import main:app
+C-->>U: 검증·캐시된 settings
+U->>W: 기능 배선 준비
+W->>A: routers/models/admin/hooks
+U->>L: lifespan enter
+L->>R: connect + ping + version
+L->>D: 개발 DDL/ready 준비
+L-->>U: serve 가능</div></section><section><h2>2. API 요청</h2><div class="mermaid">sequenceDiagram
+Client->>Middleware: HTTP
+Middleware->>FastAPI: context
+FastAPI->>Policy: DI + auth
+Policy->>Service: Principal + DTO
+Service->>Repository: use case
+Repository->>Database: query/flush
+Database-->>Repository: result
+Repository-->>Service: data
+Service-->>FastAPI: response data
+FastAPI->>Database: validate DTO then commit
+FastAPI-->>Client: JSON</div></section><section><h2>3. 인증과 refresh 회전</h2><div class="mermaid">sequenceDiagram
+Client->>Auth: credentials
+Auth->>Redis: rate limit
+Auth->>DB: password verify
+Auth-->>Client: access + refresh
+Client->>Auth: refresh token
+Auth->>Redis: GETDEL/rotate family
+Redis-->>Auth: accepted once
+Auth-->>Client: new token pair</div></section><section><h2>4. 종료와 요청 밖 작업</h2><div class="mermaid">flowchart LR
+Signal --> Stop[새 요청 중지]
+Stop --> Drain[접속 로그 background drain]
+Drain --> Redis[Redis close]
+Redis --> DB[DB engines dispose]
+DB --> Logs[log listener stop]
+Task[Celery task] --> WorkerLoop[worker event loop]
+WorkerLoop --> BgSession[background DB session]
+BgSession --> WorkerShutdown[worker 전용 cleanup]</div><p>FastAPI lifespan은 Celery worker에서 실행되지 않으므로 worker는 자기 event loop와 DB engine 정리를 소유합니다.</p></section><section><h2>5. 확장 시 도식 유지 규칙</h2><ul><li>새 외부 자원은 생성 주체, 공유 범위, readiness, 종료 순서를 함께 명시합니다.</li><li>요청 session을 background task로 넘기지 않습니다.</li><li>인증 경계를 추가하면 성공뿐 아니라 401/403/429/503과 폐기 흐름도 갱신합니다.</li><li>새 데이터 경로는 commit 소유자와 rollback 지점을 한 곳으로 유지합니다.</li></ul></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../assets/site.js"></script></body></html>

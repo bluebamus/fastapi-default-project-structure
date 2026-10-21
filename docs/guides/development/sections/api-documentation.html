@@ -1,0 +1,18 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9. OpenAPI·Scalar 문서 체크리스트</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>9. OpenAPI·Scalar 문서 체크리스트</h1><p>개발·확장의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="9-openapiscalar">9. OpenAPI·Scalar 문서 체크리스트</h2>
+<p>Scalar 문서의 계약은 ORM 모델이 아니라 View 와 Pydantic DTO 입니다. <code>tests/test_openapi_contract.py</code> 가
+대부분을 규칙으로 검사합니다.</p>
+<ul>
+<li>[ ] View: <code>summary</code>, <code>description</code>, 프로젝트 전체에서 고유한 <code>operation_id</code>(기존 예제는 camelCase — SDK 생성기의 함수명이 된다)</li>
+<li>[ ] 성공 <code>response_model</code> 과 상태 코드. <strong>204 는 본문·<code>response_model</code> 없음</strong></li>
+<li>[ ] 알려진 오류를 <code>responses</code> 로(404·409·422 등, 오류 모델은 <code>ErrorResponse</code>)</li>
+<li>[ ] Path·Query 의 설명·실제 제약·대표 예시(<code>examples=</code>)</li>
+<li>[ ] 라우터 tag 가 <code>app/core/tags_metadata.py</code> 에 있고, 쓰지 않는 tag 가 남지 않음</li>
+<li>[ ] 구현된 기능을 "예정·미구현" 으로 설명하지 않음</li>
+<li>[ ] DTO: 입력/출력 분리, 외부 필드마다 <code>description</code>, 주요 DTO 에 <code>json_schema_extra.examples</code>,
+      민감 필드(해시·토큰) 제외, 스키마 이름 전역 고유</li>
+<li>[ ] ORM 응답만 <code>from_attributes=True</code>, Raw 는 명시 변환 — <code>RowMapping</code>·ORM 객체가 계약에 노출되지 않음</li>
+</ul><nav class="pager"><a href="migrations.html">← 이전</a><a href="../index.html">전체 개발·확장</a><a href="celery.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

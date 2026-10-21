@@ -1,0 +1,168 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>부록. 설정 필드 전체</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>부록. 설정 필드 전체</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="_1">부록. 설정 필드 전체</h2>
+<p><code>config.py</code> 의 필드 선언 기준 코드 기본값입니다(<code>.env.example</code> 의 예시 값과 다를 수 있습니다). 비밀 값은
+기본값을 적지 않습니다. 소비 지점은 §6.2.</p>
+<p><strong>TimezoneSettings</strong> — <code>TIME_ZONE</code>=<code>Asia/Seoul</code></p>
+<p><strong>AppSettings</strong></p>
+<table>
+<thead>
+<tr>
+<th>키</th>
+<th>타입</th>
+<th>기본값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PROJECT_NAME</code></td>
+<td>str</td>
+<td><code>FastAPI Project</code></td>
+</tr>
+<tr>
+<td><code>VERSION</code></td>
+<td>str</td>
+<td><code>0.1.0</code></td>
+</tr>
+<tr>
+<td><code>DESCRIPTION</code></td>
+<td>str</td>
+<td><code>config.API_DESCRIPTION</code></td>
+</tr>
+<tr>
+<td><code>DEBUG</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>ADMIN_DISABLED</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>ENV</code></td>
+<td><code>development</code>/<code>staging</code>/<code>production</code>/<code>test</code></td>
+<td><code>development</code></td>
+</tr>
+<tr>
+<td><code>SERVER_HOST</code> / <code>SERVER_PORT</code></td>
+<td>str / int</td>
+<td><code>0.0.0.0</code> / <code>8000</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>DatabaseSettings</strong></p>
+<table>
+<thead>
+<tr>
+<th>키</th>
+<th>타입</th>
+<th>기본값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MYSQL_HOST</code> / <code>MYSQL_PORT</code></td>
+<td>str / int</td>
+<td><code>localhost</code> / <code>3306</code></td>
+</tr>
+<tr>
+<td><code>MYSQL_USER</code> / <code>MYSQL_PASSWORD</code> / <code>MYSQL_DATABASE</code></td>
+<td>str</td>
+<td><code>root</code> / 빈 값 / <code>fastapi_db</code></td>
+</tr>
+<tr>
+<td><code>DB_ROUTER_ENABLED</code> / <code>DB_REPLICATION_ENABLED</code></td>
+<td>bool</td>
+<td><code>false</code> / <code>false</code></td>
+</tr>
+<tr>
+<td><code>DB_READ_STICKY_AFTER_WRITE</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>MYSQL_REPLICA_HOSTS</code></td>
+<td>list[str] (JSON)</td>
+<td><code>[]</code></td>
+</tr>
+<tr>
+<td><code>MYSQL_REPLICA_PORT</code></td>
+<td>int</td>
+<td><code>3306</code></td>
+</tr>
+<tr>
+<td><code>MYSQL_REPLICA_USER</code> / <code>MYSQL_REPLICA_PASSWORD</code> / <code>MYSQL_REPLICA_DATABASE</code></td>
+<td>str | None</td>
+<td>없음 → primary 값 재사용</td>
+</tr>
+<tr>
+<td><code>ALEMBIC_DATABASE_URL</code></td>
+<td>str | None</td>
+<td>없음 → primary DSN 에서 유도</td>
+</tr>
+</tbody>
+</table>
+<p><strong>CORSSettings</strong> — <code>CORS_ALLOW_ORIGINS</code>=<code>["*"]</code>, <code>CORS_ALLOW_CREDENTIALS</code>=<code>false</code>,
+<code>CORS_ALLOW_METHODS</code>=<code>["*"]</code>, <code>CORS_ALLOW_HEADERS</code>=<code>["*"]</code>, <code>CORS_EXPOSE_HEADERS</code>=<code>[]</code>, <code>CORS_MAX_AGE</code>=<code>600</code></p>
+<p><strong>LogSettings</strong></p>
+<table>
+<thead>
+<tr>
+<th>키</th>
+<th>기본값</th>
+<th>비고</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LOG_LEVEL</code> / <code>LOG_CONSOLE_LEVEL</code> / <code>LOG_FILE_LEVEL</code></td>
+<td>없음</td>
+<td>§9.3</td>
+</tr>
+<tr>
+<td><code>LOG_APP_LEVELS</code></td>
+<td>빈 값</td>
+<td>헤더별 최소 레벨 <code>blog=DEBUG,sqlalchemy=WARNING</code> — §9.3</td>
+</tr>
+<tr>
+<td><code>LOG_SQL_ECHO_ENABLED</code></td>
+<td><code>false</code></td>
+<td>§9.4</td>
+</tr>
+<tr>
+<td><code>LOG_CONSOLE_ENABLED</code></td>
+<td><code>true</code></td>
+<td>false 면 콘솔 핸들러 없음(앱·uvicorn CLI·Celery), 파일도 꺼져 있으면 기동 시 경고 한 줄 — §9.2</td>
+</tr>
+<tr>
+<td><code>LOG_CONSOLE_FORMAT</code> / <code>LOG_FILE_FORMAT</code></td>
+<td><code>[{asctime} {tzname}] {levelname:5} [app={appname}] [{module}:{classname}:{funcName}:{lineno}] {message}</code></td>
+<td>콘솔 / 파일 포매터 fmt, 잘못되거나 필수 필드가 빠지면 기동 오류 — §9.2</td>
+</tr>
+<tr>
+<td><code>LOG_DATE_FORMAT</code></td>
+<td><code>%Y-%m-%d %H:%M:%S</code></td>
+<td>포매터 datefmt(빈 값 금지) — §9.2</td>
+</tr>
+<tr>
+<td><code>LOG_FILE_ENABLED</code> / <code>LOG_DIR</code></td>
+<td><code>false</code> / <code>logs</code></td>
+<td>프로세스별 파일 출력 — §9.2</td>
+</tr>
+<tr>
+<td><code>LOG_MAX_SIZE_MB</code> / <code>LOG_RETENTION_DAYS</code></td>
+<td><code>10</code> / <code>30</code></td>
+<td>하루 안 분할 크기(1 이상) / 회전 파일 보관 일수(0 = 지우지 않음) — §9.2</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MiddlewareSettings</strong> — §10 표</p>
+<p><strong>RedisSettings</strong> — <code>REDIS_HOST</code>=<code>localhost</code>, <code>REDIS_PORT</code>=<code>6379</code>, <code>REDIS_DB</code>=<code>0</code>, <code>REDIS_PASSWORD</code>=없음
+(<code>REDIS_URL</code> = <code>redis://[:비밀번호@]호스트:포트/DB</code>, 비밀번호는 퍼센트 인코딩)</p>
+<p><strong>JWTSettings</strong> — §11 표</p>
+<p><strong>SessionSettings</strong> — <code>SESSION_COOKIE_NAME</code>=<code>session</code>(접속 로그의 <code>session_id</code> 쿠키 이름으로만 읽힌다), <code>SESSION_SECRET_KEY</code>=(placeholder — test 외 기동 거부, §6.1. 관리 세션 ID → Redis 키 HMAC 키, §12), <code>ADMIN_SESSION_MAX_AGE_SECONDS</code>·<code>ADMIN_SESSION_IDLE_SECONDS</code>(관리 세션 만료, §12 — 기본값은 README <a href="../../../../README.md#세션토큰-만료">세션·토큰 만료</a>)</p>
+<p>파생 값(<code>MYSQL_URL</code>·<code>ALEMBIC_URL</code>·<code>MYSQL_REPLICA_URLS</code>·<code>replication_active</code>·<code>routing_mode</code>·<code>REDIS_URL</code>·유효 로그
+레벨)은 필드가 아니라 <code>config.py</code> 의 property/메서드입니다.</p><nav class="pager"><a href="changelog.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="../index.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

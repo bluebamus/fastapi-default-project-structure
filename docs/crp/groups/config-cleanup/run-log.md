@@ -27,8 +27,8 @@
 | `README.md` | 134(§2 표), 234(검사 표), 251~252(만료 행), 420(체크리스트 4), 433 | SMTP 삭제, 만료는 새 `### 세션·토큰 만료` 표로, 업그레이드 노트 신설 |
 | `docs/guides/ARCHITECTURE.md` | 422(12개), 430(SMTP validator), 440, 459(`SESSION_EXPIRE_SECONDS`), 460(`smtp_settings`·`upload_settings`), 914·1015(만료 기본값), 1231·1233~1238(부록) | 삭제·10개로, 만료는 README 표를 가리킴, §16 변경 이력 1행 |
 | `docs/guides/DEVELOPMENT.md` | 99, 103 | 사용처 계약 테스트 언급, `SMTP_PASSWORD` 삭제 |
-| `docs/guides/server-lifecycle-guide.html` | 84(소비 지점 표·validator·배포 검사 문단), 185(부록 표·"12개·76개") | 삭제, 10개·63개, Session 행 갱신(낡은 "소비 코드 없음" 정정), Middleware 필드 수 5→6 정정 |
-| `docs/guides/admin-auth-guide.html` | (세 묶음 참조 없음) §13 표의 만료 기본값 | README 표를 가리키는 한 행으로 |
+| `docs/guides/workflows/server-lifecycle.html` | 84(소비 지점 표·validator·배포 검사 문단), 185(부록 표·"12개·76개") | 삭제, 10개·63개, Session 행 갱신(낡은 "소비 코드 없음" 정정), Middleware 필드 수 5→6 정정 |
+| `docs/guides/workflows/admin-authentication.html` | (세 묶음 참조 없음) §13 표의 만료 기본값 | README 표를 가리키는 한 행으로 |
 | `docs/crp/groups/orm-raw-repository/design-baseline.md` | 51·105·116·190 (`SMTP_PASSWORD`) | **고치지 않음** — 이력(append-only) |
 | app·scripts·migrations·`.github`·`compose.test.yaml`·`pyproject.toml` | 없음 | — |
 

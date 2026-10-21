@@ -1,0 +1,80 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>10. 접속 로그 미들웨어</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>10. 접속 로그 미들웨어</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="10">10. 접속 로그 미들웨어</h2>
+<p><code>UserInfoMiddleware</code>(<code>app/core/middlewares/user_info_middleware.py</code>)가 요청마다 정보를 모으고, 응답을
+받은 뒤 <code>access_log_tasks.spawn()</code> 으로 저장 태스크를 제출합니다. core 는 저장 방법을 모르고,
+<code>access_log_sink.get_access_log_sink()</code> 에 등록된 sink 에 위임합니다. <code>home</code> 이 import 시점에
+<code>HomeAccessLogSink</code> 를 등록하며, 이 sink 는 <code>background_db_session()</code>(별도 풀)으로 저장하고 직접 커밋합니다.</p>
+<table>
+<thead>
+<tr>
+<th>설정</th>
+<th>기본값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ACCESS_LOG_ENABLED</code></td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_EXCLUDE_PATHS</code></td>
+<td><code>["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]</code> (정확히 일치)</td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_EXCLUDE_EXTENSIONS</code></td>
+<td><code>[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]</code> (접미사)</td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_SENSITIVE_QUERY_KEYS</code></td>
+<td><code>["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]</code> (대소문자 무시, 값을 <code>***</code> 로 저장)</td>
+</tr>
+<tr>
+<td><code>ACCESS_LOG_RETENTION_DAYS</code></td>
+<td><code>365</code> (보존 일수. <code>0</code> 이면 지우지 않는다, 음수는 기동 시 검증 오류 — 아래 "보존")</td>
+</tr>
+<tr>
+<td><code>TRUSTED_PROXY_HOPS</code></td>
+<td><code>0</code> (앞단 신뢰 프록시 수 — 0 이면 전달 헤더를 보지 않는다. <strong>프록시 뒤 배포는 단 수만큼</strong> — 0 이면 전원이 프록시 IP 하나로 보여 접속 로그·로그인 레이트 리밋이 한 사람으로 취급하고, 크게 잡으면 IP 위조)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>수집: <code>ip_address</code>(아래 IP 결정 규칙), <code>forwarded_for</code>·<code>real_ip</code>(원본 헤더 — 감사용),
+  <code>user_agent</code> 와 파싱 결과(<code>os_name</code>·<code>os_version</code>·<code>browser_name</code>·<code>browser_version</code>·<code>device_type</code>
+  (<code>mobile</code>/<code>tablet</code>/<code>desktop</code>/<code>other</code>)·<code>device_brand</code>·<code>device_model</code>·<code>is_bot</code>), <code>request_path</code>,
+  <code>request_method</code>, <code>query_string</code>(민감 키 값은 <code>***</code>), <code>referer</code>, <code>accept_language</code>,
+  <code>session_id</code>(설정 <code>SESSION_COOKIE_NAME</code> 쿠키의 값), <code>user_id</code>(<code>request.state.user_id</code> — 인증 의존성
+  <code>get_current_principal</code> 이 라우트 처리 중에 채우므로 미들웨어가 <strong>응답 뒤에</strong> 읽는다. 익명·401 요청은 NULL, §11.1),
+  <code>response_status</code>, <code>response_time_ms</code>.</li>
+<li><strong>IP 결정</strong> — <code>app/core/middlewares/client_ip.py</code> 의 <code>ClientIPResolver</code> 가 정하고, 미들웨어는 생성자로
+  받습니다(<code>setup_user_info_middleware</code> 가 설정에서 한 번 만든다, service-hardening ADR-006·ADR-021).
+  <code>TRUSTED_PROXY_HOPS=0</code>(기본)이면 직접 피어 주소만 씁니다. <code>N</code> 이면 <code>X-Forwarded-For</code> 의 <strong>오른쪽에서
+  N번째</strong> 값(신뢰 프록시 N단이 덧붙인 값)이고, 목록이 N개보다 짧거나 값이 IP 가 아니면 직접 피어로
+  물러납니다. <code>X-Real-IP</code> 는 hops&gt;0 이고 <code>X-Forwarded-For</code> 가 없을 때만 봅니다. uvicorn
+  <code>--forwarded-allow-ips</code> 와 같은 모델이며, 실제 프록시 단수보다 크게 잡으면 다시 위조할 수 있게 됩니다.</li>
+<li><strong>길이</strong> — 문자열은 저장 직전 home 기능(<code>fit_to_columns</code>)이 <code>UserAccessLog</code> 컬럼 길이로 자릅니다. 길이는
+  모델 컬럼에서 읽습니다(숫자를 두 번 적지 않는다). MySQL strict 모드에서 길이 초과 INSERT 가 실패해 기록이
+  조용히 버려지던 경로를 막습니다.</li>
+<li><code>user_access_logs</code> 테이블의 <code>country</code>·<code>country_code</code>·<code>city</code> 컬럼은 채우는 코드가 없습니다.
+  인덱스: <code>created_at</code>·<code>ip_address</code>·<code>os_name</code>·<code>browser_name</code>·<code>device_type</code>·<code>country</code>·<code>session_id</code>·<code>user_id</code>.</li>
+<li><code>session_id</code> 쿠키 값·<code>referer</code>·<code>forwarded_for</code>(<code>X-Forwarded-For</code>)·<code>real_ip</code> 는 <strong>원문 그대로</strong> 저장합니다 —
+  사용자 결정으로 유지합니다(log-redaction ADR-004). 조회 API 는 슈퍼유저 전용입니다.</li>
+<li><strong>보존</strong>(security-ops-hardening ADR-002·ADR-003) — Celery beat 가 매일 03:30(<code>TIME_ZONE</code> 기준) <code>home.purge_expired_access_logs</code> 를
+  실행해 <code>created_at &lt; 지금(UTC) − ACCESS_LOG_RETENTION_DAYS 일</code> 인 행을 지웁니다(정확히 N일 전 행은 남는다). 정책은
+  <code>AccessLogRetentionService</code>(보존 일수·시계 주입), 쿼리는 <code>UserAccessLogRepository.delete_created_before</code> — <code>created_at</code>
+  인덱스로 id 를 최대 5,000개 고른 뒤 <code>DELETE ... WHERE id IN (...)</code> 하고 <strong>배치마다 커밋</strong>합니다(긴 잠금·거대 트랜잭션
+  방지, MySQL·SQLite 공통 쿼리). <code>0</code> 이면 쿼리 없이 끝납니다. beat 를 띄우지 않으면 아무것도 지워지지 않습니다(§13).</li>
+<li><code>X-Forwarded-For</code> 는 클라이언트가 위조할 수 있으므로 신뢰 프록시 홉 수(<code>TRUSTED_PROXY_HOPS</code>) 밖의 값은
+  믿지 않습니다. 이전에는 맨 왼쪽 값을 무조건 믿었습니다 — 기본값 0 은 이 동작을 바꾼 것이니 프록시 뒤 배포는
+  홉 수를 설정해야 실제 클라이언트 IP 가 기록됩니다.</li>
+<li><code>BackgroundTaskRunner</code> 는 동시 256개가 상한이고 넘치면 <strong>버리고</strong> <code>dropped</code> 를 올립니다. 비핵심 로그용이라
+  결제·발송 같은 업무 저장을 이 러너에 넣지 않습니다. 종료 시 drain 합니다(§8).</li>
+<li>저장 실패는 요청에 영향을 주지 않고 ERROR 로그만 남깁니다. 제출 시점은 <code>call_next</code> 가 응답 객체를 돌려준
+  뒤이며, 클라이언트가 본문을 다 받았다는 보장은 아닙니다. <code>call_next</code> 가 예외로 끝난 요청은 status 500 으로
+  기록한 뒤 예외를 그대로 다시 던집니다(바깥 500 처리는 그대로 — service-hardening ADR-007).</li>
+<li>조회 API 는 <code>/api/v1/home/access-logs</code> 계열 5개(전부 읽기 세션)이고, 예시 Celery 태스크
+  <code>home.aggregate_access_stats</code> 가 통계를 집계합니다.</li>
+</ul><nav class="pager"><a href="logging.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="authentication.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

@@ -1,0 +1,109 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>1. 구조와 의존 방향</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>1. 구조와 의존 방향</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="1">1. 구조와 의존 방향</h2>
+<h3 id="11">1.1 폴더 구조</h3>
+<pre><code>.
+├── main.py                 # FastAPI 조립: 미들웨어·예외 핸들러·라우터·health/ready·Scalar·Admin, run_server()
+├── config.py               # Pydantic Settings 12종 — 환경 변수를 읽는 유일한 모듈
+├── conftest.py             # pytest 전역 옵션 --mysql-required (루트에 있어야 인식된다)
+├── pyproject.toml / uv.lock / .python-version
+├── alembic.ini / migrations/        # env.py 가 import_all_models() 로 전 기능 모델 수집
+├── compose.test.yaml       # 테스트용 MySQL 8.4(127.0.0.1:3308, tmpfs) + Redis 7(6379, 앱 최소 6.2)
+├── scripts/review_gate.py  # 결정적 검수 게이트
+├── .github/workflows/ci.yml
+├── app/
+│   ├── features/                    # 기능 단위 vertical slice
+│   │   ├── admin.py                 # SQLAdmin 취합 — ADMIN_VIEWS + 인증 백엔드 조립 + register_admin()
+│   │   ├── auth/                    # OAuth2 password + JWT (자체 모델 없음, user 모델 사용) + admin_backend.py(/admin 로그인)
+│   │   ├── blog/ reply/ sns/ user/  # CRUD 기능
+│   │   ├── home/                    # 접속 로그 조회 + access-log sink
+│   │   ├── catalog/                 # ORM 참조 예제 (상품 CRUD)
+│   │   └── reports/                 # Raw SQL 참조 예제 (일별 매출 집계·스냅샷 적재)
+│   │       ├── __init__.py          # router 공개 + models import
+│   │       ├── admin.py             # 기능 소유 ModelView + admin_views
+│   │       ├── api/routers/router.py   # &lt;name&gt;_router — v1 서브라우터를 prefix 와 tag 로 취합
+│   │       ├── api/routers/v1/*.py     # path operation (HTTP 역할 + 쓰기 커밋)
+│   │       ├── dependencies/        # &lt;x&gt;_dependencies.py — 세션 선택 + Service 조립
+│   │       ├── services/ repositories/ schemas/ models/
+│   │       ├── exceptions.py        # 기능 예외 (AppException 하위)
+│   │       ├── tasks.py             # (있으면) Celery 태스크 — worker include 에 자동 발견
+│   │       └── tests/
+│   ├── core/                        # 프레임워크 인프라
+│   │   ├── resources.py             # 프로세스 수명 자원의 생성·해제 단일 지점
+│   │   ├── redis.py                 # get_redis — lifespan Redis client 주입 provider, REDIS_MIN_VERSION·ensure_redis_version
+│   │   ├── security/                # 토큰·회전 저장소·레이트 리밋·PasswordHasher·Principal·OwnershipPolicy·관리 세션(admin_session.py) + provider — §11·§12
+│   │   ├── exception.py             # AppException 계층 + ErrorResponse
+│   │   ├── schemas.py               # PatchSchema(모든 Update 스키마의 기반 — null PATCH 거부)
+│   │   ├── tags_metadata.py         # OpenAPI 태그 설명
+│   │   ├── db/session.py            # 엔진·세션 팩토리·세션 의존성·create_db_tables·ping·dispose
+│   │   ├── db/router.py             # 읽기/쓰기 라우팅(RoutingSession)
+│   │   ├── db/models_registry.py    # 기능 모델·태스크 모듈 탐색 단일 지점(모델은 import)
+│   │   ├── models/models_base.py    # Base + UUID/Created/Updated Mixin
+│   │   ├── repositories/            # crud_base·repository_base(ORM) / raw_crud_base·raw_repository_base(Raw) / db_errors(DB 오류 변환 표)
+│   │   ├── services/services_base.py
+│   │   └── middlewares/             # cors_middleware·user_info_middleware·client_ip·background_tasks·access_log_sink
+│   ├── celery/                      # app.py(중앙 앱, include 는 기능 tasks.py 자동 발견)·task.py(run_async)·lifecycle.py
+│   ├── templates/admin/sqladmin/            # login.html(Bootstrap 로그인 화면)·base.html(원본 확장 + CSRF meta·스크립트)·filters/ — §12
+│   └── utils/                       # logs/ · pagination/ · validators.py
+├── tests/                  # core 계약·배선·교차 기능 / utils / integration(실제 uvicorn·MySQL)
+├── docs/                   # guides/ · specs/ · crp/  (색인은 README)
+└── media/ static/ poc/ logs/   # 예약 디렉터리 (추적하지 않음, 파일 로그는 쓰지 않는다)
+</code></pre>
+<h3 id="12">1.2 의존 방향과 기능 간 참조</h3>
+<pre><code>features → core → utils        (config 는 누구나 import)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>영역</th>
+<th>규칙</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/features/&lt;name&gt;/</code></td>
+<td>비즈니스 코드는 전부 여기. <code>core</code> 를 쓰고 <strong>다른 기능을 import 하지 않는다.</strong> 예외: <code>auth</code> 는 횡단 관심사라 <code>user</code> 의 모델·Repository 를 쓴다. 기능 간 데이터 참조는 FK 없는 식별자로 둔다(예: <code>Reply.post_id</code>)</td>
+</tr>
+<tr>
+<td><code>app/core/</code></td>
+<td>특정 기능을 직접 알지 않는다. 기능이 core 에 붙어야 하면 등록 훅을 쓴다(<code>access_log_sink.set_access_log_sink()</code>). <code>models_registry</code> 만 등록 목적으로 기능 모델을 동적 import 하고, 기능 <code>tasks.py</code> 의 존재를 찾아 Celery include 를 만든다(import 는 Celery 가 한다)</td>
+</tr>
+<tr>
+<td><code>app/utils/</code></td>
+<td>순수 유틸. 상위 계층에 의존하지 않는다</td>
+</tr>
+</tbody>
+</table>
+<h3 id="13">1.3 핵심 파일</h3>
+<table>
+<thead>
+<tr>
+<th>파일</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>main.py</code></td>
+<td><code>FastAPI(...)</code> 생성(lifespan·태그·문서 URL), <code>CustomCORSMiddleware</code>·<code>UserInfoMiddleware</code> 등록, 예외 핸들러 4종, 기능 라우터 8개 <code>include_router(prefix="/api")</code>, <code>/health</code>·<code>/ready</code>·Scalar <code>/docs</code>, <code>ADMIN_DISABLED</code> 가 아니면 <code>register_admin(app, engine)</code></td>
+</tr>
+<tr>
+<td><code>app/core/resources.py</code></td>
+<td><code>manage_application_resources()</code> — Redis 확인, 개발용 테이블 생성, 역순 정리 (§7·§8)</td>
+</tr>
+<tr>
+<td><code>app/core/db/session.py</code></td>
+<td>엔진 3종, 세션 의존성 5종, <code>create_db_tables()</code>, <code>ping_writer_db()</code>, <code>dispose_engine()</code> (§4)</td>
+</tr>
+<tr>
+<td><code>app/utils/logs/</code></td>
+<td>큐 기반 로깅과 listener 수명 (§9). <strong>손대기 전에 §9 를 읽는다</strong></td>
+</tr>
+<tr>
+<td><code>app/features/admin.py</code></td>
+<td>기능별 <code>admin_views</code> 의 명시 취합과 조립 (§12)</td>
+</tr>
+</tbody>
+</table><nav class="pager"><a href="../index.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="app-wiring.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

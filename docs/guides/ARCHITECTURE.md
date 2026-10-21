@@ -3,14 +3,14 @@
 이 저장소가 **어떻게 조립되고, 어떻게 뜨고, 요청을 어떻게 처리하고, 어떻게 끝나는지**를 한곳에
 적습니다. 설치·실행은 [README](../../README.md), 코드를 쓰는 절차는 [DEVELOPMENT](./DEVELOPMENT.md)
 를 봅니다. 같은 흐름을 도식과 함께 따라가는 요약은
-[서버 수명주기 안내서](./server-lifecycle-guide.html)이고, 상세 표는 이 문서가 소유합니다. 코드와 이 문서가
+[서버 수명주기 안내서](./workflows/server-lifecycle.html)이고, 상세 표는 이 문서가 소유합니다. 코드와 이 문서가
 다르면 코드가 정답이며, 이 문서(와 요약하는 HTML)를 고칩니다.
 
 본문에 나오는 `ADR-0xx`·`REQ-0xx` 는 `docs/crp/groups/orm-raw-repository/design-baseline.md`,
 `AR-`·`TX-`·`NFR-` 등은 `docs/specs/orm-raw-repository/requirements.md` 의 ID 입니다.
 `service-hardening ADR-0xx` 처럼 그룹 이름이 붙은 번호는 `docs/crp/groups/service-hardening/design-baseline.md` 의 ID 입니다.
 `admin-login ADR-0xx` 는 `docs/crp/groups/admin-login/design-baseline.md` 의 ID 입니다. 관리 화면 인증의 흐름도·운영은
-[관리 화면 인증 안내서](./admin-auth-guide.html)가 원본입니다.
+[관리 화면 인증 안내서](./workflows/admin-authentication.html)가 원본입니다.
 
 ## 목차
 
@@ -1094,7 +1094,7 @@ main.py (ADMIN_DISABLED 가 아닐 때만 — true 면 이 모듈을 import 하�
   SQLAdmin 기본 화면을 덮어씁니다. `templates_dir` 의 FileSystemLoader 가 패키지 템플릿보다 먼저 찾아지기 때문입니다.
 - **끄기** — `ADMIN_DISABLED=true` 면 sqladmin·백엔드·세션 미들웨어·관리 세션 저장소를 만들지 않고 `/admin` 이하가 404 이며, 앱 응답·기동
   로그에 경로가 나오지 않습니다(`tests/test_admin_disabled.py`). 예전 `ADMIN` 설정이 남아 있으면 기동을 거부합니다(§6.1).
-- 흐름도·쿠키 구조·위협 모델·운영 문제 해결은 [관리 화면 인증 안내서](./admin-auth-guide.html)가 원본입니다.
+- 흐름도·쿠키 구조·위협 모델·운영 문제 해결은 [관리 화면 인증 안내서](./workflows/admin-authentication.html)가 원본입니다.
 - ModelView 는 기능이 소유합니다(`app/features/<name>/admin.py` 의 `admin_views`). 취합은 **명시 import**
   입니다 — 예전의 `getattr(module, "admin_views", [])` 수집은 빈 `admin.py` 를 조용히 건너뛰었습니다.
   `ADMIN_VIEWS` 는 기능명 사전순이며 테스트가 순서까지 대조합니다. 모델이 있는 기능은 `admin.py` 를 가져야 합니다.
@@ -1221,7 +1221,7 @@ config.set_main_option(
 | 2026-09-17 | 문서 재구성(ADR-025): README·ARCHITECTURE·DEVELOPMENT 3종으로 통합. QUICKSTART → README, LOGGING-AND-SHUTDOWN·서버 수명 HTML → 이 문서, ORM-RAW-WORKFLOW·개발 HTML·명세의 workflow-guide → DEVELOPMENT |
 | 2026-09-17 | 문서 일관성(ADR-026): HTML 안내서 두 편(`server-lifecycle-guide.html`·`feature-development-guide.html`)과 명세 `workflow-guide.md` 복원, 통일 문서 배치. HTML 은 요약, 상세 표는 Markdown. `API_DESCRIPTION`·미사용 설정 설명·`requires-python>=3.13`(ruff/mypy 대상 3.13) 정합. 모든 쓰기 핸들러를 응답 DTO 검증 → 커밋 → 반환 순서로 통일(`tests/test_write_dto_before_commit.py`) |
 | 2026-10-12 | 인증 코어(service-hardening 단계 F1): `app/core/security/`(토큰·회전 저장소·레이트 리밋), Argon2 `PasswordHasher` + bcrypt 점진 이전, `POST /auth/logout`, 429 `Retry-After`. `app/utils/authenticator/` 제거 |
-| 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./admin-auth-guide.html) 신설 |
+| 2026-10-12 | 관리 화면 로그인(admin-login): §12 — `AdminAuthBackend`(슈퍼유저·요청마다 DB 확인·레이트 리밋)·`admin_session` 쿠키·Bootstrap 로그인 템플릿, `ADMIN`→`ADMIN_DISABLED`(잔존 시 기동 거부, §6.1), 배포 환경의 관리 화면 확인 플래그 제거, `session_settings` 소비처, 의존성 `itsdangerous`. [관리 화면 인증 안내서](./workflows/admin-authentication.html) 신설 |
 | 2026-10-19 | 보안·운영(security-ops-hardening): §4.1 `hide_parameters` 회귀 고정, §10 접속 로그 보존(`ACCESS_LOG_RETENTION_DAYS`, beat 매일 03:30 배치 삭제), §12 로그인 폼 CSRF 토큰·`created_at` 날짜 필터(`LocalDateFilter`), §13 beat 등록 구조 |
 | 2026-10-19 | 관리 세션(admin-session-hardening): §12 서명 쿠키 → Redis 서버 세션(`AdminSessionStore`·`RedisSessionMiddleware`, 절대·미사용 만료, 강등·비활성화·삭제 즉시 폐기), 로그인 이후 CSRF(`AdminCsrfMiddleware`·`base.html` meta·스크립트), POST 로그아웃, 기간 필터. 설정 `ADMIN_SESSION_*`, 의존성 `itsdangerous` 제거 |
 | 2026-10-19 | 설정 정리(config-cleanup): 읽는 코드가 없던 `SMTPSettings`·`UploadSettings`·`SESSION_EXPIRE_SECONDS` 삭제(옛 `.env` 줄은 무시), 세션·토큰 만료의 정본을 README 표 하나로, 사용처 계약 테스트 `tests/core/test_settings_usage.py` |

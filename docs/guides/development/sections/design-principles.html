@@ -1,0 +1,58 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>1. 계층 원칙</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>1. 계층 원칙</h1><p>개발·확장의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="1">1. 계층 원칙</h2>
+<pre><code class="language-text">View → Dependency → Service → Repository → AsyncSession
+</code></pre>
+<p>ORM 과 Raw SQL 은 <strong>Repository 구현에서만</strong> 갈라집니다. 나머지(조립·유스케이스·트랜잭션·응답 검증·
+라우터·문서·테스트 기준)는 같습니다.</p>
+<table>
+<thead>
+<tr>
+<th>개념</th>
+<th>이 프로젝트의 자리</th>
+<th>두지 않는 것</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model</td>
+<td><code>models/models.py</code> — 테이블·컬럼·제약</td>
+<td>HTTP 응답 계약</td>
+</tr>
+<tr>
+<td>입출력 계약</td>
+<td><code>schemas/</code> — Pydantic 입력 검증·응답 공개 필드·문서</td>
+<td>테이블 생성, DB 접근</td>
+</tr>
+<tr>
+<td>Controller(View)</td>
+<td><code>api/routers/v1/*.py</code> — 경로·파라미터·Service 호출·응답·<strong>쓰기 커밋</strong></td>
+<td>SQL, 도메인 분기</td>
+</tr>
+<tr>
+<td>Composition root</td>
+<td><code>dependencies/</code> — 세션 선택 + <code>Service(db_session)</code> 반환</td>
+<td>유스케이스 실행, 커밋, <code>yield</code> 후 커밋</td>
+</tr>
+<tr>
+<td>Service</td>
+<td><code>services/</code> — <code>BaseService</code> 상속, 업무 규칙·오케스트레이션</td>
+<td>HTTP 객체, SQL 문자열, 임의 커밋</td>
+</tr>
+<tr>
+<td>Repository</td>
+<td><code>repositories/</code> — <code>BaseRepository</code> 또는 <code>RawRepositoryBase</code> 상속</td>
+<td>커밋, HTTP, 업무 규칙</td>
+</tr>
+<tr>
+<td>관리 UI</td>
+<td><code>admin.py</code> — SQLAdmin ModelView. 인증(활성 슈퍼유저 로그인, Redis 서버 세션)과 쓰기 요청 CSRF 는 관리 화면 전체에 이미 걸려 있다(<a href="../../workflows/admin-authentication.html">관리 화면 인증 안내서</a>). sqladmin <code>@action</code> 은 GET 으로 상태를 바꿔 CSRF 검사를 비켜 가므로 쓰지 않는다(<code>tests/test_admin_csrf.py</code> 가 막는다)</td>
+<td>API 권한 계약과 공유되는 보안 장치 아님 — 관리 세션은 API 를 인증하지 않는다</td>
+</tr>
+</tbody>
+</table>
+<p>"뷰" 는 이 저장소에서 path operation 함수를 뜻합니다(SQLAdmin ModelView·DB 의 SQL VIEW 와 다릅니다).
+Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입으로 쓸 수 있는 것이 계층을 나누는
+이유입니다. 요구가 없는데 UnitOfWork·Factory·Strategy 같은 추상을 새로 들이지 않습니다.</p><nav class="pager"><a href="../index.html">← 이전</a><a href="../index.html">전체 개발·확장</a><a href="feature-workflow.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

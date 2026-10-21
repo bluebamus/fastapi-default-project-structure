@@ -1,0 +1,26 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>8. 마이그레이션</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>8. 마이그레이션</h1><p>개발·확장의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="8">8. 마이그레이션</h2>
+<pre><code class="language-bash">uv run alembic revision --autogenerate -m &quot;add inventory items&quot;
+# 생성된 파일의 upgrade/downgrade · drop · nullable · index · FK · default · 데이터 이동을 사람이 검토
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic heads          # head 는 하나여야 한다 (CI 확인)
+</code></pre>
+<ol>
+<li>모델을 만들고 기능 <code>__init__.py</code> 에서 import 한다(등록은 자동).</li>
+<li>autogenerate 로 <strong>후보</strong>를 만든다. rename 은 감지되지 않고 drop 으로 나올 수 있다.</li>
+<li>upgrade·downgrade 를 모두 구현하고, 빈 DB·기존 DB·MySQL 에서 확인한다
+   (<code>tests/core/test_migration_chain.py</code> 는 빈 SQLite 에서 head 까지와 모델 일치를,
+   <code>tests/integration/test_mysql_raw_sql.py</code> 는 MySQL 에서 upgrade → downgrade → 재-upgrade 를 본다).</li>
+<li>운영은 writer 에 <code>upgrade head</code> 를 <strong>앱 배포 전에</strong> 적용한다. 서버 기동은 upgrade 를 하지 않는다.</li>
+</ol>
+<ul>
+<li><code>DEBUG=true</code> 의 <code>create_all</code> 로 만든 개발 DB 와 migration 을 섞을 때, 데이터가 있는 DB 에서 검증 없이
+  drop/recreate 하거나 <code>alembic stamp head</code> 하지 않습니다 — <code>stamp</code> 는 테이블을 만들지 않고 이력만 맞춰
+  스키마 차이를 숨깁니다.</li>
+<li>호환 배포(컬럼 추가 → 코드 전환 → 옛 컬럼 제거)는 무중단 요구가 있을 때 단계를 나눕니다.</li>
+<li><code>ALEMBIC_DATABASE_URL</code> 로 로컬에서 다른 DSN(SQLite 등)을 쓸 수 있습니다.</li>
+</ul><nav class="pager"><a href="operations-security.html">← 이전</a><a href="../index.html">전체 개발·확장</a><a href="api-documentation.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

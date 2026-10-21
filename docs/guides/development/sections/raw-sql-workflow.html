@@ -1,0 +1,120 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>6. Raw SQL 워크플로 — reports</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>6. Raw SQL 워크플로 — reports</h1><p>개발·확장의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="6-raw-sql-reports">6. Raw SQL 워크플로 — reports</h2>
+<h3 id="61-raw">6.1 언제 Raw 를 쓰나, 모델은 어떻게 두나</h3>
+<p>기본은 ORM 입니다. Raw 는 복잡한 집계·윈도 함수·CTE, 실행 계획으로 관리해야 하는 조회, 서버 안에서 끝나는
+집합 연산(<code>INSERT … SELECT</code>)처럼 SQL 이 더 명확한 경우에 씁니다. "Raw 는 항상 빠르다" 거나
+"Schema·Service 가 필요 없다" 는 뜻이 아닙니다.</p>
+<ul>
+<li>집계 <strong>결과</strong>용 ORM 모델은 만들지 않습니다 — 결과 한 줄은 테이블의 행이 아닙니다.</li>
+<li>단, 이 프로젝트가 생명주기를 소유하는 <strong>원본 테이블</strong>은 ORM 모델과 migration 을 둡니다. 모델이 없으면
+  Alembic 이 그 테이블을 지워야 할 것으로 봅니다(<code>SalesOrder</code>). 결과를 영속 적재하는 테이블도 실제 테이블이므로
+  모델이 있습니다(<code>SalesDailySnapshot</code>).</li>
+<li>SQL VIEW 가 필요하면 방언에 맞는 <code>CREATE/DROP VIEW</code> 를 migration 으로 직접 관리합니다. Table 모델만으로
+  Alembic 이 VIEW 정의를 추적하지 않습니다(현재 reports 는 VIEW 를 만들지 않습니다).</li>
+</ul>
+<h3 id="62-base">6.2 Base 사용 계약</h3>
+<p><code>fetch_one</code>/<code>fetch_all</code>/<code>fetch_scalar</code>/<code>execute</code> + keyword-only <code>query_name</code>
+(<a href="../../architecture/index.html#53-raw-sql--rawrepositorybase">ARCHITECTURE §5.3</a>). 문자열을 받는 만능 실행 메서드는 없습니다.</p>
+<h3 id="63-schema">6.3 결과 Schema</h3>
+<pre><code class="language-python"># app/features/reports/schemas/report_schema.py (축약)
+class DailySalesItem(BaseModel):
+    sales_date: date = Field(description=&quot;매출 일자&quot;, examples=[&quot;2026-08-01&quot;])
+    order_count: int = Field(ge=0, description=&quot;주문 수&quot;, examples=[42])
+    gross_amount: Decimal = Field(ge=0, description=&quot;총 매출&quot;, examples=[&quot;5120.50&quot;])
+</code></pre>
+<p>Raw 결과는 ORM 객체가 아니므로 <code>from_attributes</code> 에 기대지 않고 <code>dict(row)</code> 를 검증합니다. SQL alias 와
+DTO 필드명이 같아야 합니다. <code>Decimal</code>·날짜 타입은 대상 DB 에서 확인합니다.</p>
+<h3 id="64-repository">6.4 Repository</h3>
+<pre><code class="language-python"># app/features/reports/repositories/sales_report_repository.py (축약)
+QUERY_DAILY_SALES = &quot;sales_report.daily_sales&quot;          # 로그의 안정 식별자 — 바꾸면 대시보드가 끊긴다
+SORTABLE_COLUMNS = {&quot;sales_date&quot;: &quot;sales_date&quot;, &quot;order_count&quot;: &quot;order_count&quot;, &quot;gross_amount&quot;: &quot;gross_amount&quot;}
+
+_LOCAL_DATE_SQL = {   # UTC 저장값을 로컬 영업일로 묶는 식(방언별) — ponytail: 고정 오프셋
+    &quot;mysql&quot;: &quot;DATE(CONVERT_TZ(o.created_at, '+00:00', :tz_offset))&quot;,
+    &quot;sqlite&quot;: &quot;DATE(o.created_at, :tz_offset)&quot;,
+}
+_DAILY_SALES_SQL_TEMPLATE = &quot;&quot;&quot;
+    SELECT {local_date} AS sales_date,
+           COUNT(*)           AS order_count,
+           COALESCE(SUM(o.total_amount), 0) AS gross_amount
+      FROM sales_orders AS o
+     WHERE o.created_at &gt;= :start_at
+       AND o.created_at &lt;  :end_at
+     GROUP BY {local_date}
+     ORDER BY {order_by} {direction}
+&quot;&quot;&quot;
+
+
+class SalesReportRawRepository(RawRepositoryBase):
+    async def daily_sales(self, *, start_at, end_at, tz_offset, sort_by=&quot;sales_date&quot;, sort_direction=&quot;ASC&quot;):
+        order_by = resolve_identifier(sort_by, SORTABLE_COLUMNS)   # 요청값은 키로만
+        direction = resolve_sort_direction(sort_direction)
+        dialect_name = self._dialect_name()
+        return await self.fetch_all(
+            _daily_sales_statement(order_by, direction, dialect_name),   # 시각 바인드는 UTCDateTime 타입
+            {&quot;start_at&quot;: start_at, &quot;end_at&quot;: end_at, &quot;tz_offset&quot;: _offset_param(dialect_name, tz_offset)},
+            query_name=QUERY_DAILY_SALES,
+        )
+</code></pre>
+<ul>
+<li>기간은 이미 계산된 <strong>반열린 구간</strong> <code>[start_at, end_at)</code> 으로 받습니다. 그래서 <code>DATE_ADD</code> 같은 방언 함수가
+  SQL 에 없고 규칙이 SQL 에 숨지 않습니다.</li>
+<li>allowlist 는 Repository 가 소유합니다(ADR-013) — View 의 enum 은 UX 일 뿐이고, Celery·스크립트가 Repository
+  를 직접 불러도 같은 제약이 걸려야 합니다. 허용 밖이면 <code>ValueError</code> 를 던지고 Service 가 422 로 바꿉니다.</li>
+<li>표준 SQL 만 써서 SQLite 단위 테스트와 MySQL 통합 테스트가 같은 문장을 검증합니다. 예외는 로컬 영업일 식
+  하나입니다 — <code>created_at</code> 이 UTC 로 저장되므로(service-hardening ADR-010) 일자를 로컬 날짜로 바꾸는 방언 함수가
+  필요하고, 그 식만 <code>_LOCAL_DATE_SQL</code> 에서 방언별로 고릅니다. 오프셋은 구간 시작 시점의 TIME_ZONE 오프셋
+  하나로 고정합니다(DST 지역의 한계는 residual-risk R-003). 방언 승인은 MySQL 통합 테스트(<code>-m mysql</code>)가 합니다.</li>
+<li>Raw <code>text()</code> 는 컬럼 타입을 모르므로 시각 바인드에 <code>bindparam(..., type_=UTCDateTime())</code> 을 붙입니다. 붙이지
+  않으면 드라이버가 aware 값의 오프셋을 버리고 벽시계만 보냅니다.</li>
+</ul>
+<h3 id="65-service">6.5 Service — 기간 규칙은 여기</h3>
+<pre><code class="language-python"># app/features/reports/services/report_service.py (축약)
+MAX_REPORT_DAYS = 366
+
+async def get_daily_sales(self, *, start_date, end_date, sort_by=..., sort_direction=...):
+    self._validate_range(start_date, end_date)          # 1970-01-01..9998-12-31 밖, 종료일 &lt; 시작일, 366일 초과 → InvalidDateRangeException(422)
+    # &quot;종료일 포함&quot; → 로컬(TIME_ZONE) 다음날 00:00 미만. aware 값이라 바인드가 UTC 로 바꾼다.
+    start_at, end_at = local_day_bounds(start_date, end_date, timezone_settings.tz)
+    try:
+        rows = await self.repository.daily_sales(start_at=start_at, end_at=end_at, tz_offset=_utc_offset(start_at), sort_by=sort_by, sort_direction=sort_direction)
+    except ValueError as error:
+        raise InvalidSortException(detail={...}) from error
+    return [DailySalesItem.model_validate(dict(row)) for row in rows]
+</code></pre>
+<p>"종료일 포함"·최대 기간은 비즈니스 규칙이라 Service 가 해석하고, SQL 과 alias 는 Repository 가 가집니다.
+날짜 상한이 <code>date.max</code> 보다 하루 앞(9998-12-31)인 이유는 <code>end_date + 1일</code> 이 overflow 로 500 을 내지 않게 하기
+위해서입니다(service-hardening ADR-008 ③).
+<code>23:59:59</code> 를 끝으로 쓰면 마이크로초 단위 주문을 놓칩니다.</p>
+<h3 id="66-dependency-view">6.6 Dependency 와 View</h3>
+<pre><code class="language-python"># app/features/reports/dependencies/report_dependencies.py
+async def get_report_service_readonly(db_session=Depends(get_read_only_db_session)) -&gt; ReportService: ...
+async def get_report_service(db_session=Depends(get_writer_db_session)) -&gt; ReportService: ...   # 적재용
+
+# app/features/reports/api/routers/v1/sales_reports.py (축약)
+@router.get(&quot;/sales/daily&quot;, response_model=DailySalesReportResponse, operation_id=&quot;getDailySalesReport&quot;,
+            dependencies=[SuperuserRequired], …)
+async def get_daily_sales_report(
+    start_date: date = Query(...), end_date: date = Query(...),     # 필수
+    sort_by: str = Query(&quot;sales_date&quot;), sort_direction: str = Query(&quot;asc&quot;),
+    service: ReportService = Depends(get_report_service_readonly),
+) -&gt; DailySalesReportResponse:
+    items = await service.get_daily_sales(start_date=start_date, end_date=end_date, sort_by=sort_by, sort_direction=sort_direction)
+    return DailySalesReportResponse(start_date=start_date, end_date=end_date, items=items)   # 조회 — 커밋 없음
+</code></pre>
+<h3 id="67-raw">6.7 Raw 쓰기 — 스냅샷 적재</h3>
+<p><code>POST /api/v1/reports/sales/daily/snapshots</code> 는 같은 writer 세션에서
+<code>DELETE FROM sales_daily_snapshots …</code> → <code>INSERT INTO sales_daily_snapshots … SELECT … FROM sales_orders …</code> 를
+실행하고 <strong>View 가 한 번 커밋</strong>합니다(ADR-011).</p>
+<ul>
+<li>두 문장은 한 트랜잭션이어야 합니다 — DELETE 만 커밋되면 그 기간 리포트가 사라집니다.</li>
+<li>표준 SQL <code>DELETE</code> + <code>INSERT … SELECT</code> 로 멱등을 만들고 방언 UPSERT 를 쓰지 않습니다.</li>
+<li><code>generated_at</code> 은 바인드 파라미터로 넣습니다 — Raw DML 은 Mixin 의 Python 기본값을 우회해 NULL 이 됩니다.
+  시각을 Python(<code>timezone_settings.utc_now()</code> — DB 저장 시각은 UTC, ADR-010)이 정하면 테스트가 DB 시계에 묶이지 않습니다.</li>
+<li><code>execute</code> 는 영향 행 수만 돌려줍니다. 원장(<code>sales_orders</code>)은 읽기만 합니다.</li>
+<li>동시 실행의 직렬화는 보장하지 않습니다. 같은 기간을 동시에 적재할 수 있는 운영이라면 잠금·중복 실행
+  정책을 따로 정합니다.</li>
+</ul><nav class="pager"><a href="orm-workflow.html">← 이전</a><a href="../index.html">전체 개발·확장</a><a href="operations-security.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

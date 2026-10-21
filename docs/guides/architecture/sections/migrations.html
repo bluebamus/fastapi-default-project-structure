@@ -1,0 +1,33 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>14. Alembic</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>14. Alembic</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="14-alembic">14. Alembic</h2>
+<pre><code class="language-python"># migrations/env.py
+fileConfig(config.config_file_name, disable_existing_loggers=False)   # 앱 로거를 끄지 않는다
+import_all_models()
+target_metadata = Base.metadata
+config.set_main_option(
+    &quot;sqlalchemy.url&quot;,
+    db_settings.ALEMBIC_URL.render_as_string(hide_password=False).replace(&quot;%&quot;, &quot;%%&quot;),
+)
+</code></pre>
+<ul>
+<li>URL: <code>ALEMBIC_DATABASE_URL</code> 이 있으면 그 값을 <code>make_url</code> 로 읽은 것, 없으면 primary URL 의 드라이버만
+  <code>mysql+pymysql</code> 로 바꾼 것. 마이그레이션은 항상 primary 에서 실행합니다. Alembic Config 는 ConfigParser 라
+  <code>%</code> 를 보간으로 읽으므로 <code>%%</code> 로 바꿔 넘깁니다(퍼센트 인코딩된 비밀번호 대비).</li>
+<li>revision 체인(단일 head, CI 가 확인): <code>f4adf0ae24ea</code>(baseline — 기존 5개 테이블) → <code>b2f1a9c0d3e4</code>
+  (<code>users.hashed_password</code>) → <code>c3d5e7f9a1b2</code>(<code>catalog_products</code>) → <code>d4e6f8a0b2c3</code>(<code>sales_orders</code>) →
+  <code>e5f7a9b1c4d5</code>(<code>sales_daily_snapshots</code>) → <code>a7c9e1f3b5d6</code>(시각 컬럼 전부 MySQL <code>DATETIME(6)</code> + 기존 값
+  KST→UTC 변환, SQLite 는 no-op — service-hardening ADR-010). <strong>배포 전:</strong> 이 리비전은 기존 MySQL 값을 모두 +09:00 으로
+  가정합니다 — 다른 시간대였다면 적용 전에 리비전의 <code>_LEGACY_OFFSET</code> 을 바꾸고, 값을 고쳐 쓰므로 적용 전에 백업합니다.</li>
+<li><code>env.py</code> 는 <code>app/core/models/types.py</code> 의 <code>compare_type</code>(MySQL <code>UTCDateTime</code> 의 소수 초 자릿수 비교 — 기본 비교는
+  <code>DATETIME</code> 과 <code>DATETIME(6)</code> 을 같다고 본다)과 <code>render_item</code>(autogenerate 가 앱 import 없는
+  <code>sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql")</code> 로 쓰게)을 넘깁니다.</li>
+<li>Alembic 은 lifespan 에 들어가지 않으므로 Redis 확인을 하지 않습니다. 서버 기동은 upgrade 를 하지 않습니다.</li>
+<li><code>DEBUG=true</code> 의 <code>create_all</code> 은 migration 결함을 가립니다(예전 baseline 이 테이블 4개를 빠뜨렸는데 개발
+  환경에서는 보이지 않았습니다). 그래서 빈 DB 에서 head 까지 올리고 모델과 비교하는 테스트가 있습니다:
+  <code>tests/core/test_migration_chain.py</code>(SQLite), <code>tests/integration/test_mysql_raw_sql.py</code>(MySQL 8.4 —
+  upgrade → downgrade → 재-upgrade).</li>
+<li>작성 절차는 <a href="../../development/index.html#8-마이그레이션">DEVELOPMENT §8</a>.</li>
+</ul><nav class="pager"><a href="celery.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="design-decisions.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

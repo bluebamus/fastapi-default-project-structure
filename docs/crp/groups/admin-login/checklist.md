@@ -15,7 +15,7 @@
 ## Round 2 — 2026-10-12 · 추가 명세 (ADMIN_DISABLED · 세션 범위 · 안내서 · 모든 문서)
 - [x] (F-003) `ADMIN` → `ADMIN_DISABLED` + 예전 이름 잔존 거부 + 끈 상태 4가지 보장 테스트
 - [x] 세션 범위 확인(감독자 가정과 코드 일치) + 테스트 4건(ADR-006)
-- [x] `docs/guides/admin-auth-guide.html`(12절, Mermaid 도식 8개) + README 문서 표·ARCHITECTURE §12 링크
+- [x] `docs/guides/workflows/admin-authentication.html`(12절, Mermaid 도식 8개) + README 문서 표·ARCHITECTURE §12 링크
 - [x] 모든 문서 반영(README·`.env.example`·ARCHITECTURE·DEVELOPMENT·HTML 2편·CRP 상태 줄) + 낡은 서술 grep
 - [x] 공통 게이트 그린 · fail-on-revert 23/23 · run-log 갱신
 

@@ -1,0 +1,25 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>인증·인가 매뉴얼</title><link rel="stylesheet" href="../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../index.html">프로젝트 가이드</a></strong><a href="../index.html">전체 메뉴</a><a href="../architecture/index.html">아키텍처</a><a href="../development/index.html">개발</a><a href="../reference/api.html">API</a><a href="../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>인증·인가 매뉴얼</h1><p>JWT API 인증, refresh 회전, 관리자 서버 세션, CSRF와 소유권 정책의 경계를 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2>두 인증 체계는 의도적으로 분리됩니다</h2><div class="table-wrap"><table><thead><tr><th>영역</th><th>자격 증명</th><th>저장/검증</th><th>주요 방어</th></tr></thead><tbody><tr><td>JSON API</td><td><code>Authorization: Bearer …</code></td><td>JWT access token + Redis refresh family</td><td>만료·issuer/audience·회전·재사용 탐지·레이트 리밋</td></tr><tr><td><code>/admin</code></td><td><code>admin_session</code> HttpOnly cookie</td><td>무작위 ID cookie + Redis 서버 세션 + 매 요청 DB 확인</td><td>CSRF, SameSite, idle/absolute expiry, 즉시 폐기</td></tr></tbody></table></div><p>관리 cookie가 API를 인증하지 않고, Bearer token이 SQLAdmin 세션을 대체하지 않습니다. 공격면과 브라우저 보안 모델이 다르기 때문입니다.</p></section><section><h2>API 로그인·재발급·로그아웃</h2><div class="mermaid">sequenceDiagram
+participant C as Client
+participant API as Auth router
+participant RL as Redis rate limiter
+participant DB as User DB
+participant TS as TokenService
+participant RS as RefreshTokenStore
+C->>API: POST login (form)
+API->>RL: IP + username 제한
+API->>DB: 사용자·비밀번호 검증
+DB-->>API: active user
+API->>TS: access/refresh JWT 발급
+API->>RS: refresh family 저장
+API-->>C: token pair
+C->>API: POST refresh
+API->>RS: 일회용 token 회전
+RS-->>API: 새 family member
+API-->>C: 새 token pair
+C->>API: POST logout
+API->>RS: family 폐기
+API-->>C: 204</div></section><section><h2>인가와 소유권</h2><p>공개·로그인·슈퍼유저 수준은 route dependency로 선언되어 누락을 기동 시 검사합니다. 특정 게시물의 작성자인지는 입력 스키마의 user id를 믿지 않고 인증된 Principal과 저장된 owner id를 Service의 OwnershipPolicy가 비교합니다.</p><div class="callout">401은 인증 실패, 403은 인증됐지만 권한 부족입니다. 숨겨야 하는 리소스의 존재 여부 정책은 Service에서 일관되게 정합니다.</div><p><a href="admin-authentication.html">관리 화면 인증 상세</a> · <a href="../architecture/sections/authentication.html">JWT 설계</a> · <a href="../reference/api.html">인증 endpoint</a></p></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../assets/site.js"></script></body></html>

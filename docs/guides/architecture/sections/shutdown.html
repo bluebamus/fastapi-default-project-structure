@@ -1,0 +1,119 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>8. 종료</title><link rel="stylesheet" href="../../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../../index.html">프로젝트 가이드</a></strong><a href="../../index.html">전체 메뉴</a><a href="../../architecture/index.html">아키텍처</a><a href="../../development/index.html">개발</a><a href="../../reference/api.html">API</a><a href="../../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>8. 종료</h1><p>아키텍처의 세부 주제입니다. 목적·책임·운영 및 확장 시 지켜야 할 계약을 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2 id="8">8. 종료</h2>
+<h3 id="81">8.1 순서와 강제 방식</h3>
+<p>순서를 강제하는 코드는 없습니다. <strong>중첩 컨텍스트가 곧 순서</strong>이고, 파이썬이 역순으로 풉니다(ADR-017).</p>
+<pre><code>uvicorn: 신규 요청 수신 중단 → 진행 중 요청 처리 → lifespan shutdown
+① _background_tasks  &quot;[shutdown] 애플리케이션 요청 처리 자원 해제 시작&quot; → 접속 로그 태스크 drain
+② _redis             app.state.redis = None → client.aclose()
+③ _database          dispose_engine() — writer·replica·background 를 gather 로 동시에
+                     → app.state.resources = None → &quot;[shutdown] 애플리케이션 요청 처리 자원 해제 완료&quot;
+④ _log_queue         flush_log_queue() — 쌓인 로그가 다 쓰일 때까지 **기다린다**(멈추지 않는다)
+uvicorn: &quot;Application shutdown complete&quot; · &quot;Finished server process&quot;
+프로세스 종료: atexit / 신호 핸들러 → stop_log_listener()  (&quot;[log-lifecycle] stop 완료&quot;, stderr 직접)
+</code></pre>
+<ul>
+<li>①이 ②③보다 먼저인 이유: 외부 자원을 쓰는 주체(background task)가 살아 있는데 client·풀을 닫으면
+  연결이 강제로 끊깁니다.</li>
+<li>④가 마지막인 이유: 앞 단계가 남긴 로그까지 내보내야 합니다.</li>
+<li><strong>이 중첩을 평평한 <code>finally</code> 안의 연속 <code>await</code> 로 되돌리지 마세요.</strong> <code>asyncio.CancelledError</code> 는
+  <code>BaseException</code> 이라 <code>_run_cleanup()</code> 의 <code>except Exception</code> 을 통과하고, 연속 <code>await</code> 였을 때는 첫
+  단계에서 취소를 맞으면 <strong>뒤 단계가 통째로 건너뛰어졌습니다</strong>(DB 풀이 닫히지 않았다). 중첩 컨텍스트는
+  취소가 전파되어도 바깥 <code>__aexit__</code> 를 시도합니다.
+  회귀 테스트: <code>tests/core/test_resources.py::test_manager_cancellation_still_runs_remaining_cleanup</code>.</li>
+<li>요청별 <code>AsyncSession</code> 은 이 사슬 밖에서 세션 의존성이 닫습니다. Celery worker 의 연결은 worker 가
+  닫습니다(AR-006, §13). 종료에서 테이블을 drop 하지 않습니다.</li>
+</ul>
+<h3 id="82">8.2 시간 예산</h3>
+<table>
+<thead>
+<tr>
+<th>단계</th>
+<th>예산</th>
+<th>정의</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>background drain</td>
+<td>5초 (완료 대기는 4초 = <code>DRAIN_WAIT_RATIO</code> 0.8, 남는 1초는 취소한 태스크 회수)</td>
+<td><code>resources.py</code></td>
+</tr>
+<tr>
+<td>Redis close</td>
+<td>5초</td>
+<td><code>resources.py</code></td>
+</tr>
+<tr>
+<td>DB dispose</td>
+<td>10초</td>
+<td><code>resources.py</code></td>
+</tr>
+<tr>
+<td>로그 큐 flush</td>
+<td>2초</td>
+<td><code>LOG_FLUSH_TIMEOUT_SECONDS</code></td>
+</tr>
+<tr>
+<td>listener 정지(프로세스 종료 훅)</td>
+<td>sentinel 적재 2초 + join 5초</td>
+<td><code>queue_handler.py</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>drain 이 자기 guard 보다 <strong>짧게</strong> 기다리는 이유: 같은 값을 주면 취소 직후 바깥 guard 가 끊어, 취소된
+  태스크의 <code>finally</code>(세션 rollback·close)가 실행되지 못합니다.</li>
+<li><code>SHUTDOWN_TOTAL_TIMEOUT_SECONDS=20.0</code> 은 <strong>전체를 감싸는 timeout 이 아닙니다.</strong> 테스트
+  (<code>test_shutdown_timeout_budget_fits_total</code>)는 background·DB·flush 합(17초)이 20 이하인지만 봅니다.
+  Redis 를 더하면 lifespan 정리만 최대 약 22초, listener 정지까지 약 29초이며 진행 중 요청 대기는 별도입니다.
+  컨테이너 종료 유예(Kubernetes <code>terminationGracePeriodSeconds</code>, <code>docker stop -t</code>)는 이보다 길게 잡습니다.</li>
+<li>Celery worker 정리는 별도 10초입니다(§13).</li>
+</ul>
+<h3 id="83">8.3 오류·취소 전파 계약</h3>
+<table>
+<thead>
+<tr>
+<th>상황</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cleanup 의 일반 <code>Exception</code>·timeout</td>
+<td><code>_run_cleanup()</code> 이 자원명과 함께 기록하고 삼킨다 → 다음 단계 계속, 원래 예외 보존</td>
+</tr>
+<tr>
+<td>lifespan 취소(<code>CancelledError</code>)</td>
+<td>삼키지 않는다. 중첩 구조가 남은 정리를 시도한 뒤 호출자에게 재전파</td>
+</tr>
+<tr>
+<td>DB 엔진 일부 dispose 실패</td>
+<td><code>asyncio.gather(return_exceptions=True)</code> 로 전부 시도, 실패는 엔진 이름과 기록, 상위로 던지지 않음. <code>dispose_engine()</code> 은 인자를 받지 않는다(Celery 가 인자 없이 부름)</td>
+</tr>
+<tr>
+<td>background 태스크 예외</td>
+<td>done callback 이 회수해 ERROR 로 남김(취소는 오류로 보지 않음)</td>
+</tr>
+<tr>
+<td>로그 flush 초과</td>
+<td>경고만 남기고 종료 계속</td>
+</tr>
+<tr>
+<td>listener 정지 실패</td>
+<td>참조를 유지해 재시도 가능, 상태는 queue 를 거치지 않고 <code>sys.__stderr__</code> 에 기록</td>
+</tr>
+</tbody>
+</table>
+<h3 id="84">8.4 보장하지 않는 것</h3>
+<ul>
+<li><strong>SIGKILL</strong>(<code>kill -9</code>, 유예 초과) — 어떤 정리도 실행되지 않습니다. DB 연결은 서버 측 timeout 이 정리하고,
+  큐에 남은 로그는 사라집니다.</li>
+<li><strong>uvicorn force exit</strong>(Ctrl+C 두 번) — uvicorn 이 <code>lifespan.shutdown()</code> 을 호출하지 않습니다.</li>
+<li>uvicorn 의 graceful shutdown timeout 초과는 <strong>요청 task</strong> 를 취소하지 lifespan 을 취소하지 않습니다.
+  lifespan 취소는 테스트 하네스·다른 ASGI 서버·앱을 감싸는 코드에서 일어나며, 그 경로가 §8.1 의 이유입니다.</li>
+<li>반복 취소·무응답 I/O 에서 모든 정리의 성공, 다중 worker(gunicorn 등)·POSIX 실경로의 신호 처리는
+  실행 검증하지 않았습니다(CRP residual-risk 참고).</li>
+</ul><nav class="pager"><a href="boot-lifecycle.html">← 이전</a><a href="../index.html">전체 아키텍처</a><a href="logging.html">다음 →</a></nav></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../../assets/site.js"></script></body></html>

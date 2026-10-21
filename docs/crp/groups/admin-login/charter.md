@@ -16,7 +16,7 @@
 | 1 | `tests/test_admin_login.py`(신규), `tests/integration/test_mysql_admin_login.py`(신규), `tests/core/test_celery_app.py`, `tests/core/test_deployment_safety.py` | 테스트 | |
 | 2 | `config.py`(`ADMIN_DISABLED`·`validate_no_legacy_admin`·`API_DESCRIPTION`), `main.py`, `app/features/*/admin.py` docstring | 소스 | |
 | 2 | `tests/test_admin_disabled.py`(신규), `tests/test_admin_session_scope.py`(신규), `tests/test_admin_wiring.py`, `tests/test_route_inventory.py` | 테스트 | |
-| 2 | `docs/guides/admin-auth-guide.html`(신규) | 문서 | 도식 12절 |
+| 2 | `docs/guides/workflows/admin-authentication.html`(신규) | 문서 | 도식 12절 |
 | 3 | `app/features/{blog,catalog,home,reply,reports,sns,user}/admin.py`, `tests/test_admin_views_render.py`(신규) | 소스+테스트 | `column_filters` → `sqladmin.filters` |
 | 공통 | `README.md`, `.env.example`, `docs/guides/ARCHITECTURE.md`·`DEVELOPMENT.md`·`server-lifecycle-guide.html`·`feature-development-guide.html`, `scripts/review_gate.py`(요구 ID 출처 목록), `docs/crp/groups/{service-hardening,orm-raw-repository}/` 상태 줄 | 문서 | |
 

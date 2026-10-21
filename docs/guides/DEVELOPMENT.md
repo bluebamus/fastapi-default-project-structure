@@ -3,7 +3,7 @@
 새 엔드포인트·테이블을 만들 때 따라가는 문서입니다. 두 참조 예제를 기준으로 삼습니다 —
 `app/features/catalog/`(ORM, 상품 CRUD)와 `app/features/reports/`(Raw SQL, 일별 매출 집계·스냅샷 적재).
 구조와 런타임의 **왜**는 [ARCHITECTURE](./ARCHITECTURE.md), 설치·실행은 [README](../../README.md)에 있습니다.
-상품 생성 한 요청을 도식과 함께 따라가는 요약은 [신규 뷰·테이블 개발 안내서](./feature-development-guide.html)
+상품 생성 한 요청을 도식과 함께 따라가는 요약은 [신규 뷰·테이블 개발 안내서](./workflows/feature-development.html)
 이고, 절차·체크리스트의 원본은 이 문서입니다. 한쪽을 고치면 다른 쪽도 함께 고칩니다.
 
 아래 코드 조각은 실제 파일을 줄인 것이거나(파일 경로를 적음) 설명용 가상 예시(`inventory`)입니다.
@@ -44,7 +44,7 @@ ORM 과 Raw SQL 은 **Repository 구현에서만** 갈라집니다. 나머지(�
 | Composition root | `dependencies/` — 세션 선택 + `Service(db_session)` 반환 | 유스케이스 실행, 커밋, `yield` 후 커밋 |
 | Service | `services/` — `BaseService` 상속, 업무 규칙·오케스트레이션 | HTTP 객체, SQL 문자열, 임의 커밋 |
 | Repository | `repositories/` — `BaseRepository` 또는 `RawRepositoryBase` 상속 | 커밋, HTTP, 업무 규칙 |
-| 관리 UI | `admin.py` — SQLAdmin ModelView. 인증(활성 슈퍼유저 로그인, Redis 서버 세션)과 쓰기 요청 CSRF 는 관리 화면 전체에 이미 걸려 있다([관리 화면 인증 안내서](./admin-auth-guide.html)). sqladmin `@action` 은 GET 으로 상태를 바꿔 CSRF 검사를 비켜 가므로 쓰지 않는다(`tests/test_admin_csrf.py` 가 막는다) | API 권한 계약과 공유되는 보안 장치 아님 — 관리 세션은 API 를 인증하지 않는다 |
+| 관리 UI | `admin.py` — SQLAdmin ModelView. 인증(활성 슈퍼유저 로그인, Redis 서버 세션)과 쓰기 요청 CSRF 는 관리 화면 전체에 이미 걸려 있다([관리 화면 인증 안내서](./workflows/admin-authentication.html)). sqladmin `@action` 은 GET 으로 상태를 바꿔 CSRF 검사를 비켜 가므로 쓰지 않는다(`tests/test_admin_csrf.py` 가 막는다) | API 권한 계약과 공유되는 보안 장치 아님 — 관리 세션은 API 를 인증하지 않는다 |
 
 "뷰" 는 이 저장소에서 path operation 함수를 뜻합니다(SQLAdmin ModelView·DB 의 SQL VIEW 와 다릅니다).
 Service 를 FastAPI 밖(background·Celery·테스트)에서도 생성자 주입으로 쓸 수 있는 것이 계층을 나누는

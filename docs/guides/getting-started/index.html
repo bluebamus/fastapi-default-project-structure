@@ -1,0 +1,232 @@
+<!-- generated-by: gsd-doc-writer -->
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>설치·부팅 시작 안내서</title><link rel="stylesheet" href="../assets/site.css"></head><body>
+<nav class="topbar"><strong><a href="../index.html">프로젝트 가이드</a></strong><a href="../index.html">전체 메뉴</a><a href="../architecture/index.html">아키텍처</a><a href="../development/index.html">개발</a><a href="../reference/api.html">API</a><a href="../workflows/sequence-diagrams.html">시퀀스</a></nav>
+<header class="hero"><div class="eyebrow">코드 기준 HTML 매뉴얼 · 2026-10-21</div><h1>설치·부팅 시작 안내서</h1><p>의존성 설치부터 .env, Redis/MySQL, 첫 서버 실행과 다음 학습 경로를 설명합니다.</p></header>
+<div class="layout"><main class="content"><section><h2>이 저장소의 조립 방식</h2><p><strong>명시적 조립</strong>: main.py가 기능 라우터와 애플리케이션 인프라를 명시적으로 조립합니다.</p><p>Python 요구 버전, 의존성, Redis·MySQL 준비, <code>.env</code>, 실행 명령은 아래 README의 빠른 시작 절에서 그대로 가져왔습니다.</p></section><section><h2 id="_1">빠른 시작</h2>
+<p>모든 명령은 <strong>저장소 루트</strong>에서 실행합니다(<code>.env</code> 를 작업 디렉터리 기준으로 읽습니다).</p>
+<h3 id="0">0. 무엇이 필요한가</h3>
+<table>
+<thead>
+<tr>
+<th>실행 방식</th>
+<th>Redis</th>
+<th>MySQL</th>
+<th>결과</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEBUG=false</code></td>
+<td>필요</td>
+<td>없어도 기동</td>
+<td><code>/health</code> 200, <code>/ready</code> 503, DB 를 쓰는 API 는 500, <code>/docs</code> 404</td>
+</tr>
+<tr>
+<td><code>DEBUG=true</code> (기본값)</td>
+<td>필요</td>
+<td><strong>필요</strong></td>
+<td>startup 에서 개발용 테이블 생성을 시도하므로 MySQL 이 없으면 기동 실패</td>
+</tr>
+<tr>
+<td>단위 테스트</td>
+<td>불필요*</td>
+<td>불필요*</td>
+<td>*실제 uvicorn 수명 테스트는 Redis, <code>-m mysql</code> 테스트는 MySQL 이 없으면 skip</td>
+</tr>
+</tbody>
+</table>
+<p>Redis 는 끌 수 없는 startup 조건이고 서버는 <strong>6.2 이상</strong>이어야 합니다(<code>DEBUG</code> 와 무관). API 문서(<code>/docs</code>)는 <code>DEBUG=true</code> 에서만
+열리고, <code>DEBUG=true</code> 는 MySQL 을 요구합니다 — 첫 실행에서 가장 헷갈리는 조합입니다.</p>
+<h3 id="1">1. 의존성 설치</h3>
+<pre><code class="language-bash">uv sync
+</code></pre>
+<p><code>[tool.uv] package = false</code> 라 루트 패키지는 설치하지 않고 의존성만 설치합니다.</p>
+<h3 id="2-env">2. <code>.env</code> 준비 — 먼저 채운다</h3>
+<pre><code class="language-bash">cp .env.example .env        # PowerShell: Copy-Item -LiteralPath .env.example -Destination .env
+uv run python -c &quot;import secrets; print(secrets.token_urlsafe(48))&quot;   # 키마다 한 번씩, 세 번 실행
+</code></pre>
+<p><code>.env</code> 에서 아래를 바꿉니다. 바꾸지 않으면 <strong>개발 환경에서도 기동하지 않습니다</strong>(설정 검사, ADR-045).
+오류 메시지에 고칠 설정 이름이 나오므로 그대로 따라 고치면 됩니다.</p>
+<table>
+<thead>
+<tr>
+<th>설정</th>
+<th>할 일</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code></td>
+<td>위 명령으로 만든 값을 <strong>서로 다르게</strong> 넣는다(32자 이상)</td>
+</tr>
+<tr>
+<td><code>MYSQL_PASSWORD</code></td>
+<td>4단계에서 띄울 MySQL 의 비밀번호와 같은 값. 비워 두거나 예시 값이면 거부</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><code>.env</code> 가 없으면 기동하지 않습니다. 파일 없이 환경 변수로 주입하는 경우(컨테이너)는 <code>ENV</code>·비밀 키 3종·
+  <code>MYSQL_HOST/USER/PASSWORD/DATABASE</code> 가 모두 있어야 합니다.</li>
+<li>우선순위: <strong>프로세스 환경 변수 → <code>.env</code> → 코드 기본값</strong>. 코드 기본값은 그대로 두되, 예시 값·빈 비밀번호로는 뜨지 않습니다.</li>
+<li>리스트 값은 JSON 배열로 씁니다: <code>CORS_ALLOW_ORIGINS=["http://localhost:3000"]</code>.</li>
+<li>테스트(<code>ENV=test</code>, pytest 가 지정)는 이 검사를 하지 않습니다 — <code>.env</code> 없이 돕니다.</li>
+</ul>
+<h3 id="3-redis">3. Redis 만으로 배선 확인</h3>
+<pre><code class="language-bash">docker run --rm -d --name fastapi-redis -p 6379:6379 redis:7-alpine   # 6.2 이상이면 된다
+DEBUG=false uv run uvicorn main:app --port 8000
+curl http://127.0.0.1:8000/health      # {&quot;status&quot;:&quot;healthy&quot;,&quot;version&quot;:&quot;0.1.0&quot;}
+</code></pre>
+<p>PowerShell 은 <code>$env:DEBUG = "false"</code> 로 지정하고, 끝난 뒤 <code>Remove-Item Env:DEBUG</code> 로 되돌립니다.
+<code>compose.test.yaml</code> 의 Redis 를 써도 됩니다: <code>docker compose -f compose.test.yaml up -d --wait redis-test</code>.</p>
+<h3 id="4-mysql-api">4. MySQL 추가 — 기능 API·문서까지</h3>
+<pre><code class="language-bash">docker run -d --name fastapi-mysql -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD='&lt;.env 의 MYSQL_PASSWORD 와 같은 값&gt;' -e MYSQL_DATABASE=fastapi_db mysql:8
+uv run uvicorn main:app --reload --port 8000
+</code></pre>
+<p>설정 기본값(<code>MYSQL_HOST=localhost</code>, <code>MYSQL_USER=root</code>, <code>MYSQL_DATABASE=fastapi_db</code>)에 맞춘 <strong>로컬 전용</strong>
+예시입니다. 빈 비밀번호는 개발 환경에서도 설정 검사가 거부하므로 비밀번호를 지정합니다.
+이 단일 컨테이너 경로는 실행 확인하지 않았습니다 — 검증된 것은 <code>compose.test.yaml</code>(포트 3308) 경로입니다.
+데이터베이스와 계정 권한은 미리 있어야 합니다. <code>DEBUG=true</code> 의 테이블 생성은 <strong>없는 테이블만</strong> 만드는
+개발 편의 기능이고 migration 이 아닙니다.</p>
+<h3 id="5">5. 실행 명령과 접속 주소</h3>
+<pre><code class="language-bash">uv run python main.py                                  # run_server(): SERVER_HOST/PORT, reload=DEBUG
+uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000   # uvicorn 표준 CLI
+</code></pre>
+<p>두 명령 모두 정상이며 오류·traceback 도 똑같이 출력됩니다. 차이는 uvicorn 자신의 로그 포맷뿐입니다
+(<code>python main.py</code> 는 프로젝트 포맷 + <code>[app=uvicorn]</code>). 이유는
+<a href="../architecture/index.html#96-실행-명령에-따른-차이">ARCHITECTURE §9.6</a>.
+<code>--lifespan off</code> 는 Redis 확인과 자원 정리를 통째로 건너뛰므로 쓰지 않습니다.</p>
+<table>
+<thead>
+<tr>
+<th>주소</th>
+<th>조건</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="http://127.0.0.1:8000/health">http://127.0.0.1:8000/health</a></td>
+<td>항상 — 프로세스 생존(liveness)</td>
+</tr>
+<tr>
+<td><a href="http://127.0.0.1:8000/ready">http://127.0.0.1:8000/ready</a></td>
+<td>항상 — writer DB <code>SELECT 1</code> 과 Redis <code>PING</code>(각 2초, 동시에), 하나라도 실패 시 503 (readiness)</td>
+</tr>
+<tr>
+<td><a href="http://127.0.0.1:8000/docs">http://127.0.0.1:8000/docs</a>, <code>/openapi.json</code></td>
+<td><code>DEBUG=true</code></td>
+</tr>
+<tr>
+<td><a href="http://127.0.0.1:8000/admin">http://127.0.0.1:8000/admin</a></td>
+<td><code>ADMIN_DISABLED=false</code>(기본값) — <strong>활성 슈퍼유저 로그인 필요</strong>(아래). <code>ADMIN_DISABLED=true</code> 면 404</td>
+</tr>
+</tbody>
+</table>
+<p>관리 화면에 들어가려면 MySQL 이 뜬 상태에서 슈퍼유저를 하나 만들고(비밀번호를 두 번 묻는다) 그 계정으로
+<code>/admin/login</code> 의 Bootstrap 로그인 화면에서 로그인합니다(폼에 CSRF 토큰이 숨은 필드로 실린다 — 화면을 오래 열어 두었다가
+세션이 바뀌면 "요청이 만료되었습니다" 403 이 나오고, 다시 그려진 화면에서 그대로 다시 로그인하면 된다). 로그인 뒤의
+생성·수정·삭제·로그아웃도 같은 세션 토큰을 싣는다 — 화면의 작은 스크립트가 폼·삭제 요청에 붙인다. 관리 세션은 Redis 에
+있어 30분 동안 요청이 없거나 로그인 뒤 8시간이 지나면 다시 로그인해야 한다:</p>
+<pre><code class="language-bash">uv run python -m scripts.create_superuser --username admin --email admin@example.com
+</code></pre>
+<p>오케스트레이터의 liveness probe 에는 <code>/health</code>, readiness probe 에는 <code>/ready</code> 를 연결합니다.
+<code>/health</code> 가 DB 를 검사하면 DB 가 잠깐 흔들릴 때 멀쩡한 프로세스가 재시작됩니다.</p>
+<h3 id="_2">자주 막히는 지점</h3>
+<table>
+<thead>
+<tr>
+<th>증상</th>
+<th>원인</th>
+<th>조치</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>startup 에서 <code>Redis 연결 실패: &lt;오류 타입&gt;</code></td>
+<td>Redis 미기동·주소/포트/비밀번호 오류</td>
+<td><code>REDIS_*</code> 확인. <code>DEBUG=false</code> 로 우회되지 않음</td>
+</tr>
+<tr>
+<td>startup 에서 <code>Redis &lt;버전&gt; 는 지원하지 않는다 — 최소 6.2.0 이상이 필요하다</code></td>
+<td>Redis 서버가 6.2 미만이라 <code>GETDEL</code>(refresh 회전)이 없다</td>
+<td>Redis 를 6.2 이상으로 올린다. <code>INFO</code> 를 막아 둔 관리형 Redis 는 WARNING 만 남기고 뜬다 — 그때는 버전을 직접 확인한다</td>
+</tr>
+<tr>
+<td>startup 에서 <code>Can't connect to MySQL server</code></td>
+<td><code>DEBUG=true</code> 가 테이블 생성을 시도</td>
+<td>MySQL 을 띄우거나 <code>DEBUG=false</code></td>
+</tr>
+<tr>
+<td><code>/docs</code> 404</td>
+<td><code>DEBUG=false</code> 는 문서를 끈다</td>
+<td><code>DEBUG=true</code> (MySQL 필요)</td>
+</tr>
+<tr>
+<td>기능 API 만 500</td>
+<td>앱은 떴지만 DB 가 없다</td>
+<td>4단계</td>
+</tr>
+<tr>
+<td><code>.env 파일이 없고, 필수 설정이 …</code></td>
+<td><code>.env</code> 가 없다</td>
+<td>2단계. 컨테이너라면 메시지에 나온 환경 변수를 주입</td>
+</tr>
+<tr>
+<td><code>ENV=development 설정 검사 실패 — X 가 예시 값…</code></td>
+<td><code>.env</code> 의 비밀 키·비밀번호가 예시 값·빈 값·32자 미만</td>
+<td>2단계 표대로 X 를 고친다</td>
+</tr>
+<tr>
+<td><code>설정 ADMIN 은 ADMIN_DISABLED 로 바뀌었습니다</code></td>
+<td>환경 변수나 <code>.env</code> 에 예전 <code>ADMIN</code> 이 남아 있다(옛 <code>.env.example</code> 사본)</td>
+<td>그 줄을 지운다. <code>ADMIN=false</code> 였다면 대신 <code>ADMIN_DISABLED=true</code></td>
+</tr>
+<tr>
+<td><code>/admin</code> 로그인이 계속 로그인 화면으로 돌아온다</td>
+<td>계정이 슈퍼유저·활성이 아니거나, HTTP 로 접속했는데 <code>ENV=staging/production</code> 이라 쿠키가 <code>Secure</code></td>
+<td><code>scripts.create_superuser</code> 로 승격, 배포 환경은 HTTPS 로 접속(<a href="../workflows/admin-authentication.html#ops">관리 화면 인증 안내서</a>)</td>
+</tr>
+<tr>
+<td><code>/admin</code> 이 503 <code>관리 세션 저장소를 사용할 수 없습니다</code></td>
+<td>관리 세션은 Redis 에 있다 — Redis 장애면 관리 화면은 통과시키지 않는다(fail-closed)</td>
+<td>Redis 를 복구한다(<code>/ready</code> 로 확인). 복구 뒤 세션이 남아 있으면 그대로 쓴다</td>
+</tr>
+<tr>
+<td>로그인·refresh·로그아웃·회원가입·사용자 수정/삭제 API 가 503 <code>SERVICE_UNAVAILABLE</code></td>
+<td>레이트 리밋·refresh 회전·토큰 폐기가 Redis 에 있다 — Redis 연결 오류면 요청을 거부한다(fail-closed). Redis 를 쓰지 않는 조회는 그대로 200</td>
+<td>Redis 를 복구한다(<code>/ready</code> 로 확인). 서버 로그에 <code>[RedisUnavailable]</code> 가 traceback 과 함께 한 번 남는다</td>
+</tr>
+<tr>
+<td>관리 화면에서 저장·삭제·로그아웃이 403 <code>요청이 만료되었습니다</code></td>
+<td>화면을 연 뒤 세션이 바뀌었거나(다른 탭에서 다시 로그인) 브라우저 JS 가 꺼져 토큰이 붙지 않았다</td>
+<td>화면을 새로 고쳐 다시 시도. JS 를 켠다(<a href="../workflows/admin-authentication.html#ops">관리 화면 인증 안내서</a>)</td>
+</tr>
+<tr>
+<td><code>/admin/login</code> 이 429</td>
+<td>같은 IP+사용자명 5회·같은 IP 20회(60초 창) 초과</td>
+<td><code>Retry-After</code> 초만큼 기다린다. 프록시 뒤인데 모두가 막히면 <code>TRUSTED_PROXY_HOPS</code></td>
+</tr>
+<tr>
+<td>startup INFO 로그가 안 보임</td>
+<td><code>LOG_LEVEL</code>·<code>LOG_CONSOLE_LEVEL</code> 명시값이 더 높음</td>
+<td><a href="../architecture/index.html#93-레벨이-정해지는-방식">ARCHITECTURE §9.3</a></td>
+</tr>
+<tr>
+<td>새 기능 URL 이 404</td>
+<td><code>main.py</code> 에 <code>include_router</code> 누락</td>
+<td><a href="../development/index.html#2-새-기능테이블-추가-절차">DEVELOPMENT §2</a></td>
+</tr>
+<tr>
+<td>MySQL 테스트가 <code>Access denied</code> 로만 실패</td>
+<td>3308 포트를 다른 MySQL 이 선점(IDE 포트 포워딩 등)</td>
+<td>Windows <code>Get-NetTCPConnection -LocalPort 3308</code>, Linux <code>ss -ltn</code>. <code>MYSQL_TEST_PORT</code> 로 이동</td>
+</tr>
+<tr>
+<td>통합 테스트가 갑자기 전부 skip</td>
+<td>WSL2 유휴로 VM 과 컨테이너가 내려감(<code>docker ps -a</code> 에 <code>Exited (0)</code>)</td>
+<td><code>docker compose -f compose.test.yaml up -d --wait</code></td>
+</tr>
+</tbody>
+</table>
+<hr></section><section><h2>다음 읽을 문서</h2><div class="cards"><a class="card" href="../workflows/server-lifecycle.html"><strong>실행 뒤 무슨 일이 생기나</strong><span>설정 → 기동 → 요청 → 종료</span></a><a class="card" href="../reference/configuration.html"><strong>환경변수 전체</strong><span>민감값을 제외한 .env.example 키</span></a><a class="card" href="../reference/api.html"><strong>첫 API 호출</strong><span>전체 endpoint와 요청·응답 스키마</span></a><a class="card" href="../development/index.html"><strong>테스트</strong><span>단위·통합·품질 게이트</span></a></div></section></main></div><footer>코드와 문서가 다르면 코드가 기준입니다. 변경 시 관련 소스·테스트·이 문서를 함께 갱신하세요.</footer><script type="module" src="../assets/site.js"></script></body></html>
