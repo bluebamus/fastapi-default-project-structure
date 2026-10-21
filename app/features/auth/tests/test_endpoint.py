@@ -309,3 +309,43 @@ async def test_logout_revokes_refresh_and_is_idempotent(client):
 async def test_logout_with_invalid_token_401(client):
     resp = await client.post("/api/v1/auth/logout", json={"refresh_token": "garbage"})
     assert resp.status_code == 401
+
+
+# =============================================================================
+# 인증 사용자 조회는 primary (e2e-policy-2 결정 5)
+# =============================================================================
+async def test_current_user_is_read_from_primary_not_a_lagging_replica():
+    """replica 에 아직 없는(복제 지연) 사용자의 유효한 토큰이 401 이 되지 않는다.
+
+    writer·reader 를 서로 다른 sqlite 로 두고 사용자는 writer 에만 넣는다 — reader 에서 읽으면 401 이다.
+    세션은 앱과 같은 읽기 전용 표시를 달아, 조회가 primary 로 가도 쓰기 차단은 그대로인지 함께 본다.
+    """
+    from app.core.db.router import DatabaseRouter, create_routing_sessionmaker, mark_read_only
+    from app.core.security.authorization import Principal
+    from app.features.auth.dependencies.auth_dependencies import get_current_user
+
+    engines = []
+    for _ in range(2):
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        engines.append(engine)
+    writer, reader = engines
+    async with async_sessionmaker(writer)() as session:
+        session.add(
+            User(id="u-1", username="lagged", email="lagged@example.com", hashed_password="x")
+        )
+        await session.commit()
+    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
+
+    async with maker() as session:
+        mark_read_only(session)
+        user = await get_current_user(Principal("u-1", "lagged", False), session)
+
+    assert user.username == "lagged"
+    for engine in engines:
+        await engine.dispose()

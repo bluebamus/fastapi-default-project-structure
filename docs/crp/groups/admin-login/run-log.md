@@ -29,7 +29,7 @@
   `SESSION_SECRET_KEY` 소비처는 관리 세션 서명 + 설정 검사(예시 값·길이·`REQUIRED_WITHOUT_ENV_FILE`)뿐 → ADR-006
 - **결정:** ADR-005·006, ADR-008 보강
 - **신규 finding:** MED 1(F-003) — Fixed
-- **안내서:** `docs/guides/admin-auth-guide.html` 12절, Mermaid 도식 8개. 기존 안내서와 같은 Mermaid 11.12.0 으로 8개 전부
+- **안내서:** `docs/guides/workflows/admin-authentication.html` 12절, Mermaid 도식 8개. 기존 안내서와 같은 Mermaid 11.12.0 으로 8개 전부
   `mermaid.parse` 통과(저장소 밖 node + jsdom 로 확인 — 브라우저는 이 작업 환경에서 localhost 에 닿지 않아 렌더링 화면은 보지 못했다)
 - **낡은 서술 grep:** `git grep -n -E "인증 없|ADMIN=|ADMIN_ALLOW_UNAUTHENTICATED|ADMIN_UNAUTHENTICATED_ACK|unauthenticated"` —
   남은 것은 (a) Redis·MySQL·헬스 엔드포인트의 "인증 없는 접속" 같은 다른 주제, (b) 선행 그룹 CRP·ARCHITECTURE 변경 이력의 당시 기록,

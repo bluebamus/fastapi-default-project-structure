@@ -12,7 +12,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db.session import get_read_only_db_session, get_writer_db_session
+from app.core.db.session import get_read_only_db_session, get_writer_db_session, using_writer
 from app.core.exception import TooManyRequestsException
 from app.core.middlewares.client_ip import ClientIPResolver
 from app.core.redis import get_redis
@@ -129,15 +129,16 @@ async def get_current_user(
     (service-hardening ADR-017). 회전 저장소(Redis)·해시기가 필요 없으므로 ``AuthService`` 를
     조립하지 않는다 — 조회 하나를 위해 Redis 를 요청 경로에 끌어들이지 않는다.
 
-    세션도 읽기 전용을 쓴다(P4-3). 커밋을 안 하는 것만으로는 조회가 여전히
-    writer 로 가서, ``DB_ROUTER_ENABLED`` 를 켜도 인증 조회가 replica 로 분산되지
-    않는다. 다른 도메인의 ``get_<name>_service_readonly`` 와 같은 기준이다.
+    세션은 읽기 전용(쓰기 차단, P4-3)이지만 조회는 **primary** 에서 한다(e2e-policy-2 결정 5). replica 에서
+    읽으면 복제 지연 동안 막 가입한 사용자의 유효한 토큰이 401 이 되고, 비활성화·삭제가 지연만큼 늦게
+    반영된다. 요청마다 1건이라 primary 부하는 작다. 다른 읽기 라우팅은 그대로다.
 
     쓰기 의존성과 함께 쓰이는 라우트가 생기면 세션이 둘로 나뉜다(읽기용·쓰기용).
     커밋 주체가 하나로 유지되므로 의도된 동작이지만, 인증 단계에서 읽은 객체를
     쓰기 세션에서 수정하려 들면 다른 세션의 인스턴스라 반영되지 않는다. 그런
     라우트를 만들 때는 쓰기 세션에서 다시 조회할 것.
     """
+    using_writer(db_session)
     user = await UserRepository(db_session).get_by_id(principal.id)
     if user is None or not user.is_active:
         raise InvalidTokenException()

@@ -37,7 +37,7 @@ ADMIN_CELLS = (
 STATIC = {
     ("admin-auth", "login"): ("success", "wrong-password", "csrf-missing", "rate-limit"),
     ("admin-auth", "logout"): ("get-405", "post"),
-    ("admin-auth", "csrf"): ("create", "edit", "delete", "logout", "body-cap-413"),
+    ("admin-auth", "csrf"): ("create", "edit", "delete", "logout", "body-cap-413", "field-cap-400"),
     ("admin-auth", "session"): (
         "idle-expiry",
         "absolute-expiry",
@@ -46,9 +46,9 @@ STATIC = {
         "revoke-on-delete",
     ),
     ("admin-auth", "admin-disabled"): ("404",),
-    ("fault", "redis"): ("stop-start",),
+    ("fault", "redis"): ("stop-start", "admin-first-request-503"),
     ("fault", "worker"): ("stop-start",),
-    ("fault", "replica"): ("stop-start",),
+    ("fault", "replica"): ("stop-start", "lag-auth-primary"),
     ("fault", "primary"): ("stop-start",),
     ("ops", "alembic"): ("round-trip",),
     ("ops", "create_superuser"): ("create-promote-reject",),

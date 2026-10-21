@@ -27,9 +27,9 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | **README.md** (이 문서) | 개요 · 빠른 시작 · 문서 안내(유일한 색인). 핵심 환경 변수, 테스트·CI, API 목록, 배포 점검 | 처음 받았을 때, 배포 전 |
 | [docs/guides/ARCHITECTURE.md](./docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 — 배선, 요청·트랜잭션 흐름, DB 세션·라우팅, 설정, 기동·종료 순서와 예산, 로깅, 접속 로그, 인증, SQLAdmin, Celery, Alembic, 설계 결정, 전체 설정 부록 | 구조를 이해하거나 런타임(시작·종료·로그)을 건드리기 전 |
 | [docs/guides/DEVELOPMENT.md](./docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 — 새 기능·테이블 추가 절차, 세션·DI 선택, 트랜잭션 규칙, ORM(`catalog`)·Raw SQL(`reports`) 실습, 마이그레이션, 비동기 원칙, 테스트·리뷰 체크리스트 | 코드를 작성할 때 |
-| [docs/guides/server-lifecycle-guide.html](./docs/guides/server-lifecycle-guide.html) | 서버 수명주기 안내서 — 설정 → 기동 → 요청 → 종료를 도식과 함께 추적(상세 표는 ARCHITECTURE) | 서버가 뜨고 끝나는 흐름을 한 번에 따라가 볼 때 |
-| [docs/guides/feature-development-guide.html](./docs/guides/feature-development-guide.html) | 신규 뷰·테이블 개발 안내서 — 상품 생성 한 요청을 따라가며 계층·DI·트랜잭션을 설명(절차 원본은 DEVELOPMENT) | 새 기능을 처음 만들 때 |
-| [docs/guides/admin-auth-guide.html](./docs/guides/admin-auth-guide.html) | 관리 화면 인증 안내서 — `/admin` 로그인(Redis 서버 세션)과 API 인증(JWT)의 범위, 세션 구조·로그인·요청별 확인·로그아웃·폐기 흐름도, 쿠키·Redis 키·만료, CSRF 흐름, 계정 수명주기, 위협 모델, 운영·문제 해결 | 관리 화면 인증을 이해하거나 바꾸기 전, 배포 전 |
+| [docs/guides/workflows/server-lifecycle.html](./docs/guides/workflows/server-lifecycle.html) | 서버 수명주기 안내서 — 설정 → 기동 → 요청 → 종료를 도식과 함께 추적(상세 표는 ARCHITECTURE) | 서버가 뜨고 끝나는 흐름을 한 번에 따라가 볼 때 |
+| [docs/guides/workflows/feature-development.html](./docs/guides/workflows/feature-development.html) | 신규 뷰·테이블 개발 안내서 — 상품 생성 한 요청을 따라가며 계층·DI·트랜잭션을 설명(절차 원본은 DEVELOPMENT) | 새 기능을 처음 만들 때 |
+| [docs/guides/workflows/admin-authentication.html](./docs/guides/workflows/admin-authentication.html) | 관리 화면 인증 안내서 — `/admin` 로그인(Redis 서버 세션)과 API 인증(JWT)의 범위, 세션 구조·로그인·요청별 확인·로그아웃·폐기 흐름도, 쿠키·Redis 키·만료, CSRF 흐름, 계정 수명주기, 위협 모델, 운영·문제 해결 | 관리 화면 인증을 이해하거나 바꾸기 전, 배포 전 |
 | [docs/specs/orm-raw-repository/requirements.md](./docs/specs/orm-raw-repository/requirements.md) | 고정 기준선(착수 명세) — 요구 ID(AR·TX·NFR 등)의 원본 | 코드·문서가 인용한 요구 ID 를 찾을 때 |
 | [docs/specs/orm-raw-repository/development-plan.md](./docs/specs/orm-raw-repository/development-plan.md) | 고정 기준선 — 착수 시점 설계·Phase 0~7 계획 | 요구 명세의 Phase 추적표를 따라갈 때 |
 | [docs/specs/orm-raw-repository/workflow-guide.md](./docs/specs/orm-raw-repository/workflow-guide.md) | 고정 기준선 — 착수 시점 구현 지침·예시 코드 | 착수 당시의 지침과 현재를 비교할 때 |
@@ -60,6 +60,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   읽기 세션의 쓰기 차단은 `DB_ROUTER_ENABLED` 와 무관하게 항상 동작하고,
   `DB_ROUTER_ENABLED=true` 면 여기에 replica 라우팅이 더해집니다. replica 에 접속할 수 없으면 읽기 세션의
   읽기는 primary 로 한 번 다시 실행되고 WARNING 이 남습니다([ARCHITECTURE §4.3](./docs/guides/ARCHITECTURE.md#43-읽기쓰기-라우팅)).
+  예외: 토큰의 사용자를 확인하는 조회(`/me` 의 `get_current_user`)는 복제 지연 때 유효한 토큰이 401 이 되지 않도록 primary 에서 읽습니다.
 - **ORM·Raw SQL 두 가지 Repository** — `BaseRepository`(ORM)와 `RawRepositoryBase`(Raw SQL)는
   상속 관계가 없는 평행 계층입니다. 참조 예제: `app/features/catalog/`(ORM),
   `app/features/reports/`(Raw).
@@ -77,7 +78,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
   Bootstrap 로그인 화면·Redis 서버 세션(로그아웃·강등·비활성화 즉시 폐기)·모든 쓰기 요청의 CSRF 토큰·POST 로그아웃·
   레이트 리밋, 목록의 `created_at` 날짜·기간 필터. 쓰지 않으면
   `ADMIN_DISABLED=true` 로 흔적 없이 끈다).
-  관리 세션은 `/admin` 전용이고 API 인증(JWT)과 섞이지 않는다([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html)).
+  관리 세션은 `/admin` 전용이고 API 인증(JWT)과 섞이지 않는다([관리 화면 인증 안내서](./docs/guides/workflows/admin-authentication.html)).
 - **결정적 검수** — `scripts/review_gate.py` 와 CI 가 계층 불변식·공개 API 불변·SKIP 0 을 기계로 확인합니다.
 
 ## 기술 스택
@@ -86,7 +87,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 |---|---|
 | Python | 3.14 (`.python-version`, CI 동일). 최소 3.13 — `TypeVar(default=...)` 사용 |
 | Web | FastAPI 0.141, Uvicorn 0.54 |
-| DB | SQLAlchemy 2.0 async + aiomysql(MySQL), Alembic(pymysql), 테스트는 aiosqlite |
+| DB | SQLAlchemy 2.0 async + aiomysql(MySQL — `aiomysql[rsa]`: MySQL 8.4 `caching_sha2_password` 전체 인증의 RSA 암호화용 cryptography 포함), Alembic(pymysql), 테스트는 aiosqlite |
 | 검증·설정 | Pydantic v2, pydantic-settings |
 | Redis | 필수 — **서버 6.2 이상**(`GETDEL` 이 쓰는 명령 중 가장 높은 요구치, 기동 시 `INFO server` 로 확인해 미만이면 기동 거부) · startup 연결 검증 · `/ready` 판정 · 주입 provider `get_redis`(refresh 회전 기록·레이트 리밋) + Celery broker/backend (클라이언트 redis-py 6, 선언은 `>=6.0.0,<7.0.0` — 실제 해석 천장은 `kombu[redis]` 가 정한다) |
 | 작업 큐 | Celery 5 (앱 `app/celery/`, 태스크는 기능별 `app/features/<name>/tasks.py` 자동 발견) |
@@ -209,10 +210,10 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `.env 파일이 없고, 필수 설정이 …` | `.env` 가 없다 | 2단계. 컨테이너라면 메시지에 나온 환경 변수를 주입 |
 | `ENV=development 설정 검사 실패 — X 가 예시 값…` | `.env` 의 비밀 키·비밀번호가 예시 값·빈 값·32자 미만 | 2단계 표대로 X 를 고친다 |
 | `설정 ADMIN 은 ADMIN_DISABLED 로 바뀌었습니다` | 환경 변수나 `.env` 에 예전 `ADMIN` 이 남아 있다(옛 `.env.example` 사본) | 그 줄을 지운다. `ADMIN=false` 였다면 대신 `ADMIN_DISABLED=true` |
-| `/admin` 로그인이 계속 로그인 화면으로 돌아온다 | 계정이 슈퍼유저·활성이 아니거나, HTTP 로 접속했는데 `ENV=staging/production` 이라 쿠키가 `Secure` | `scripts.create_superuser` 로 승격, 배포 환경은 HTTPS 로 접속([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html#ops)) |
+| `/admin` 로그인이 계속 로그인 화면으로 돌아온다 | 계정이 슈퍼유저·활성이 아니거나, HTTP 로 접속했는데 `ENV=staging/production` 이라 쿠키가 `Secure` | `scripts.create_superuser` 로 승격, 배포 환경은 HTTPS 로 접속([관리 화면 인증 안내서](./docs/guides/workflows/admin-authentication.html#ops)) |
 | `/admin` 이 503 `관리 세션 저장소를 사용할 수 없습니다` | 관리 세션은 Redis 에 있다 — Redis 장애면 관리 화면은 통과시키지 않는다(fail-closed) | Redis 를 복구한다(`/ready` 로 확인). 복구 뒤 세션이 남아 있으면 그대로 쓴다 |
 | 로그인·refresh·로그아웃·회원가입·사용자 수정/삭제 API 가 503 `SERVICE_UNAVAILABLE` | 레이트 리밋·refresh 회전·토큰 폐기가 Redis 에 있다 — Redis 연결 오류면 요청을 거부한다(fail-closed). Redis 를 쓰지 않는 조회는 그대로 200 | Redis 를 복구한다(`/ready` 로 확인). 서버 로그에 `[RedisUnavailable]` 가 traceback 과 함께 한 번 남는다 |
-| 관리 화면에서 저장·삭제·로그아웃이 403 `요청이 만료되었습니다` | 화면을 연 뒤 세션이 바뀌었거나(다른 탭에서 다시 로그인) 브라우저 JS 가 꺼져 토큰이 붙지 않았다 | 화면을 새로 고쳐 다시 시도. JS 를 켠다([관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html#ops)) |
+| 관리 화면에서 저장·삭제·로그아웃이 403 `요청이 만료되었습니다` | 화면을 연 뒤 세션이 바뀌었거나(다른 탭에서 다시 로그인) 브라우저 JS 가 꺼져 토큰이 붙지 않았다 | 화면을 새로 고쳐 다시 시도. JS 를 켠다([관리 화면 인증 안내서](./docs/guides/workflows/admin-authentication.html#ops)) |
 | `/admin/login` 이 429 | 같은 IP+사용자명 5회·같은 IP 20회(60초 창) 초과 | `Retry-After` 초만큼 기다린다. 프록시 뒤인데 모두가 막히면 `TRUSTED_PROXY_HOPS` |
 | startup INFO 로그가 안 보임 | `LOG_LEVEL`·`LOG_CONSOLE_LEVEL` 명시값이 더 높음 | [ARCHITECTURE §9.3](./docs/guides/ARCHITECTURE.md#93-레벨이-정해지는-방식) |
 | 새 기능 URL 이 404 | `main.py` 에 `include_router` 누락 | [DEVELOPMENT §2](./docs/guides/DEVELOPMENT.md#2-새-기능테이블-추가-절차) |
@@ -501,8 +502,8 @@ uv run python -m scripts.review_gate --fast   # pytest 제외
 | Catalog | `GET·POST /api/v1/catalog/products` · `GET·PATCH·DELETE /api/v1/catalog/products/{product_id}` | ORM 참조 예제 |
 | Reports | `GET /api/v1/reports/sales/daily` · `POST /api/v1/reports/sales/daily/snapshots` | Raw SQL 참조 예제(조회·적재) |
 
-DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은 `{"error_code", "message", "detail"}` 형식입니다.
-예외가 실은 헤더는 그대로 실립니다 — 405 `Allow`, 401 `WWW-Authenticate: Bearer`, 429 `Retry-After`.
+DELETE 와 `POST /auth/logout` 은 204(본문 없음)입니다. 오류 응답은 `{"error_code", "message", "detail"}` 형식입니다 — 422 도 같고, OpenAPI 문서의 422 도 이 형식(`ErrorResponse`)입니다.
+예외가 실은 헤더는 그대로 실립니다 — 405 `Allow`, 429 `Retry-After`. 401 은 로그인 실패·refresh·logout·보호 라우트 어디서 나든 `WWW-Authenticate: Bearer` 가 붙습니다.
 
 인증 흐름 — `register` → `login`(form) 으로 `{access_token, refresh_token, token_type, expires_in}` 를 받고, API 는
 `Authorization: Bearer <access_token>` 으로 부릅니다. access 가 만료되면 `refresh` 에 refresh 토큰을 보내 **새 쌍**을 받습니다 —
@@ -539,7 +540,7 @@ access 토큰에는 사용자 ID(`sub`)·사용자명·슈퍼유저 여부(`su`)
   요청마다 DB 도 확인합니다. 관리 화면에서 사용자를 비활성화·비밀번호 변경·삭제하면 그 사용자의 API refresh 토큰도
   함께 폐기됩니다(API 경로와 같은 집합). 강등만 하면 관리 세션만 끊기고 일반 사용자로 API 는 계속 쓴다. 이름·이메일 같은
   일반 수정은 아무것도 폐기하지 않고, 폐기가 실패하면 변경도 저장되지 않습니다. 관리 화면의 상태 변경(생성·수정·삭제·로그아웃)은 모두 CSRF 토큰을 요구합니다.
-  상세는 [관리 화면 인증 안내서](./docs/guides/admin-auth-guide.html).
+  상세는 [관리 화면 인증 안내서](./docs/guides/workflows/admin-authentication.html).
 
 ### 첫 관리자 만들기
 
@@ -562,7 +563,7 @@ printf '%s\n' "$ADMIN_PASSWORD" | uv run python -m scripts.create_superuser --us
 
 4·5번(그리고 남아 있는 예전 `ADMIN` 설정)은 **앱이 직접 기동을 거부**합니다(설정 검사, ADR-027·028·030·045,
 admin-login ADR-005). 그 밖의 조합(`SERVER_HOST` 등)은 앱이 막지 않으므로 아래를 확인합니다. A~D 는 이번
-버전에서 **배포 전에 반드시** 할 일입니다(관리 화면 인증 안내서의 [운영 절](./docs/guides/admin-auth-guide.html#ops)).
+버전에서 **배포 전에 반드시** 할 일입니다(관리 화면 인증 안내서의 [운영 절](./docs/guides/workflows/admin-authentication.html#ops)).
 
 | # | 확인 | 빠뜨리면 |
 |---|---|---|

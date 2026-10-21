@@ -85,6 +85,7 @@ class ServerProcess:
     """
 
     def __init__(self, argv: list[str], port: int, redis_target: tuple[str, int]) -> None:
+        self.port = port
         env = os.environ.copy()
         redis_host, redis_port = redis_target
         # 부모(pytest)는 pytest-env 로 DEBUG=true 를 쓴다. 그대로 물려주면 reloader 가
@@ -313,3 +314,52 @@ def test_uvicorn_cli_also_flushes_the_shutdown_tail(server_process):
         "uvicorn CLI 로 띄우면 앱 종료 로그의 꼬리가 잘린다 — 정리가 끝까지 갔는지 "
         f"로그로 확인할 수 없다 (F-039).\n{out}"
     )
+
+
+def test_unhandled_exception_keeps_the_connection_and_logs_once(server_process):
+    """버그(처리기 없는 예외) 500 뒤에도 같은 연결로 다음 요청이 된다 (e2e-policy-2 결정 2).
+
+    전에는 ``ServerErrorMiddleware`` 가 응답 뒤 예외를 다시 던져 uvicorn 이 ``Exception in ASGI application``
+    traceback 을 한 번 더 남기고 연결을 닫았다. 지금은 앱 로그 1건, uvicorn 의 그 줄 0건이다.
+    """
+    import http.client
+    import json
+
+    proc = server_process(
+        [
+            "-m",
+            "uvicorn",
+            "tests.integration.unhandled_exception_app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "{port}",
+        ]
+    )
+    assert proc.wait_for_marker(
+        READY_MARKER, READY_TIMEOUT_SECONDS
+    ), f"서버가 {READY_TIMEOUT_SECONDS:.0f}초 안에 기동하지 않았다.\n{proc.output}"
+
+    conn = http.client.HTTPConnection("127.0.0.1", proc.port, timeout=10)
+    try:
+        conn.request("GET", "/bug")
+        bug = conn.getresponse()
+        body = json.loads(bug.read())
+        conn.request("GET", "/ok")  # 같은 연결 — 닫혔으면 여기서 ConnectionError
+        ok = conn.getresponse()
+        ok_body = json.loads(ok.read())
+    finally:
+        conn.close()
+    proc.stop_gracefully()
+    out = proc.output
+
+    assert bug.status == 500
+    assert body == {
+        "error_code": "INTERNAL_SERVER_ERROR",
+        "message": "내부 서버 오류가 발생했습니다.",
+        "detail": None,
+    }
+    assert (ok.status, ok_body) == (200, {"ok": True})
+    assert out.count("[UnhandledException] RuntimeError") == 1, out
+    assert "Exception in ASGI application" not in out, out
+    assert out.count("Traceback (most recent call last)") == 1, out

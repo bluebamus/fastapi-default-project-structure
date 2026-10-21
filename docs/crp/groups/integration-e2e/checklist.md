@@ -26,3 +26,16 @@
 - [x] (F-003) 설정 로드 직후 프로세스 파일 부착 — 단위(실행 경로 5종)·e2e 테스트, fail-on-revert, `3d30859`
 - [x] README·ARCHITECTURE 장애 동작 설명을 실제 동작으로
 - [x] Round 1 의 결정 필요 3건 닫음 — F-003·F-004 Fixed(ledger), R-004 해소(residual-risk)
+
+## Round 3 — 2026-10-21 · e2e 정책 결정 2차(결정 1~7, 브랜치 `fix/e2e-policy-2`)
+- [x] 결정을 design-baseline 에 기록(REQ-008, ADR-012~016)
+- [x] 결정마다 해당 여부 확인 — 고침 1·2·3·5·7, 이미 충족 6, 해당 없음 4(결정 2 는 보류 뒤 확정)
+- [x] (F-008) 422 문서 = `ErrorResponse` — 계약 테스트, fail-on-revert, `01f1d6a`·`6f479c4`
+- [x] (F-009) 모든 401 에 `WWW-Authenticate: Bearer` — 단위·e2e, fail-on-revert, `98c390d`
+- [x] (F-010) 인증 사용자 조회 primary — 단위·e2e(복제 지연), fail-on-revert, `db1d3fe`
+- [x] 결정 6 계약 고정(쿠키 없는 첫 요청 503) — 단위·e2e, 변이 검증, `cce4fdd`
+- [x] (F-011) CSRF 상한 413·400 — 단위·e2e(L5 측정 갱신, RSS), fail-on-revert, `8f3d269`
+- [x] (F-012) 결정 2 — 가장 바깥 사용자 미들웨어, 단위·실제 uvicorn, fail-on-revert, `0fef02e`
+- [x] 의존성 `aiomysql[rsa]` 통일(ADR-017) — 계약 테스트, fail-on-revert, lock 표기만 변경, `9774d68`
+- [x] README·ARCHITECTURE·관리 화면 안내서 설명을 실제 동작으로
+- [x] `docs/review` 병합 표에 certifi 병합과 이번 브랜치(병합 대기) 덧붙임(커밋하지 않음)

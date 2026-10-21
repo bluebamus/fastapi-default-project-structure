@@ -94,6 +94,7 @@ def test_token_lifecycle_rotation_reuse_and_logout(stack, r, cover):
         )
         reuse = c.post("/api/v1/auth/refresh", json={"refresh_token": again["refresh_token"]})
     assert reuse.status_code == 401
+    assert reuse.headers["www-authenticate"] == "Bearer"  # refresh 의 401 도 challenge (결정 3)
     assert r.exists(f"auth:fam:{_claims(again['refresh_token'])['fam']}:revoked")
     for prefix in ("auth:rt:", "auth:fam:", "auth:user:"):
         cover("redis", prefix, "used")
@@ -109,6 +110,7 @@ def test_login_and_register_rate_limits_recover_after_the_window(stack, r, cover
                 "/api/v1/auth/login", data={"username": user["username"], "password": "wrong-pass"}
             )
             assert bad.status_code == 401
+            assert bad.headers["www-authenticate"] == "Bearer"  # 로그인 실패 401 도 (결정 3)
         blocked = c.post(
             "/api/v1/auth/login", data={"username": user["username"], "password": user["password"]}
         )

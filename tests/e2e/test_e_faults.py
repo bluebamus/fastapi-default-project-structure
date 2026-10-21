@@ -67,6 +67,10 @@ def test_redis_down_admin_fails_closed_and_api_follows_policy(stack, cover):
         assert (
             blocked.status_code == 503 and "관리 세션 저장소를 사용할 수 없습니다" in blocked.text
         )
+        # 쿠키 없는 첫 요청: 응답 직전 세션(CSRF 토큰) 저장이 실패하는 경로도 503 (결정 6)
+        with client(stack) as fresh:
+            first = fresh.get("/admin/login")
+        assert first.status_code == 503 and "관리 세션 저장소를 사용할 수 없습니다" in first.text
         change = admin.post(
             f"/admin/user/edit/{user['id']}",
             data={
@@ -120,6 +124,7 @@ def test_redis_down_admin_fails_closed_and_api_follows_policy(stack, cover):
     admin.close()
     _admin(stack).close()  # 새 로그인으로 관리 화면도 회복
     cover("fault", "redis", "stop-start")
+    cover("fault", "redis", "admin-first-request-503")
 
 
 def test_worker_down_does_not_affect_api_and_backlog_runs_after_restart(stack, cover):
@@ -172,6 +177,32 @@ def test_replica_down_and_back(stack, cover):
         _wait(lambda: c.get(f"/api/v1/blog/posts/{created.json()['id']}").status_code == 200)
         assert c.get(f"/api/v1/blog/posts/{created.json()['id']}").json()["title"] == "u"
     cover("fault", "replica", "stop-start")
+
+
+def test_replication_lag_does_not_401_a_valid_token(stack, cover):
+    """인증 사용자 조회는 primary (e2e-policy-2 결정 5).
+
+    replica 의 SQL 스레드를 멈춰 복제 지연을 만든 뒤 가입·로그인한 사용자의 ``/me`` 가 200 이고, primary 에서
+    비활성화하면 replica 가 따라오기 전에도 401 이다. 그동안 다른 읽기(replica 경로)는 그대로 replica 를 본다.
+    """
+    stack.sql("mysql-replica", "STOP REPLICA SQL_THREAD;")
+    try:
+        user = new_user(stack)
+        assert not stack.query("SELECT id FROM users WHERE id=%s", (user["id"],), replica=True)
+        with client(stack, user["access"]) as c:
+            me = c.get("/api/v1/auth/me")
+            assert me.status_code == 200, me.text
+            stack.execute("UPDATE users SET is_active=0 WHERE id=%s", (user["id"],))
+            gone = c.get("/api/v1/auth/me")
+            assert gone.status_code == 401, gone.text
+            assert gone.headers["www-authenticate"] == "Bearer"
+        NOTES["복제 지연 · /me"] = (
+            f"가입 직후 {me.status_code}, primary 비활성화 직후 {gone.status_code}"
+        )
+    finally:
+        stack.sql("mysql-replica", "START REPLICA SQL_THREAD;")
+        stack.wait_replica(timeout=120)
+    cover("fault", "replica", "lag-auth-primary")
 
 
 def test_primary_down_ready_503_health_200_and_clean_500(stack, cover):

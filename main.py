@@ -5,7 +5,7 @@
 """
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -17,6 +17,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from scalar_fastapi import get_scalar_api_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from app.core.db.session import READINESS_TIMEOUT_SECONDS, engine, ping_writer_db
 from app.core.exception import (
@@ -56,6 +58,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         yield
 
 
+def _with_bearer_challenge(
+    status_code: int, headers: Mapping[str, str] | None
+) -> dict[str, str] | None:
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 보탠다 — 로그인·refresh·logout·보호 라우트 전부 (e2e-policy-2 결정 3).
+
+    RFC 9110 §15.5.2: 401 은 challenge 를 하나 이상 실어야 한다. 예외가 이미 실은 값은 그대로 둔다.
+    """
+    if status_code != 401:
+        return dict(headers) if headers is not None else None
+    return {"WWW-Authenticate": "Bearer", **(headers or {})}
+
+
 def _register_exception_handlers(app: FastAPI) -> None:
     """글로벌 예외 핸들러(4가지 + Redis 연결 오류 503)를 등록합니다."""
 
@@ -88,7 +102,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.to_response().model_dump(mode="json"),
-            headers=exc.headers,
+            headers=_with_bearer_challenge(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -151,7 +165,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=None,
             ).model_dump(mode="json"),
             # 401 의 ``WWW-Authenticate: Bearer``(OAuth2PasswordBearer)처럼 예외가 실은 헤더를 보존한다.
-            headers=exc.headers,
+            headers=_with_bearer_challenge(exc.status_code, exc.headers),
         )
 
     async def redis_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -206,6 +220,26 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 detail=detail,
             ).model_dump(mode="json"),
         )
+
+    @app.middleware("http")
+    async def unhandled_exception_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받는다 (e2e-policy-2 결정 2).
+
+        위 ``Exception`` 처리기만 두면 Starlette 가 그것을 ``ServerErrorMiddleware`` 에서 부르고 응답 뒤 예외를
+        다시 던진다 — uvicorn 이 traceback 을 한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기로
+        응답을 끝내면 로그 1번·연결 유지·본문 그대로다. 사용자 미들웨어 중 **가장 바깥**이어야 CORS·UserInfo
+        안에서 난 예외도 받는다 — 이 함수를 등록하는 이 호출이 미들웨어 등록의 마지막이다(테스트로 고정).
+        ``DEBUG=true`` 는 지금처럼 다시 던진다. 응답 본문을 보내는 중의 예외는 ``call_next`` 가 이미 돌아온 뒤라
+        여기 오지 않는다(기존대로 — 시작된 응답은 덧쓸 수 없다).
+        """
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            if app_settings.DEBUG:
+                raise
+            return await general_exception_handler(request, exc)
 
 
 class HealthResponse(BaseModel):
@@ -359,6 +393,35 @@ logger.info("라우터 include 완료")
 
 # 헬스체크 + Scalar 문서
 _add_health_and_docs(app)
+
+
+def _openapi_with_actual_422() -> dict:
+    """422 문서를 실제 본문(``ErrorResponse``)으로 바꾼 OpenAPI (e2e-policy-2 결정 1).
+
+    FastAPI 는 매개변수가 있는 operation 마다 422 를 기본 ``HTTPValidationError`` 로 광고하지만, 실제 응답은
+    ``validation_exception_handler`` 가 만드는 ``ErrorResponse`` 다. 생성된 문서를 한 번 고쳐 캐시한다.
+    """
+    if app.openapi_schema is not None:
+        return app.openapi_schema
+    schema = FastAPI.openapi(app)
+    schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+    schemas.setdefault(
+        "ErrorResponse",
+        ErrorResponse.model_json_schema(ref_template="#/components/schemas/{model}"),
+    )
+    for operations in schema.get("paths", {}).values():
+        for operation in operations.values():
+            documented = operation.get("responses", {}).get("422")
+            if documented is not None:
+                documented["content"] = {
+                    "application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}
+                }
+    schemas.pop("HTTPValidationError", None)
+    schemas.pop("ValidationError", None)
+    return schema
+
+
+app.openapi = _openapi_with_actual_422  # type: ignore[method-assign]
 
 # SQLAdmin 관리 화면 (ADMIN_DISABLED=true 면 끈다 — admin-login ADR-005).
 # 끈 경우 sqladmin·인증 백엔드·세션 미들웨어를 import 하지도 만들지도 않고, 로그에도 경로를 싣지 않는다.

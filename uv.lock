@@ -19,6 +19,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4c/af/aae0153c3e28712adaf462328f6c7a3c196a1c1c27b491de4377dd3e6b52/aiomysql-0.3.2-py3-none-any.whl", hash = "sha256:c82c5ba04137d7afd5c693a258bea8ead2aad77101668044143a991e04632eb2", size = 71834, upload-time = "2025-10-22T00:15:15.905Z" },
 ]
 
+[package.optional-dependencies]
+rsa = [
+    { name = "pymysql", extra = ["rsa"] },
+]
+
 [[package]]
 name = "aiosqlite"
 version = "0.20.0"
@@ -720,11 +725,10 @@ name = "fastapi-default-project-structure"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "aiomysql" },
+    { name = "aiomysql", extra = ["rsa"] },
     { name = "alembic" },
     { name = "bcrypt" },
     { name = "celery", extra = ["redis"] },
-    { name = "cryptography" },
     { name = "fastapi" },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic" },
@@ -761,11 +765,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiomysql", specifier = ">=0.3.2,<0.4.0" },
+    { name = "aiomysql", extras = ["rsa"], specifier = ">=0.3.2,<0.4.0" },
     { name = "alembic", specifier = ">=1.15.1,<2.0.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "celery", extras = ["redis"], specifier = ">=5.4,<6.0" },
-    { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastapi", specifier = ">=0.141.1,<0.142.0" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.1" },
     { name = "pydantic", specifier = ">=2.10.6,<3.0.0" },
@@ -1523,6 +1526,11 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c9/bc/1c6a92f385940f727daeecf3bacaf186e03875dff57197801046c583bcf0/pymysql-1.2.0.tar.gz", hash = "sha256:6c7b17ca686988104d7426c27895b455cdeea3e9d3ceb1270f0c3704fead8c33", size = 49021, upload-time = "2026-05-19T08:26:22.302Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/bd/2534e130295c8cfd4f0a2e31623baab7502278f1e97bcfe61db75656a77f/pymysql-1.2.0-py3-none-any.whl", hash = "sha256:62169ce6d5510f08e140c5e7990ee884a9764024e4a9a27b2cc11f1099322ae0", size = 45716, upload-time = "2026-05-19T08:26:20.974Z" },
+]
+
+[package.optional-dependencies]
+rsa = [
+    { name = "cryptography" },
 ]
 
 [[package]]
