@@ -2,7 +2,8 @@
 Blog Service
 
 게시글 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
-트랜잭션 경계(commit/rollback)는 호출하는 의존성(또는 background_db_session)이 책임진다.
+트랜잭션 경계는 쓰기 핸들러(View)가 닫는다 — 응답 DTO 검증 뒤 ``await service.commit()`` 한 번.
+요청 밖에서는 ``background_db_session`` 을 연 쪽이 커밋한다. Service 메서드는 스스로 커밋하지 않는다.
 
 작성자는 인증 주체(``Principal``)로 서버가 채우고, 수정·삭제는 주입된 ``OwnershipPolicy`` 가
 소유자 또는 슈퍼유저만 허용한다(service-hardening ADR-018).

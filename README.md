@@ -25,6 +25,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | 문서 | 역할 | 언제 보나 |
 |---|---|---|
 | **README.md** (이 문서) | 개요 · 빠른 시작 · 문서 안내(유일한 색인). 핵심 환경 변수, 테스트·CI, API 목록, 배포 점검 | 처음 받았을 때, 배포 전 |
+| [docs/guides/index.html](./docs/guides/index.html) | HTML 가이드 목차 — 아래 HTML 안내서 3편과 주제별 HTML 요약(부팅·설계·API·설정·요청 처리·인증·기능 8편·개발·테스트·운영·시퀀스)을 브라우저에서 잇는다. 색인은 이 표가 정본이고 HTML 요약의 원본은 이 README·ARCHITECTURE·DEVELOPMENT 다 | 브라우저에서 주제별로 훑어볼 때 |
 | [docs/guides/ARCHITECTURE.md](./docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 — 배선, 요청·트랜잭션 흐름, DB 세션·라우팅, 설정, 기동·종료 순서와 예산, 로깅, 접속 로그, 인증, SQLAdmin, Celery, Alembic, 설계 결정, 전체 설정 부록 | 구조를 이해하거나 런타임(시작·종료·로그)을 건드리기 전 |
 | [docs/guides/DEVELOPMENT.md](./docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 — 새 기능·테이블 추가 절차, 세션·DI 선택, 트랜잭션 규칙, ORM(`catalog`)·Raw SQL(`reports`) 실습, 마이그레이션, 비동기 원칙, 테스트·리뷰 체크리스트 | 코드를 작성할 때 |
 | [docs/guides/workflows/server-lifecycle.html](./docs/guides/workflows/server-lifecycle.html) | 서버 수명주기 안내서 — 설정 → 기동 → 요청 → 종료를 도식과 함께 추적(상세 표는 ARCHITECTURE) | 서버가 뜨고 끝나는 흐름을 한 번에 따라가 볼 때 |
@@ -229,7 +230,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 [ARCHITECTURE 부록](./docs/guides/ARCHITECTURE.md#부록-설정-필드-전체)에 있고,
 `config.py` 와 `.env.example` 은 `tests/core/test_settings_contract.py` 가 양방향으로 맞춰 둡니다.
 
-`config` import 시점의 설정 검사(ADR-027·028·030·045)가 잘못된 설정을 `RuntimeError` 로 알립니다. 메시지에는 설정 이름만 나오고 값은 나오지 않으며, 위반은 한 번에 모아 보여 줍니다. `ENV=test` 는 검사하지 않습니다.
+`config` import 시점의 설정 검사(ADR-027·028·030·045)가 잘못된 설정을 `RuntimeError` 로 알립니다. 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. 검사 세 개(`validate_env_source()` → `validate_no_legacy_admin()` → `validate_deployment_safety()`)는 차례로 돌아 처음 실패한 곳에서 멈추고, 위반을 한 번에 모아 보여 주는 것은 `validate_deployment_safety()` 안에서뿐입니다. `ENV=test` 는 검사하지 않습니다.
 
 | 검사 | 적용 ENV |
 |---|---|
@@ -257,7 +258,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` | 로그인 시도 한도(IP+사용자명 / IP, 창 초). 초과 시 429 + `Retry-After`. 관리 화면 로그인도 같은 한도(카운터는 따로) |
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 시도 한도(IP) |
 | `LOG_*` | 아래 절 | 레벨·헤더별 레벨·형식·파일·회전·보관 — [로깅](#로깅) |
-| `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
+| `ACCESS_LOG_ENABLED` | `true` | `true` 면 `ACCESS_LOG_EXCLUDE_PATHS`(정확히 일치)·`ACCESS_LOG_EXCLUDE_EXTENSIONS`(접미사)에 걸리지 않는 요청의 접속 로그를 DB 에 저장. `false` 면 저장하지 않는다 |
 | `TRUSTED_PROXY_HOPS` | `0` | 접속 로그·로그인 레이트 리밋의 IP 를 `X-Forwarded-For` 오른쪽에서 몇 번째로 읽을지(앞단 신뢰 프록시 수). 0 이면 헤더를 보지 않는다. **프록시 뒤 배포는 단수만큼 설정** — 0 이면 전원이 프록시 IP 하나로 보여 한 사람으로 취급되고, 크게 잡으면 IP 위조가 가능하다 |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `password`·`token`·… | 접속 로그에 값을 `***` 로 저장할 쿼리스트링 키 |
 | `ACCESS_LOG_RETENTION_DAYS` | `365` | 접속 로그 보존 일수. Celery beat 가 매일 03:30(`TIME_ZONE`) 이보다 오래된 행을 5,000행씩 지운다. `0` 이면 지우지 않는다, 음수는 기동 시 검증 오류. **beat 를 띄워야 동작**(아래 체크리스트 11) |

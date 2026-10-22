@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>API 요청 처리</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>API 요청 처리</h1>
+  <p>요청이 미들웨어, 접근 수준 의존성, View, Service, DB 세션을 지나 응답이 되는 순서입니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>미들웨어 순서</h2>
+<p>바깥에서 안쪽으로 <code>unhandled_exception_middleware</code> → <code>UserInfoMiddleware</code> → CORS 입니다. <a data-source="main.py" href="../../../main.py"><code>main.py</code></a> 가 CORS, UserInfo 순으로 등록한 뒤 예외 미들웨어를 마지막에 등록하므로 예외 미들웨어가 가장 바깥입니다.</p>
+<ul>
+<li><code>unhandled_exception_middleware</code>: 처리기가 없는 예외를 500 JSON 으로 끝내 로그 1번·keep-alive 유지. <code>DEBUG=true</code> 면 다시 던집니다(개발 중 traceback 확인).</li>
+<li><code>UserInfoMiddleware</code>: client IP(<code>TRUSTED_PROXY_HOPS</code> 기준)·User-Agent·경로·메서드·쿼리(민감 키는 <code>***</code>)·Referer·세션 쿠키 값을 모으고, 응답 뒤 상태 코드·소요 시간·<code>user_id</code> 를 더해 저장 태스크를 제출합니다. 저장 실패는 응답에 영향을 주지 않습니다.</li>
+<li>CORS: <code>CORS_*</code> 설정대로 동작합니다.</li>
+</ul>
+</section>
+<section>
+<h2>처리 순서</h2>
+<div class="mermaid">sequenceDiagram
+participant C as Client
+participant E as unhandled_exception_middleware
+participant U as UserInfoMiddleware
+participant K as CORS
+participant A as 접근 수준 의존성
+participant V as View
+participant S as Service
+participant DB as read_only 또는 writer 세션
+C-&gt;&gt;E: HTTP 요청
+E-&gt;&gt;U: call_next
+U-&gt;&gt;U: 시작 시각, IP, UA, 경로 수집
+U-&gt;&gt;K: call_next
+K-&gt;&gt;A: 라우트 매칭 뒤 의존성 해석
+A--&gt;&gt;C: 토큰 실패 401, 권한 없음 403
+A-&gt;&gt;V: Principal 과 Service 주입
+V-&gt;&gt;S: 유스케이스 호출
+S-&gt;&gt;DB: 조회 또는 변경
+V-&gt;&gt;V: 쓰기면 응답 DTO 검증 뒤 service.commit()
+V--&gt;&gt;U: 응답
+U-&gt;&gt;U: 상태, 소요 시간, user_id 로 접속 로그 태스크 제출
+U--&gt;&gt;E: 응답
+E--&gt;&gt;C: 응답</div>
+<details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant C as Client
+participant E as unhandled_exception_middleware
+participant U as UserInfoMiddleware
+participant K as CORS
+participant A as 접근 수준 의존성
+participant V as View
+participant S as Service
+participant DB as read_only 또는 writer 세션
+C-&gt;&gt;E: HTTP 요청
+E-&gt;&gt;U: call_next
+U-&gt;&gt;U: 시작 시각, IP, UA, 경로 수집
+U-&gt;&gt;K: call_next
+K-&gt;&gt;A: 라우트 매칭 뒤 의존성 해석
+A--&gt;&gt;C: 토큰 실패 401, 권한 없음 403
+A-&gt;&gt;V: Principal 과 Service 주입
+V-&gt;&gt;S: 유스케이스 호출
+S-&gt;&gt;DB: 조회 또는 변경
+V-&gt;&gt;V: 쓰기면 응답 DTO 검증 뒤 service.commit()
+V--&gt;&gt;U: 응답
+U-&gt;&gt;U: 상태, 소요 시간, user_id 로 접속 로그 태스크 제출
+U--&gt;&gt;E: 응답
+E--&gt;&gt;C: 응답</code></pre></details>
+</section>
+<section>
+<h2>세션과 트랜잭션</h2>
+<ul>
+<li>기능 라우터는 조회에 <code>get_read_only_db_session</code>(쓰기 시도 시 즉시 실패, 라우터가 켜져 있으면 replica), 쓰기에 <code>get_writer_db_session</code>(첫 쿼리부터 primary)을 씁니다. <code>get_routed_db_session</code> 은 승인된 특수 경로용이며 현재 기능 라우터는 쓰지 않습니다.</li>
+<li>쓰기 핸들러(View)가 응답 DTO 를 먼저 검증한 뒤 <code>await service.commit()</code> 을 정확히 한 번 부르고 반환합니다. 세션은 의존성(<code>get_writer_db_session</code>)이 열고 닫으며, 커밋 전에 예외가 나면 세션 종료가 롤백합니다. Repository·Dependency 는 커밋하지 않습니다(<code>tests/test_write_dto_before_commit.py</code>, 검수 게이트 INV-2).</li>
+<li>요청 밖(접속 로그 저장·Celery 태스크)은 <code>background_db_session</code> 을 쓰고 그 안에서 직접 커밋합니다.</li>
+</ul>
+</section>
+<section>
+<h2>오류 응답</h2>
+<ul>
+<li><code>AppException</code> 계열은 상태 코드대로 <code>{error_code, message, detail}</code> 응답(4xx 는 WARNING, 5xx 는 ERROR 로그).</li>
+<li>입력 오류는 422 <code>VALIDATION_ERROR</code>, Starlette HTTP 예외는 <code>HTTP_&lt;code&gt;</code>.</li>
+<li>Redis 연결·타임아웃 오류는 503 <code>SERVICE_UNAVAILABLE</code>. Redis 를 쓰는 요청만 해당합니다.</li>
+<li>그 밖의 예외는 500 이고 <code>DEBUG=true</code> 에서만 가려진 예외 문자열을 <code>detail</code> 에 싣습니다.</li>
+<li>로그와 접속 로그를 잇는 기준은 경로·메서드·시각·<code>user_id</code> 입니다(요청마다 붙이는 별도 식별자는 없습니다).</li>
+</ul>
+</section>
+<section>
+<h2>코드 근거</h2>
+<ul>
+<li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li>
+<li><a data-source="app/core/middlewares/user_info_middleware.py" href="../../../app/core/middlewares/user_info_middleware.py"><code>app/core/middlewares/user_info_middleware.py</code></a></li>
+<li><a data-source="app/core/security/dependencies.py" href="../../../app/core/security/dependencies.py"><code>app/core/security/dependencies.py</code></a></li>
+<li><a data-source="app/core/exception.py" href="../../../app/core/exception.py"><code>app/core/exception.py</code></a></li>
+<li><a data-source="app/core/db/session.py" href="../../../app/core/db/session.py"><code>app/core/db/session.py</code></a></li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../ARCHITECTURE.md#3-요청-처리-흐름">ARCHITECTURE §3 요청 처리 흐름</a></li>
+<li><a href="../reference/api.html">API 레퍼런스</a></li>
+<li><a href="../workflows/authentication.html">API 인증</a></li>
+<li><a href="../workflows/server-lifecycle.html">서버 수명주기</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

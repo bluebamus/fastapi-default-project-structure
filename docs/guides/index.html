@@ -3,19 +3,90 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>문서 안내</title>
-  <style>body{font:16px/1.6 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem}</style>
+  <title>가이드 허브</title>
+  <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-  <h1>문서 안내</h1>
-  <p>구조와 절차의 원본은 Markdown 문서입니다. HTML 안내서는 흐름을 도식과 함께 따라가는 보조 문서입니다.</p>
-  <ul>
-    <li><a href="../../README.md">README — 설치·실행·환경 변수</a></li>
-    <li><a href="ARCHITECTURE.md">ARCHITECTURE — 구조와 동작의 원본 문서</a></li>
-    <li><a href="DEVELOPMENT.md">DEVELOPMENT — 기능 개발 절차의 원본 문서</a></li>
-    <li><a href="workflows/server-lifecycle.html">서버 수명주기 안내서 — 설정 → 기동 → 요청 → 종료</a></li>
-    <li><a href="workflows/feature-development.html">신규 뷰·테이블 개발 안내서 — 한 요청을 따라가며 계층·DI·트랜잭션</a></li>
-    <li><a href="workflows/admin-authentication.html">관리 화면 인증 안내서 — 세션·CSRF·폐기·운영</a></li>
-  </ul>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>가이드 허브</h1>
+  <p>실제 코드 기준으로 부팅, 설계, API, 요청 처리, 인증, 기능, 개발, 테스트, 운영 문서를 주제별로 연결합니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="index.html">허브</a>
+  <a href="getting-started/index.html">부팅</a>
+  <a href="architecture/index.html">설계</a>
+  <a href="reference/api.html">API</a>
+  <a href="reference/configuration.html">설정</a>
+  <a href="workflows/request-processing.html">요청</a>
+  <a href="workflows/authentication.html">인증</a>
+  <a href="features/index.html">기능</a>
+  <a href="development/index.html">개발</a>
+  <a href="development/testing.html">테스트</a>
+  <a href="operations/deployment.html">운영</a>
+</nav>
+<main>
+<section>
+<h2>이 페이지의 역할</h2>
+<p>구조와 절차의 원본은 Markdown 문서입니다. 저장소 문서 전체의 색인은 <a href="../../README.md#문서-안내">README 문서 안내 표</a> 이고, 이 페이지는 그중 HTML 가이드를 브라우저에서 잇는 목차입니다.</p>
+<ul>
+<li><a href="../../README.md">README — 설치·실행·환경 변수·API·배포 점검</a></li>
+<li><a href="ARCHITECTURE.md">ARCHITECTURE — 구조와 런타임 동작의 원본</a></li>
+<li><a href="DEVELOPMENT.md">DEVELOPMENT — 기능 개발 절차의 원본</a></li>
+</ul>
+</section>
+<section>
+<h2>처음 읽기</h2>
+<ul>
+<li><a href="getting-started/index.html">부팅과 첫 실행</a> — 설정 검사 → lifespan → readiness → 종료</li>
+<li><a href="architecture/index.html">아키텍처</a> — include_router 로 명시 조립, 모델·태스크 자동 탐색, 계층 책임</li>
+<li><a href="workflows/request-processing.html">API 요청 처리</a> — 미들웨어 순서, 세션, 트랜잭션, 오류 응답</li>
+<li><a href="workflows/authentication.html">API JWT 인증</a> — 발급·회전·폐기와 한계</li>
+<li><a href="workflows/sequence-diagrams.html">핵심 시퀀스 다이어그램</a> — 기동·쓰기 트랜잭션·인가</li>
+</ul>
+</section>
+<section>
+<h2>레퍼런스</h2>
+<ul>
+<li><a href="reference/api.html">API 레퍼런스</a> — 전체 operation 과 접근 수준</li>
+<li><a href="reference/configuration.html">환경 설정 레퍼런스</a> — Settings 전 필드와 기동 시 검사</li>
+</ul>
+</section>
+<section>
+<h2>기능별</h2>
+<ul>
+<li><a href="features/index.html">기능별 안내</a> — 기능 경계와 등록 방식</li>
+<li><a href="features/home.html">접속 로그 기능(home)</a> — <code>ACCESS_LOG_ENABLED</code> 일 때 제외 경로·확장자가 아닌 요청의 접속 정보를 저장하고, 슈퍼유저 조회 API·보존 삭제 태스크를 제공합니다.</li>
+<li><a href="features/blog.html">블로그 기능</a> — 게시글 CRUD 와 작성자 기반 수정·삭제 권한의 기준 구현입니다.</li>
+<li><a href="features/reply.html">댓글 기능</a> — 댓글 CRUD 와 작성자 기반 수정·삭제 권한을 제공합니다.</li>
+<li><a href="features/sns.html">SNS 기능</a> — 피드 게시물 CRUD 를 독립 기능으로 제공합니다.</li>
+<li><a href="features/user.html">사용자 기능</a> — 사용자 관리, 본인·슈퍼유저 접근 규칙, 변경별 토큰·세션 폐기 규칙을 다룹니다.</li>
+<li><a href="features/auth.html">API 인증 기능(auth)</a> — 가입, 로그인, 토큰 회전, 로그아웃, 현재 사용자 조회를 담당합니다.</li>
+<li><a href="features/catalog.html">상품 카탈로그 기능</a> — ORM Repository 로 상품 CRUD 를 구현한 참조 예제입니다.</li>
+<li><a href="features/reports.html">매출 보고서 기능</a> — Raw SQL Repository 로 집계 조회와 스냅샷 재적재를 구현한 참조 예제입니다.</li>
+</ul>
+</section>
+<section>
+<h2>개발·테스트·운영</h2>
+<ul>
+<li><a href="development/index.html">개발 가이드</a> — 새 기능을 등록하고 검토하는 순서</li>
+<li><a href="development/testing.html">테스트와 검증</a> — 로컬·CI 명령과 테스트 층</li>
+<li><a href="operations/deployment.html">배포와 운영</a> — 배포 전 확인, 관측, 장애 대응</li>
+</ul>
+</section>
+<section>
+<h2>흐름 안내서(도식 중심)</h2>
+<ul>
+<li><a href="workflows/server-lifecycle.html">서버 수명주기 안내서</a> — 설정 → 기동 → 요청 → 종료</li>
+<li><a href="workflows/feature-development.html">신규 뷰·테이블 개발 안내서</a> — 상품 생성 한 요청으로 계층·DI·트랜잭션</li>
+<li><a href="workflows/admin-authentication.html">관리 화면 인증 안내서</a> — 세션·CSRF·폐기·운영</li>
+</ul>
+</section>
+<section>
+<h2>문서 유지 규칙</h2>
+<p>라우트·설정·조립 코드가 바뀌면 해당 HTML 과 Markdown 을 같은 변경에서 고칩니다. 코드 근거 링크의 <code>data-source</code> 는 저장소 루트 기준 경로입니다.</p>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
 </body>
 </html>

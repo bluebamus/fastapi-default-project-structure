@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>기능별 안내</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>기능별 안내</h1>
+  <p>8개 기능의 책임, 접근 수준, 확장 지점을 기능마다 나눠 설명합니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>기능 경계</h2>
+<ul>
+<li>각 기능은 <code>app/features/&lt;name&gt;</code> 에 api·services·repositories·models·schemas·dependencies 를 모읍니다.</li>
+<li>기능끼리는 import 하지 않습니다. 유일한 예외는 auth 가 user 의 <code>User</code>·<code>UserRepository</code> 를 직접 쓰는 것이고 <a data-source="tests/core/test_layering.py" href="../../../tests/core/test_layering.py"><code>tests/core/test_layering.py</code></a> 가 강제합니다. 여러 기능이 쓰는 협력 객체는 <code>app/core</code> 의 provider 로 둡니다.</li>
+<li>라우터는 <a data-source="main.py" href="../../../main.py"><code>main.py</code></a> 의 <code>include_router</code>, 관리 화면은 <a data-source="app/features/admin.py" href="../../../app/features/admin.py"><code>app/features/admin.py</code></a> 의 명시 import 와 <code>ADMIN_VIEWS</code> 로 등록합니다(기능 <code>admin.py</code> 가 <code>admin_views</code> 를 정의). 모델·태스크는 디렉터리 규칙으로 자동 탐색됩니다.</li>
+</ul>
+</section>
+<section class="grid">
+<article class="card"><h2>접속 로그 기능(home)</h2><p><code>ACCESS_LOG_ENABLED</code> 일 때 제외 경로·확장자가 아닌 요청의 접속 정보를 저장하고, 슈퍼유저 조회 API·보존 삭제 태스크를 제공합니다.</p><a href="home.html">상세 보기 →</a></article>
+<article class="card"><h2>블로그 기능</h2><p>게시글 CRUD 와 작성자 기반 수정·삭제 권한의 기준 구현입니다.</p><a href="blog.html">상세 보기 →</a></article>
+<article class="card"><h2>댓글 기능</h2><p>댓글 CRUD 와 작성자 기반 수정·삭제 권한을 제공합니다.</p><a href="reply.html">상세 보기 →</a></article>
+<article class="card"><h2>SNS 기능</h2><p>피드 게시물 CRUD 를 독립 기능으로 제공합니다.</p><a href="sns.html">상세 보기 →</a></article>
+<article class="card"><h2>사용자 기능</h2><p>사용자 관리, 본인·슈퍼유저 접근 규칙, 변경별 토큰·세션 폐기 규칙을 다룹니다.</p><a href="user.html">상세 보기 →</a></article>
+<article class="card"><h2>API 인증 기능(auth)</h2><p>가입, 로그인, 토큰 회전, 로그아웃, 현재 사용자 조회를 담당합니다.</p><a href="auth.html">상세 보기 →</a></article>
+<article class="card"><h2>상품 카탈로그 기능</h2><p>ORM Repository 로 상품 CRUD 를 구현한 참조 예제입니다.</p><a href="catalog.html">상세 보기 →</a></article>
+<article class="card"><h2>매출 보고서 기능</h2><p>Raw SQL Repository 로 집계 조회와 스냅샷 재적재를 구현한 참조 예제입니다.</p><a href="reports.html">상세 보기 →</a></article>
+</section>
+<section>
+<h2>어디에 둘까</h2>
+<div class="mermaid">flowchart TD
+Change["새 요구사항"] --&gt; Owns{"어느 기능이 데이터를 소유?"}
+Owns --&gt;|"기존 기능"| Feature["그 기능 안에서 확장"]
+Owns --&gt;|"새 도메인"| New["새 기능 패키지"]
+Feature --&gt; Other{"다른 기능의 코드가 필요?"}
+New --&gt; Other
+Other --&gt;|"아니오"| Local["기능 내부 유지"]
+Other --&gt;|"예"| Core["core 로 올려 provider 로 공유, 기능 간 import 금지"]</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart TD
+Change["새 요구사항"] --&gt; Owns{"어느 기능이 데이터를 소유?"}
+Owns --&gt;|"기존 기능"| Feature["그 기능 안에서 확장"]
+Owns --&gt;|"새 도메인"| New["새 기능 패키지"]
+Feature --&gt; Other{"다른 기능의 코드가 필요?"}
+New --&gt; Other
+Other --&gt;|"아니오"| Local["기능 내부 유지"]
+Other --&gt;|"예"| Core["core 로 올려 provider 로 공유, 기능 간 import 금지"]</code></pre></details>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../development/index.html">개발 가이드</a></li>
+<li><a href="../reference/api.html">전체 API</a></li>
+<li><a href="../architecture/index.html">아키텍처</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

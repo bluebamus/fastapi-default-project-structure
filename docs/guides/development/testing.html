@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>테스트와 검증</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>테스트와 검증</h1>
+  <p>로컬·CI 에서 돌리는 명령과 각 테스트 층이 무엇을 보는지 정리합니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>기본 명령</h2>
+<pre><code>REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest -m "not mysql"   # CI gate 와 같은 집합
+uv run ruff check . &amp;&amp; uv run ruff format --check .
+uv run mypy .
+uv run python -m scripts.review_gate --fast                                   # pytest 제외 구조 검사
+
+docker compose -f compose.test.yaml up -d --wait                              # MySQL 8.4(3308) + Redis
+uv run python -m pytest -m mysql --mysql-required                             # 닿지 못하면 skip 이 아니라 실패
+uv run python -m pytest -m e2e -rsxX                                          # E2E, 스택은 하네스가 띄운다</code></pre>
+<ul>
+<li><code>REDIS_HOST</code>·<code>REDIS_PORT</code> 를 둘 다 주지 않으면 실제 uvicorn 수명 테스트(<code>tests/integration/test_uvicorn_lifecycle.py</code>)가 실패합니다. 주었는데 닿지 않으면 skip 됩니다.</li>
+<li><code>pytest</code> 콘솔 스크립트 대신 <code>python -m pytest</code> 를 씁니다. <code>pyproject.toml</code> 이 <code>DEBUG=true</code>·<code>ENV=test</code> 로 실행합니다.</li>
+<li><strong>skip 은 통과가 아닙니다.</strong> CI 는 skipped·xfailed·xpassed 가 있으면 실패합니다. 마커는 <code>mysql</code>·<code>e2e</code> 를 씁니다(<code>e2e</code> 는 마커식에 없으면 deselect).</li>
+</ul>
+<p>포트 충돌·E2E 하네스·검수 게이트 표·CI job 은 <a href="../../../README.md#테스트검수ci">README 테스트·검수·CI</a> 가 정본입니다.</p>
+</section>
+<section>
+<h2>검증 층</h2>
+<div class="mermaid">flowchart TD
+Static["ruff, mypy, review_gate: 계층 불변식, 공개 API 불변"] --&gt; Unit["단위·계약: sqlite, fakeredis, mysql 마커 제외"]
+Unit --&gt; MySQL["MySQL 통합: mysql 마커, compose.test.yaml"]
+MySQL --&gt; E2E["E2E: e2e 마커, compose.e2e.yaml, uvicorn, Celery, Playwright"]</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart TD
+Static["ruff, mypy, review_gate: 계층 불변식, 공개 API 불변"] --&gt; Unit["단위·계약: sqlite, fakeredis, mysql 마커 제외"]
+Unit --&gt; MySQL["MySQL 통합: mysql 마커, compose.test.yaml"]
+MySQL --&gt; E2E["E2E: e2e 마커, compose.e2e.yaml, uvicorn, Celery, Playwright"]</code></pre></details>
+</section>
+<section>
+<h2>무엇을 어디서 검증하나</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>대상</th><th>테스트</th><th>예</th></tr></thead>
+<tbody>
+<tr><td>서비스 규칙·트랜잭션 순서</td><td>단위(in-memory sqlite)</td><td><code>tests/test_write_dto_before_commit.py</code>, 기능별 <code>tests/</code></td></tr>
+<tr><td>인증·레이트 리밋·refresh 회전</td><td>fakeredis 단위 테스트</td><td><code>tests/core/test_rate_limiter.py</code>, <code>tests/core/test_refresh_token_store.py</code>, <code>tests/test_authorization.py</code></td></tr>
+<tr><td>라우트·접근 수준·OpenAPI</td><td>계약 테스트</td><td><code>tests/test_route_inventory.py</code>, <code>tests/test_openapi_contract.py</code></td></tr>
+<tr><td>계층 규칙</td><td>AST 검사</td><td><code>tests/core/test_layering.py</code></td></tr>
+<tr><td>문서</td><td>링크·경로·내용 계약</td><td><code>tests/test_docs_guides.py</code>, <code>tests/test_docs_guide_site.py</code></td></tr>
+<tr><td>SQL·dialect·마이그레이션</td><td>MySQL 통합(<code>-m mysql</code>)</td><td><code>tests/integration/</code></td></tr>
+<tr><td>프로세스 수명·장애·관리 화면</td><td>E2E(<code>-m e2e</code>)</td><td><code>tests/e2e/</code></td></tr>
+</tbody>
+</table></div>
+</section>
+<section>
+<h2>변경 완료 조건</h2>
+<p>성공 경로뿐 아니라 잘못된 입력, 미인증, 권한 부족, 없음, 충돌을 검증합니다. 외부 서비스가 필요한 테스트를 돌리지 못했다면 결과에 명시하고 CI(mysql·e2e job)에서 확인합니다.</p>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../development/index.html">개발 가이드</a></li>
+<li><a href="../DEVELOPMENT.md#12-테스트">DEVELOPMENT §12 테스트</a></li>
+<li><a href="../operations/deployment.html">배포와 운영</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

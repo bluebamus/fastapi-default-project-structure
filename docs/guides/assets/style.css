@@ -1,0 +1,45 @@
+:root {
+  color-scheme: light;
+  --ink: #162033;
+  --muted: #586276;
+  --line: #d9e0ea;
+  --brand: #176b87;
+  --soft: #eef8fb;
+  --code: #f4f6f8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); font: 16px/1.7 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; background: #fff; }
+.hero, main, .topnav, footer { max-width: 1120px; margin: auto; padding-left: 24px; padding-right: 24px; }
+.hero { padding-top: 52px; padding-bottom: 28px; }
+.hero h1 { font-size: clamp(2rem, 5vw, 3.3rem); line-height: 1.12; margin: .15em 0; }
+.hero p { max-width: 760px; color: var(--muted); }
+.eyebrow { font-weight: 800; letter-spacing: .12em; color: var(--brand) !important; }
+.topnav { display: flex; gap: 8px; flex-wrap: wrap; border-block: 1px solid var(--line); padding-top: 14px; padding-bottom: 14px; }
+.topnav a, .card a { color: var(--brand); font-weight: 700; text-decoration: none; }
+.topnav a { padding: 5px 9px; background: var(--soft); border-radius: 999px; }
+main { padding-top: 24px; padding-bottom: 60px; }
+section { margin: 34px 0; }
+h2 { margin-top: 1.6em; border-bottom: 1px solid var(--line); padding-bottom: .3em; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 16px; }
+.card, .callout { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: #fff; }
+.callout { background: var(--soft); border-left: 5px solid var(--brand); }
+.warning { background: #fff4e5; border-color: #b76d0d; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+code { background: var(--code); padding: .12em .32em; border-radius: 4px; }
+pre { overflow: auto; background: #172033; color: #edf6ff; padding: 16px; border-radius: 8px; }
+pre code { background: none; padding: 0; color: inherit; }
+.table-wrap { overflow: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 650px; }
+th, td { border: 1px solid var(--line); padding: 10px; text-align: left; vertical-align: top; }
+th { background: var(--soft); }
+.method { font-weight: 800; color: var(--brand); }
+.mermaid { overflow: auto; text-align: center; background: #fbfdff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.mermaid svg { max-width: 100%; height: auto; }
+details { margin-top: 8px; }
+summary { cursor: pointer; font-weight: 600; }
+footer { color: var(--muted); border-top: 1px solid var(--line); padding-top: 24px; padding-bottom: 40px; }
+a { color: #075f7a; }
+@media (max-width: 640px) {
+  .hero, main, .topnav, footer { padding-left: 16px; padding-right: 16px; }
+  .hero { padding-top: 30px; }
+}

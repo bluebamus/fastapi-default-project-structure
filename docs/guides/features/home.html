@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>접속 로그 기능(home)</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>접속 로그 기능(home)</h1>
+  <p><code>ACCESS_LOG_ENABLED</code> 일 때 제외 경로·확장자가 아닌 요청의 접속 정보를 저장하고, 슈퍼유저 조회 API·보존 삭제 태스크를 제공합니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>목적과 책임</h2>
+<ul>
+<li><code>UserInfoMiddleware</code>(core)가 모은 정보를 이 기능의 <code>HomeAccessLogSink</code> 가 <code>background_db_session</code> 으로 저장하고 직접 커밋합니다. sink 는 <code>app/features/home/__init__.py</code> 가 import 될 때 등록됩니다.</li>
+<li>조회 API 는 전부 <code>SuperuserRequired</code> 이고 read_only 세션을 씁니다(요청 경로의 쓰기 없음).</li>
+<li><code>tasks.py</code> 의 <code>home.purge_expired_access_logs</code> 가 매일 03:30(<code>TIME_ZONE</code>) beat 로 돌며 <code>ACCESS_LOG_RETENTION_DAYS</code>(기본 365, 0 이면 삭제 안 함)보다 오래된 로그를 지웁니다. <code>home.aggregate_access_stats</code> 는 통계 집계 예시 태스크입니다. beat 를 띄우지 않으면 로그가 계속 쌓입니다.</li>
+</ul>
+<div class="callout"><strong>핵심 패턴:</strong> core 미들웨어 → 기능 sink 등록 훅, 요청 밖 세션</div>
+</section>
+<section>
+<h2>API와 접근 수준</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>메서드</th><th>경로</th><th>접근 수준</th><th>성공</th><th>추가 검사·주의</th><th>용도</th></tr></thead>
+<tbody>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs</code></td><td><code>SuperuserRequired</code></td><td>200</td><td></td><td>접속 로그 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/recent</code></td><td><code>SuperuserRequired</code></td><td>200</td><td></td><td>최근 접속 로그</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/by-ip/{ip_address}</code></td><td><code>SuperuserRequired</code></td><td>200</td><td></td><td>IP별 조회</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/by-user/{user_id}</code></td><td><code>SuperuserRequired</code></td><td>200</td><td></td><td>사용자별 조회</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/home/access-logs/stats</code></td><td><code>SuperuserRequired</code></td><td>200</td><td></td><td>접속 통계</td></tr>
+</tbody>
+</table></div>
+</section>
+<section>
+<h2>내부 흐름</h2>
+<div class="mermaid">flowchart LR
+Req["요청: ACCESS_LOG_ENABLED, 제외 경로·확장자 아님"] --&gt; MW["UserInfoMiddleware"]
+MW --&gt;|"응답 뒤 태스크 제출"| Sink["HomeAccessLogSink: background 세션, 직접 커밋"]
+Sink --&gt; DB[("user_access_logs")]
+Admin["슈퍼유저"] --&gt; V["View home.py"]
+V --&gt; S["UserAccessLogService: read_only 세션"]
+S --&gt; DB
+Beat["Celery beat 03:30"] --&gt; T["tasks.py purge_expired_access_logs"]
+T --&gt; Ret["AccessLogRetentionService"]
+Ret --&gt; DB</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Req["요청: ACCESS_LOG_ENABLED, 제외 경로·확장자 아님"] --&gt; MW["UserInfoMiddleware"]
+MW --&gt;|"응답 뒤 태스크 제출"| Sink["HomeAccessLogSink: background 세션, 직접 커밋"]
+Sink --&gt; DB[("user_access_logs")]
+Admin["슈퍼유저"] --&gt; V["View home.py"]
+V --&gt; S["UserAccessLogService: read_only 세션"]
+S --&gt; DB
+Beat["Celery beat 03:30"] --&gt; T["tasks.py purge_expired_access_logs"]
+T --&gt; Ret["AccessLogRetentionService"]
+Ret --&gt; DB</code></pre></details>
+<p>트랜잭션 경계: 쓰기 핸들러(View)가 응답 DTO 를 먼저 검증한 뒤 <code>await service.commit()</code> 을 정확히 한 번 부르고 반환합니다. 세션은 의존성(<code>get_writer_db_session</code>)이 열고 닫으며, 커밋 전에 예외가 나면 세션 종료가 롤백합니다. Repository·Dependency 는 커밋하지 않습니다(<code>tests/test_write_dto_before_commit.py</code>, 검수 게이트 INV-2).</p>
+</section>
+<section>
+<h2>주요 소스</h2>
+<ul>
+<li><a data-source="app/features/home/__init__.py" href="../../../app/features/home/__init__.py"><code>app/features/home/__init__.py</code></a></li>
+<li><a data-source="app/features/home/api/routers/v1/home.py" href="../../../app/features/home/api/routers/v1/home.py"><code>app/features/home/api/routers/v1/home.py</code></a></li>
+<li><a data-source="app/features/home/access_log_sink.py" href="../../../app/features/home/access_log_sink.py"><code>app/features/home/access_log_sink.py</code></a></li>
+<li><a data-source="app/features/home/tasks.py" href="../../../app/features/home/tasks.py"><code>app/features/home/tasks.py</code></a></li>
+<li><a data-source="app/features/home/services/user_access_log_service.py" href="../../../app/features/home/services/user_access_log_service.py"><code>app/features/home/services/user_access_log_service.py</code></a></li>
+<li><a data-source="app/features/home/services/access_log_retention_service.py" href="../../../app/features/home/services/access_log_retention_service.py"><code>app/features/home/services/access_log_retention_service.py</code></a></li>
+<li><a data-source="app/features/home/repositories/user_access_log_repository.py" href="../../../app/features/home/repositories/user_access_log_repository.py"><code>app/features/home/repositories/user_access_log_repository.py</code></a></li>
+<li><a data-source="app/features/home/models/models.py" href="../../../app/features/home/models/models.py"><code>app/features/home/models/models.py</code></a></li>
+<li><a data-source="app/features/home/dependencies/access_log_dependencies.py" href="../../../app/features/home/dependencies/access_log_dependencies.py"><code>app/features/home/dependencies/access_log_dependencies.py</code></a></li>
+<li><a data-source="app/features/home/admin.py" href="../../../app/features/home/admin.py"><code>app/features/home/admin.py</code></a></li>
+</ul>
+</section>
+<section>
+<h2>확장할 때</h2>
+<ul>
+<li>보존 기간을 바꾸려면 <code>ACCESS_LOG_RETENTION_DAYS</code> 만 바꿉니다. 수집 항목을 늘리면 모델·migration·<code>ACCESS_LOG_SENSITIVE_QUERY_KEYS</code> 마스킹을 함께 검토합니다.</li>
+<li>API 가 바뀌면 <a href="../reference/api.html">API 레퍼런스</a>·README API 표·<code>tests/test_authorization.py</code> 를 함께 갱신합니다.</li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../features/index.html">기능 목록</a></li>
+<li><a href="../reference/api.html">전체 API</a></li>
+<li><a href="../development/index.html">개발 가이드</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

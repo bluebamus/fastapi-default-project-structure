@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-GUIDES = sorted((REPO_ROOT / "docs" / "guides").glob("*.md")) + sorted(
-    (REPO_ROOT / "docs" / "guides").glob("*.html")
+GUIDES = sorted((REPO_ROOT / "docs" / "guides").rglob("*.md")) + sorted(
+    (REPO_ROOT / "docs" / "guides").rglob("*.html")
 )
 #: 경로 검사 대상 — 가이드 전부 + 루트 README.
 CHECKED_DOCS = [REPO_ROOT / "README.md", *GUIDES]
@@ -29,6 +30,8 @@ _PATH = re.compile(
     r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_.-]+\.(?:py|ya?ml|toml|json|ini|cfg|txt|md|html))`"
 )
 _HTML_CODE = re.compile(r"<code>([^<]+)</code>")
+_HTML_HREF = re.compile(r'<a\s+[^>]*href="([^"]+)"')
+_HTML_ID = re.compile(r'\s(?:id|name)="([^"]+)"')
 _HISTORY = re.compile(r"^(#{1,6}) [^\n]*변경 이력[^\n]*\n.*?(?=^#{1,6} |\Z)", re.M | re.S)
 _RELATIVE_PREFIX = re.compile(r"^(?:\.\.?/)+")
 _IGNORED_DIRS = {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
@@ -73,6 +76,57 @@ def test_rule_catches_missing_and_skips_history():
 
 def test_guides_exist():
     assert GUIDES, "docs/guides 가 비어 있다 — 검사가 아무것도 보지 않는다"
+
+
+def anchors(path: Path) -> set[str]:
+    """링크 ``#조각`` 이 가리킬 수 있는 이름 — HTML 은 ``id``·``name``, Markdown 은 제목 앵커."""
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".html":
+        return set(_HTML_ID.findall(text))
+    # GitHub 제목 앵커: 소문자, 글자·숫자·_·-·공백만 남기고 공백은 '-'.
+    slugs = {
+        re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
+        for heading in re.findall(r"^#+\s+(.*)$", text, re.M)
+    }
+    return slugs | set(_HTML_ID.findall(text))
+
+
+def broken_links(guide: Path) -> list[str]:
+    broken = []
+    for href in _HTML_HREF.findall(guide.read_text(encoding="utf-8")):
+        parts = urlsplit(href)
+        if parts.scheme or href.startswith("//"):
+            continue
+        target = (guide.parent / unquote(parts.path)).resolve() if parts.path else guide
+        if not target.exists():
+            broken.append(href)
+        elif parts.fragment and target.suffix in (".html", ".md"):
+            if unquote(parts.fragment) not in anchors(target):
+                broken.append(href)
+    return broken
+
+
+def test_link_rule_catches_missing_fragment(tmp_path: Path):
+    """규칙 자체가 헛돌지 않는지 — 없는 앵커는 잡고, 있는 앵커·제목 앵커는 통과시킨다."""
+    (tmp_path / "doc.md").write_text("## 3. 자주 막히는 지점\n", encoding="utf-8")
+    page = tmp_path / "page.html"
+    page.write_text(
+        '<h2 id="ok">x</h2><a href="#ok">a</a><a href="#gone">b</a>'
+        '<a href="doc.md#3-자주-막히는-지점">c</a><a href="doc.md#없음">d</a>',
+        encoding="utf-8",
+    )
+
+    assert broken_links(page) == ["#gone", "doc.md#없음"]
+
+
+@pytest.mark.parametrize(
+    "guide",
+    [path for path in GUIDES if path.suffix == ".html"],
+    ids=lambda p: str(p.relative_to(REPO_ROOT)),
+)
+def test_html_guide_links_exist(guide: Path):
+    """모든 HTML 가이드의 저장소 내부 링크가 실제 파일과, ``#조각`` 이면 그 앵커를 가리킨다(D-N7)."""
+    assert not broken_links(guide), f"깨진 상대 링크: {broken_links(guide)}"
 
 
 @pytest.mark.parametrize("guide", CHECKED_DOCS, ids=lambda p: p.name)

@@ -832,7 +832,7 @@ REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest tests/integration/t
 
 ## 10. 접속 로그 미들웨어
 
-`UserInfoMiddleware`(`app/core/middlewares/user_info_middleware.py`)가 요청마다 정보를 모으고, 응답을
+`UserInfoMiddleware`(`app/core/middlewares/user_info_middleware.py`)가 대상 요청(`ACCESS_LOG_ENABLED` 이고 아래 제외 경로·확장자가 아닌 요청)마다 정보를 모으고, 응답을
 받은 뒤 `access_log_tasks.spawn()` 으로 저장 태스크를 제출합니다. core 는 저장 방법을 모르고,
 `access_log_sink.get_access_log_sink()` 에 등록된 sink 에 위임합니다. `home` 이 import 시점에
 `HomeAccessLogSink` 를 등록하며, 이 sink 는 `background_db_session()`(별도 풀)으로 저장하고 직접 커밋합니다.
@@ -1210,6 +1210,7 @@ config.set_main_option(
 
 | 날짜 | 변경 |
 |---|---|
+| 2026-10-22 | HTML 가이드 사이트(docs-guide-site): `docs/guides/index.html` 허브와 주제별 HTML 요약 19편(부팅·설계·API·설정·요청·인증·기능 8편·개발·테스트·운영·시퀀스)을 코드에 맞춰 추가, 내용 계약 `tests/test_docs_guide_site.py`(API 표 = openapi × 접근 수준, 설정 표 = Settings 전 필드, Mermaid `11.12.0` 고정, 허브 링크). 서비스 docstring 의 트랜잭션 경계 문구를 핸들러 커밋으로 정정 |
 | 2026-10-21 | 안내서 검수 반영(docs-guide-review): 미들웨어 순서(가장 바깥 = `unhandled_exception_middleware`)·설정 클래스 9종·revision head `c9e1a3b5d7f0`·파일 로그·`/ready` Redis·관리 세션(Redis 서버 세션)·e2e 실행·경로 수 24/39 등 HTML 안내서·DEVELOPMENT·README 를 코드에 맞춤, 결정 인용을 ADR 번호로, 이 표를 최신순으로 |
 | 2026-10-21 | e2e 정책 결정 2차(integration-e2e ADR-012~017): §3.3 OpenAPI 422 = `ErrorResponse`, 모든 401 에 `WWW-Authenticate: Bearer`, 처리기 없는 예외는 가장 바깥 사용자 미들웨어(로그 1번·keep-alive), §4.3 인증 사용자 조회 primary, 관리 화면 CSRF 상한(413 `Content-Length` 선판정·필드 1 MiB 400), 의존성 `aiomysql[rsa]` |
 | 2026-10-20 | 장애 동작 결정(integration-e2e ADR-009~011): §3.3 Redis 연결 오류 → 503 `SERVICE_UNAVAILABLE`(traceback 한 번, keep-alive 유지), §4.3 읽기 전용 세션의 replica 연결 오류 → primary 한 번 재시도 + WARNING, §9.2 프로세스 파일을 설정 로드 직후 실행 프로그램으로 붙여 import 중 줄도 기록 |

@@ -2,7 +2,8 @@
 UserAccessLog Service
 
 접속 로그 관련 비즈니스 로직. 세션을 주입받아 Repository 를 구성한다.
-트랜잭션 경계(commit/rollback)는 호출하는 의존성 또는 background_db_session 이 책임진다.
+Service 메서드는 스스로 커밋하지 않는다. HTTP 라우트는 조회만 하고, 접속 로그 적재는 ``HomeAccessLogSink`` 가
+``background_db_session`` 안에서 직접 커밋한다.
 """
 
 from collections.abc import Sequence

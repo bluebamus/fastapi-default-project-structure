@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>개발 가이드</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>개발 가이드</h1>
+  <p>기능을 추가·변경할 때 계층, 세션, 트랜잭션, 등록, 테스트, 문서를 함께 완성하는 순서입니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>변경 절차</h2>
+<div class="mermaid">flowchart LR
+Req["HTTP 계약, 권한, 세션 의도"] --&gt; Model["Model, Schema"]
+Model --&gt; Repo["Repository"]
+Repo --&gt; Svc["Service: 업무 규칙"]
+Svc --&gt; Dep["Dependency: 세션, Service 조립"]
+Dep --&gt; View["View: 접근 수준 선언, DTO 검증 뒤 commit"]
+View --&gt; Wire["router.py, main.py include_router, ADMIN_VIEWS"]
+Wire --&gt; Mig["Alembic revision"]
+Mig --&gt; Test["테스트, review_gate"]
+Test --&gt; Docs["README API 표, 문서"]</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Req["HTTP 계약, 권한, 세션 의도"] --&gt; Model["Model, Schema"]
+Model --&gt; Repo["Repository"]
+Repo --&gt; Svc["Service: 업무 규칙"]
+Svc --&gt; Dep["Dependency: 세션, Service 조립"]
+Dep --&gt; View["View: 접근 수준 선언, DTO 검증 뒤 commit"]
+View --&gt; Wire["router.py, main.py include_router, ADMIN_VIEWS"]
+Wire --&gt; Mig["Alembic revision"]
+Mig --&gt; Test["테스트, review_gate"]
+Test --&gt; Docs["README API 표, 문서"]</code></pre></details>
+</section>
+<section>
+<h2>새 기능 등록 — 손댈 곳</h2>
+<ol>
+<li><code>app/features/&lt;name&gt;</code> 에 기존 기능(<code>catalog</code>: ORM, <code>reports</code>: Raw SQL)과 같은 구조를 만듭니다. 기능명이 URL 세그먼트(<code>/api/v1/&lt;name&gt;/…</code>)가 됩니다.</li>
+<li>뷰마다 <code>dependencies=[Public|PublicWrite|LoginRequired|SuperuserRequired]</code> 중 하나를 선언하거나 <code>principal: CurrentPrincipal</code>/<code>SuperuserPrincipal</code> 인자로 받습니다. 선언이 없으면 기동이 거부됩니다.</li>
+<li>쓰기 핸들러는 응답 DTO 를 검증한 뒤 <code>await service.commit()</code> 을 한 번 부릅니다.</li>
+<li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a> 에 <code>from app.features import …</code> 와 <code>app.include_router(&lt;name&gt;.router, prefix="/api")</code> 를 <code>AccessPolicyGuard().verify(app)</code> <strong>위에</strong> 한 줄 추가합니다.</li>
+<li>관리 화면이 필요하면 기능 <code>admin.py</code> 에 <code>admin_views</code> 를 만들고 <a data-source="app/features/admin.py" href="../../../app/features/admin.py"><code>app/features/admin.py</code></a> 의 import 와 <code>ADMIN_VIEWS</code> 에 한 줄씩 더합니다.</li>
+<li>모델(<code>models/models.py</code>)과 Celery 태스크(<code>tasks.py</code>)는 자동 탐색되므로 등록할 곳이 없습니다. 모델 변경은 Alembic revision 을 만들고 검토합니다.</li>
+<li><code>app/core/tags_metadata.py</code>, <code>tests/test_route_inventory.py</code>, <code>tests/test_authorization.py</code> 의 <code>EXPECTED_ACCESS</code>, E2E <code>SPECS</code>, README API 표, <a href="../reference/api.html">API 레퍼런스</a> 를 함께 갱신합니다.</li>
+</ol>
+<p>파일별 표와 실패 시 증상은 <a href="../DEVELOPMENT.md#22-기능-밖에서-손댈-곳">DEVELOPMENT §2.2</a> 가 정본입니다.</p>
+</section>
+<section>
+<h2>코드 리뷰 기준</h2>
+<ul>
+<li>업무 규칙이 View·Repository 로 새지 않았는가. View 가 SQL·세션을 직접 다루지 않는가.</li>
+<li>커밋은 쓰기 핸들러의 <code>service.commit()</code> 한 번뿐이고 DTO 검증 뒤인가. Repository·Dependency 가 커밋하지 않는가.</li>
+<li>조회는 read_only 세션, 쓰기·조회 후 쓰기는 writer 세션인가.</li>
+<li>다른 기능을 import 하지 않았는가(auth→user 만 허용).</li>
+<li>인증 실패 401, 권한 실패 403, 없음 404, 중복 409 를 공통 오류 형식으로 내는가.</li>
+<li><code>async def</code> 안에 동기 I/O 가 없는가.</li>
+</ul>
+<p>전체 체크리스트는 <a href="../DEVELOPMENT.md#13-코드-리뷰-체크리스트">DEVELOPMENT §13</a> 입니다.</p>
+</section>
+<section>
+<h2>코드 근거</h2>
+<ul>
+<li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li>
+<li><a data-source="app/features/admin.py" href="../../../app/features/admin.py"><code>app/features/admin.py</code></a></li>
+<li><a data-source="app/core/security/access.py" href="../../../app/core/security/access.py"><code>app/core/security/access.py</code></a></li>
+<li><a data-source="app/core/services/services_base.py" href="../../../app/core/services/services_base.py"><code>app/core/services/services_base.py</code></a></li>
+<li><a data-source="app/core/repositories/repository_base.py" href="../../../app/core/repositories/repository_base.py"><code>app/core/repositories/repository_base.py</code></a></li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../DEVELOPMENT.md#2-새-기능테이블-추가-절차">DEVELOPMENT §2 새 기능·테이블 추가</a></li>
+<li><a href="../workflows/feature-development.html">신규 뷰·테이블 개발 안내서</a></li>
+<li><a href="../development/testing.html">테스트와 검증</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

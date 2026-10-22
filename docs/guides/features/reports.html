@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>매출 보고서 기능</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>매출 보고서 기능</h1>
+  <p>Raw SQL Repository 로 집계 조회와 스냅샷 재적재를 구현한 참조 예제입니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>목적과 책임</h2>
+<ul>
+<li>두 API 모두 <code>SuperuserRequired</code> 입니다.</li>
+<li><code>GET /api/v1/reports/sales/daily</code>: read_only 세션에서 <code>sales_orders</code> 원장을 집계합니다.</li>
+<li><code>POST /api/v1/reports/sales/daily/snapshots</code>: writer 세션에서 기간의 <code>sales_daily_snapshots</code> 를 DELETE 후 INSERT 로 재적재하고 핸들러가 한 번 커밋합니다(멱등이라 200). 원장은 바꾸지 않습니다.</li>
+</ul>
+<div class="callout"><strong>핵심 패턴:</strong> Raw SQL <code>RawRepositoryBase</code>, 조회와 쓰기 경로</div>
+</section>
+<section>
+<h2>API와 접근 수준</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>메서드</th><th>경로</th><th>접근 수준</th><th>성공</th><th>추가 검사·주의</th><th>용도</th></tr></thead>
+<tbody>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/reports/sales/daily</code></td><td><code>SuperuserRequired</code></td><td>200</td><td>read_only 세션의 Raw SQL 집계</td><td>일별 매출 집계 조회</td></tr>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/reports/sales/daily/snapshots</code></td><td><code>SuperuserRequired</code></td><td>200</td><td>기간의 스냅샷을 DELETE 후 INSERT(멱등), 커밋 1회</td><td>일별 매출 스냅샷 재적재</td></tr>
+</tbody>
+</table></div>
+</section>
+<section>
+<h2>내부 흐름</h2>
+<div class="mermaid">flowchart LR
+C["슈퍼유저"] --&gt; V["View sales_reports.py"]
+V --&gt; S["ReportService: 기간 규칙"]
+S --&gt; R["SalesReportRawRepository: Raw SQL"]
+R --&gt;|"GET: 집계 SELECT, read_only 세션"| Orders[("sales_orders")]
+R --&gt;|"POST: DELETE + INSERT, writer 세션"| Snap[("sales_daily_snapshots")]
+V --&gt;|"POST: service.commit() 1회"| S</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+C["슈퍼유저"] --&gt; V["View sales_reports.py"]
+V --&gt; S["ReportService: 기간 규칙"]
+S --&gt; R["SalesReportRawRepository: Raw SQL"]
+R --&gt;|"GET: 집계 SELECT, read_only 세션"| Orders[("sales_orders")]
+R --&gt;|"POST: DELETE + INSERT, writer 세션"| Snap[("sales_daily_snapshots")]
+V --&gt;|"POST: service.commit() 1회"| S</code></pre></details>
+<p>트랜잭션 경계: 쓰기 핸들러(View)가 응답 DTO 를 먼저 검증한 뒤 <code>await service.commit()</code> 을 정확히 한 번 부르고 반환합니다. 세션은 의존성(<code>get_writer_db_session</code>)이 열고 닫으며, 커밋 전에 예외가 나면 세션 종료가 롤백합니다. Repository·Dependency 는 커밋하지 않습니다(<code>tests/test_write_dto_before_commit.py</code>, 검수 게이트 INV-2).</p>
+</section>
+<section>
+<h2>주요 소스</h2>
+<ul>
+<li><a data-source="app/features/reports/api/routers/v1/sales_reports.py" href="../../../app/features/reports/api/routers/v1/sales_reports.py"><code>app/features/reports/api/routers/v1/sales_reports.py</code></a></li>
+<li><a data-source="app/features/reports/services/report_service.py" href="../../../app/features/reports/services/report_service.py"><code>app/features/reports/services/report_service.py</code></a></li>
+<li><a data-source="app/features/reports/repositories/sales_report_repository.py" href="../../../app/features/reports/repositories/sales_report_repository.py"><code>app/features/reports/repositories/sales_report_repository.py</code></a></li>
+<li><a data-source="app/features/reports/models/models.py" href="../../../app/features/reports/models/models.py"><code>app/features/reports/models/models.py</code></a></li>
+<li><a data-source="app/features/reports/schemas/report_schema.py" href="../../../app/features/reports/schemas/report_schema.py"><code>app/features/reports/schemas/report_schema.py</code></a></li>
+<li><a data-source="app/features/reports/dependencies/report_dependencies.py" href="../../../app/features/reports/dependencies/report_dependencies.py"><code>app/features/reports/dependencies/report_dependencies.py</code></a></li>
+</ul>
+</section>
+<section>
+<h2>확장할 때</h2>
+<ul>
+<li>Raw SQL 보안 규칙(바인딩만, 정렬 화이트리스트, 쓰기 판별)은 DEVELOPMENT §6·§7 을 따릅니다.</li>
+<li>API 가 바뀌면 <a href="../reference/api.html">API 레퍼런스</a>·README API 표·<code>tests/test_authorization.py</code> 를 함께 갱신합니다.</li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../features/index.html">기능 목록</a></li>
+<li><a href="../reference/api.html">전체 API</a></li>
+<li><a href="../development/index.html">개발 가이드</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>

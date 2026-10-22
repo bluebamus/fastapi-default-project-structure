@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>환경 설정 레퍼런스</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>환경 설정 레퍼런스</h1>
+  <p><code>config.py</code> 의 Settings 9종·필드 69개와 기동 시 검사 규칙입니다.</p>
+</header>
+<nav class="topnav" aria-label="가이드 메뉴">
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
+</nav>
+<main>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>값이 들어오는 순서</h2>
+<p>설정을 읽는 곳은 <a data-source="config.py" href="../../../config.py"><code>config.py</code></a> 하나입니다. 우선순위는 <strong>프로세스 환경 변수 → 작업 디렉터리의 <code>.env</code> → 코드 기본값</strong>이고, <a data-source=".env.example" href="../../../.env.example"><code>.env.example</code></a> 은 복사용 견본일 뿐 자동으로 읽지 않습니다. 리스트는 JSON 배열(<code>CORS_ALLOW_ORIGINS=["https://example.com"]</code>)로 씁니다. Settings 는 import 때 한 번 만들어 캐시하므로 실행 중 <code>.env</code> 를 바꿔도 반영되지 않습니다.</p>
+</section>
+<section>
+<h2>기동 시 검사</h2>
+<ul>
+<li>타입·validator 오류(예: CORS <code>*</code> + 자격 증명, 로그 포맷 자리표시자 누락)는 Settings 생성 때 실패합니다.</li>
+<li><code>.env</code> 가 없으면 <code>ENV</code>·<code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>·<code>MYSQL_HOST</code>·<code>MYSQL_USER</code>·<code>MYSQL_PASSWORD</code>·<code>MYSQL_DATABASE</code> 8개가 환경 변수로 와야 합니다(<code>ENV=test</code> 는 검사하지 않음).</li>
+<li>예전 설정 <code>ADMIN</code> 이 환경 변수나 <code>.env</code> 에 있으면 거부합니다(<code>ADMIN_DISABLED</code> 로 바뀌었고 뜻이 반대, <code>ENV=test</code> 는 검사하지 않음).</li>
+<li>test 를 뺀 모든 ENV: 비밀 키 3종·<code>MYSQL_PASSWORD</code> 가 예시 값(<code>change-this</code> 포함·<code>your-</code> 시작·빈 값)이면, 비밀 키가 32자 미만이면, access 와 refresh 키가 같으면 거부합니다. <code>REDIS_PASSWORD</code> 는 값이 있을 때만 봅니다.</li>
+<li><code>ENV=staging</code>/<code>production</code> 만: <code>DEBUG=true</code>, <code>LOG_LEVEL=DEBUG</code> 를 거부합니다.</li>
+<li>세 검사(<code>validate_env_source</code> → <code>validate_no_legacy_admin</code> → <code>validate_deployment_safety</code>)는 이 순서로 돌고 처음 실패한 검사의 <code>RuntimeError</code> 로 멈춥니다. 위반을 모아 한 번에 알리는 것은 <code>validate_deployment_safety</code> 안에서뿐입니다. 메시지에는 설정 이름만 담습니다(값은 싣지 않음).</li>
+</ul>
+<div class="mermaid">flowchart LR
+Env["프로세스 환경 변수"] --&gt; S["Settings 생성: import 시점"]
+File[".env: 작업 디렉터리"] --&gt; S
+Def["코드 기본값"] --&gt; S
+S --&gt; T["타입과 validator"]
+T --&gt; V1["validate_env_source: .env 없으면 필수 8개, test 제외"]
+V1 --&gt; V2["validate_no_legacy_admin"]
+V2 --&gt; V3["validate_deployment_safety"]
+V3 --&gt;|"위반"| Stop["RuntimeError: lifespan 전에 기동 중단"]
+V3 --&gt;|"통과"| App["앱 조립 뒤 lifespan"]</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Env["프로세스 환경 변수"] --&gt; S["Settings 생성: import 시점"]
+File[".env: 작업 디렉터리"] --&gt; S
+Def["코드 기본값"] --&gt; S
+S --&gt; T["타입과 validator"]
+T --&gt; V1["validate_env_source: .env 없으면 필수 8개, test 제외"]
+V1 --&gt; V2["validate_no_legacy_admin"]
+V2 --&gt; V3["validate_deployment_safety"]
+V3 --&gt;|"위반"| Stop["RuntimeError: lifespan 전에 기동 중단"]
+V3 --&gt;|"통과"| App["앱 조립 뒤 lifespan"]</code></pre></details>
+</section>
+<section>
+<h2>전체 설정</h2>
+<p>기본값은 코드 기본값입니다(<code>.env.example</code> 의 예시 값과 다를 수 있음). 설명은 Field 설명에 검사 규칙을 덧붙였습니다. 만료 값의 의미는 <a href="../../../README.md#세션토큰-만료">README 세션·토큰 만료</a>, 필드별 상세는 <a href="../ARCHITECTURE.md#부록-설정-필드-전체">ARCHITECTURE 부록</a> 입니다.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>설정</th><th>클래스</th><th>코드 기본값</th><th>설명</th></tr></thead>
+<tbody>
+<tr><td><code>TIME_ZONE</code></td><td><code>TimezoneSettings</code></td><td><code>Asia/Seoul</code></td><td>애플리케이션 전역 타임존</td></tr>
+<tr><td><code>PROJECT_NAME</code></td><td><code>AppSettings</code></td><td><code>FastAPI Project</code></td><td>프로젝트 이름</td></tr>
+<tr><td><code>VERSION</code></td><td><code>AppSettings</code></td><td><code>0.1.0</code></td><td>애플리케이션 버전</td></tr>
+<tr><td><code>DESCRIPTION</code></td><td><code>AppSettings</code></td><td>소개 Markdown(코드 기본값)</td><td>API 문서 설명</td></tr>
+<tr><td><code>DEBUG</code></td><td><code>AppSettings</code></td><td><code>true</code></td><td>디버그 모드 활성화. staging/production 에서 true 면 기동 거부. true 면 <code>/docs</code>·<code>/openapi.json</code> 공개, 기동 때 개발용 테이블 생성(MySQL 필요), uvicorn reload</td></tr>
+<tr><td><code>ADMIN_DISABLED</code></td><td><code>AppSettings</code></td><td><code>false</code></td><td>관리 화면 끄기 (true=마운트 없음·404). 기본 false=켬, 슈퍼유저 로그인 필요. 예전 설정 <code>ADMIN</code> 이 남아 있으면 기동 거부</td></tr>
+<tr><td><code>ENV</code></td><td><code>AppSettings</code></td><td><code>development</code></td><td>실행 환경. staging/production 이면 DEBUG·LOG_LEVEL=DEBUG 검사와 관리 세션 쿠키 Secure. <code>.env</code> 없이 주입하면 필수</td></tr>
+<tr><td><code>SERVER_HOST</code></td><td><code>AppSettings</code></td><td><code>0.0.0.0</code></td><td>개발 서버 바인딩 호스트</td></tr>
+<tr><td><code>SERVER_PORT</code></td><td><code>AppSettings</code></td><td><code>8000</code></td><td>개발 서버 바인딩 포트</td></tr>
+<tr><td><code>MYSQL_HOST</code></td><td><code>DatabaseSettings</code></td><td><code>localhost</code></td><td>MySQL 서버 호스트</td></tr>
+<tr><td><code>MYSQL_PORT</code></td><td><code>DatabaseSettings</code></td><td><code>3306</code></td><td>MySQL 서버 포트</td></tr>
+<tr><td><code>MYSQL_USER</code></td><td><code>DatabaseSettings</code></td><td><code>root</code></td><td>MySQL 사용자명</td></tr>
+<tr><td><code>MYSQL_PASSWORD</code></td><td><code>DatabaseSettings</code></td><td>빈 값</td><td>MySQL 비밀번호. test 외 모든 ENV 에서 예시 값·빈 값이면 기동 거부</td></tr>
+<tr><td><code>MYSQL_DATABASE</code></td><td><code>DatabaseSettings</code></td><td><code>fastapi_db</code></td><td>데이터베이스 이름</td></tr>
+<tr><td><code>DB_ROUTER_ENABLED</code></td><td><code>DatabaseSettings</code></td><td><code>false</code></td><td>DB 읽기/쓰기 라우터 활성화</td></tr>
+<tr><td><code>DB_REPLICATION_ENABLED</code></td><td><code>DatabaseSettings</code></td><td><code>false</code></td><td>읽기 복제본(replica) 사용</td></tr>
+<tr><td><code>DB_READ_STICKY_AFTER_WRITE</code></td><td><code>DatabaseSettings</code></td><td><code>true</code></td><td>쓰기 이후 읽기를 primary 에 고정(read-after-write 일관성)</td></tr>
+<tr><td><code>MYSQL_REPLICA_HOSTS</code></td><td><code>DatabaseSettings</code></td><td><code>[]</code></td><td>replica 호스트 목록 (host 또는 host:port)</td></tr>
+<tr><td><code>MYSQL_REPLICA_PORT</code></td><td><code>DatabaseSettings</code></td><td><code>3306</code></td><td>replica 기본 포트</td></tr>
+<tr><td><code>MYSQL_REPLICA_USER</code></td><td><code>DatabaseSettings</code></td><td>미설정</td><td>replica 사용자명 (미설정 시 primary 재사용)</td></tr>
+<tr><td><code>MYSQL_REPLICA_PASSWORD</code></td><td><code>DatabaseSettings</code></td><td>미설정</td><td>replica 비밀번호 (미설정 시 primary 재사용)</td></tr>
+<tr><td><code>MYSQL_REPLICA_DATABASE</code></td><td><code>DatabaseSettings</code></td><td>미설정</td><td>replica 데이터베이스 이름 (미설정 시 primary 재사용)</td></tr>
+<tr><td><code>ALEMBIC_DATABASE_URL</code></td><td><code>DatabaseSettings</code></td><td>미설정</td><td>Alembic 전용 DSN (미설정 시 primary DSN 에서 자동 유도). DSN 으로 받는 유일한 설정. 앱 런타임은 <code>MYSQL_*</code> 개별 키로 접속</td></tr>
+<tr><td><code>CORS_ALLOW_ORIGINS</code></td><td><code>CORSSettings</code></td><td><code>["*"]</code></td><td>허용할 Origin 목록. <code>*</code> 와 <code>CORS_ALLOW_CREDENTIALS=true</code> 를 함께 쓰면 검증 오류</td></tr>
+<tr><td><code>CORS_ALLOW_CREDENTIALS</code></td><td><code>CORSSettings</code></td><td><code>false</code></td><td>자격 증명 허용 여부</td></tr>
+<tr><td><code>CORS_ALLOW_METHODS</code></td><td><code>CORSSettings</code></td><td><code>["*"]</code></td><td>허용할 HTTP 메서드</td></tr>
+<tr><td><code>CORS_ALLOW_HEADERS</code></td><td><code>CORSSettings</code></td><td><code>["*"]</code></td><td>허용할 HTTP 헤더</td></tr>
+<tr><td><code>CORS_EXPOSE_HEADERS</code></td><td><code>CORSSettings</code></td><td><code>[]</code></td><td>노출할 응답 헤더</td></tr>
+<tr><td><code>CORS_MAX_AGE</code></td><td><code>CORSSettings</code></td><td><code>600</code></td><td>Preflight 캐시 시간(초)</td></tr>
+<tr><td><code>LOG_CONSOLE_ENABLED</code></td><td><code>LogSettings</code></td><td><code>true</code></td><td>콘솔(stdout/stderr) 로그 출력 — false 면 콘솔 핸들러를 붙이지 않는다</td></tr>
+<tr><td><code>LOG_SQL_ECHO_ENABLED</code></td><td><code>LogSettings</code></td><td><code>false</code></td><td>SQL 본문·파라미터 로그 출력 (기본 false — 민감정보 유출 방지)</td></tr>
+<tr><td><code>LOG_LEVEL</code></td><td><code>LogSettings</code></td><td>미설정</td><td>전역 로그 레벨 (미설정 시 DEBUG 따라 자동 결정). staging/production 에서 DEBUG 면 기동 거부</td></tr>
+<tr><td><code>LOG_CONSOLE_LEVEL</code></td><td><code>LogSettings</code></td><td>미설정</td><td>콘솔 로그 레벨</td></tr>
+<tr><td><code>LOG_CONSOLE_FORMAT</code></td><td><code>LogSettings</code></td><td>프로젝트 포맷</td><td>콘솔 로그 포맷 (str.format 스타일 '{field}')</td></tr>
+<tr><td><code>LOG_FILE_FORMAT</code></td><td><code>LogSettings</code></td><td>프로젝트 포맷</td><td>파일 로그 포맷 (str.format 스타일 '{field}')</td></tr>
+<tr><td><code>LOG_APP_LEVELS</code></td><td><code>LogSettings</code></td><td>빈 값</td><td>헤더별 최소 레벨 (예: blog=DEBUG,sqlalchemy=WARNING)</td></tr>
+<tr><td><code>LOG_FILE_ENABLED</code></td><td><code>LogSettings</code></td><td><code>false</code></td><td>파일 로그 출력 (기본 false — 콘솔+수집기 운영)</td></tr>
+<tr><td><code>LOG_DIR</code></td><td><code>LogSettings</code></td><td><code>logs</code></td><td>로그 파일 디렉터리 (작업 디렉터리 기준 상대 경로 가능)</td></tr>
+<tr><td><code>LOG_FILE_LEVEL</code></td><td><code>LogSettings</code></td><td>미설정</td><td>파일 로그 레벨</td></tr>
+<tr><td><code>LOG_MAX_SIZE_MB</code></td><td><code>LogSettings</code></td><td><code>10</code></td><td>하루 안에서 파일을 나누는 크기(MB)</td></tr>
+<tr><td><code>LOG_RETENTION_DAYS</code></td><td><code>LogSettings</code></td><td><code>30</code></td><td>회전 파일 보관 일수 (0 = 삭제 안 함)</td></tr>
+<tr><td><code>LOG_DATE_FORMAT</code></td><td><code>LogSettings</code></td><td><code>%Y-%m-%d %H:%M:%S</code></td><td>로그 시각 형식 (strftime)</td></tr>
+<tr><td><code>ACCESS_LOG_ENABLED</code></td><td><code>MiddlewareSettings</code></td><td><code>true</code></td><td>접속 로그 수집 활성화</td></tr>
+<tr><td><code>ACCESS_LOG_EXCLUDE_PATHS</code></td><td><code>MiddlewareSettings</code></td><td><code>["/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico"]</code></td><td>로그 수집 제외 경로</td></tr>
+<tr><td><code>ACCESS_LOG_EXCLUDE_EXTENSIONS</code></td><td><code>MiddlewareSettings</code></td><td><code>[".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg"]</code></td><td>로그 수집 제외 확장자</td></tr>
+<tr><td><code>TRUSTED_PROXY_HOPS</code></td><td><code>MiddlewareSettings</code></td><td><code>0</code></td><td>X-Forwarded-For 를 덧붙이는 신뢰 프록시 수(0=헤더 무시). 프록시 뒤 배포는 앞단 프록시 단 수로 — 0 이면 전원이 프록시 IP 하나, 크면 IP 위조. 접속 로그 IP 와 로그인 레이트 리밋 키에 쓰인다</td></tr>
+<tr><td><code>ACCESS_LOG_SENSITIVE_QUERY_KEYS</code></td><td><code>MiddlewareSettings</code></td><td><code>["password", "token", "access_token", "refresh_token", "secret", "api_key", "code"]</code></td><td>접속 로그에서 값을 가릴 쿼리스트링 키</td></tr>
+<tr><td><code>ACCESS_LOG_RETENTION_DAYS</code></td><td><code>MiddlewareSettings</code></td><td><code>365</code></td><td>접속 로그 보존 일수(0=삭제하지 않음). 기본 1년. Celery beat(매일 03:30)가 지난 로그를 지운다</td></tr>
+<tr><td><code>REDIS_HOST</code></td><td><code>RedisSettings</code></td><td><code>localhost</code></td><td>Redis 서버 호스트</td></tr>
+<tr><td><code>REDIS_PORT</code></td><td><code>RedisSettings</code></td><td><code>6379</code></td><td>Redis 서버 포트</td></tr>
+<tr><td><code>REDIS_DB</code></td><td><code>RedisSettings</code></td><td><code>0</code></td><td>Redis 데이터베이스 번호</td></tr>
+<tr><td><code>REDIS_PASSWORD</code></td><td><code>RedisSettings</code></td><td>미설정</td><td>Redis 비밀번호. 비워 두면 인증 없이 접속(정상 구성). 값이 있으면 예시 값 검사</td></tr>
+<tr><td><code>ACCESS_TOKEN_SECRET_KEY</code></td><td><code>JWTSettings</code></td><td>예시 값(교체 필수)</td><td>Access Token 서명 키. 예시 값·32자 미만·REFRESH 와 같으면 기동 거부</td></tr>
+<tr><td><code>REFRESH_TOKEN_SECRET_KEY</code></td><td><code>JWTSettings</code></td><td>예시 값(교체 필수)</td><td>Refresh Token 서명 키. 예시 값·32자 미만·ACCESS 와 같으면 기동 거부</td></tr>
+<tr><td><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td><code>JWTSettings</code></td><td><code>15</code></td><td>Access Token 만료 시간(분)</td></tr>
+<tr><td><code>REFRESH_TOKEN_EXPIRE_DAYS</code></td><td><code>JWTSettings</code></td><td><code>7</code></td><td>Refresh Token 만료 시간(일)</td></tr>
+<tr><td><code>JWT_ALGORITHM</code></td><td><code>JWTSettings</code></td><td><code>HS256</code></td><td>JWT 서명 알고리즘</td></tr>
+<tr><td><code>JWT_ISSUER</code></td><td><code>JWTSettings</code></td><td><code>fastapi-default-project-structure</code></td><td>JWT 발급자(iss) — 검증 시 일치 필수</td></tr>
+<tr><td><code>JWT_AUDIENCE</code></td><td><code>JWTSettings</code></td><td><code>fastapi-default-project-structure-api</code></td><td>JWT 대상(aud) — 검증 시 일치 필수</td></tr>
+<tr><td><code>JWT_LEEWAY_SECONDS</code></td><td><code>JWTSettings</code></td><td><code>10</code></td><td>JWT 시각 검증 허용 오차(초)</td></tr>
+<tr><td><code>AUTH_LOGIN_MAX_ATTEMPTS</code></td><td><code>JWTSettings</code></td><td><code>5</code></td><td>로그인 시도 허용 횟수(IP+사용자명, 창마다)</td></tr>
+<tr><td><code>AUTH_LOGIN_WINDOW_SECONDS</code></td><td><code>JWTSettings</code></td><td><code>60</code></td><td>로그인 레이트 리밋 창(초) — IP+사용자명·IP 공통</td></tr>
+<tr><td><code>AUTH_LOGIN_IP_MAX_ATTEMPTS</code></td><td><code>JWTSettings</code></td><td><code>20</code></td><td>로그인 시도 허용 횟수(IP, 창마다)</td></tr>
+<tr><td><code>AUTH_REGISTER_MAX_ATTEMPTS</code></td><td><code>JWTSettings</code></td><td><code>5</code></td><td>회원가입 시도 허용 횟수(IP, 창마다)</td></tr>
+<tr><td><code>AUTH_REGISTER_WINDOW_SECONDS</code></td><td><code>JWTSettings</code></td><td><code>3600</code></td><td>회원가입 레이트 리밋 창(초)</td></tr>
+<tr><td><code>SESSION_COOKIE_NAME</code></td><td><code>SessionSettings</code></td><td><code>session</code></td><td>세션 쿠키 이름</td></tr>
+<tr><td><code>SESSION_SECRET_KEY</code></td><td><code>SessionSettings</code></td><td>예시 값(교체 필수)</td><td>관리 세션 키 (/admin 세션 ID → Redis 키 HMAC). 예시 값·32자 미만이면 기동 거부. 바꾸면 모든 관리 세션이 끊긴다</td></tr>
+<tr><td><code>ADMIN_SESSION_MAX_AGE_SECONDS</code></td><td><code>SessionSettings</code></td><td><code>28800</code></td><td>관리 세션 절대 만료(초, 기본 8시간)</td></tr>
+<tr><td><code>ADMIN_SESSION_IDLE_SECONDS</code></td><td><code>SessionSettings</code></td><td><code>1800</code></td><td>관리 세션 미사용 만료(초, 기본 30분)</td></tr>
+</tbody>
+</table></div>
+<p>파생 값(<code>MYSQL_URL</code>·<code>ALEMBIC_URL</code>·<code>MYSQL_REPLICA_URLS</code>·<code>REDIS_URL</code>·유효 로그 레벨)은 필드가 아니라 property·메서드입니다. 로그에서 값을 가리는 설정 목록은 <code>LOG_SECRET_SETTINGS</code> 입니다.</p>
+</section>
+<section>
+<h2>설정을 추가할 때</h2>
+<ol>
+<li><code>config.py</code> 에 타입·설명·안전한 기본값으로 필드를 추가하고 그 값을 읽는 코드도 함께 넣습니다(정의만 있는 필드는 <code>tests/core/test_settings_usage.py</code> 가 실패).</li>
+<li><code>.env.example</code> 에 같은 이름을 적습니다(<code>tests/core/test_settings_contract.py</code> 가 양방향 대조).</li>
+<li>비밀 값이면 <code>LOG_SECRET_SETTINGS</code> 와 <code>validate_deployment_safety()</code> 검사 대상에, 파일 없이도 꼭 와야 하면 <code>REQUIRED_WITHOUT_ENV_FILE</code> 에 넣습니다.</li>
+<li>이 표에 행을 더합니다(<code>tests/test_docs_guide_site.py</code> 가 빠진 필드를 잡습니다).</li>
+</ol>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../../../README.md#환경-변수">README 환경 변수</a></li>
+<li><a href="../getting-started/index.html">부팅과 첫 실행</a></li>
+<li><a href="../operations/deployment.html">배포와 운영</a></li>
+</ul>
+</section>
+</main>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
+</body>
+</html>
