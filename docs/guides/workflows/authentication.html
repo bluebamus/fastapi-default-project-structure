@@ -118,7 +118,7 @@ A--&gt;&gt;C: 204</code></pre></details>
 <section>
 <h2>알아야 할 한계와 규칙</h2>
 <ul>
-<li>access 토큰은 폐기 목록이 없어 만료(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>, 기본 15분)까지 유효합니다. <code>su</code> 는 <strong>발급 시점 값</strong>이라 강등·비활성화·삭제 뒤에도 그동안 이전 권한이 남습니다.</li>
+<li>access 토큰은 폐기 목록이 없어 서버에서 폐기할 수 없고 만료까지 유효합니다(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>, 기본 15분). <code>su</code> 는 <strong>발급 시점 값</strong>이라 강등·비활성화·삭제 뒤에도 그동안 이전 권한이 남습니다.</li>
 <li>보호 라우트는 토큰 클레임만 봅니다(DB 조회 없음). <code>/api/v1/auth/me</code> 만 DB 에서 사용자를 다시 읽어 삭제·비활성 사용자를 401 로 돌려보냅니다.</li>
 <li>비활성화·삭제는 그 사용자의 refresh 계열을 모두 폐기하고(관리 세션도 함께), 강등은 관리 세션만 끊습니다.</li>
 <li>레이트 리밋은 <code>login</code>(IP+사용자명 5회·IP 20회, 60초 창)과 <code>register</code>(IP 5회, 3600초 창)에만 있습니다. <code>refresh</code>·<code>logout</code> 에는 없습니다.</li>

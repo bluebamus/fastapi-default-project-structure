@@ -83,7 +83,7 @@ S-&gt;&gt;R: 변경
 R-&gt;&gt;W: flush
 V-&gt;&gt;V: 응답 DTO 검증
 V-&gt;&gt;S: await service.commit()
-S-&gt;&gt;W: commit 1회
+S-&gt;&gt;W: session.commit() 1회
 V--&gt;&gt;C: 201, 200, 204
 Note over D,W: 커밋 전 예외면 세션 종료가 rollback 한다</div>
 <details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
@@ -102,7 +102,7 @@ S-&gt;&gt;R: 변경
 R-&gt;&gt;W: flush
 V-&gt;&gt;V: 응답 DTO 검증
 V-&gt;&gt;S: await service.commit()
-S-&gt;&gt;W: commit 1회
+S-&gt;&gt;W: session.commit() 1회
 V--&gt;&gt;C: 201, 200, 204
 Note over D,W: 커밋 전 예외면 세션 종료가 rollback 한다</code></pre></details>
 <p>쓰기 핸들러(View)가 응답 DTO 를 먼저 검증한 뒤 <code>await service.commit()</code> 을 정확히 한 번 부르고 반환합니다. 세션은 의존성(<code>get_writer_db_session</code>)이 열고 닫으며, 커밋 전에 예외가 나면 세션 종료가 롤백합니다. Repository·Dependency 는 커밋하지 않습니다(<code>tests/test_write_dto_before_commit.py</code>, 검수 게이트 INV-2).</p>
