@@ -7,34 +7,103 @@
   <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>배포와 운영</h1><p>설정, migration, readiness, 관측, 정상 종료를 연결한 운영 체크리스트입니다.</p></header>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>배포와 운영</h1>
+  <p>배포 전 설정, 마이그레이션, 첫 관리자, readiness, 관측, 장애 대응을 연결한 운영 요약입니다.</p>
+</header>
 <nav class="topnav" aria-label="가이드 메뉴">
-  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
-  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
-  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
 </nav>
 <main>
-<section><h2>배포 전 필수 확인</h2><ul><li>운영용 DB·Redis URL과 충분히 긴 서명 키를 비밀 저장소에서 주입합니다.</li><li>debug와 불필요한 관리자 기능을 끄고 CORS·trusted proxy 범위를 실제 인프라에 맞춥니다.</li><li><code>alembic upgrade head</code>를 애플리케이션 rollout과 호환되는 순서로 실행합니다.</li><li>웹 프로세스와 Celery worker/beat의 설정·코드 버전을 맞춥니다.</li><li><code>/health</code>는 생존, <code>/ready</code>는 트래픽 수신 가능 여부에 사용합니다.</li></ul></section>
-<section><h2>배포 흐름</h2><div class="mermaid">flowchart LR
-Build[잠금 파일로 빌드] --&gt; Test[테스트·정적 검사]
-Test --&gt; Migrate[호환 migration]
-Migrate --&gt; Rollout[애플리케이션 rollout]
-Rollout --&gt; Ready{/ready 통과?}
-Ready --&gt;|예| Traffic[트래픽 전환]
-Ready --&gt;|아니오| Halt[전환 중단·원인 조사]
-Traffic --&gt; Observe[로그·지표·오류 관측]</div><details><summary>Mermaid 원문</summary><pre><code>flowchart LR
-Build[잠금 파일로 빌드] --&gt; Test[테스트·정적 검사]
-Test --&gt; Migrate[호환 migration]
-Migrate --&gt; Rollout[애플리케이션 rollout]
-Rollout --&gt; Ready{/ready 통과?}
-Ready --&gt;|예| Traffic[트래픽 전환]
-Ready --&gt;|아니오| Halt[전환 중단·원인 조사]
-Traffic --&gt; Observe[로그·지표·오류 관측]</code></pre></details></section>
-<section><h2>운영 관측과 장애 대응</h2><ul><li>request id를 기준으로 접근 로그와 예외 로그를 연결합니다.</li><li>5xx 증가, readiness 실패, DB pool 고갈, Redis 오류, task 적체를 알림 대상으로 둡니다.</li><li>DB/Redis 장애 시 기능별 영향 범위를 확인하고, 인증 저장소 오류를 무조건 허용으로 우회하지 않습니다.</li><li>종료 grace 기간은 실제 가장 긴 정상 요청과 background 정리 시간을 근거로 정합니다.</li></ul></section>
-<section><h2>코드 근거</h2><ul><li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li><li><a data-source="config.py" href="../../../config.py"><code>config.py</code></a></li><li><a data-source="app/core/resources.py" href="../../../app/core/resources.py"><code>app/core/resources.py</code></a></li><li><a data-source="alembic.ini" href="../../../alembic.ini"><code>alembic.ini</code></a></li></ul></section>
-<section><h2>관련 문서</h2><ul><li><a href="../getting-started/index.html">부팅</a></li><li><a href="../reference/configuration.html">환경 설정</a></li><li><a href="../development/testing.html">테스트</a></li></ul></section>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>배포 전 필수 확인</h2>
+<ul>
+<li><code>ENV=production</code>(또는 <code>staging</code>)을 명시합니다. 이때 <code>DEBUG=true</code>·<code>LOG_LEVEL=DEBUG</code> 면 기동을 거부하고, 관리 세션 쿠키에 <code>Secure</code> 가 붙습니다.</li>
+<li>비밀 키 3종(서로 다르게, 32자 이상)·<code>MYSQL_PASSWORD</code>(쓰면 <code>REDIS_PASSWORD</code>)를 비밀 저장소에서 주입합니다. <code>.env</code> 없이 주입하면 필수 8개가 모두 있어야 합니다.</li>
+<li>접속 정보는 URL 이 아니라 개별 키 <code>MYSQL_HOST/PORT/USER/PASSWORD/DATABASE</code>·<code>REDIS_HOST/PORT/DB/PASSWORD</code> 입니다. DSN 으로 받는 설정은 Alembic 용 <code>ALEMBIC_DATABASE_URL</code> 하나입니다.</li>
+<li>Redis 는 6.2 이상이어야 기동합니다(refresh 회전의 <code>GETDEL</code>).</li>
+<li>프록시 뒤라면 <code>TRUSTED_PROXY_HOPS</code> 를 앞단 프록시 단 수로, <code>CORS_ALLOW_ORIGINS</code> 를 실제 출처로 좁힙니다.</li>
+<li><code>alembic upgrade head</code> 를 먼저 적용합니다(<code>DEBUG=false</code> 는 테이블을 만들지 않음). 첫 슈퍼유저는 <code>python -m scripts.create_superuser</code> 로 만듭니다.</li>
+<li>관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>, 쓰면 HTTPS 로만 접속합니다.</li>
+<li>Celery worker 와 beat <strong>한 개</strong>를 띄웁니다(beat 가 없으면 접속 로그 보존 삭제가 돌지 않음).</li>
+<li>컨테이너 종료 유예를 종료 예산(전체 20초)보다 길게 둡니다.</li>
+</ul>
+<p>빠뜨렸을 때의 결과까지 적힌 정본은 <a href="../../../README.md#운영-배포-체크리스트">README 운영 배포 체크리스트</a> 입니다.</p>
+</section>
+<section>
+<h2>배포 흐름</h2>
+<div class="mermaid">flowchart LR
+Env["ENV, 비밀 키, MYSQL_*, REDIS_* 주입"] --&gt; Mig["alembic upgrade head"]
+Mig --&gt; SU["scripts.create_superuser: 처음 한 번"]
+SU --&gt; Run["API 기동: 설정 검사, Redis 확인"]
+Run --&gt; Ready{"/ready 200?"}
+Ready --&gt;|"예"| Traffic["트래픽 전환"]
+Ready --&gt;|"아니오"| Halt["전환 중단: DB, Redis 확인"]
+Run --&gt; Celery["Celery worker + beat 1개"]</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+Env["ENV, 비밀 키, MYSQL_*, REDIS_* 주입"] --&gt; Mig["alembic upgrade head"]
+Mig --&gt; SU["scripts.create_superuser: 처음 한 번"]
+SU --&gt; Run["API 기동: 설정 검사, Redis 확인"]
+Run --&gt; Ready{"/ready 200?"}
+Ready --&gt;|"예"| Traffic["트래픽 전환"]
+Ready --&gt;|"아니오"| Halt["전환 중단: DB, Redis 확인"]
+Run --&gt; Celery["Celery worker + beat 1개"]</code></pre></details>
+</section>
+<section>
+<h2>관측과 장애 대응</h2>
+<ul>
+<li>liveness 는 <code>/health</code>(외부 연결을 보지 않음), readiness 는 <code>/ready</code>(writer DB <code>SELECT 1</code>·Redis <code>PING</code>, 각 2초) 입니다.</li>
+<li>접속 로그와 앱 로그는 경로·메서드·시각·<code>user_id</code> 로 맞춰 봅니다. 접속 로그에는 client IP·UA·상태 코드·소요 시간이 남습니다.</li>
+<li>Redis 연결 오류: 기동 중이면 기동 실패. 운영 중이면 Redis 를 쓰는 요청(로그인·가입 레이트 리밋, refresh·logout, 사용자 비활성화·강등·삭제의 폐기, <code>/admin</code>, <code>/ready</code>)이 503 이고 서버 로그에 <code>[RedisUnavailable]</code> 가 남습니다. Redis 를 쓰지 않는 조회는 그대로 응답합니다. 우회해 허용하지 않습니다(fail-closed).</li>
+<li>DB 장애: <code>/ready</code> 503, DB 를 쓰는 API 는 500. 접속 로그 저장 실패는 응답에 영향을 주지 않습니다.</li>
+<li>알림 대상: 5xx 증가, <code>/ready</code> 실패, <code>[RedisUnavailable]</code>, 종료 timeout 로그(<code>[shutdown] … timeout</code>).</li>
+</ul>
+</section>
+<section>
+<h2>코드 근거</h2>
+<ul>
+<li><a data-source="config.py" href="../../../config.py"><code>config.py</code></a></li>
+<li><a data-source="main.py" href="../../../main.py"><code>main.py</code></a></li>
+<li><a data-source="app/core/resources.py" href="../../../app/core/resources.py"><code>app/core/resources.py</code></a></li>
+<li><a data-source="alembic.ini" href="../../../alembic.ini"><code>alembic.ini</code></a></li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../getting-started/index.html">부팅과 첫 실행</a></li>
+<li><a href="../reference/configuration.html">환경 설정</a></li>
+<li><a href="../workflows/admin-authentication.html">관리 화면 인증 안내서</a></li>
+<li><a href="../ARCHITECTURE.md#82-시간-예산">ARCHITECTURE §8.2 시간 예산</a></li>
+</ul>
+</section>
 </main>
-<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
-<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
 </body>
 </html>
