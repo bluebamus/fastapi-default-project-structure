@@ -47,3 +47,20 @@
 | RR-01 | LOW | docs-guide-review/residual-risk.md | 작업 트리 CRLF. **추가:** 생성물이 기존 행·열 이름을 고쳐 쓴 것(append-only 위반)을 main 내용으로 되돌리고 후속 기록을 덧붙임. 이번 남은 위험은 이 그룹 residual-risk 에 등록 | Fixed | `370b51b` |
 | 부수-1 | LOW | .env.example | admin-auth-guide.html → workflows/admin-authentication.html | Fixed | `b241acc` |
 | 부수-2 | LOW | services docstring | blog·reply·sns·user: 핸들러 커밋 / home: sink 가 background 세션에서 커밋 | Fixed | `b241acc` |
+
+## Round 2 — 2026-10-22 · 수정본 재검수(Codex 실증 + Claude 재검수) 남은 결함
+
+> 입력: round2 재검수 "남은 결함" 의 default 몫(D-N1~D-N8)과 가로 결함 X-1(X-2 는 D-N7 로 포함). 고치기 전에 코드 근거를 다시 열었고 9건 모두 맞았다.
+> 아래 D-N8 은 Round 1 머리말("42건 모두 처리")과 CFG-02·OPS-02 의 `Fixed` 가 사실과 달랐다는 **정정 행**이다 — 위 행은 고치지 않는다(append-only).
+
+| ID | 심각도 | 문서 | 고친 것(코드 근거) | Status | 커밋 |
+|---|---|---|---|---|---|
+| D-N1 | MED | configuration·getting-started·.env.example | `.env` 부재 필수 8개 검사와 ADMIN 레거시 검사도 `ENV=test` 에서 건너뜀(config.py `validate_env_source`·`validate_no_legacy_admin` 의 `env == "test"`). .env.example "모든 ENV" → "test 외 모든 ENV" | Fixed | `0f8489d` |
+| D-N2 | MED | getting-started·deployment | "전체 예산 20초" → 단계별 제한 5/5/10 + 로그 flush 2, `SHUTDOWN_TOTAL_TIMEOUT_SECONDS` 는 정의만(강제 안 함), lifespan 약 22초·listener 까지 약 29초(resources.py 69-73, queue_handler `LOG_FLUSH_TIMEOUT_SECONDS`; ARCHITECTURE §8·server-lifecycle 과 같게) | Fixed | `0f8489d` |
+| D-N3 | MED | api·features/user | PATCH 사용자: 비활성화=refresh+관리 세션, 강등=관리 세션만, access 는 만료까지(user_service.py `update_user`) | Fixed | `0f8489d` |
+| D-N4 | LOW | features/home·features/index·허브 | "모든 요청" → `ACCESS_LOG_ENABLED` 이고 제외 경로·확장자가 아닌 요청(user_info_middleware.py `_should_skip`), 도식 렌더·원문 둘 다 | Fixed | `0f8489d` |
+| D-N5 | LOW | configuration·README | "위반을 RuntimeError 하나로" → 세 검사는 순차 fail-fast, 위반 집계는 `validate_deployment_safety` 안에서만(config.py 끝 세 호출) | Fixed | `0f8489d` |
+| D-N6 | LOW | tests/test_docs_guide_site.py | Mermaid 도식 페이지는 고정 URL 을 정확히 한 번(고정 삭제 변이에서 옛 검사 통과 → 새 검사 실패) | Fixed | `19bb96d` |
+| D-N7 | LOW | tests/test_docs_guides.py | 상대 링크 `#조각` 이 대상 HTML id·Markdown 제목 앵커로 실재(없는 앵커 변이: 옛 통과 → 새 실패) | Fixed | `19bb96d` |
+| X-1 | MED | tests/test_docs_guide_site.py | 기능별 API 표 ⊆ openapi × 접근 수준(features/user 수준 변조: 옛 통과 → 새 실패). 명세의 P-N5 지시대로 설정 표 클래스·코드 기본값 대조도 추가(MYSQL_PORT 변조: 옛 통과 → 새 실패) | Fixed | `19bb96d` |
+| D-N8 | MED | 이 그룹 ledger·checklist·run-log | **정정:** Round 1 의 "42건 모두 처리"·CFG-02/OPS-02 `Fixed`·`CONVERGED` 는 사실과 달랐다 — CFG-02 는 ENV=test 생략(D-N1), OPS-02 는 종료 예산(D-N2)이 남은 일부 수정이었다. Round 2 로 닫고 기록을 덧붙임 | Fixed | 이 기록 커밋 |

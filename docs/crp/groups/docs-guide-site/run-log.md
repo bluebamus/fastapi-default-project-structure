@@ -14,3 +14,12 @@
 - **커밋:** `b439092` 원본 · `ccdd874` 흐름 · `c3d8396` 시작·설정·API·배포 · `ea2fd46` 기능·개발·테스트 · `370b51b` 허브·공통 · `b241acc` 코드 docstring · `b0cb53b` 계약 테스트 · `6195d85` 재검 반영
 - **잔여:** R-001~R-003
 - **수렴 판정:** `CONVERGED`
+
+### Round 2 — 2026-10-22 · 수정본 재검수 반영
+- **트리거:** round2 재검수(Codex 실증 + Claude 재검수) 남은 결함 — default D-N1~D-N8, 가로 X-1
+- **Round 1 정정:** 위 Round 1 의 `CONVERGED` 는 이르렀다 — CFG-02·OPS-02 가 일부만 고쳐져 있었다(D-N8). 판정은 이 라운드로 대신한다.
+- **재확인:** `config.py`(검사 3종의 `env == "test"` 생략·순차 호출·`validate_deployment_safety` 집계), `app/core/resources.py`(단계별 timeout, `SHUTDOWN_TOTAL_TIMEOUT_SECONDS` 는 테스트에서만 참조), `app/utils/logs/queue_handler.py`, `app/features/user/services/user_service.py`(`update_user` 폐기 분기), `app/core/middlewares/user_info_middleware.py`(`_should_skip`)
+- **계약 테스트 보강:** 저장소 밖 클론 변이 — mermaid 고정 삭제·없는 앵커·기능 표 접근 수준·설정 기본값: 옛 테스트 모두 통과(헛검사) → 새 테스트 모두 1 failed, 원복 뒤 통과
+- **커밋:** `0f8489d` 문서 · `19bb96d` 계약 테스트 · 이 기록 커밋
+- **잔여:** R-001~R-003 그대로(R-002: 본문 문장은 여전히 테스트 밖 — D-N1~D-N5 가 그 예)
+- **수렴 판정:** `CONVERGED`(이 브랜치 기준, 재검수 대기)
