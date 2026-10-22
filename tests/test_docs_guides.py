@@ -76,7 +76,11 @@ def test_guides_exist():
     assert GUIDES, "docs/guides 가 비어 있다 — 검사가 아무것도 보지 않는다"
 
 
-@pytest.mark.parametrize("guide", [path for path in GUIDES if path.suffix == ".html"], ids=lambda p: str(p.relative_to(REPO_ROOT)))
+@pytest.mark.parametrize(
+    "guide",
+    [path for path in GUIDES if path.suffix == ".html"],
+    ids=lambda p: str(p.relative_to(REPO_ROOT)),
+)
 def test_html_guide_links_exist(guide: Path):
     """모든 HTML 가이드의 저장소 내부 링크가 실제 파일을 가리킨다."""
     broken = []
