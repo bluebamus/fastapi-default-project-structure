@@ -153,3 +153,26 @@ async def test_anonymous_and_rejected_requests_record_no_user_id(call, sink):
         (200, None),
         (401, None),
     ]
+
+
+@pytest.mark.parametrize(
+    ("enabled", "url", "recorded"),
+    [
+        (False, "/ok", False),  # ACCESS_LOG_ENABLED=false 면 아무것도 저장하지 않는다
+        (True, "/skip", False),  # 제외 경로는 정확 일치
+        (True, "/skip/child", True),  # 접두사는 제외가 아니다
+        (True, "/app.css", False),  # 제외 확장자는 접미사 일치
+        (True, "/ok", True),
+    ],
+)
+async def test_only_enabled_and_not_excluded_requests_are_stored(
+    call, sink, monkeypatch, enabled, url, recorded
+):
+    """문서가 말하는 저장 범위(``_should_skip``) — 로컬 .env 값과 무관하게 고정한다."""
+    monkeypatch.setattr(middleware_settings, "ACCESS_LOG_ENABLED", enabled)
+    monkeypatch.setattr(middleware_settings, "ACCESS_LOG_EXCLUDE_PATHS", ["/skip"])
+    monkeypatch.setattr(middleware_settings, "ACCESS_LOG_EXCLUDE_EXTENSIONS", [".css"])
+
+    await call(url)
+
+    assert [entry["request_path"] for entry in sink.saved] == ([url] if recorded else [])

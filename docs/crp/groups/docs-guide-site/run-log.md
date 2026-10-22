@@ -32,3 +32,10 @@
 - **관찰(범위 밖, 고치지 않음):** `.env` 없는 클론에서 `tests/core/test_sql_logging_leak.py::test_debug_level_keeps_full_rollback_detail` 2건이 실패한다 — main 클론에서도 같아 이 브랜치와 무관. 감독 판단 대기
 - **커밋:** `be56abc` 문서·docstring · `e51ed66` 계약 테스트 · 이 기록 커밋
 - **상태:** 수정됨 — 검수 대기
+
+### 후속 T-1 — 2026-10-22 · `_should_skip` 회귀 테스트
+- **트리거:** 문서가 말하는 접속 로그 저장 범위(`ACCESS_LOG_ENABLED`·제외 경로 정확 일치·확장자 접미사 일치)를 직접 고정하는 테스트가 없었다. 사용자 요청으로 추가
+- **변경:** `7b6f611` (테스트만, 코드 무변경)
+- **red→green:** 저장소 밖 복사본에서 `_should_skip` 의 비활성 검사 제거·정확 일치→접두사·접미사 무시 → 각각 1 failed(케이스가 서로 다름), 원본 5 passed
+- **검사:** ruff check·format 통과, `.env` 없는 복사본 전체 1450 passed · 19 skipped · 4 errors(모두 `tests/integration/test_uvicorn_lifecycle.py` — 실서버용 `REDIS_HOST`·`REDIS_PORT` 미설정, 무관). 위 관찰의 `test_sql_logging_leak` 2건 실패는 이번 `.env` 없는 복사본에서는 재현되지 않음(21 passed)
+- **상태:** 수정됨 — 검수 대기
