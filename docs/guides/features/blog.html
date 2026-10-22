@@ -7,34 +7,111 @@
   <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>블로그 기능</h1><p>게시물 CRUD와 소유권 기반 쓰기 권한의 기준 구현입니다.</p></header>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>블로그 기능</h1>
+  <p>게시글 CRUD 와 작성자 기반 수정·삭제 권한의 기준 구현입니다.</p>
+</header>
 <nav class="topnav" aria-label="가이드 메뉴">
-  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
-  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
-  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
 </nav>
 <main>
-<section><h2>목적과 책임</h2><p>게시물 CRUD와 소유권 기반 쓰기 권한의 기준 구현입니다.</p><div class="callout"><strong>핵심 패턴:</strong> Router–Service–Repository</div></section>
-<section><h2>API와 권한</h2><div class="table-wrap"><table><thead><tr><th>메서드</th><th>경로</th><th>권한</th><th>용도</th></tr></thead><tbody><tr><td><span class="method">POST</span></td><td><code>/api/v1/blog/posts</code></td><td>login</td><td>게시물 생성</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts</code></td><td>public</td><td>게시물 목록</td></tr><tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>public</td><td>게시물 상세</td></tr><tr><td><span class="method">PATCH</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>owner/superuser</td><td>게시물 수정</td></tr><tr><td><span class="method">DELETE</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td>owner/superuser</td><td>게시물 삭제</td></tr></tbody></table></div></section>
-<section><h2>내부 흐름</h2><div class="mermaid">flowchart LR
-Client --&gt; Router[블로그 router]
-Router --&gt; Policy[Access policy]
-Router --&gt; Service[블로그 service]
-Service --&gt; Repo[Repository]
-Repo --&gt; DB[(Database)]
-DB --&gt; Repo --&gt; Service --&gt; Router</div><details><summary>Mermaid 원문</summary><pre><code>flowchart LR
-Client --&gt; Router[블로그 router]
-Router --&gt; Policy[Access policy]
-Router --&gt; Service[블로그 service]
-Service --&gt; Repo[Repository]
-Repo --&gt; DB[(Database)]
-DB --&gt; Repo --&gt; Service --&gt; Router</code></pre></details><p>라우터는 입력과 HTTP 상태를, 서비스는 업무 규칙과 트랜잭션을, 저장소는 DB 표현을 책임집니다. 권한 검사를 생략한 내부 호출 경로를 만들지 않습니다.</p></section>
-<section><h2>주요 소스</h2><ul><li><a data-source="app/features/blog/api/routers/router.py" href="../../../app/features/blog/api/routers/router.py"><code>app/features/blog/api/routers/router.py</code></a></li><li><a data-source="app/features/blog/api/routers/v1/blog.py" href="../../../app/features/blog/api/routers/v1/blog.py"><code>app/features/blog/api/routers/v1/blog.py</code></a></li><li><a data-source="app/features/blog/services/blog_service.py" href="../../../app/features/blog/services/blog_service.py"><code>app/features/blog/services/blog_service.py</code></a></li><li><a data-source="app/features/blog/repositories/post_repository.py" href="../../../app/features/blog/repositories/post_repository.py"><code>app/features/blog/repositories/post_repository.py</code></a></li><li><a data-source="app/features/blog/models/models.py" href="../../../app/features/blog/models/models.py"><code>app/features/blog/models/models.py</code></a></li><li><a data-source="app/features/blog/schemas/blog_schema.py" href="../../../app/features/blog/schemas/blog_schema.py"><code>app/features/blog/schemas/blog_schema.py</code></a></li><li><a data-source="app/features/blog/dependencies/blog_dependencies.py" href="../../../app/features/blog/dependencies/blog_dependencies.py"><code>app/features/blog/dependencies/blog_dependencies.py</code></a></li><li><a data-source="app/features/blog/admin.py" href="../../../app/features/blog/admin.py"><code>app/features/blog/admin.py</code></a></li><li><a data-source="app/features/blog/exceptions.py" href="../../../app/features/blog/exceptions.py"><code>app/features/blog/exceptions.py</code></a></li><li><a data-source="app/features/blog/tests/conftest.py" href="../../../app/features/blog/tests/conftest.py"><code>app/features/blog/tests/conftest.py</code></a></li><li><a data-source="app/features/blog/tests/test_db.py" href="../../../app/features/blog/tests/test_db.py"><code>app/features/blog/tests/test_db.py</code></a></li><li><a data-source="app/features/blog/tests/test_endpoint.py" href="../../../app/features/blog/tests/test_endpoint.py"><code>app/features/blog/tests/test_endpoint.py</code></a></li></ul></section>
-<section><h2>사용과 확장</h2><p>클라이언트는 API 레퍼런스의 접근 수준을 만족한 뒤 OpenAPI 스키마에 맞춰 호출합니다. 태그·검색·발행 상태는 서비스 규칙과 마이그레이션을 함께 추가합니다.</p><ol><li>요구사항과 접근 정책을 먼저 정합니다.</li><li>스키마 → 서비스 규칙 → 저장소 → 라우터 순서로 책임을 배치합니다.</li><li>마이그레이션과 단위·통합 테스트를 같은 변경에 포함합니다.</li><li>API 또는 운영 흐름이 달라지면 이 문서와 전체 API 표를 함께 갱신합니다.</li></ol></section>
-<section><h2>주의점</h2><ul><li>라우터에서 직접 commit하거나 쿼리를 조립하지 않습니다.</li><li>목록 API는 정렬·페이지 경계를 안정적으로 유지합니다.</li><li>삭제·수정은 존재 여부와 권한 실패를 구분하되 내부 정보를 과도하게 노출하지 않습니다.</li></ul></section>
-<section><h2>관련 문서</h2><ul><li><a href="index.html">기능 목록</a></li><li><a href="../reference/api.html">전체 API</a></li><li><a href="../development/index.html">개발 절차</a></li></ul></section>
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>목적과 책임</h2>
+<ul>
+<li>조회는 <code>Public</code>, 생성·수정·삭제는 로그인(<code>CurrentPrincipal</code>)이 필요합니다. 작성자는 토큰 주체로 서버가 채우고, 수정·삭제는 Service 가 <code>OwnershipPolicy</code> 로 작성자 또는 슈퍼유저만 허용합니다(아니면 403).</li>
+<li>인가 도입 전에 만든 작성자 없는 행은 슈퍼유저만 고칠 수 있습니다.</li>
+</ul>
+<div class="callout"><strong>핵심 패턴:</strong> View–Dependency–Service–Repository(ORM)</div>
+</section>
+<section>
+<h2>API와 접근 수준</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>메서드</th><th>경로</th><th>접근 수준</th><th>성공</th><th>추가 검사·주의</th><th>용도</th></tr></thead>
+<tbody>
+<tr><td><span class="method">POST</span></td><td><code>/api/v1/blog/posts</code></td><td><code>LoginRequired</code></td><td>201</td><td>작성자는 토큰 주체로 서버가 채운다</td><td>게시글 생성</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts</code></td><td><code>Public</code></td><td>200</td><td></td><td>게시글 목록</td></tr>
+<tr><td><span class="method">GET</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td><code>Public</code></td><td>200</td><td></td><td>게시글 상세</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td><code>LoginRequired</code></td><td>200</td><td>작성자 또는 슈퍼유저(<code>OwnershipPolicy</code>, 아니면 403)</td><td>게시글 수정</td></tr>
+<tr><td><span class="method">DELETE</span></td><td><code>/api/v1/blog/posts/{post_id}</code></td><td><code>LoginRequired</code></td><td>204</td><td>작성자 또는 슈퍼유저(<code>OwnershipPolicy</code>, 아니면 403)</td><td>게시글 삭제</td></tr>
+</tbody>
+</table></div>
+</section>
+<section>
+<h2>내부 흐름</h2>
+<div class="mermaid">flowchart LR
+C["Client"] --&gt; V["View"]
+V --&gt; A["접근 수준 의존성"]
+V --&gt; D["get_blog_service: writer 세션, Service 조립"]
+V --&gt; S["BlogService"]
+S --&gt; O["OwnershipPolicy: 작성자 또는 슈퍼유저"]
+S --&gt; R["PostRepository"]
+R --&gt; DB[("blog_posts")]
+V --&gt;|"쓰기: DTO 검증 뒤 service.commit() 1회"| S</div>
+<details><summary>Mermaid 원문</summary><pre><code>flowchart LR
+C["Client"] --&gt; V["View"]
+V --&gt; A["접근 수준 의존성"]
+V --&gt; D["get_blog_service: writer 세션, Service 조립"]
+V --&gt; S["BlogService"]
+S --&gt; O["OwnershipPolicy: 작성자 또는 슈퍼유저"]
+S --&gt; R["PostRepository"]
+R --&gt; DB[("blog_posts")]
+V --&gt;|"쓰기: DTO 검증 뒤 service.commit() 1회"| S</code></pre></details>
+<p>트랜잭션 경계: 쓰기 핸들러(View)가 응답 DTO 를 먼저 검증한 뒤 <code>await service.commit()</code> 을 정확히 한 번 부르고 반환합니다. 세션은 의존성(<code>get_writer_db_session</code>)이 열고 닫으며, 커밋 전에 예외가 나면 세션 종료가 롤백합니다. Repository·Dependency 는 커밋하지 않습니다(<code>tests/test_write_dto_before_commit.py</code>, 검수 게이트 INV-2).</p>
+</section>
+<section>
+<h2>주요 소스</h2>
+<ul>
+<li><a data-source="app/features/blog/api/routers/v1/blog.py" href="../../../app/features/blog/api/routers/v1/blog.py"><code>app/features/blog/api/routers/v1/blog.py</code></a></li>
+<li><a data-source="app/features/blog/services/blog_service.py" href="../../../app/features/blog/services/blog_service.py"><code>app/features/blog/services/blog_service.py</code></a></li>
+<li><a data-source="app/features/blog/repositories/post_repository.py" href="../../../app/features/blog/repositories/post_repository.py"><code>app/features/blog/repositories/post_repository.py</code></a></li>
+<li><a data-source="app/features/blog/models/models.py" href="../../../app/features/blog/models/models.py"><code>app/features/blog/models/models.py</code></a></li>
+<li><a data-source="app/features/blog/schemas/blog_schema.py" href="../../../app/features/blog/schemas/blog_schema.py"><code>app/features/blog/schemas/blog_schema.py</code></a></li>
+<li><a data-source="app/features/blog/dependencies/blog_dependencies.py" href="../../../app/features/blog/dependencies/blog_dependencies.py"><code>app/features/blog/dependencies/blog_dependencies.py</code></a></li>
+<li><a data-source="app/features/blog/admin.py" href="../../../app/features/blog/admin.py"><code>app/features/blog/admin.py</code></a></li>
+</ul>
+</section>
+<section>
+<h2>확장할 때</h2>
+<ul>
+<li>태그·검색·발행 상태를 더할 때는 스키마·Service 규칙·migration 을 같은 변경에 넣습니다.</li>
+<li>API 가 바뀌면 <a href="../reference/api.html">API 레퍼런스</a>·README API 표·<code>tests/test_authorization.py</code> 를 함께 갱신합니다.</li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../features/index.html">기능 목록</a></li>
+<li><a href="../reference/api.html">전체 API</a></li>
+<li><a href="../development/index.html">개발 가이드</a></li>
+</ul>
+</section>
 </main>
-<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
-<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
 </body>
 </html>
