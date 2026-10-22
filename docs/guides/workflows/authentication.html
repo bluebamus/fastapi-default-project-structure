@@ -7,77 +7,162 @@
   <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
-<header class="hero"><p class="eyebrow">CODE-VERIFIED GUIDE</p><h1>API JWT 인증</h1><p>가입·로그인·보호 API·refresh 회전·로그아웃의 경계와 실패 원칙을 설명합니다.</p></header>
+<header class="hero">
+  <p class="eyebrow">PROJECT GUIDE</p>
+  <h1>API JWT 인증</h1>
+  <p>가입·로그인·보호 API·refresh 회전·로그아웃의 경계와 실패 규칙입니다.</p>
+</header>
 <nav class="topnav" aria-label="가이드 메뉴">
-  <a href="../index.html">허브</a><a href="../getting-started/index.html">부팅</a><a href="../architecture/index.html">설계</a>
-  <a href="../reference/api.html">API</a><a href="../workflows/request-processing.html">요청</a><a href="../workflows/authentication.html">인증</a>
-  <a href="../features/index.html">기능</a><a href="../development/index.html">개발</a><a href="../operations/deployment.html">운영</a>
+  <a href="../index.html">허브</a>
+  <a href="../getting-started/index.html">부팅</a>
+  <a href="../architecture/index.html">설계</a>
+  <a href="../reference/api.html">API</a>
+  <a href="../reference/configuration.html">설정</a>
+  <a href="../workflows/request-processing.html">요청</a>
+  <a href="../workflows/authentication.html">인증</a>
+  <a href="../features/index.html">기능</a>
+  <a href="../development/index.html">개발</a>
+  <a href="../development/testing.html">테스트</a>
+  <a href="../operations/deployment.html">운영</a>
 </nav>
 <main>
-<section><h2>인증 모델</h2><p>API는 Bearer JWT를 사용하고, 짧은 수명의 access token과 서버 저장소에서 상태를 관리하는 refresh token을 분리합니다. 관리자 화면의 쿠키 세션은 별도 경계이므로 서로 대체하지 않습니다.</p></section>
-<section><h2>로그인과 보호 API</h2><div class="mermaid">sequenceDiagram
+<aside class="callout"><p id="diagram-status" role="status">도식은 고정 버전 Mermaid CDN을 사용합니다. 인터넷이 없어도 본문·표·도식 원문을 읽을 수 있습니다.</p><noscript>JavaScript가 꺼져 있어 도식 원문과 본문으로 설명을 제공합니다.</noscript></aside>
+<section>
+<h2>인증 모델</h2>
+<p>API 는 Bearer JWT 를 씁니다. access 토큰(기본 15분)에는 <code>sub</code>·<code>username</code>·<code>su</code>(슈퍼유저 여부)가 실리고, refresh 토큰(기본 7일)에는 <code>jti</code>·<code>fam</code>(계열)이 실려 Redis 의 <code>RefreshTokenStore</code> 가 회전을 기록합니다. 관리 화면(<code>/admin</code>)의 Redis 서버 세션은 별도 경계이며 API 를 인증하지 않습니다.</p>
+</section>
+<section>
+<h2>로그인과 보호 API</h2>
+<div class="mermaid">sequenceDiagram
 participant C as Client
-participant A as Auth API
-participant L as Rate limiter
-participant U as User store
-participant T as Token service
-C-&gt;&gt;A: POST /auth/login
-A-&gt;&gt;L: IP/계정 제한 확인
-A-&gt;&gt;U: 사용자·비밀번호 검증
-U--&gt;&gt;A: User
-A-&gt;&gt;T: access + refresh 발급
-T--&gt;&gt;C: token pair
-C-&gt;&gt;A: GET /auth/me + Bearer access
-A-&gt;&gt;T: 서명·만료·타입 검증
-A-&gt;&gt;U: 현재 사용자 재조회
-U--&gt;&gt;C: 사용자 응답</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant RL as 레이트 리밋(Redis)
+participant A as AuthService
+participant U as UserRepository
+participant T as TokenService
+participant RS as RefreshTokenStore(Redis)
+participant P as get_current_principal
+C-&gt;&gt;RL: POST /api/v1/auth/login (form)
+RL--&gt;&gt;C: 초과면 429 + Retry-After
+RL-&gt;&gt;A: authenticate
+A-&gt;&gt;U: 사용자 조회, 비밀번호 검증
+A--&gt;&gt;C: 없음, 비활성, 불일치면 401
+A-&gt;&gt;T: access + refresh 발급(새 family)
+A-&gt;&gt;RS: refresh jti 등록
+A--&gt;&gt;C: 200 token pair
+Note over RL: 성공하면 IP+사용자명 카운터만 지운다
+C-&gt;&gt;P: 보호 API + Bearer access
+P-&gt;&gt;T: 서명, 만료, iss, aud 검증
+P--&gt;&gt;C: 실패면 401, DB 는 보지 않는다</div>
+<details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
 participant C as Client
-participant A as Auth API
-participant L as Rate limiter
-participant U as User store
-participant T as Token service
-C-&gt;&gt;A: POST /auth/login
-A-&gt;&gt;L: IP/계정 제한 확인
-A-&gt;&gt;U: 사용자·비밀번호 검증
-U--&gt;&gt;A: User
-A-&gt;&gt;T: access + refresh 발급
-T--&gt;&gt;C: token pair
-C-&gt;&gt;A: GET /auth/me + Bearer access
-A-&gt;&gt;T: 서명·만료·타입 검증
-A-&gt;&gt;U: 현재 사용자 재조회
-U--&gt;&gt;C: 사용자 응답</code></pre></details></section>
-<section><h2>회전과 로그아웃</h2><div class="mermaid">sequenceDiagram
+participant RL as 레이트 리밋(Redis)
+participant A as AuthService
+participant U as UserRepository
+participant T as TokenService
+participant RS as RefreshTokenStore(Redis)
+participant P as get_current_principal
+C-&gt;&gt;RL: POST /api/v1/auth/login (form)
+RL--&gt;&gt;C: 초과면 429 + Retry-After
+RL-&gt;&gt;A: authenticate
+A-&gt;&gt;U: 사용자 조회, 비밀번호 검증
+A--&gt;&gt;C: 없음, 비활성, 불일치면 401
+A-&gt;&gt;T: access + refresh 발급(새 family)
+A-&gt;&gt;RS: refresh jti 등록
+A--&gt;&gt;C: 200 token pair
+Note over RL: 성공하면 IP+사용자명 카운터만 지운다
+C-&gt;&gt;P: 보호 API + Bearer access
+P-&gt;&gt;T: 서명, 만료, iss, aud 검증
+P--&gt;&gt;C: 실패면 401, DB 는 보지 않는다</code></pre></details>
+</section>
+<section>
+<h2>회전과 로그아웃</h2>
+<div class="mermaid">sequenceDiagram
 participant C as Client
-participant A as Auth API
-participant R as Refresh store
-participant T as Token service
-C-&gt;&gt;A: POST /auth/refresh
-A-&gt;&gt;T: refresh token 검증
-A-&gt;&gt;R: 기존 토큰 원자적 소비
-R--&gt;&gt;A: 유효 / 재사용 감지
-A-&gt;&gt;T: 새 token pair 발급
-T--&gt;&gt;C: 새 token pair
-C-&gt;&gt;A: POST /auth/logout
-A-&gt;&gt;R: token family 폐기
-R--&gt;&gt;C: 로그아웃 완료</div><details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
+participant A as AuthService
+participant RS as RefreshTokenStore(Redis)
+participant U as UserRepository
+C-&gt;&gt;A: POST /api/v1/auth/refresh
+A-&gt;&gt;RS: family 폐기 여부 확인
+A--&gt;&gt;C: 폐기된 family 면 401
+A-&gt;&gt;RS: jti 1회 소비(GETDEL)
+A-&gt;&gt;RS: 기록이 없으면 재사용으로 보고 family 전체 폐기
+A--&gt;&gt;C: 재사용이면 401
+A-&gt;&gt;U: 사용자 조회
+A-&gt;&gt;RS: 없거나 비활성이면 family 폐기
+A--&gt;&gt;C: 그 경우 401
+A-&gt;&gt;RS: 같은 family 로 새 jti 등록
+A--&gt;&gt;C: 200 새 token pair
+C-&gt;&gt;A: POST /api/v1/auth/logout
+A-&gt;&gt;RS: family 폐기(멱등)
+A--&gt;&gt;C: 204</div>
+<details><summary>Mermaid 원문</summary><pre><code>sequenceDiagram
 participant C as Client
-participant A as Auth API
-participant R as Refresh store
-participant T as Token service
-C-&gt;&gt;A: POST /auth/refresh
-A-&gt;&gt;T: refresh token 검증
-A-&gt;&gt;R: 기존 토큰 원자적 소비
-R--&gt;&gt;A: 유효 / 재사용 감지
-A-&gt;&gt;T: 새 token pair 발급
-T--&gt;&gt;C: 새 token pair
-C-&gt;&gt;A: POST /auth/logout
-A-&gt;&gt;R: token family 폐기
-R--&gt;&gt;C: 로그아웃 완료</code></pre></details></section>
-<section><h2>보안 의도와 확장</h2><ul><li>refresh token 회전은 탈취 토큰의 재사용 창을 줄입니다. 저장소 오류를 성공으로 간주하지 않습니다.</li><li>로그인·가입은 공개 쓰기이지만 rate limit 대상입니다.</li><li>라우트 접근 수준과 리소스 소유권을 분리해 <code>owner/superuser</code> 정책을 재사용합니다.</li><li>외부 IdP를 추가할 때도 내부 <code>Principal</code>과 접근 수준 계약은 유지합니다.</li></ul></section>
-<section><h2>코드 근거</h2><ul><li><a data-source="app/features/auth/api/routers/v1/auth.py" href="../../../app/features/auth/api/routers/v1/auth.py"><code>app/features/auth/api/routers/v1/auth.py</code></a></li><li><a data-source="app/features/auth/dependencies/auth_dependencies.py" href="../../../app/features/auth/dependencies/auth_dependencies.py"><code>app/features/auth/dependencies/auth_dependencies.py</code></a></li><li><a data-source="app/core/security/tokens.py" href="../../../app/core/security/tokens.py"><code>app/core/security/tokens.py</code></a></li><li><a data-source="app/core/security/refresh_store.py" href="../../../app/core/security/refresh_store.py"><code>app/core/security/refresh_store.py</code></a></li><li><a data-source="app/core/security/rate_limit.py" href="../../../app/core/security/rate_limit.py"><code>app/core/security/rate_limit.py</code></a></li></ul></section>
-<section><h2>관련 문서</h2><ul><li><a href="admin-authentication.html">관리자 세션 인증</a></li><li><a href="../features/auth.html">auth 기능 상세</a></li><li><a href="../reference/api.html">API 목록</a></li></ul></section>
+participant A as AuthService
+participant RS as RefreshTokenStore(Redis)
+participant U as UserRepository
+C-&gt;&gt;A: POST /api/v1/auth/refresh
+A-&gt;&gt;RS: family 폐기 여부 확인
+A--&gt;&gt;C: 폐기된 family 면 401
+A-&gt;&gt;RS: jti 1회 소비(GETDEL)
+A-&gt;&gt;RS: 기록이 없으면 재사용으로 보고 family 전체 폐기
+A--&gt;&gt;C: 재사용이면 401
+A-&gt;&gt;U: 사용자 조회
+A-&gt;&gt;RS: 없거나 비활성이면 family 폐기
+A--&gt;&gt;C: 그 경우 401
+A-&gt;&gt;RS: 같은 family 로 새 jti 등록
+A--&gt;&gt;C: 200 새 token pair
+C-&gt;&gt;A: POST /api/v1/auth/logout
+A-&gt;&gt;RS: family 폐기(멱등)
+A--&gt;&gt;C: 204</code></pre></details>
+</section>
+<section>
+<h2>알아야 할 한계와 규칙</h2>
+<ul>
+<li>access 토큰은 폐기 목록이 없어 만료(<code>ACCESS_TOKEN_EXPIRE_MINUTES</code>, 기본 15분)까지 유효합니다. <code>su</code> 는 <strong>발급 시점 값</strong>이라 강등·비활성화·삭제 뒤에도 그동안 이전 권한이 남습니다.</li>
+<li>보호 라우트는 토큰 클레임만 봅니다(DB 조회 없음). <code>/api/v1/auth/me</code> 만 DB 에서 사용자를 다시 읽어 삭제·비활성 사용자를 401 로 돌려보냅니다.</li>
+<li>비활성화·삭제는 그 사용자의 refresh 계열을 모두 폐기하고(관리 세션도 함께), 강등은 관리 세션만 끊습니다.</li>
+<li>레이트 리밋은 <code>login</code>(IP+사용자명 5회·IP 20회, 60초 창)과 <code>register</code>(IP 5회, 3600초 창)에만 있습니다. <code>refresh</code>·<code>logout</code> 에는 없습니다.</li>
+<li>레이트 리밋·회전·폐기는 Redis 에 있어 Redis 연결 오류면 해당 요청은 503 입니다(fail-closed).</li>
+<li>슈퍼유저 전용 라우트도 토큰이 없거나 틀리면 403 이 아니라 401 입니다.</li>
+</ul>
+</section>
+<section>
+<h2>코드 근거</h2>
+<ul>
+<li><a data-source="app/features/auth/api/routers/v1/auth.py" href="../../../app/features/auth/api/routers/v1/auth.py"><code>app/features/auth/api/routers/v1/auth.py</code></a></li>
+<li><a data-source="app/features/auth/services/auth_service.py" href="../../../app/features/auth/services/auth_service.py"><code>app/features/auth/services/auth_service.py</code></a></li>
+<li><a data-source="app/features/auth/dependencies/auth_dependencies.py" href="../../../app/features/auth/dependencies/auth_dependencies.py"><code>app/features/auth/dependencies/auth_dependencies.py</code></a></li>
+<li><a data-source="app/core/security/dependencies.py" href="../../../app/core/security/dependencies.py"><code>app/core/security/dependencies.py</code></a></li>
+<li><a data-source="app/core/security/authorization.py" href="../../../app/core/security/authorization.py"><code>app/core/security/authorization.py</code></a></li>
+<li><a data-source="app/core/security/tokens.py" href="../../../app/core/security/tokens.py"><code>app/core/security/tokens.py</code></a></li>
+<li><a data-source="app/core/security/refresh_store.py" href="../../../app/core/security/refresh_store.py"><code>app/core/security/refresh_store.py</code></a></li>
+<li><a data-source="app/core/security/rate_limit.py" href="../../../app/core/security/rate_limit.py"><code>app/core/security/rate_limit.py</code></a></li>
+</ul>
+</section>
+<section>
+<h2>관련 문서</h2>
+<ul>
+<li><a href="../workflows/admin-authentication.html">관리 화면 인증 안내서</a></li>
+<li><a href="../features/auth.html">auth 기능</a></li>
+<li><a href="../ARCHITECTURE.md#11-인증-jwt">ARCHITECTURE §11 인증</a></li>
+<li><a href="../reference/api.html">API 레퍼런스</a></li>
+</ul>
+</section>
 </main>
-<footer>문서보다 코드가 우선입니다. 변경 시 연결된 소스와 테스트를 함께 확인하세요.</footer>
-<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
+<footer>기준 코드: main <code>e4806f6</code>(2026-10-22). 코드와 다르면 코드가 정답이고 이 문서를 고칩니다. API 표·설정 표·Mermaid 버전·허브 링크는 <code>tests/test_docs_guide_site.py</code> 가 코드와 대조합니다.</footer>
+<script type="module">
+const status = document.getElementById("diagram-status");
+try {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({startOnLoad:false,securityLevel:"strict",theme:"neutral",fontFamily:'system-ui, "Malgun Gothic", sans-serif',flowchart:{htmlLabels:false},suppressErrorRendering:true});
+  for (const node of document.querySelectorAll(".mermaid")) {
+    try { await mermaid.run({nodes:[node]}); }
+    catch { node.textContent = "도식을 렌더링하지 못했습니다. 아래 Mermaid 원문과 본문 설명을 확인하세요."; node.classList.add("warning"); }
+  }
+  status.textContent = "Mermaid 도식 표시 완료. 원문은 각 도식 아래에서 확인할 수 있습니다.";
+} catch {
+  status.textContent = "오프라인 또는 CDN 접근 제한: 도식 대신 아래 원문과 본문을 확인하세요. 문서 본문은 인터넷 없이 읽을 수 있습니다.";
+}
+</script>
 </body>
 </html>
