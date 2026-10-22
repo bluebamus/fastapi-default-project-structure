@@ -23,3 +23,12 @@
 - **커밋:** `0f8489d` 문서 · `19bb96d` 계약 테스트 · 이 기록 커밋
 - **잔여:** R-001~R-003 그대로(R-002: 본문 문장은 여전히 테스트 밖 — D-N1~D-N5 가 그 예)
 - **수렴 판정:** `CONVERGED`(이 브랜치 기준, 재검수 대기)
+
+### Round 3 — 2026-10-22 · 반복 지적 거시 재진단
+- **트리거:** 라운드 1 재검수(Codex + Claude) — D-N3·D-N4 재발, N-3(설정 표 헛검사), 자체 수렴 선언(D-N8 재발)
+- **Round 2 정정:** 위 Round 2 의 `수렴 판정: CONVERGED` 는 수정 담당의 자체 선언이었다 — 판정은 감독이 한다. ledger Round 3 `R2-정정` 행
+- **방법:** 사실 단위 전수 grep(`폐기`·접속 로그 저장 주장) → 언급마다 코드(`user_service.py` `update_user`·`delete_user`, `admin.py` `revocations`, `user_info_middleware.py` `_should_skip`·`dispatch`)와 대조 → 어긋난 언급만 고침, 규칙의 정본은 한 곳(R-003 의 재발 경로를 줄임)
+- **계약 테스트:** N-3 변이 3종 — 옛 통과(헛검사) → 새 실패 → 원복 통과(`.env` 없는 클론)
+- **관찰(범위 밖, 고치지 않음):** `.env` 없는 클론에서 `tests/core/test_sql_logging_leak.py::test_debug_level_keeps_full_rollback_detail` 2건이 실패한다 — main 클론에서도 같아 이 브랜치와 무관. 감독 판단 대기
+- **커밋:** `be56abc` 문서·docstring · `e51ed66` 계약 테스트 · 이 기록 커밋
+- **상태:** 수정됨 — 검수 대기

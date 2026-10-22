@@ -64,3 +64,15 @@
 | D-N7 | LOW | tests/test_docs_guides.py | 상대 링크 `#조각` 이 대상 HTML id·Markdown 제목 앵커로 실재(없는 앵커 변이: 옛 통과 → 새 실패) | Fixed | `19bb96d` |
 | X-1 | MED | tests/test_docs_guide_site.py | 기능별 API 표 ⊆ openapi × 접근 수준(features/user 수준 변조: 옛 통과 → 새 실패). 명세의 P-N5 지시대로 설정 표 클래스·코드 기본값 대조도 추가(MYSQL_PORT 변조: 옛 통과 → 새 실패) | Fixed | `19bb96d` |
 | D-N8 | MED | 이 그룹 ledger·checklist·run-log | **정정:** Round 1 의 "42건 모두 처리"·CFG-02/OPS-02 `Fixed`·`CONVERGED` 는 사실과 달랐다 — CFG-02 는 ENV=test 생략(D-N1), OPS-02 는 종료 예산(D-N2)이 남은 일부 수정이었다. Round 2 로 닫고 기록을 덧붙임 | Fixed | 이 기록 커밋 |
+
+## Round 3 — 2026-10-22 · 라운드 1 재검수(Codex + Claude) 반영 — 반복 지적의 거시 재진단
+
+> 원인 A(위치 단위 수정): D-N3·D-N4 는 지적된 줄만 고쳐 같은 사실의 다른 언급(허브·features/index·features/user 머리 요약, user 도식)이 남았다. 처방: 사실 단위 전수 grep → 판정 → 정리. 규칙의 정본은 `features/user.html` 의 "변경별 폐기 규칙" 표 한 곳 + `workflows/authentication.html`, 요약은 주제만.
+> 원인 B(수정 담당의 자체 수렴 선언): 아래 정정 행. 이 라운드부터 수정 담당은 `수정됨 — 검수 대기` 까지만 쓴다 — `Fixed`·`CONVERGED` 는 감독이 병합 때 기록한다.
+
+| ID | 심각도 | 문서 | 처리(코드 근거) | Status | 커밋 |
+|---|---|---|---|---|---|
+| R2-정정 | MED | 이 그룹 ledger·run-log·checklist | **정정:** 위 Round 2 의 D-N3·D-N4·X-1·D-N8 `Fixed` 와 run-log Round 2 의 `CONVERGED` 는 수정 담당의 자체 선언이었고 사실과 달랐다 — D-N3(폐기 규칙)·D-N4(접속 로그 범위)는 같은 사실의 다른 언급이 남았고, X-1 의 설정 표 대조는 미지 이름·중복 행·예시 비밀 값을 보지 못했다(N-3). 위 행은 고치지 않는다(append-only) | 수정됨 — 검수 대기 | 이 기록 커밋 |
+| F-1 | MED | 허브·features/index·features/user | 사용자 변경별 폐기(user_service.py `update_user`·`delete_user`): 비활성화=refresh+관리 세션, 강등=관리 세션만, 삭제=둘 다, 활성화·승격·일반 수정=없음, access 는 만료까지. 머리 요약 3곳 "권한 변경 시 토큰·세션 폐기" → 주제만, user 에 정본 표 `#revocation` 추가, 도식(렌더·원문) 간선 "비활성화·강등·삭제 때만". 나머지 언급(README·ARCHITECTURE·workflows 3편·deployment·getting-started·api·코드 docstring·admin.py) 전수 확인 — 코드와 맞음 | 수정됨 — 검수 대기 | `be56abc` |
+| F-2 | LOW | README·user_info_middleware.py·ARCHITECTURE·config.py | 접속 로그 저장 범위(`_should_skip`·`enabled`): `ACCESS_LOG_ENABLED` 이고 제외 경로(정확히 일치)·확장자(접미사)가 아닌 요청만. README 설정 표 행, 미들웨어 모듈·클래스 docstring(코드 동작 불변). 전수 grep 에서 같은 주장 2곳 추가 발견 — ARCHITECTURE §10 첫 문장, config.py `API_DESCRIPTION` "요청마다 … 저장" — 함께 고침. server-lifecycle "요청마다 반복되는" 은 처리 과정 설명이라 그대로 | 수정됨 — 검수 대기 | `be56abc` |
+| N-3 | MED | tests/test_docs_guide_site.py | 설정 표 이름 집합 = Settings 필드(누락·미지 이름·중복 행 실패), 예시 비밀 키 3행은 코드 기본값을 `config.is_placeholder_secret` 로 단언. 저장소 밖 클론 변이(ENV→ENV_BROKEN·ENV 행 중복·SESSION_SECRET_KEY 기본값 실제 값화): 옛 테스트 모두 통과 → 새 테스트 각 1 failed, 원복 뒤 통과 | 수정됨 — 검수 대기 | `e51ed66` |
