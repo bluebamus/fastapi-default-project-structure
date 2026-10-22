@@ -258,7 +258,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 | `AUTH_LOGIN_MAX_ATTEMPTS` / `AUTH_LOGIN_IP_MAX_ATTEMPTS` / `AUTH_LOGIN_WINDOW_SECONDS` | `5` / `20` / `60` | 로그인 시도 한도(IP+사용자명 / IP, 창 초). 초과 시 429 + `Retry-After`. 관리 화면 로그인도 같은 한도(카운터는 따로) |
 | `AUTH_REGISTER_MAX_ATTEMPTS` / `AUTH_REGISTER_WINDOW_SECONDS` | `5` / `3600` | 회원가입 시도 한도(IP) |
 | `LOG_*` | 아래 절 | 레벨·헤더별 레벨·형식·파일·회전·보관 — [로깅](#로깅) |
-| `ACCESS_LOG_ENABLED` | `true` | 요청마다 접속 로그를 DB 에 저장 |
+| `ACCESS_LOG_ENABLED` | `true` | `true` 면 `ACCESS_LOG_EXCLUDE_PATHS`(정확히 일치)·`ACCESS_LOG_EXCLUDE_EXTENSIONS`(접미사)에 걸리지 않는 요청의 접속 로그를 DB 에 저장. `false` 면 저장하지 않는다 |
 | `TRUSTED_PROXY_HOPS` | `0` | 접속 로그·로그인 레이트 리밋의 IP 를 `X-Forwarded-For` 오른쪽에서 몇 번째로 읽을지(앞단 신뢰 프록시 수). 0 이면 헤더를 보지 않는다. **프록시 뒤 배포는 단수만큼 설정** — 0 이면 전원이 프록시 IP 하나로 보여 한 사람으로 취급되고, 크게 잡으면 IP 위조가 가능하다 |
 | `ACCESS_LOG_SENSITIVE_QUERY_KEYS` | `password`·`token`·… | 접속 로그에 값을 `***` 로 저장할 쿼리스트링 키 |
 | `ACCESS_LOG_RETENTION_DAYS` | `365` | 접속 로그 보존 일수. Celery beat 가 매일 03:30(`TIME_ZONE`) 이보다 오래된 행을 5,000행씩 지운다. `0` 이면 지우지 않는다, 음수는 기동 시 검증 오류. **beat 를 띄워야 동작**(아래 체크리스트 11) |

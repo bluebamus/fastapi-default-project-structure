@@ -91,7 +91,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 
 - **게시글·댓글·SNS·사용자 CRUD**, **JWT 인증**(OAuth2 password flow)
 - **참조 예제**: `catalog`(ORM Repository), `reports`(Raw SQL Repository)
-- **접속 로그 수집**: 요청마다 User-Agent 를 파싱해 background 세션으로 저장, 조회·통계 API 제공
+- **접속 로그 수집**: 제외 경로·확장자가 아닌 요청의 User-Agent 를 파싱해 background 세션으로 저장(`ACCESS_LOG_ENABLED`), 조회·통계 API 제공
 
 ### 아키텍처
 

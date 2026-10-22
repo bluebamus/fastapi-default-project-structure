@@ -832,7 +832,7 @@ REDIS_HOST=127.0.0.1 REDIS_PORT=6379 uv run python -m pytest tests/integration/t
 
 ## 10. 접속 로그 미들웨어
 
-`UserInfoMiddleware`(`app/core/middlewares/user_info_middleware.py`)가 요청마다 정보를 모으고, 응답을
+`UserInfoMiddleware`(`app/core/middlewares/user_info_middleware.py`)가 대상 요청(`ACCESS_LOG_ENABLED` 이고 아래 제외 경로·확장자가 아닌 요청)마다 정보를 모으고, 응답을
 받은 뒤 `access_log_tasks.spawn()` 으로 저장 태스크를 제출합니다. core 는 저장 방법을 모르고,
 `access_log_sink.get_access_log_sink()` 에 등록된 sink 에 위임합니다. `home` 이 import 시점에
 `HomeAccessLogSink` 를 등록하며, 이 sink 는 `background_db_session()`(별도 풀)으로 저장하고 직접 커밋합니다.
