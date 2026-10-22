@@ -230,7 +230,7 @@ uv run python -m scripts.create_superuser --username admin --email admin@example
 [ARCHITECTURE 부록](./docs/guides/ARCHITECTURE.md#부록-설정-필드-전체)에 있고,
 `config.py` 와 `.env.example` 은 `tests/core/test_settings_contract.py` 가 양방향으로 맞춰 둡니다.
 
-`config` import 시점의 설정 검사(ADR-027·028·030·045)가 잘못된 설정을 `RuntimeError` 로 알립니다. 메시지에는 설정 이름만 나오고 값은 나오지 않으며, 위반은 한 번에 모아 보여 줍니다. `ENV=test` 는 검사하지 않습니다.
+`config` import 시점의 설정 검사(ADR-027·028·030·045)가 잘못된 설정을 `RuntimeError` 로 알립니다. 메시지에는 설정 이름만 나오고 값은 나오지 않습니다. 검사 세 개(`validate_env_source()` → `validate_no_legacy_admin()` → `validate_deployment_safety()`)는 차례로 돌아 처음 실패한 곳에서 멈추고, 위반을 한 번에 모아 보여 주는 것은 `validate_deployment_safety()` 안에서뿐입니다. `ENV=test` 는 검사하지 않습니다.
 
 | 검사 | 적용 ENV |
 |---|---|

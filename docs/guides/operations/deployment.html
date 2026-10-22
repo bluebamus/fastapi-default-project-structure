@@ -38,7 +38,7 @@
 <li><code>alembic upgrade head</code> 를 먼저 적용합니다(<code>DEBUG=false</code> 는 테이블을 만들지 않음). 첫 슈퍼유저는 <code>python -m scripts.create_superuser</code> 로 만듭니다.</li>
 <li>관리 화면을 쓰지 않으면 <code>ADMIN_DISABLED=true</code>, 쓰면 HTTPS 로만 접속합니다.</li>
 <li>Celery worker 와 beat <strong>한 개</strong>를 띄웁니다(beat 가 없으면 접속 로그 보존 삭제가 돌지 않음).</li>
-<li>컨테이너 종료 유예를 종료 예산(전체 20초)보다 길게 둡니다.</li>
+<li>컨테이너 종료 유예를 종료 정리 시간(lifespan 정리 최대 약 22초, listener 정지까지 약 29초 — 단계별 제한의 합이며 <code>SHUTDOWN_TOTAL_TIMEOUT_SECONDS</code>=20 은 강제되지 않음)보다 길게 둡니다.</li>
 </ul>
 <p>빠뜨렸을 때의 결과까지 적힌 정본은 <a href="../../../README.md#운영-배포-체크리스트">README 운영 배포 체크리스트</a> 입니다.</p>
 </section>

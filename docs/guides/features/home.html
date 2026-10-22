@@ -10,7 +10,7 @@
 <header class="hero">
   <p class="eyebrow">PROJECT GUIDE</p>
   <h1>접속 로그 기능(home)</h1>
-  <p>모든 요청의 접속 정보를 저장하고, 슈퍼유저 조회 API·보존 삭제 태스크를 제공합니다.</p>
+  <p><code>ACCESS_LOG_ENABLED</code> 일 때 제외 경로·확장자가 아닌 요청의 접속 정보를 저장하고, 슈퍼유저 조회 API·보존 삭제 태스크를 제공합니다.</p>
 </header>
 <nav class="topnav" aria-label="가이드 메뉴">
   <a href="../index.html">허브</a>
@@ -52,7 +52,7 @@
 <section>
 <h2>내부 흐름</h2>
 <div class="mermaid">flowchart LR
-Req["모든 요청"] --&gt; MW["UserInfoMiddleware"]
+Req["요청: ACCESS_LOG_ENABLED, 제외 경로·확장자 아님"] --&gt; MW["UserInfoMiddleware"]
 MW --&gt;|"응답 뒤 태스크 제출"| Sink["HomeAccessLogSink: background 세션, 직접 커밋"]
 Sink --&gt; DB[("user_access_logs")]
 Admin["슈퍼유저"] --&gt; V["View home.py"]
@@ -62,7 +62,7 @@ Beat["Celery beat 03:30"] --&gt; T["tasks.py purge_expired_access_logs"]
 T --&gt; Ret["AccessLogRetentionService"]
 Ret --&gt; DB</div>
 <details><summary>Mermaid 원문</summary><pre><code>flowchart LR
-Req["모든 요청"] --&gt; MW["UserInfoMiddleware"]
+Req["요청: ACCESS_LOG_ENABLED, 제외 경로·확장자 아님"] --&gt; MW["UserInfoMiddleware"]
 MW --&gt;|"응답 뒤 태스크 제출"| Sink["HomeAccessLogSink: background 세션, 직접 커밋"]
 Sink --&gt; DB[("user_access_logs")]
 Admin["슈퍼유저"] --&gt; V["View home.py"]

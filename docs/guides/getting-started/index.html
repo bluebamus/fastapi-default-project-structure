@@ -95,11 +95,11 @@ L-&gt;&gt;L: background drain, Redis close, DB dispose, 로그 큐 flush</code><
 <section>
 <h2>실패를 읽는 법</h2>
 <ul>
-<li>설정 오류는 메시지에 고칠 설정 <strong>이름</strong>이 나옵니다. <code>.env</code> 가 없으면 필수 8개(<code>ENV</code>·비밀 키 3종·<code>MYSQL_HOST/USER/PASSWORD/DATABASE</code>)가 환경 변수로 와야 합니다.</li>
+<li>설정 오류는 메시지에 고칠 설정 <strong>이름</strong>이 나옵니다. <code>.env</code> 가 없으면 필수 8개(<code>ENV</code>·비밀 키 3종·<code>MYSQL_HOST/USER/PASSWORD/DATABASE</code>)가 환경 변수로 와야 합니다. 이 검사와 예전 설정 <code>ADMIN</code> 검사는 <code>ENV=test</code> 에서 건너뜁니다.</li>
 <li>Redis 에 닿지 못하거나 6.2 미만이면 기동이 실패합니다. 기동 뒤 Redis 연결 오류는 Redis 를 쓰는 요청(레이트 리밋·refresh·logout·토큰과 관리 세션 폐기, <code>/ready</code>)만 503 이 되고, Redis 를 쓰지 않는 조회는 그대로 응답합니다.</li>
 <li><code>/ready</code> 는 <code>SELECT 1</code> 과 <code>PING</code> 만 봅니다. 마이그레이션 누락·스키마 불일치는 <code>/ready</code> 가 200 이어도 그 테이블을 쓰는 요청에서 500 으로 드러납니다.</li>
 <li>뷰에 접근 수준 선언이 빠지면 <code>AccessPolicyError</code> 로 기동이 멈춥니다(위반 목록 포함).</li>
-<li>종료는 background drain(5초) → Redis close(5초) → DB dispose(10초) 순서, 전체 예산 20초입니다. 컨테이너 종료 유예는 이보다 길게 둡니다.</li>
+<li>종료는 background drain(5초) → Redis close(5초) → DB dispose(10초) → 로그 큐 flush(2초) 순서이고 시간 제한은 단계마다 따로 걸립니다. <code>SHUTDOWN_TOTAL_TIMEOUT_SECONDS</code>(20초)는 정의만 있고 전체를 강제하지 않아 lifespan 정리만 최대 약 22초, listener 정지까지 약 29초입니다(진행 중 요청 대기는 별도). 컨테이너 종료 유예는 이보다 길게 둡니다.</li>
 </ul>
 <p>증상별 조치는 <a href="../../../README.md#자주-막히는-지점">README 자주 막히는 지점</a>, 단계별 근거는 <a href="../workflows/server-lifecycle.html">서버 수명주기 안내서</a> 를 봅니다.</p>
 </section>

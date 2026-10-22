@@ -44,7 +44,7 @@
 <tr><td><span class="method">POST</span></td><td><code>/api/v1/user/users</code></td><td><code>SuperuserRequired</code></td><td>201</td><td>사용자명 중복 409</td><td>사용자 생성</td></tr>
 <tr><td><span class="method">GET</span></td><td><code>/api/v1/user/users</code></td><td><code>SuperuserRequired</code></td><td>200</td><td></td><td>사용자 목록</td></tr>
 <tr><td><span class="method">GET</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td><code>LoginRequired</code></td><td>200</td><td>본인 또는 슈퍼유저(아니면 403)</td><td>사용자 상세</td></tr>
-<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td><code>LoginRequired</code></td><td>200</td><td>본인 또는 슈퍼유저, <code>is_active</code>·<code>is_superuser</code> 변경은 슈퍼유저만. 비활성화·강등 시 토큰·관리 세션 폐기(Redis)</td><td>사용자 수정</td></tr>
+<tr><td><span class="method">PATCH</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td><code>LoginRequired</code></td><td>200</td><td>본인 또는 슈퍼유저, <code>is_active</code>·<code>is_superuser</code> 변경은 슈퍼유저만. 비활성화는 refresh 토큰·관리 세션, 강등은 관리 세션만 폐기(Redis). access 토큰은 만료까지 유효</td><td>사용자 수정</td></tr>
 <tr><td><span class="method">DELETE</span></td><td><code>/api/v1/user/users/{user_id}</code></td><td><code>SuperuserRequired</code></td><td>204</td><td>refresh 토큰·관리 세션 폐기(Redis)</td><td>사용자 삭제</td></tr>
 </tbody>
 </table></div>

@@ -35,18 +35,18 @@
 <h2>기동 시 검사</h2>
 <ul>
 <li>타입·validator 오류(예: CORS <code>*</code> + 자격 증명, 로그 포맷 자리표시자 누락)는 Settings 생성 때 실패합니다.</li>
-<li><code>.env</code> 가 없으면 <code>ENV</code>·<code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>·<code>MYSQL_HOST</code>·<code>MYSQL_USER</code>·<code>MYSQL_PASSWORD</code>·<code>MYSQL_DATABASE</code> 8개가 환경 변수로 와야 합니다.</li>
-<li>예전 설정 <code>ADMIN</code> 이 환경 변수나 <code>.env</code> 에 있으면 거부합니다(<code>ADMIN_DISABLED</code> 로 바뀌었고 뜻이 반대).</li>
+<li><code>.env</code> 가 없으면 <code>ENV</code>·<code>ACCESS_TOKEN_SECRET_KEY</code>·<code>REFRESH_TOKEN_SECRET_KEY</code>·<code>SESSION_SECRET_KEY</code>·<code>MYSQL_HOST</code>·<code>MYSQL_USER</code>·<code>MYSQL_PASSWORD</code>·<code>MYSQL_DATABASE</code> 8개가 환경 변수로 와야 합니다(<code>ENV=test</code> 는 검사하지 않음).</li>
+<li>예전 설정 <code>ADMIN</code> 이 환경 변수나 <code>.env</code> 에 있으면 거부합니다(<code>ADMIN_DISABLED</code> 로 바뀌었고 뜻이 반대, <code>ENV=test</code> 는 검사하지 않음).</li>
 <li>test 를 뺀 모든 ENV: 비밀 키 3종·<code>MYSQL_PASSWORD</code> 가 예시 값(<code>change-this</code> 포함·<code>your-</code> 시작·빈 값)이면, 비밀 키가 32자 미만이면, access 와 refresh 키가 같으면 거부합니다. <code>REDIS_PASSWORD</code> 는 값이 있을 때만 봅니다.</li>
 <li><code>ENV=staging</code>/<code>production</code> 만: <code>DEBUG=true</code>, <code>LOG_LEVEL=DEBUG</code> 를 거부합니다.</li>
-<li>위반은 모아서 <code>RuntimeError</code> 하나로 올리고 메시지에는 설정 이름만 담습니다(값은 싣지 않음).</li>
+<li>세 검사(<code>validate_env_source</code> → <code>validate_no_legacy_admin</code> → <code>validate_deployment_safety</code>)는 이 순서로 돌고 처음 실패한 검사의 <code>RuntimeError</code> 로 멈춥니다. 위반을 모아 한 번에 알리는 것은 <code>validate_deployment_safety</code> 안에서뿐입니다. 메시지에는 설정 이름만 담습니다(값은 싣지 않음).</li>
 </ul>
 <div class="mermaid">flowchart LR
 Env["프로세스 환경 변수"] --&gt; S["Settings 생성: import 시점"]
 File[".env: 작업 디렉터리"] --&gt; S
 Def["코드 기본값"] --&gt; S
 S --&gt; T["타입과 validator"]
-T --&gt; V1["validate_env_source: .env 없으면 필수 8개"]
+T --&gt; V1["validate_env_source: .env 없으면 필수 8개, test 제외"]
 V1 --&gt; V2["validate_no_legacy_admin"]
 V2 --&gt; V3["validate_deployment_safety"]
 V3 --&gt;|"위반"| Stop["RuntimeError: lifespan 전에 기동 중단"]
@@ -56,7 +56,7 @@ Env["프로세스 환경 변수"] --&gt; S["Settings 생성: import 시점"]
 File[".env: 작업 디렉터리"] --&gt; S
 Def["코드 기본값"] --&gt; S
 S --&gt; T["타입과 validator"]
-T --&gt; V1["validate_env_source: .env 없으면 필수 8개"]
+T --&gt; V1["validate_env_source: .env 없으면 필수 8개, test 제외"]
 V1 --&gt; V2["validate_no_legacy_admin"]
 V2 --&gt; V3["validate_deployment_safety"]
 V3 --&gt;|"위반"| Stop["RuntimeError: lifespan 전에 기동 중단"]
