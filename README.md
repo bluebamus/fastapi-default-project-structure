@@ -25,7 +25,7 @@ Repository 패턴과 계층 분리를 적용한 FastAPI 백엔드 템플릿입�
 | 문서 | 역할 | 언제 보나 |
 |---|---|---|
 | **README.md** (이 문서) | 개요 · 빠른 시작 · 문서 안내(유일한 색인). 핵심 환경 변수, 테스트·CI, API 목록, 배포 점검 | 처음 받았을 때, 배포 전 |
-| [docs/guides/index.html](./docs/guides/index.html) | HTML 가이드 허브 — 부팅, 설계, API, 요청 처리, 인증, 기능, 개발, 테스트, 운영 문서를 주제별로 연결 | 브라우저에서 전체 매뉴얼을 탐색할 때 |
+| [docs/guides/index.html](./docs/guides/index.html) | HTML 가이드 목차 — 아래 HTML 안내서 3편과 주제별 HTML 요약(부팅·설계·API·설정·요청 처리·인증·기능 8편·개발·테스트·운영·시퀀스)을 브라우저에서 잇는다. 색인은 이 표가 정본이고 HTML 요약의 원본은 이 README·ARCHITECTURE·DEVELOPMENT 다 | 브라우저에서 주제별로 훑어볼 때 |
 | [docs/guides/ARCHITECTURE.md](./docs/guides/ARCHITECTURE.md) | 구조 · 런타임 동작 레퍼런스 — 배선, 요청·트랜잭션 흐름, DB 세션·라우팅, 설정, 기동·종료 순서와 예산, 로깅, 접속 로그, 인증, SQLAdmin, Celery, Alembic, 설계 결정, 전체 설정 부록 | 구조를 이해하거나 런타임(시작·종료·로그)을 건드리기 전 |
 | [docs/guides/DEVELOPMENT.md](./docs/guides/DEVELOPMENT.md) | 기능 개발 가이드 — 새 기능·테이블 추가 절차, 세션·DI 선택, 트랜잭션 규칙, ORM(`catalog`)·Raw SQL(`reports`) 실습, 마이그레이션, 비동기 원칙, 테스트·리뷰 체크리스트 | 코드를 작성할 때 |
 | [docs/guides/workflows/server-lifecycle.html](./docs/guides/workflows/server-lifecycle.html) | 서버 수명주기 안내서 — 설정 → 기동 → 요청 → 종료를 도식과 함께 추적(상세 표는 ARCHITECTURE) | 서버가 뜨고 끝나는 흐름을 한 번에 따라가 볼 때 |
