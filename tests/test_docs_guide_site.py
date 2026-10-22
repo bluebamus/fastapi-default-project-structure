@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -28,14 +29,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GUIDES = REPO_ROOT / "docs" / "guides"
 HTML_GUIDES = sorted(GUIDES.rglob("*.html"))
 MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.esm.min.mjs"
+SECRET_PLACEHOLDER = "예시 값(교체 필수)"
 #: 코드 기본값을 그대로 옮기지 않고 말로 적은 행 — 값이 길거나(포맷·소개문) 예시 비밀 값이다.
+#: 예시 비밀 값 행은 코드 기본값이 실제로 예시 값인지 따로 본다
+#: (``test_described_secret_defaults_are_placeholders``).
 DESCRIBED_DEFAULTS = {
     "DESCRIPTION": "소개 Markdown(코드 기본값)",
     "LOG_CONSOLE_FORMAT": "프로젝트 포맷",
     "LOG_FILE_FORMAT": "프로젝트 포맷",
-    "ACCESS_TOKEN_SECRET_KEY": "예시 값(교체 필수)",
-    "REFRESH_TOKEN_SECRET_KEY": "예시 값(교체 필수)",
-    "SESSION_SECRET_KEY": "예시 값(교체 필수)",
+    "ACCESS_TOKEN_SECRET_KEY": SECRET_PLACEHOLDER,
+    "REFRESH_TOKEN_SECRET_KEY": SECRET_PLACEHOLDER,
+    "SESSION_SECRET_KEY": SECRET_PLACEHOLDER,
 }
 
 
@@ -174,7 +178,7 @@ def test_configuration_reference_lists_every_settings_field():
 
 
 def test_configuration_rows_match_class_and_code_default():
-    """설정 표의 클래스·코드 기본값이 코드와 같다 — 기본값만 바뀐 행도 실패(P-N5)."""
+    """설정 표의 이름 집합 = Settings 필드(누락·미지 이름·중복 행 실패), 클래스·코드 기본값도 같다(P-N5·N-3)."""
     fields = _settings_fields()
     tables = [
         t
@@ -184,6 +188,11 @@ def test_configuration_rows_match_class_and_code_default():
     assert len(tables) == 1, "configuration.html 에 '코드 기본값' 열이 있는 표가 하나 있어야 한다"
     header, *rows = tables[0]
     name_i, cls_i, default_i = (header.index(c) for c in ("설정", "클래스", "코드 기본값"))
+    names = Counter(row[name_i] for row in rows)
+
+    assert not sorted(fields.keys() - names), "표에 없는 설정"
+    assert not sorted(names.keys() - fields.keys()), "코드에 없는 설정 이름"
+    assert not sorted(n for n, k in names.items() if k > 1), "중복 행"
 
     wrong = [
         (row[name_i], row[cls_i], row[default_i])
@@ -194,6 +203,17 @@ def test_configuration_rows_match_class_and_code_default():
     ]
 
     assert not wrong, f"코드와 다른 설정 행(이름, 클래스, 기본값): {wrong}"
+
+
+def test_described_secret_defaults_are_placeholders():
+    """'예시 값(교체 필수)' 으로 적은 행의 코드 기본값은 실제로 예시 값이다(config 의 판정 재사용, N-3)."""
+    fields = _settings_fields()
+    secrets = [name for name, cell in DESCRIBED_DEFAULTS.items() if cell == SECRET_PLACEHOLDER]
+    assert len(secrets) == 3
+
+    real = [name for name in secrets if not config.is_placeholder_secret(fields[name][1])]
+
+    assert not real, f"예시 값이 아닌 비밀 키 기본값: {real}"
 
 
 @pytest.mark.parametrize("guide", HTML_GUIDES, ids=lambda p: p.relative_to(GUIDES).as_posix())
