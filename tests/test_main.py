@@ -22,8 +22,8 @@ def test_run_server_passes_the_project_log_config(monkeypatch):
 
     ``log_config`` 은 uvicorn 이 문서화한 공식 파라미터다. 이 배선이 끊겨도 서버는
     정상 기동하므로 다른 어떤 테스트도 잡지 못한다 — uvicorn 로그만 조용히 기본
-    포맷으로 돌아간다. Wave 7 의 subprocess 테스트가 정상 앱과 startup 실패 앱을
-    **같은 경로로** 띄우기 위해 대상 앱을 인자로 받는다.
+    포맷으로 돌아간다. 다른 앱을 **같은 경로로** 띄울 수 있게
+    대상 앱을 인자로 받는다.
     """
     import uvicorn
 

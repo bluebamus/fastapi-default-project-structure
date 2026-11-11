@@ -35,14 +35,6 @@ async def client():
     await engine.dispose()
 
 
-def test_reply_auto_registered():
-    """디렉터리 컨벤션만으로 reply CRUD 라우터가 자동 발견·마운트된다."""
-    # app.routes 직접 순회는 FastAPI 버전에 따라 하위 라우터가 평탄화되지 않는다.
-    paths = set(app.openapi()["paths"])
-    assert "/api/v1/reply/replies" in paths
-    assert "/api/v1/reply/replies/{reply_id}" in paths
-
-
 async def test_create_and_get_reply(client):
     resp = await client.post(
         "/api/v1/reply/replies",

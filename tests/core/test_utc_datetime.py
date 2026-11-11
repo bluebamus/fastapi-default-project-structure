@@ -1,7 +1,7 @@
 """UTC 저장 시각 타입 — ``UTCDateTime``·``utc_now``·Alembic 훅.
 
 DB 에는 UTC 벽시계를, 응용에는 UTC aware 값을. naive 값은 저장 경로에서 거부한다 —
-KST 벽시계가 오프셋 없이 저장돼 "(UTC)" 라는 설명과 어긋났던 것이 검수 R-05 다.
+KST 벽시계가 오프셋 없이 저장돼 "(UTC)" 라는 설명과 어긋나는 일을 막는다.
 """
 
 from __future__ import annotations
@@ -150,3 +150,18 @@ def test_render_item_writes_an_app_free_equivalent_type():
     assert str(equivalent.compile(dialect=mysql.dialect())) == "DATETIME(6)"
     assert str(equivalent.compile(dialect=sqlite.dialect())) == "DATETIME"
     assert render_item("type", sa.String(10), autogen) is False
+
+
+def test_every_model_timestamp_column_is_utc_datetime():
+    """모든 모델의 ``*_at`` 컬럼은 ``UTCDateTime`` 이다 — naive 저장·오프셋 없는 KST 벽시계를 막는다."""
+    from app.core.db.models_registry import import_all_models
+    from app.core.db.session import Base
+
+    import_all_models()
+    offenders = [
+        f"{table.name}.{column.name}"
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+        if column.name.endswith("_at") and not isinstance(column.type, UTCDateTime)
+    ]
+    assert not offenders, f"UTCDateTime 이 아닌 시각 컬럼: {offenders}"

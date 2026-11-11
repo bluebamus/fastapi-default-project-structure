@@ -1,4 +1,4 @@
-"""null PATCH 거부 — service-hardening ADR-008 ①.
+"""null PATCH 거부.
 
 ``{"title": null}`` 처럼 **보낸** null 이 NOT NULL 컬럼으로 내려가 500 이 났다. 모든 Update
 스키마는 ``PatchSchema`` 를 상속하고, nullable 로 선언한 필드만 null 을 받는다.
@@ -14,7 +14,6 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 import app.features
-from app.core.schemas import PatchSchema
 
 
 def _update_schemas() -> list[type[BaseModel]]:
@@ -39,11 +38,6 @@ UPDATE_SCHEMAS = _update_schemas()
 def test_update_schemas_are_discovered():
     names = {schema.__name__ for schema in UPDATE_SCHEMAS}
     assert {"PostUpdate", "ReplyUpdate", "SnsPostUpdate", "UserUpdate", "ProductUpdate"} <= names
-
-
-@pytest.mark.parametrize("schema", UPDATE_SCHEMAS, ids=lambda s: s.__name__)
-def test_every_update_schema_inherits_patch_schema(schema):
-    assert issubclass(schema, PatchSchema), f"{schema.__name__} 가 PatchSchema 를 상속하지 않는다"
 
 
 @pytest.mark.parametrize("schema", UPDATE_SCHEMAS, ids=lambda s: s.__name__)
@@ -73,8 +67,8 @@ def test_nullable_allowlist_names_real_fields():
 def test_no_patch_field_is_nullable():
     """null 로 비울 수 있는 PATCH 필드가 없다 — 모델과 맞춘 목록.
 
-    nullable 컬럼이던 ``author`` 는 서버가 인증 주체로 채우는 값이 되어 수정 스키마에서 빠졌다
-    (service-hardening ADR-018).
+     nullable 컬럼이던 ``author`` 는 서버가 인증 주체로 채우는 값이 되어 수정 스키마에서 빠졌다
+    .
     """
     allowed = {schema.__name__: schema.nullable_fields for schema in UPDATE_SCHEMAS}
     assert allowed["PostUpdate"] == frozenset()

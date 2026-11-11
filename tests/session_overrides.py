@@ -2,11 +2,10 @@
 
 운영 의존성은 읽기 세션에 ``mark_read_only``, 쓰기 세션에 ``using_writer`` 를 건다.
 예전 테스트들은 두 의존성을 **표시 없는 같은 세션**으로 바꿔 끼워, GET 경로가 몰래 써도
-테스트가 통과했다(검수 R-15). 여기서는 운영과 같은 표시를 붙인 세션을 yield 한다 —
+테스트가 통과했다. 여기서는 운영과 같은 표시를 붙인 세션을 yield 한다 —
 read-only 세션의 flush·DML 은 ``ReadOnlyRoutingError`` 로 실패한다.
 
-엔드포인트 테스트가 ``app.dependency_overrides[get_*_db_session]`` 를 직접 쓰지 않는다는
-계약은 ``tests/test_session_overrides.py`` 가 지킨다.
+엔드포인트 테스트는 ``app.dependency_overrides[get_*_db_session]`` 를 직접 쓰지 않고 이 함수를 쓴다.
 """
 
 from __future__ import annotations

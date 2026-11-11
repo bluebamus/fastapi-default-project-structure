@@ -1,4 +1,4 @@
-"""Raw ``text()`` DML 의 쓰기 판정 — RAW-REP-007.
+"""Raw ``text()`` DML 의 쓰기 판정.
 
 ``TextClause`` 는 ``UpdateBase`` 가 아니라서, 타입만 보면 Raw DML 이 읽기로 분류된다.
 그러면 복제가 켜져 있을 때 **UPDATE 가 replica 로 나간다** — 조용히 잘못된 서버로
@@ -106,7 +106,7 @@ def test_explain_analyze_is_still_a_read():
 
 
 # ---------------------------------------------------------------------------
-# CTE 로 감싼 DML — 선두 키워드가 `WITH` 라 예전 판정은 읽기로 봤다(R-001 의 라우팅 절반).
+# CTE 로 감싼 DML — 선두 키워드가 `WITH` 라 예전 판정은 읽기로 봤다.
 # 판정을 read-only 쪽과 같은 괄호 깊이 0 스캔(`_depth0_words`)으로 옮긴 뒤의 계약.
 # ---------------------------------------------------------------------------
 
@@ -154,7 +154,7 @@ def test_reads_that_merely_mention_write_words(sql):
 
 
 # ---------------------------------------------------------------------------
-# 공유 잠금 읽기도 writer 로 — ADR-038.
+# 공유 잠금 읽기도 writer 로
 # 예전에는 이 경로만 `"FOR UPDATE" in sql.upper()` 로 따로 판정해서, 읽기 전용 가드가
 # 쓰던 `_LOCKING_READ`(FOR UPDATE · FOR SHARE · LOCK IN SHARE MODE)와 어긋나 있었다.
 # 같은 개념이 두 군데 다르게 정의되면 한쪽만 조용히 새 나간다.

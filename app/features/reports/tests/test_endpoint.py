@@ -1,7 +1,7 @@
-"""Reports(Raw SQL 예제) API 통합 테스트 — SCN-RAW-001/002, TEST-002/003.
+"""Reports(Raw SQL 예제) API 통합 테스트.
 
 Raw 집계 SQL 이 실제로 도는지, 결과가 Pydantic DTO 로 검증돼 나가는지, 그리고
-조회 경로가 커밋하지 않는지를 본다. SCN-RAW-002(Raw DML 검증)도 여기서 다룬다 —
+조회 경로가 커밋하지 않는지를 본다. Raw DML 검증도 여기서 다룬다 —
 운영 공개 API 는 아니지만 트랜잭션 규칙은 검증돼야 한다.
 """
 
@@ -443,7 +443,7 @@ async def test_malformed_date_returns_422(client):
 
 
 # =============================================================================
-# 트랜잭션 경계 (TEST-002)
+# 트랜잭션 경계
 # =============================================================================
 async def test_report_query_does_not_commit(client):
     http_client, counter = client
@@ -451,11 +451,11 @@ async def test_report_query_does_not_commit(client):
 
     await http_client.get(BASE, params={"start_date": "2026-08-01", "end_date": "2026-08-07"})
 
-    assert counter["commits"] == 0, "Raw 조회가 커밋했다 (TX-002 위반)"
+    assert counter["commits"] == 0, "Raw 조회가 커밋했다"
 
 
 # =============================================================================
-# SCN-RAW-002 — Raw DML workflow 검증 (운영 공개 API 아님)
+# Raw DML workflow 검증 (운영 공개 API 아님)
 # =============================================================================
 async def test_raw_dml_reports_affected_rows_and_needs_explicit_commit(sales_engine):
     """Repository 는 execute 까지만 하고, 커밋은 호출자가 명시한다."""

@@ -1,4 +1,4 @@
-"""로그·오류 응답의 비밀값 마스킹 — log-redaction ADR-001.
+"""로그·오류 응답의 비밀값 마스킹.
 
 ``logger.exception(...)`` 은 예외 메시지와 체인(``raise ... from``)·``stack_info`` 를 traceback
 본문으로 출력한다. 그 안의 DSN 비밀번호·``password=``·``Authorization`` 값이 그대로 나가던 것을

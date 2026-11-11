@@ -1,4 +1,4 @@
-"""BackgroundTaskRunner 회귀 테스트 (검수 W1/REQ-009).
+"""BackgroundTaskRunner 회귀 테스트.
 
 미들웨어 접속로그 저장을 fire-and-forget 로 던지되,
 - 동시 실행 태스크 수에 상한을 두어(백프레셔) 고부하 시 무제한 증가를 막고,
@@ -56,7 +56,7 @@ async def test_completed_tasks_are_not_retained() -> None:
 
 
 # =============================================================================
-# AR-009 — drain timeout 후 남은 태스크 처리
+# drain timeout 후 남은 태스크 처리
 #
 # timeout 이 지났다고 태스크를 그대로 두면, 곧이어 실행되는 DB engine dispose
 # 이후에도 태스크가 살아 돌아 이미 닫힌 pool 을 만진다. 취소만 하고 반환해도
@@ -77,7 +77,7 @@ async def test_drain_cancels_pending_tasks_after_timeout() -> None:
 
     await runner.drain(timeout=0.05)
 
-    assert runner.active == 0, "drain 후에도 태스크가 추적 집합에 남아 있다 (AR-009 위반)"
+    assert runner.active == 0, "drain 후에도 태스크가 추적 집합에 남아 있다"
     assert runner.cancelled == 1
 
 
@@ -131,7 +131,7 @@ async def test_drain_is_safe_when_called_twice() -> None:
 
 
 # =============================================================================
-# F-033 — 완료된 태스크의 예외 회수
+# 완료된 태스크의 예외 회수
 #
 # done callback 이 추적 집합에서 빼기만 하고 아무도 task.exception() 을 꺼내지 않으면,
 # 실패한 태스크가 GC 될 때 asyncio 가 "Task exception was never retrieved" 를 찍는다.

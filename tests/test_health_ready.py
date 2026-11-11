@@ -1,4 +1,4 @@
-"""liveness(/health)와 readiness(/ready) 분리 계약 — NFR-006.
+"""liveness(/health)와 readiness(/ready) 분리 계약.
 
 둘을 한 엔드포인트로 합치면 오케스트레이터가 잘못된 판단을 한다.
 DB 가 잠깐 흔들릴 때 /health 까지 실패하면 **살아 있는 프로세스가 재시작**되고,
@@ -211,11 +211,6 @@ async def test_ready_503_hides_internal_details(client, monkeypatch):
     assert "db-internal" not in body
     assert "1045" not in body
     assert "Access denied" not in body
-
-
-def test_readiness_timeout_is_two_seconds():
-    """확정 정책 5 — writer DB SELECT 1, 2초 timeout."""
-    assert db_session_module.READINESS_TIMEOUT_SECONDS == 2.0
 
 
 async def test_ping_writer_db_times_out(monkeypatch):

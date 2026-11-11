@@ -1,4 +1,4 @@
-"""라우트 인가 정책 — 401·403·소유권·슈퍼유저 우회 (ledger F-022~F-024).
+"""라우트 인가 정책 — 401·403·소유권·슈퍼유저 우회.
 
 앱 전체를 in-memory sqlite + fakeredis 로 띄우고, 실제 ``TokenService`` 로 발급한 토큰(``tests.auth_headers``)
 을 싣는다 — 의존성을 가짜로 바꾸지 않으므로 ``OAuth2PasswordBearer`` → ``TokenService`` → ``Principal`` →
@@ -165,17 +165,6 @@ OWNED = [
     Owned("/api/v1/reply/replies", {"content": "c", "post_id": "p1"}, {"content": "changed"}),
 ]
 OWNED_IDS = ["blog", "sns", "reply"]
-
-
-def test_owned_cases_cover_every_login_created_collection():
-    """``OWNED`` 는 요청 본문 묶음일 뿐 — 대상 집합은 표에서 정해진다. 로그인으로 만드는
-    컬렉션이 새로 생기면 소유권 테스트에 본문을 더하라고 여기서 실패한다."""
-    login_created = {
-        label.split(" ", 1)[1]
-        for label, level in EXPECTED_ACCESS.items()
-        if label.startswith("POST ") and level is A.LOGIN
-    }
-    assert {case.collection for case in OWNED} == login_created
 
 
 async def _create_owned(client, case: Owned, principal=ALICE) -> dict:

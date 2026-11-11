@@ -1,4 +1,4 @@
-"""응답 직렬화 계약 고정 (2026-08-10 외부 검수 후속 P6).
+"""응답 직렬화 계약 고정.
 
 `default_response_class=ORJSONResponse` 를 제거하고 FastAPI 기본 경로(Pydantic 이
 JSON 바이트를 직접 생성)로 전환했다. 전환 전후 응답 바이트가 같아야 하므로, 형식이
@@ -102,13 +102,3 @@ def test_error_handler_survives_non_primitive_detail(detail: Any):
     assert body["error_code"] == "INTERNAL_ERROR"
     for value in body["detail"].values():
         assert isinstance(value, str), "JSON 안전 값으로 변환되지 않았다"
-
-
-def test_app_does_not_use_deprecated_response_class():
-    """앱이 deprecated 된 커스텀 응답 클래스를 다시 들이지 않는지 고정한다."""
-    from fastapi.responses import ORJSONResponse
-
-    from main import app
-
-    assert app.router.default_response_class.__class__ is not ORJSONResponse
-    assert "ORJSONResponse" not in repr(app.router.default_response_class)

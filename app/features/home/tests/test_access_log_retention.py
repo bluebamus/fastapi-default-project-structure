@@ -1,8 +1,7 @@
-"""접속 로그 보존 — 경계·배치·0=보존·설정 검증·beat 등록·provider 조립."""
+"""접속 로그 보존 — 경계·배치·0=보존·설정 검증·provider 조립."""
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -11,7 +10,6 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.celery.task import clear_worker_loop, get_worker_loop
 from app.core.db.session import Base
 from app.features.home.dependencies.access_log_dependencies import (
     build_access_log_retention_service,
@@ -139,49 +137,3 @@ def test_provider_builds_service_from_settings():
     assert service.retention_days == middleware_settings.ACCESS_LOG_RETENTION_DAYS
     assert service._clock == timezone_settings.utc_now
     assert service.batch_size == DEFAULT_BATCH_SIZE
-
-
-def test_purge_task_is_registered_and_scheduled_daily_at_0330_local():
-    from app.celery.app import celery_app
-
-    celery_app.loader.import_default_modules()
-    from app.features.home import tasks
-
-    assert tasks.PURGE_TASK_NAME in celery_app.tasks
-    entry = celery_app.conf.beat_schedule[tasks.PURGE_TASK_NAME]
-    assert entry["task"] == tasks.PURGE_TASK_NAME
-    assert entry["schedule"].hour == {3}
-    assert entry["schedule"].minute == {30}
-    assert celery_app.conf.timezone == timezone_settings.TIME_ZONE  # crontab 은 로컬 시간대
-
-
-def test_purge_task_builds_service_through_home_provider(monkeypatch):
-    from app.features.home import tasks
-
-    session = object()
-    built: list[object] = []
-
-    @asynccontextmanager
-    async def fake_background_session():
-        yield session
-
-    class FakeService:
-        async def purge(self):
-            return 42
-
-    def fake_build(db_session):
-        built.append(db_session)
-        return FakeService()
-
-    monkeypatch.setattr(tasks, "background_db_session", fake_background_session)
-    monkeypatch.setattr(tasks, "build_access_log_retention_service", fake_build)
-
-    try:
-        assert tasks.purge_expired_access_logs.run() == 42
-    finally:
-        loop = get_worker_loop()
-        if loop is not None:
-            loop.close()
-        clear_worker_loop()
-
-    assert built == [session]

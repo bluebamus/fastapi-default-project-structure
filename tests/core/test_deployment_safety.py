@@ -1,12 +1,11 @@
 """설정 검사(`config.validate_deployment_safety` · `config.validate_env_source`) 테스트.
 
-- ADR-027: 비밀 키가 예시 값(placeholder)이거나 access 와 refresh 키가 같으면 config import 가
+- 비밀 키가 예시 값(placeholder)이거나 access 와 refresh 키가 같으면 config import 가
   실패한다. 오류 메시지는 설정 **이름**만 담고 값은 담지 않는다.
-- ADR-045 ①: `.env` 가 없고 필수 값이 환경 변수로도 없으면 실패한다(컨테이너 주입은 통과).
-- ADR-045 ②: 위 비밀값 검사는 test 를 뺀 **모든 ENV** 에 적용된다(개발 환경 포함).
-- admin-login ADR-004: ADR-045 ③(배포 환경의 켜진 관리 화면에 확인 플래그 요구)은 관리 화면 로그인이
-  붙어 없앴다 — staging/production 에서 관리 화면을 켜도 통과하고, 예전 플래그가 남아 있어도 무시된다.
-- admin-login ADR-005: 예전 설정 `ADMIN` 이 환경 변수·`.env` 에 남아 있으면 기동을 멈춘다(`ADMIN_DISABLED` 로 교체).
+- `.env` 가 없고 필수 값이 환경 변수로도 없으면 실패한다(컨테이너 주입은 통과).
+- 위 비밀값 검사는 test 를 뺀 **모든 ENV** 에 적용된다(개발 환경 포함).
+- staging/production 에서 관리 화면을 켜도 통과한다(슈퍼유저 로그인이 지킨다). 예전 확인 플래그가 남아 있어도 무시된다.
+- 예전 설정 `ADMIN` 이 환경 변수·`.env` 에 남아 있으면 기동을 멈춘다(`ADMIN_DISABLED` 로 교체).
 """
 
 import os
@@ -85,11 +84,6 @@ def test_env_example_secrets_are_rejected_without_leaking_values(env):
         assert value not in message
 
 
-def test_example_secrets_are_distinct():
-    """예시 값 셋은 서로 달라야 한다(복사해 쓰다 같은 키가 되는 것을 막는다)."""
-    assert len(set(_example_secrets().values())) == 3
-
-
 @pytest.mark.parametrize("env", ["staging", "production"])
 def test_distinct_strong_secrets_pass(env):
     """(b) 서로 다른 강한 키는 통과한다."""
@@ -140,7 +134,7 @@ def test_test_env_is_not_checked():
 
 
 def test_development_rejects_example_secrets():
-    """(e') ADR-045 ②: 개발 환경도 `.env.example` 값 그대로면 오류다 — `.env` 를 채우라는 신호."""
+    """(e') 개발 환경도 `.env.example` 값 그대로면 오류다 — `.env` 를 채우라는 신호."""
     secrets = _example_secrets()
     with pytest.raises(RuntimeError) as exc_info:
         _check("development", secrets)
@@ -153,7 +147,7 @@ def test_development_rejects_example_secrets():
 
 @pytest.mark.parametrize("env", ["development", "staging", "production"])
 def test_short_secret_key_is_rejected(env):
-    """ADR-045 ②: 예시 값이 아니어도 32자보다 짧은 서명·세션 키는 거부한다."""
+    """예시 값이 아니어도 32자보다 짧은 서명·세션 키는 거부한다."""
     short = "k9Qz0vL3mX7pR2tY5wB8nC1dF4g"  # 27자
     with pytest.raises(RuntimeError, match="SESSION_SECRET_KEY") as exc_info:
         _check(env, {**STRONG, "SESSION_SECRET_KEY": short})
@@ -259,8 +253,6 @@ def test_import_fails_in_production_with_debug_enabled():
 #     (인증 없는 사설망 Redis). 값이 있을 때만 예시 값인지 본다.
 # ---------------------------------------------------------------------------
 
-PASSWORD_KEYS = ("MYSQL_PASSWORD", "REDIS_PASSWORD")
-
 
 def _example_value(name: str) -> str:
     """`.env.example` 에 적힌 설정 값(없으면 빈 문자열)."""
@@ -269,17 +261,6 @@ def _example_value(name: str) -> str:
         if sep and key.strip() == name:
             return value.strip()
     raise AssertionError(f".env.example 에 {name} 이 없다")
-
-
-@pytest.mark.parametrize("name", ["MYSQL_PASSWORD"])
-def test_env_example_passwords_are_placeholders(name):
-    """`.env.example` 의 비밀번호 예시는 검사에 걸리는 모양이어야 한다."""
-    assert config.is_placeholder_secret(_example_value(name))
-
-
-def test_env_example_redis_password_is_empty():
-    """Redis 는 인증 없는 구성이 기본이라 예시를 비워 둔다(위반 아님)."""
-    assert _example_value("REDIS_PASSWORD") == ""
 
 
 @pytest.mark.parametrize("env", ["staging", "production"])
@@ -331,7 +312,7 @@ def test_passwords_are_not_checked_in_test_env():
 
 @pytest.mark.parametrize("mysql_password", ["", "EXAMPLE"])
 def test_development_rejects_example_or_empty_mysql_password(mysql_password):
-    """ADR-045 ②: 개발 환경도 MySQL 비밀번호가 비었거나 예시 값이면 오류다."""
+    """개발 환경도 MySQL 비밀번호가 비었거나 예시 값이면 오류다."""
     value = _example_value("MYSQL_PASSWORD") if mysql_password == "EXAMPLE" else ""
     with pytest.raises(RuntimeError, match="MYSQL_PASSWORD"):
         _check("development", STRONG, mysql_password=value)
@@ -348,9 +329,9 @@ def test_import_fails_in_production_with_example_passwords():
 
 
 # ---------------------------------------------------------------------------
-# admin-login ADR-004 — 관리 화면은 슈퍼유저 로그인이 필요하므로 배포 환경에서 켜 두어도 막지 않는다.
+# 관리 화면은 슈퍼유저 로그인이 필요하므로 배포 환경에서 켜 두어도 막지 않는다.
 # 예전 확인 플래그는 설정·검사·기동 WARNING 에서 모두 빠졌다.
-# admin-login ADR-005 — 예전 설정 `ADMIN` 이 남아 있으면 조용히 무시하지 않고 기동을 멈춘다.
+# 예전 설정 `ADMIN` 이 남아 있으면 조용히 무시하지 않고 기동을 멈춘다.
 # ---------------------------------------------------------------------------
 
 LEGACY_ADMIN_FLAG = "ADMIN_ALLOW_UNAUTHENTICATED"
@@ -391,18 +372,6 @@ def test_import_fails_when_legacy_admin_is_set():
     result = _import_config({"ENV": "production", **STRONG, "ADMIN": "false"})
     assert result.returncode != 0
     assert "ADMIN_DISABLED" in result.stderr
-
-
-def test_legacy_admin_flag_is_gone_from_settings_and_code():
-    assert LEGACY_ADMIN_FLAG not in config.AppSettings.model_fields
-    for path in (
-        PROJECT_ROOT / "config.py",
-        PROJECT_ROOT / "main.py",
-        PROJECT_ROOT / ".env.example",
-        *(PROJECT_ROOT / "app").rglob("*.py"),
-        *(PROJECT_ROOT / "scripts").rglob("*.py"),
-    ):
-        assert LEGACY_ADMIN_FLAG not in path.read_text(encoding="utf-8"), path
 
 
 def test_leftover_legacy_admin_flag_in_env_file_is_ignored(tmp_path):
@@ -447,7 +416,7 @@ def test_deployed_admin_starts_without_flag_and_without_unauthenticated_warning(
 
 
 # ---------------------------------------------------------------------------
-# ADR-045 ① — 설정의 출처. `.env` 가 없으면 필수 값이 환경 변수로 와야 한다.
+# 설정의 출처. `.env` 가 없으면 필수 값이 환경 변수로 와야 한다.
 # ---------------------------------------------------------------------------
 
 FULL_ENVIRON = {

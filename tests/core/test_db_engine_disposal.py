@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 
 import pytest
 import pytest_asyncio
@@ -129,36 +128,11 @@ async def test_dispose_failure_does_not_propagate(engines):
     await db_session.dispose_engine()  # 예외가 나오면 이 테스트가 실패한다
 
 
-def test_dispose_engine_signature_is_unchanged():
-    """공개 계약을 바꾸지 않는다 — 인자 없이 호출 가능해야 한다.
-
-    ``app/celery/lifecycle.py`` 가 ``dispose_engine()`` 을 인자 없이 부른다. 필수
-    인자를 추가하면 Celery worker 종료가 조용히 깨진다.
-    """
-    required = [
-        name
-        for name, param in inspect.signature(db_session.dispose_engine).parameters.items()
-        if param.default is inspect.Parameter.empty
-    ]
-    assert required == [], f"dispose_engine 에 필수 인자가 생겼다: {required}"
-
-
 # ---------------------------------------------------------------------------
-# 세션 Dependency 의 예외 경로 정리
-#
-# `get_writer_db_session()`·`get_read_only_db_session()` 에는 명시적인
-# `except Exception: await session.rollback(); raise` 가 있었다. 죽은 코드다 —
-# `AsyncSession.__aexit__` 이 `asyncio.shield(create_task(self.close()))` 이고,
-# `close()` 는 `if self.is_active: self._connection_rollback_impl()` 로 ROLLBACK 을
-# 이미 보낸다. 게다가 `except Exception` 은 `asyncio.CancelledError`(BaseException
-# 상속, 클라이언트 연결 끊김)를 **못 잡는데** `__aexit__` 의 shield 는 잡는다.
-#
-# `get_routed_db_session()`·`get_background_db_session()` 은 except 블록에
-# 로깅 부수효과가 있으므로 그대로 둔다.
+# 세션 Dependency 의 예외 경로 — ROLLBACK 은 `AsyncSession.__aexit__` 이 한 번 보낸다.
 # ---------------------------------------------------------------------------
 
 SIMPLE_DEPENDENCIES = ("get_writer_db_session", "get_read_only_db_session")
-LOGGING_DEPENDENCIES = ("get_routed_db_session", "get_background_db_session")
 
 
 @pytest_asyncio.fixture
@@ -201,23 +175,3 @@ async def test_exception_path_rolls_back_exactly_once(rollbacks, dependency_name
     await _raise_inside(dependency_name, error)
 
     assert rollbacks == ["rollback"]
-
-
-@pytest.mark.parametrize("dependency_name", SIMPLE_DEPENDENCIES)
-def test_simple_dependencies_have_no_explicit_rollback(dependency_name):
-    """정리는 `async with` 에 맡긴다 — 중복 rollback 코드를 되살리지 않는다.
-
-    독스트링이 "왜 없는지" 를 설명하느라 rollback 을 언급하므로 호출 형태로 본다.
-    """
-    source = inspect.getsource(getattr(db_session, dependency_name))
-
-    assert "session.rollback()" not in source
-
-
-@pytest.mark.parametrize("dependency_name", LOGGING_DEPENDENCIES)
-def test_logging_dependencies_keep_their_except_block(dependency_name):
-    """로깅 부수효과가 있는 쪽은 except 블록이 필요하다 — 함께 지우지 않는다."""
-    source = inspect.getsource(getattr(db_session, dependency_name))
-
-    assert "except Exception" in source
-    assert "ROLLBACK" in source

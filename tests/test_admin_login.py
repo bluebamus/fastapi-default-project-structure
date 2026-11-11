@@ -1,4 +1,4 @@
-"""/admin 로그인 — ``AdminAuthBackend``·Bootstrap 로그인 화면·create_superuser 흐름 (admin-login).
+"""/admin 로그인 — ``AdminAuthBackend``·Bootstrap 로그인 화면·create_superuser 흐름.
 
 실물 부품으로 조립한다: SQLite 파일 DB(``NullPool`` — create_superuser 가 자기 이벤트 루프를 돌린다),
 fakeredis(레이트 리밋·관리 세션), 실제 ``build_admin_auth_backend``·``create_admin_interface``. 앱은 테스트마다

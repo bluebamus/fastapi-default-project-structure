@@ -1,4 +1,4 @@
-"""bounded queue logging 계약 검증 — NFR-009, TEST-006.
+"""bounded queue logging 계약 검증.
 
 핵심은 **요청 event loop 를 절대 막지 않는다**는 것이다. 로그 적재는
 ``put_nowait()`` 뿐이고, queue 가 가득 차면 blocking 대신 레벨별 정책을 쓴다.

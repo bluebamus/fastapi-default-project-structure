@@ -62,10 +62,10 @@ uv run python -m pytest --cov=app --cov-branch --cov-report=term-missing
 | 위치 | 대상 |
 |---|---|
 | `app/features/<name>/tests/` | 그 기능의 API(상태 코드·검증·응답·권한·소유권)와 트랜잭션 경계 |
-| `tests/core/` | `app/core` 모듈 — 세션·라우터·Repository Base·보안 부품·자원 수명주기·미들웨어 |
+| `tests/core/` | `app/core`·`app/celery` 모듈 — 세션·라우터·Repository Base·보안 부품·자원 수명주기·미들웨어·Celery |
 | `tests/utils/` | 로깅·페이지네이션 |
 | `tests/scripts/` | `scripts/` 의 동작 |
-| `tests/` (최상위) | 여러 기능을 가로지르는 앱 수준 동작 — 관리 화면, 예외 응답, 헬스체크, OpenAPI |
+| `tests/` (최상위) | 여러 기능을 가로지르는 앱 수준 동작 — 관리 화면, 인가, 예외 응답, 헬스체크, OpenAPI, 라우터·모델 등록, 트랜잭션 배선 |
 
 공용 헬퍼:
 

@@ -1,4 +1,4 @@
-"""Catalog(ORM 예제) API 통합 테스트 — SCN-ORM-001, TEST-002/003.
+"""Catalog(ORM 예제) API 통합 테스트.
 
 in-memory sqlite 로 View → Dependency → Service → Repository → ORM 전 구간을 돈다.
 commit 횟수까지 세는 이유는 트랜잭션 경계가 이 프로젝트의 핵심 계약이기 때문이다
@@ -182,7 +182,7 @@ async def test_limit_upper_bound_is_enforced(client):
 
 
 # =============================================================================
-# 트랜잭션 경계 (TEST-002)
+# 트랜잭션 경계
 # =============================================================================
 async def test_read_path_does_not_commit(client):
     http_client, counter = client
@@ -192,7 +192,7 @@ async def test_read_path_does_not_commit(client):
     await http_client.get(BASE)
     await http_client.get(f"{BASE}/없는-id")
 
-    assert counter["commits"] == 0, "조회 경로가 커밋했다 (TX-002 위반)"
+    assert counter["commits"] == 0, "조회 경로가 커밋했다"
 
 
 async def test_write_path_commits_exactly_once(client):
@@ -219,4 +219,4 @@ async def test_failed_write_does_not_commit(client):
     response = await http_client.delete(f"{BASE}/없는-id")
 
     assert response.status_code == 404
-    assert counter["commits"] == 0, "실패 경로가 커밋했다 (TX-004 위반)"
+    assert counter["commits"] == 0, "실패 경로가 커밋했다"

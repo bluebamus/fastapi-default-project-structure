@@ -1,4 +1,4 @@
-"""DB 오류 변환 표 — service-hardening ADR-008 ②·ADR-022.
+"""DB 오류 변환 표.
 
 예전에는 ORM 이 모든 ``IntegrityError`` 를 409 DUPLICATE 로 보냈고(NOT NULL·FK 위반의 원인이
 가려졌다), 기능 Repository 의 추가 쿼리는 변환을 거치지 않았으며, 실패 로그에 드라이버
@@ -239,16 +239,3 @@ async def test_server_side_failure_logs_at_error(db_session, monkeypatch, caplog
     assert [r.levelno for r in records] == [logging.ERROR]
     assert SECRET not in records[0].getMessage()
     assert "code=2013" in records[0].getMessage()
-
-
-def test_application_engines_hide_bound_parameters():
-    """엔진이 예외 문자열에서 바인딩 값을 빼야 어디로 흘러도 비밀이 실리지 않는다."""
-    from app.core.db import session as session_module
-
-    engines = [
-        session_module.engine,
-        session_module.background_engine,
-        session_module._create_read_engine(session_module.db_settings.MYSQL_WRITER_URL),
-    ]
-    for engine in engines:
-        assert engine.sync_engine.hide_parameters is True

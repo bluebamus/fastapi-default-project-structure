@@ -1,4 +1,4 @@
-"""Redis 서버 최소 버전 — log-redaction ADR-003.
+"""Redis 서버 최소 버전.
 
 최소 버전은 코드가 실제로 보내는 명령에서 정한다(``GETDEL`` → 6.2). lifespan 이 연결 직후
 ``INFO server`` 로 확인하고, 미만이면 기동을 멈춘다. ``INFO`` 를 막은 관리형 Redis·fakeredis 는

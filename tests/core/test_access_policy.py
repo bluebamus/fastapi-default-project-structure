@@ -1,4 +1,4 @@
-"""``AccessPolicyGuard`` 단위 규칙 (access-policy ADR-001~003).
+"""``AccessPolicyGuard`` 단위 규칙.
 
 작은 앱을 그 자리에서 조립해 판정만 본다 — 요청은 보내지 않는다.
 """
