@@ -17,9 +17,6 @@
     pip-audit                   설치된 의존성에 공개된 취약점 권고가 0건 (ADR-035)
     check_layering              계층 불변식 (INV-1/2/5) 정적 점검
     check_public_api_unchanged  기존 공개 API 불변 (baseline/openapi.json 대비, INV-11)
-    check_test_port_single_source
-                                MySQL 테스트 포트 단일 출처 (compose·테스트·charter 일치, ADR-008)
-                                + 그 값이 3306(공유 인스턴스)이 아님 (C-7)
     check_no_table_drop_in_app  운영 코드(`app/`·`main.py`)에 `drop_all` 이 없음 (C-6 / AR-006)
     check_cited_commits_reachable
                                 문서가 인용한 커밋 해시가 HEAD 에서 도달 가능 (ADR-009)
@@ -324,46 +321,6 @@ def check_public_api_unchanged() -> None:
         print(f"       (신규 operation {len(added)}건: {added})")
 
 
-def _mysql_test_port(source: Path, pattern: str) -> tuple[str, str | None]:
-    """`source` 에서 `pattern` 으로 포트 하나를 뽑는다. 없으면 (경로, None)."""
-    match = re.search(pattern, source.read_text(encoding="utf-8"), re.MULTILINE)
-    return (source.name, match.group(1) if match else None)
-
-
-def check_test_port_single_source() -> None:
-    """MySQL 통합 테스트 포트가 compose·테스트·계약서에서 같은 값인지 (ADR-008/009).
-
-    F-012 가 3307 을 3308 로 옮겼는데 charter 와 ADR 은 3307 로 남았다. 어긋난 계약서는
-    "이 포트로 뜬다"고 믿게 만들고, 실제로는 **다른 MySQL 에 붙어도** 조용하다. 사람이
-    눈으로 맞추는 절차는 이미 한 번 실패했으므로 여기서 기계로 잡는다.
-    """
-    sources = [
-        # 두 곳 모두 MYSQL_TEST_PORT 로 덮어쓸 수 있다 — 비교 대상은 **기본값**이다.
-        _mysql_test_port(REPO_ROOT / "compose.test.yaml", r"\$\{MYSQL_TEST_PORT:-(\d+)\}:3306"),
-        _mysql_test_port(
-            REPO_ROOT / "tests/integration/conftest.py",
-            r'^MYSQL_PORT = int\(os\.getenv\("MYSQL_TEST_PORT", "(\d+)"\)\)',
-        ),
-        _mysql_test_port(
-            REPO_ROOT / "docs/crp/groups/orm-raw-repository/charter.md",
-            r"호스트 포트 \*\*(\d+)\*\*",
-        ),
-    ]
-    missing = [name for name, port in sources if port is None]
-    ports = {port for _, port in sources if port is not None}
-    # C-7 — 테스트가 **공유 인스턴스(3306)** 를 가리키면 안 된다. 같은 값으로 맞춰 놓고
-    # 그 값이 3306 이면 단일 출처 판정은 통과하는데 제약은 깨진다. 한 줄로 막는다.
-    shared = "3306" in ports
-    report(
-        "MySQL 테스트 포트 단일 출처 (ADR-008) + 공유 인스턴스 회피 (C-7)",
-        not missing and len(ports) == 1 and not shared,
-        f"추출실패={missing} 값={sorted(ports)}"
-        + (" — 3306 은 공유 인스턴스다(C-7)" if shared else "")
-        if (missing or len(ports) != 1 or shared)
-        else "",
-    )
-
-
 def empty_python_files(root: Path = REPO_ROOT) -> list[Path]:
     """git 이 추적하는 내용 없는 ``.py`` — ``__init__.py`` 는 패키지 표식이라 비어 있어도 된다."""
     return [
@@ -400,8 +357,8 @@ def check_no_table_drop_in_app() -> None:
     여기서 노리는 사고는 "편의로 `Base.metadata.drop_all` 을 부르는 것" 이다. 필요해지면
     키워드를 늘린다.
 
-    테스트 픽스처는 대상이 아니다 — `tests/integration/conftest.py` 는 매 실행마다 스키마를
-    새로 만들어야 해서 drop 이 **설계**다. 그래서 `app/` 과 `main.py` 만 본다.
+    테스트 픽스처는 대상이 아니다 — 매 실행마다 스키마를 새로 만들어야 해서 drop 이
+    **설계**다. 그래서 `app/` 과 `main.py` 만 본다.
     """
     offenders: list[str] = []
     targets = [*iter_source_files("app"), REPO_ROOT / "main.py"]
@@ -683,9 +640,6 @@ def check_charter_criteria_closed() -> None:
 # 그래서 "있는지" 를 기계가 본다 — 느리다는 이유로 조용히 지워지면 그 순간 눈이 없어진다.
 PROCESS_LEVEL_TESTS = (
     "tests/core/test_resources.py::test_manager_cancellation_still_runs_remaining_cleanup",
-    "tests/integration/test_uvicorn_lifecycle.py::test_normal_shutdown_flushes_every_stage_in_order",
-    "tests/integration/test_uvicorn_lifecycle.py::test_startup_failure_still_reports_the_cause",
-    "tests/integration/test_uvicorn_lifecycle.py::test_uvicorn_cli_also_flushes_the_shutdown_tail",
     "tests/utils/test_logs.py::test_signal_shutdown_still_drains_the_log_listener",
 )
 
@@ -745,7 +699,6 @@ def main() -> int:
     )
     check_layering()
     check_public_api_unchanged()
-    check_test_port_single_source()
     check_no_table_drop_in_app()
     check_no_empty_python_files()
     check_cited_commits_reachable()

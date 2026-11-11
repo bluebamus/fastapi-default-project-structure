@@ -3,7 +3,7 @@
 Starlette 는 ``Exception`` 처리기를 ``ServerErrorMiddleware``(가장 바깥)에 두고, 응답을 보낸 **뒤 예외를 다시
 던진다** — uvicorn 이 ``Exception in ASGI application`` traceback 을 한 번 더 남기고 연결을 닫는다. 그 바로 안쪽의
 ``@app.middleware("http")`` 가 예외를 받아 같은 처리기로 응답을 끝내면 로그 1번·연결 유지·응답 불변이다.
-``DEBUG=true`` 는 지금처럼 다시 던진다. 실제 uvicorn 의 연결 유지는 ``tests/integration/test_uvicorn_lifecycle.py``.
+``DEBUG=true`` 는 지금처럼 다시 던진다.
 """
 
 from __future__ import annotations
