@@ -55,7 +55,6 @@ dev = [
     # 게이트의 의존성 감사 단계(scripts/review_gate.py)가 쓴다.
     "pip-audit>=2.7",
     "fakeredis>=2.39.0",
-    "playwright>=1.64.0",
 ]
 
 
@@ -103,21 +102,6 @@ addopts = [
     "-ra",                   # 실패/에러 요약 출력
     "--strict-markers",      # 등록되지 않은 마커 사용 시 에러
     "--tb=short",            # traceback 짧게 출력
-]
-
-# 마커 정의
-markers = [
-    "slow: 느린 테스트 (실행 제외 가능)",
-    "integration: 통합 테스트",
-    "unit: 단위 테스트",
-    # compose.test.yaml 의 MySQL 8.4 가 떠 있어야 하는 테스트.
-    # 미가용이면 자동 skip 한다(tests/integration/conftest.py, --mysql-required 면 실패).
-    #   docker compose -f compose.test.yaml up -d --wait
-    #   uv run python -m pytest -m mysql --mysql-required
-    "mysql: MySQL 8.4 통합 테스트 (compose.test.yaml 필요)",
-    # compose.e2e.yaml 스택(Docker)을 하네스가 띄운다. 마커식에 e2e 가 없으면 deselect 된다
-    # (tests/e2e/conftest.py).   uv run python -m pytest -m e2e
-    "e2e: 실제 MySQL 복제·Redis·uvicorn·Celery 위의 전수 통합 테스트 (Docker 필요)",
 ]
 
 # 환경 변수 설정
