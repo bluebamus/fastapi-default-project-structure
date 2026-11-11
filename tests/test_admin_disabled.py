@@ -6,7 +6,7 @@ import 해 두어 같은 프로세스에서는 판별할 수 없다.
 1. ``/admin`` 이하 경로가 모두 404 — 마운트 자체가 없다.
 2. 앱이 내보내는 응답(OpenAPI·``/docs``·공개 GET 경로·오류 본문·헤더) 어디에도 ``/admin`` 이 없다.
 3. 기동 로그가 관리 화면 경로를 싣지 않는다.
-4. sqladmin·인증 백엔드가 import 되지 않고 세션 미들웨어·관리 세션 저장소가 없다(admin-session-hardening).
+4. sqladmin·인증 백엔드가 import 되지 않고 세션 미들웨어·관리 세션 저장소가 없다.
 """
 
 from __future__ import annotations

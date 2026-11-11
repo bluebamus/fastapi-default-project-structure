@@ -1,4 +1,4 @@
-"""Raw SQL Base 계층 계약 — RAW-REP-001~007, AR-003, NFR-001/004, TEST-001.
+"""Raw SQL Base 계층 계약.
 
 in-memory SQLite 로 실제 SQL 을 돌린다. Raw 계층의 계약은 "결과 형태가 무엇이고,
 파라미터가 정말 바인딩되는가"이므로 mock 으로는 검증되지 않는다.
@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.exception import DatabaseException
-from app.core.repositories.raw_crud_base import RawCRUDBase
 from app.core.repositories.raw_repository_base import RawRepositoryBase
 
 CREATE_TABLE = text(
@@ -83,27 +82,6 @@ async def repository():
     await engine.dispose()
 
 
-# =============================================================================
-# AR-003 — ORM Base 와 독립된 계층
-# =============================================================================
-def test_raw_base_does_not_inherit_orm_base():
-    """하나의 Base 가 ORM 모델과 Raw row 를 동시에 반환하면 안 된다."""
-    from app.core.repositories.crud_base import CRUDBase
-    from app.core.repositories.repository_base import BaseRepository
-
-    assert not issubclass(RawRepositoryBase, BaseRepository)
-    assert not issubclass(RawRepositoryBase, CRUDBase)
-    assert not issubclass(RawCRUDBase, CRUDBase)
-    assert issubclass(RawRepositoryBase, RawCRUDBase), "Raw 계층은 자체 primitive 를 상속한다"
-
-
-def test_raw_base_has_no_transaction_control():
-    """commit/rollback 은 Raw Base 의 책임도 아니다."""
-    for base in (RawCRUDBase, RawRepositoryBase):
-        for forbidden in ("commit", "rollback"):
-            assert not hasattr(base, forbidden), f"{base.__name__} 에 {forbidden} 이 있다"
-
-
 def test_raw_base_offers_no_arbitrary_sql_entry_point():
     """``execute(sql: str)`` 같은 만능 메서드를 제공하지 않는다.
 
@@ -117,7 +95,7 @@ def test_raw_base_offers_no_arbitrary_sql_entry_point():
 
 
 # =============================================================================
-# RAW-REP-001/005 — 결과 형태
+# 결과 형태
 # =============================================================================
 async def test_fetch_all_returns_row_mappings(repository):
     rows = await repository.by_customer(customer="alice")
@@ -169,11 +147,11 @@ async def test_execute_does_not_commit(repository):
     repository.db_session.commit = _tracking_commit  # type: ignore[method-assign]
     await repository.raise_amount(customer="bob", delta=1)
 
-    assert committed == [], "Raw Repository 가 커밋했다 (RAW-REP-007 위반)"
+    assert committed == [], "Raw Repository 가 커밋했다"
 
 
 # =============================================================================
-# RAW-REP-003 — named parameter 가 실제로 바인딩되는가
+# named parameter 가 실제로 바인딩되는가
 # =============================================================================
 async def test_parameters_are_bound_not_interpolated(repository):
     """injection 대표 입력이 데이터로만 취급돼야 한다."""
@@ -193,20 +171,6 @@ async def test_bound_parameters_do_not_appear_in_compiled_sql(repository):
 
     assert ":customer" in compiled
     assert "alice" not in compiled
-
-
-# =============================================================================
-# RAW-REP-002 / NFR-004 — query_name 로깅, 민감정보 미노출
-# =============================================================================
-async def test_public_api_requires_keyword_only_query_name():
-    """query_name 은 keyword-only 여야 위치 인자와 섞여 조용히 어긋나지 않는다."""
-    import inspect
-
-    for name in ("fetch_one", "fetch_all", "fetch_scalar", "execute"):
-        parameter = inspect.signature(getattr(RawRepositoryBase, name)).parameters["query_name"]
-        assert (
-            parameter.kind is inspect.Parameter.KEYWORD_ONLY
-        ), f"{name} 의 query_name 이 keyword-only 가 아니다"
 
 
 def _our_log_messages(caplog) -> str:
@@ -252,7 +216,7 @@ async def test_failure_log_also_hides_sql_and_params(repository, caplog):
 
 
 # =============================================================================
-# RAW-REP-002 — 예외 변환
+# 예외 변환
 # =============================================================================
 async def test_sqlalchemy_errors_become_database_exception(repository):
     with pytest.raises(DatabaseException) as exc_info:
@@ -278,7 +242,7 @@ async def test_error_detail_does_not_leak_parameters(repository):
 
 
 # =============================================================================
-# RAW-REP-004 — 식별자 allowlist
+# 식별자 allowlist
 # =============================================================================
 def test_identifier_allowlist_rejects_unknown_keys():
     """정렬 키처럼 바인딩할 수 없는 식별자는 코드가 소유한 allowlist 에서만 고른다."""

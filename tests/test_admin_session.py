@@ -473,7 +473,7 @@ async def test_admin_ui_password_change_revokes(app, maker, redis):
 
 
 async def test_admin_ui_self_demotion_ends_the_current_session(app, maker, redis):
-    """자기 자신을 강등하면 지금 쓰는 세션도 끊긴다 — 의도된 동작(안내서 §폐기)."""
+    """자기 자신을 강등하면 지금 쓰는 세션도 끊긴다 — 의도된 동작이다."""
     root = await _add_user(maker)
     async with _browser(app) as me:
         assert (await admin_login(me, "root", PASSWORD)).status_code == 302

@@ -6,6 +6,7 @@
 
 검증하는 계약
 -------------
+A. 부팅된 앱의 /admin 에 모든 뷰가 선언 순서대로 한 번씩 등록된다.
 B. 각 모델은 정확히 하나의 ModelView 로 관리된다.
 C. 비밀번호 해시는 목록·상세·폼·내보내기 **어디에도** 나타나지 않는다.
 D. 접속 로그는 불변(생성·수정 불가), 콘텐츠 모델은 전체 CRUD.
@@ -20,8 +21,10 @@ bcrypt 해시가 화면에 그대로 노출된다. ``test_exposure_probe_detects
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
-from sqladmin import ModelView
+from sqladmin import Admin, ModelView
 from sqlalchemy import String
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -156,3 +159,46 @@ def test_content_admin_allows_full_crud(model_path: str) -> None:
     assert view.can_delete is True
     assert view.can_view_details is True
     assert view.can_export is True
+
+
+# =============================================================================
+# 등록 — 부팅된 앱의 /admin 에 모든 뷰가 한 번씩 붙는다
+# =============================================================================
+EXPECTED_MANAGED_MODELS = {
+    "Post",
+    "Product",
+    "Reply",
+    "SalesOrder",
+    "SnsPost",
+    "User",
+    "UserAccessLog",
+}
+
+
+def test_main_registers_every_admin_view() -> None:
+    """부팅된 앱의 SQLAdmin 에 모든 모델 뷰가 등록된다."""
+    import main
+
+    registered = {view.model.__name__ for view in main.admin._views}
+    assert registered == EXPECTED_MANAGED_MODELS
+
+
+def test_admin_page_is_mounted() -> None:
+    import main
+
+    assert any(getattr(route, "path", "") == "/admin" for route in main.app.routes)
+
+
+def test_register_admin_views_registers_every_view_once_in_order() -> None:
+    """등록 함수는 ADMIN_VIEWS 를 선언 순서대로 정확히 한 번씩 등록한다."""
+    from app.features.admin import register_admin_views
+
+    calls: list[type] = []
+
+    class _Recorder:
+        def add_view(self, view: type) -> None:
+            calls.append(view)
+
+    assert register_admin_views(cast(Admin, _Recorder())) is None
+    assert calls == list(ADMIN_VIEWS), "등록 순서 또는 구성이 ADMIN_VIEWS 와 다릅니다"
+    assert len(calls) == len(set(calls)), f"중복 등록된 뷰가 있습니다: {calls}"

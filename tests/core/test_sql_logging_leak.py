@@ -1,11 +1,11 @@
-"""SQL 파라미터 로그 유출 방지 — NFR-001.
+"""SQL 파라미터 로그 유출 방지.
 
 이 프로젝트의 기본값은 ``DEBUG=true`` 이고, 그러면 유효 로그 레벨이 DEBUG 가 된다.
 그 상태에서 SQLAlchemy·드라이버(aiosqlite·aiomysql)는 **실행한 SQL 과 바인딩된
 파라미터를 그대로** 로그로 내보낸다. 파라미터에는 비밀번호 해시·토큰·사용자 식별자가
 들어 있고, 로그는 보통 외부 collector 로 흘러간다.
 
-ADR-019(앱별 로거를 등록하지 않는다)는 유지한다. ``loggers`` 키를 추가하는 대신
+앱별 로거를 등록하지 않는 설계는 유지한다. ``loggers`` 키를 추가하는 대신
 queue 핸들러에 필터를 달아 해당 로거의 저레벨 레코드를 떨어뜨린다 — 핸들러는
 여전히 root 에만 붙고, 경로 기반 appname 판별도 그대로다.
 
@@ -86,7 +86,6 @@ def test_queue_handler_carries_the_filter():
     assert (
         "sql_noise" in config["handlers"]["queue"]["filters"]
     ), "queue 핸들러에 sql_noise 필터가 붙지 않았다"
-    # ADR-019 는 그대로 지킨다.
     assert "loggers" not in config, "필터로 해결해야 하며 앱별 로거를 등록하지 않는다"
 
 

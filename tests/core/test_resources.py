@@ -1,10 +1,10 @@
-"""Lifespan 자원 관리자(app/core/resources.py) 계약 검증 — AR-005~008, TEST-005.
+"""Lifespan 자원 관리자(app/core/resources.py) 계약 검증.
 
 이 테스트들은 **실제 DB 에 붙지 않는다**. 자원 관리자가 "무엇을, 어떤 순서로, 어떤
 조건에서" 호출하는지가 계약이므로 협력자를 가짜로 갈아끼우고 호출 기록만 본다.
 실제 연결이 필요한 검증은 통합 테스트의 몫이다.
 
-가장 중요한 계약은 AR-007 이다: **모델이 하나도 없으면 DB 에 접속조차 하지 않는다.**
+가장 중요한 계약: **모델이 하나도 없으면 DB 에 접속조차 하지 않는다.**
 파일 존재 여부가 아니라 ``Base.metadata.tables`` 의 실제 개수로 판정해야 한다.
 """
 
@@ -103,7 +103,7 @@ def _set_debug(monkeypatch, value: bool) -> None:
 
 
 # =============================================================================
-# AR-007 — 모델 유무에 따른 테이블 생성 분기
+# 모델 유무에 따른 테이블 생성 분기
 # =============================================================================
 async def test_no_models_skips_db_entirely(monkeypatch, wiring):
     """metadata table 이 0개면 create_all 도, DB 연결도 시도하지 않는다."""
@@ -116,7 +116,7 @@ async def test_no_models_skips_db_entirely(monkeypatch, wiring):
         assert res.table_count == 0
         assert res.tables_created is False
 
-    assert "create_tables" not in calls, "모델이 없는데 테이블 생성을 시도했다 (AR-007 위반)"
+    assert "create_tables" not in calls, "모델이 없는데 테이블 생성을 시도했다"
 
 
 async def test_models_with_debug_creates_tables_once(monkeypatch, wiring):
@@ -143,7 +143,7 @@ async def test_models_without_debug_never_creates_tables(monkeypatch, wiring):
     async with resources.manage_application_resources(app) as res:
         assert res.tables_created is False
 
-    assert "create_tables" not in calls, "운영에서 create_all 을 실행했다 (AR-007 위반)"
+    assert "create_tables" not in calls, "운영에서 create_all 을 실행했다"
 
 
 async def test_model_discovery_runs_once_per_startup(monkeypatch, wiring):
@@ -163,7 +163,7 @@ async def test_model_discovery_runs_once_per_startup(monkeypatch, wiring):
 
 
 # =============================================================================
-# AR-008 — 종료 순서와 실패 안전 cleanup
+# 종료 순서와 실패 안전 cleanup
 # =============================================================================
 async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
     """lifespan 종료 순서는 background drain → DB dispose 다.
@@ -223,7 +223,7 @@ async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
         "drain",
         "dispose",
         "flush",
-    ], "drain 실패 후 뒤따르는 cleanup 이 생략됐다 (AR-008 위반)"
+    ], "drain 실패 후 뒤따르는 cleanup 이 생략됐다"
 
 
 async def test_startup_failure_still_runs_cleanup(monkeypatch, wiring):
@@ -288,7 +288,7 @@ async def test_state_resources_cleared_after_shutdown(monkeypatch, wiring):
 
 
 async def test_lifespan_reentry_leaves_no_leak(monkeypatch, wiring):
-    """lifespan 을 재진입해도 자원 참조가 누수되지 않는다 (TEST-005)."""
+    """lifespan 을 재진입해도 자원 참조가 누수되지 않는다."""
     calls, _ = wiring
     _use_tables(monkeypatch, 1)
     _set_debug(monkeypatch, False)
@@ -325,10 +325,8 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
         "dispose",
         "flush",
     ], "timeout 후 다음 cleanup 이 실행되지 않았다"
-    # Definition of Done 은 "정상·startup 실패·timeout·취소 **전부**" 에서 참조가
-    # 비워지기를 요구한다. 나머지 셋에는 단언이 있었는데 timeout 만 없었다 — 동작은
-    # 맞았지만 근거가 없었다(F-025 계열: "근거가 존재한 적 없는 칸").
-    assert app.state.resources is None, "timeout 경로에서 닫힌 자원 참조가 남았다 (AR-005 위반)"
+    # 정상·startup 실패·timeout·취소 전부에서 참조가 비워져야 한다.
+    assert app.state.resources is None, "timeout 경로에서 닫힌 자원 참조가 남았다"
 
 
 async def test_drain_gets_headroom_to_finish_cancellation(monkeypatch, wiring):
@@ -336,7 +334,7 @@ async def test_drain_gets_headroom_to_finish_cancellation(monkeypatch, wiring):
 
     같은 값을 주면 drain 이 timeout 에 도달해 pending 을 취소하고 회수(gather)하려는
     순간 바깥 timeout 이 끊는다. 그러면 취소된 태스크의 finally — 세션 rollback/close
-    — 가 실행되지 못한 채 곧바로 DB dispose 로 넘어간다(AR-009 보장 붕괴).
+    — 가 실행되지 못한 채 곧바로 DB dispose 로 넘어간다.
     """
     calls, _ = wiring
     seen: dict[str, float | None] = {}
@@ -401,8 +399,7 @@ async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wi
     바로 위 ``test_cancelled_task_cleanup_survives_the_outer_timeout`` 과 헷갈리면
     안 된다. 그것은 **자식 background 태스크**가 취소되는 경우이고, 이것은 lifespan
     관리자를 들고 있는 **태스크 자체**가 밖에서 취소되는 경우다. 전자는 이미 통과하고
-    있었고 후자는 아무도 보지 않았다 — Round 11 이 13/13 그린으로 수렴을 선언한 채
-    F-028 을 놓친 이유가 이 빈칸이다.
+    있었고 후자는 아무도 보지 않았다.
 
     ``CancelledError`` 는 ``Exception`` 이 아니라 ``BaseException`` 이라
     ``_run_cleanup()`` 의 ``except Exception`` 그물을 그대로 통과한다. 따라서 첫 cleanup
@@ -448,14 +445,14 @@ async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wi
         "drain",
         "dispose",
         "flush",
-    ], f"관리자가 취소되자 남은 cleanup 이 건너뛰어졌다 (AR-008/F-028 위반): {calls}"
+    ], f"관리자가 취소되자 남은 cleanup 이 건너뛰어졌다: {calls}"
     assert (
         app.state.resources is None
-    ), "취소 경로에서 app.state.resources 가 닫힌 자원을 계속 가리킨다 (AR-005 위반)"
+    ), "취소 경로에서 app.state.resources 가 닫힌 자원을 계속 가리킨다"
 
 
 def test_shutdown_timeout_budget_fits_total():
-    """자원별 timeout 합이 전체 shutdown 예산을 넘지 않는다 (확정 정책 6)."""
+    """자원별 timeout 합이 전체 shutdown 예산을 넘지 않는다."""
     # listener 를 **멈추는** 시간은 lifespan 예산에 없다 — 프로세스 종료 훅의 몫이다.
     # 대신 쌓인 로그가 다 나가기를 **기다리는** 시간은 lifespan 의 마지막
     # 단계이므로 합계에 든다.
@@ -470,5 +467,5 @@ def test_shutdown_timeout_budget_fits_total():
     assert resources.SHUTDOWN_TOTAL_TIMEOUT_SECONDS == 20.0
     assert not hasattr(
         resources, "LOGGING_DRAIN_TIMEOUT_SECONDS"
-    ), "lifespan 예산에 logging listener **정지**가 다시 들어왔다 (ADR-018 위반)"
+    ), "lifespan 예산에 logging listener **정지**가 다시 들어왔다"
     assert per_resource <= resources.SHUTDOWN_TOTAL_TIMEOUT_SECONDS

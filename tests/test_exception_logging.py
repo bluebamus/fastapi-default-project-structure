@@ -1,4 +1,4 @@
-"""예외 핸들러의 로그 레벨 — service-hardening ADR-008 ④.
+"""예외 핸들러의 로그 레벨.
 
 4xx 는 클라이언트 입력이 원인이라 WARNING 이고 detail(요청 값이 들어 있을 수 있다)을
 싣지 않는다. ERROR 로 쌓으면 경보가 흐려진다. 5xx 만 ERROR.

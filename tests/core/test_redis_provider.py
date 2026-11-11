@@ -1,4 +1,4 @@
-"""Redis 주입 provider ``get_redis`` — service-hardening ADR-011.
+"""Redis 주입 provider ``get_redis``.
 
 클라이언트는 lifespan 이 ``app.state.redis`` 에 둔다. provider 는 그것을 돌려주고, 없으면
 (lifespan 밖·종료 후) 503 으로 막는다 — ``None`` 을 넘기면 호출자가 ``AttributeError`` 로 500 을 낸다.

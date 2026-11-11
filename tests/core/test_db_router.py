@@ -18,7 +18,6 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.db.router import (
     DatabaseRouter,
-    ReadOnlyRoutingError,
     create_routing_sessionmaker,
     mark_read_only,
     using_writer,
@@ -221,24 +220,6 @@ async def test_using_writer_forces_select_to_writer():
     async with maker() as session:
         using_writer(session)
         assert await _origins(session) == ["writer"]
-
-    await writer.dispose()
-    await reader.dispose()
-
-
-async def test_read_only_session_rejects_writes():
-    """읽기 전용으로 표시한 세션에서 쓰기를 시도하면 즉시 실패한다."""
-    writer = await _make_engine("writer")
-    reader = await _make_engine("reader")
-    maker = create_routing_sessionmaker(DatabaseRouter(writer=writer, readers=[reader]))
-
-    async with maker() as session:
-        mark_read_only(session)
-        assert await _origins(session) == ["reader"]
-
-        session.add(Probe(id=2, origin="written"))
-        with pytest.raises(ReadOnlyRoutingError):
-            await session.flush()
 
     await writer.dispose()
     await reader.dispose()

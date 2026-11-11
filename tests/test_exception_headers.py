@@ -1,4 +1,4 @@
-"""예외가 실은 응답 헤더 보존 — log-redaction ADR-002.
+"""예외가 실은 응답 헤더 보존.
 
 전역 핸들러가 응답 본문을 ``ErrorResponse`` 형식으로 바꾸면서 예외의 ``headers`` 를 버리면
 405 의 ``Allow``(RFC 9110 §15.5.6 은 필수)·401 의 ``WWW-Authenticate``·429 의 ``Retry-After`` 가

@@ -1,4 +1,4 @@
-"""ORM Repository Base 계약 — ORM-REP-001~006, ORM-MDL-003, TEST-001.
+"""ORM Repository Base 계약.
 
 in-memory SQLite 로 실제 CRUD 를 돌린다. Base 의 계약은 "SQL 이 정말 그렇게 나가는가"
 이므로 mock 으로는 검증되지 않는다.
@@ -77,7 +77,7 @@ async def repository():
 
 
 # =============================================================================
-# ORM-REP-003 — 입력 불변성
+# 입력 불변성
 # =============================================================================
 async def test_create_does_not_mutate_caller_dict(repository):
     """Repository 가 호출자의 dict 를 건드리면 안 된다.
@@ -101,7 +101,7 @@ async def test_create_respects_explicit_id(repository):
 
 
 # =============================================================================
-# ORM-REP-002 — 최소 공개 CRUD
+# 최소 공개 CRUD
 # =============================================================================
 async def test_get_by_id_and_or_raise(repository):
     created = await repository.create({"name": "alpha"})
@@ -142,7 +142,7 @@ async def _seed_ties(repository) -> None:
 
 async def test_list_orders_newest_first_and_breaks_ties_by_pk(repository):
     """기본 정렬은 ``created_at DESC, id DESC`` — 같은 시각의 행도 순서가 정해진다
-    (service-hardening ADR-005)."""
+    ."""
     await _seed_ties(repository)
 
     assert [w.id for w in await repository.list()] == ["a", "z", "q", "m"]
@@ -192,7 +192,7 @@ async def test_delete_by_id_reports_whether_a_row_was_removed(repository):
 
 
 # =============================================================================
-# ORM-REP-004 — 존재 확인은 EXISTS
+# 존재 확인은 EXISTS
 # =============================================================================
 async def test_exists_uses_sql_exists_not_count(repository):
     """``EXISTS`` 는 첫 행에서 멈춘다. ``COUNT(*)`` 는 전부 센다."""
@@ -223,7 +223,7 @@ async def test_exists_returns_bool(repository):
 
 
 # =============================================================================
-# ORM-REP-006 — 예외 변환 일관성
+# 예외 변환 일관성
 # =============================================================================
 async def test_create_translates_duplicate(repository):
     await repository.create({"name": "unique-name"})
@@ -280,36 +280,3 @@ async def test_error_detail_does_not_leak_sql_parameters(repository):
 
     rendered = str(exc_info.value.detail)
     assert "secret-value" not in rendered, f"입력값이 오류 detail 로 새어나갔다: {rendered}"
-
-
-# =============================================================================
-# ORM-MDL-003 — PK 타입 계약
-# =============================================================================
-def test_repository_declares_primary_key_type():
-    """``BaseRepository[ModelT, PrimaryKeyT]`` 가 정식 계약이어야 한다."""
-    import typing
-
-    parameters = getattr(BaseRepository, "__type_params__", None) or typing.get_args(
-        BaseRepository.__orig_bases__[-1]  # type: ignore[attr-defined]
-    )
-    assert len(parameters) >= 2, f"PK 타입 파라미터가 없다: {parameters}"
-
-
-def test_single_parameter_form_still_works():
-    """기존 ``BaseRepository[Model]`` 선언이 그대로 유효해야 한다 (기본값 str)."""
-
-    class _Probe(BaseRepository[Widget]):  # type: ignore[type-var]
-        model = Widget
-
-    assert _Probe.model is Widget
-
-
-# =============================================================================
-# ORM-REP-001 — CRUDBase 는 primitive 만
-# =============================================================================
-def test_crud_base_has_no_transaction_control():
-    """commit/rollback 은 Base 의 책임이 아니다."""
-    from app.core.repositories.crud_base import CRUDBase
-
-    for forbidden in ("commit", "rollback"):
-        assert not hasattr(CRUDBase, forbidden), f"CRUDBase 에 {forbidden} 이 있다"

@@ -1,4 +1,4 @@
-"""로그 설정 연결 — config-cleanup-2 (LOG_CONSOLE_FORMAT·LOG_DATE_FORMAT·LOG_CONSOLE_ENABLED).
+"""로그 설정 연결 — LOG_CONSOLE_FORMAT·LOG_DATE_FORMAT·LOG_CONSOLE_ENABLED 등.
 
 출력 줄은 **실제 로깅 구성을 자식 프로세스에 적용해** 본다(이 프로세스의 로깅을 바꾸지 않는다).
 자식은 빈 임시 폴더에서 돌린다 — 로컬 `.env` 의 LOG_* 값이 결과를 가리지 않게.
