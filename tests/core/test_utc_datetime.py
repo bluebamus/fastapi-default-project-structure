@@ -1,4 +1,4 @@
-"""UTC 저장 시각 타입 — ``UTCDateTime``·``utc_now``·Alembic 훅 (service-hardening ADR-010, F-016).
+"""UTC 저장 시각 타입 — ``UTCDateTime``·``utc_now``·Alembic 훅.
 
 DB 에는 UTC 벽시계를, 응용에는 UTC aware 값을. naive 값은 저장 경로에서 거부한다 —
 KST 벽시계가 오프셋 없이 저장돼 "(UTC)" 라는 설명과 어긋났던 것이 검수 R-05 다.

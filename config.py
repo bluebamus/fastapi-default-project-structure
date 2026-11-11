@@ -65,7 +65,7 @@ class TimezoneSettings(BaseSettings):
         return datetime.now(self.tz)
 
     def utc_now(self) -> datetime:
-        """현재 UTC 시각(aware). DB 에 저장하는 시각은 모두 여기서 만든다(service-hardening ADR-010).
+        """현재 UTC 시각(aware). DB 에 저장하는 시각은 모두 여기서 만든다.
 
         ``now()`` 는 로그·표시처럼 로컬 벽시계가 필요한 곳에만 쓴다.
         """
@@ -119,7 +119,7 @@ View(Router) → Dependency → Service → Repository → AsyncSession
 | `DEBUG=false` | 운영 모드 (INFO 로그, 스키마는 Alembic, `/docs` 비공개) |
 """
 # 관리 화면 설정은 여기(Scalar·/openapi.json 에 실리는 설명)에 적지 않는다 — ADMIN_DISABLED=true 일 때
-# 앱이 내보내는 어떤 응답에도 관리 화면 경로가 나오지 않아야 한다(admin-login ADR-005).
+# 앱이 내보내는 어떤 응답에도 관리 화면 경로가 나오지 않아야 한다.
 
 
 # =============================================================================
@@ -165,7 +165,7 @@ class AppSettings(BaseSettings):
         description="디버그 모드 활성화",
     )
 
-    # 관리 화면(SQLAdmin) 끄기 (DEBUG 와 독립적으로 동작) — admin-login ADR-005.
+    # 관리 화면(SQLAdmin) 끄기 (DEBUG 와 독립적으로 동작).
     # False(기본): /admin 마운트, **활성 슈퍼유저 로그인 필요**
     # True: 관리 화면을 완전히 끈다 — 마운트·sqladmin import·세션 미들웨어·인증 백엔드가 모두
     #       없고(/admin 이하 404), 앱의 어떤 응답·기동 로그에도 관리 화면 경로가 나오지 않는다.
@@ -212,7 +212,7 @@ class AppSettings(BaseSettings):
 def mysql_url(
     drivername: str, *, username: str, password: str, host: str, port: int, database: str
 ) -> URL:
-    """MySQL 접속 URL 을 ``URL.create`` 로 만든다 (service-hardening ADR-004).
+    """MySQL 접속 URL 을 ``URL.create`` 로 만든다.
 
     문자열로 조립하면 비밀번호의 ``@ : / # % ?`` 가 구분자로 읽혀 접속 정보가 깨진다 —
     운영 비밀번호에서만 드러나는 실패다. ``URL`` 은 각 부분을 따로 들고 있다가 문자열로
@@ -578,7 +578,7 @@ _DEFAULT_LOG_FORMAT = (
     "[{module}:{classname}:{funcName}:{lineno}] {message}"
 )
 
-# 모든 로그 줄에 반드시 있어야 하는 자리표시자 (logging-overhaul L3).
+# 모든 로그 줄에 반드시 있어야 하는 자리표시자.
 LOG_REQUIRED_FIELDS = (
     "asctime",
     "levelname",
@@ -609,8 +609,8 @@ class LogSettings(BaseSettings):
     로깅 설정
 
     기본 출력은 stdout/stderr 이고 저장·rotation 은 컨테이너 런타임이나 운영 agent 가
-    담당한다(NFR-009). ``LOG_FILE_ENABLED=true`` 면 프로세스별 파일도 쓴다(logging-overhaul
-    L5·L6). 실제 쓰기는 콘솔·파일 모두 QueueListener 스레드가 수행한다 — 요청 event loop
+    담당한다. ``LOG_FILE_ENABLED=true`` 면 프로세스별 파일도 쓴다.
+    실제 쓰기는 콘솔·파일 모두 QueueListener 스레드가 수행한다 — 요청 event loop
     에서 동기 write/flush/rotation 이 일어나지 않는다.
 
     DEBUG 모드에 따라 로그 레벨이 자동 결정됩니다.
@@ -642,7 +642,7 @@ class LogSettings(BaseSettings):
 
     # SQL 본문·바인딩 파라미터를 로그로 내보낼지 여부.
     #
-    # 기본값이 False 인 것은 보안 요구다(NFR-001). DEBUG=true 면 유효 로그 레벨이
+    # 기본값이 False 인 것은 보안 요구다. DEBUG=true 면 유효 로그 레벨이
     # DEBUG 가 되고, 그 상태에서 SQLAlchemy 와 드라이버는 실행한 SQL 과 **바인딩된
     # 값**을 그대로 찍는다. 값에는 비밀번호 해시·토큰·검색어가 들어 있고 로그는
     # 보통 외부 collector 로 흘러간다. 쿼리를 눈으로 봐야 할 때만 명시적으로 켠다.
@@ -668,7 +668,7 @@ class LogSettings(BaseSettings):
     # 콘솔 포매터(TzFormatter, style="{")의 fmt·datefmt. 기본값이 곧 확정 포맷(#3)이다:
     # [시간 TZ] LEVEL [app=..] [module:class:func:line] message
     # 쓸 수 있는 필드는 LogRecord 속성 + TzFormatter 가 채우는 {tzname}·{appname}·{classname}.
-    # 앱·`python main.py`·`uvicorn main:app`·Celery worker 가 **모두** 이 포맷을 쓴다(logging-overhaul L1).
+    # 앱·`python main.py`·`uvicorn main:app`·Celery worker 가 **모두** 이 포맷을 쓴다.
     # 필수 자리표시자(LOG_REQUIRED_FIELDS)가 빠지면 기동 오류다. 비밀값 마스킹은 포맷과 무관하다.
     LOG_CONSOLE_FORMAT: str = Field(
         default=_DEFAULT_LOG_FORMAT,
@@ -689,7 +689,7 @@ class LogSettings(BaseSettings):
         description="헤더별 최소 레벨 (예: blog=DEBUG,sqlalchemy=WARNING)",
     )
 
-    # === 파일 출력 (logging-overhaul L5·L6) ===
+    # === 파일 출력 ===
     # 켜면 LOG_DIR 아래에 프로세스별 파일(웹 app.log·error.log / Celery celery.log·celery-error.log)을
     # 쓴다. 매일 자정(로그 시각과 같은 시간대)에 app.log.YYYY-MM-DD 로 넘기고, 하루 안에서
     # LOG_MAX_SIZE_MB 를 넘으면 app.log.YYYY-MM-DD.1·.2… 로 나눈다. 여러 프로세스(uvicorn
@@ -736,7 +736,7 @@ class LogSettings(BaseSettings):
 
         TzFormatter 를 import 하면 순환(formatters → config)이라, 그것이 채우는 tzname·appname·
         classname 을 직접 넣은 표준 Formatter(같은 style="{")로 같은 검사를 한다.
-        렌더가 되더라도 필수 자리표시자(``LOG_REQUIRED_FIELDS``)가 빠지면 거부한다(logging-overhaul L3).
+        렌더가 되더라도 필수 자리표시자(``LOG_REQUIRED_FIELDS``)가 빠지면 거부한다.
         """
         record = logging.LogRecord("check", logging.INFO, __file__, 1, "msg", None, None, "check")
         record.tzname, record.appname, record.classname = "UTC", "app", "-"
@@ -830,7 +830,7 @@ class MiddlewareSettings(BaseSettings):
         description="로그 수집 제외 확장자",
     )
 
-    # 앞단 신뢰 프록시 홉 수 (service-hardening ADR-006·ADR-021). **배포 전에 정한다.**
+    # 앞단 신뢰 프록시 홉 수. **배포 전에 정한다.**
     # 0 이면 X-Forwarded-For·X-Real-IP 를 보지 않고 직접 피어 주소만 쓴다 — 헤더는
     # 클라이언트가 위조할 수 있다. 프록시 뒤 배포면 앞단 프록시 단 수로 설정한다:
     # 0 으로 두면 모든 클라이언트가 프록시 IP 하나로 보여 접속 로그와 로그인 레이트 리밋
@@ -859,7 +859,7 @@ class MiddlewareSettings(BaseSettings):
         description="접속 로그에서 값을 가릴 쿼리스트링 키",
     )
 
-    # 접속 로그 보존 일수(security-ops-hardening ADR-002). Celery beat 가 하루 한 번 이보다 오래된 행을 지운다.
+    # 접속 로그 보존 일수. Celery beat 가 하루 한 번 이보다 오래된 행을 지운다.
     # 0 이면 지우지 않는다. 음수는 기동 시 검증 오류.
     ACCESS_LOG_RETENTION_DAYS: int = Field(
         default=365,
@@ -913,8 +913,8 @@ class RedisSettings(BaseSettings):
     def REDIS_URL(self) -> str:
         """Redis 연결 URL (redis-py·Celery 가 문자열을 받는다).
 
-        비밀번호는 퍼센트 인코딩한다 — ``@ : / # %`` 가 그대로 들어가면 URL 파싱이 깨진다
-        (service-hardening ADR-004). redis-py 는 파싱할 때 다시 디코딩한다.
+        비밀번호는 퍼센트 인코딩한다 — ``@ : / # %`` 가 그대로 들어가면 URL 파싱이 깨진다.
+        redis-py 는 파싱할 때 다시 디코딩한다.
         """
         if self.REDIS_PASSWORD:
             password = quote(self.REDIS_PASSWORD, safe="")
@@ -949,7 +949,7 @@ class JWTSettings(BaseSettings):
         description="Refresh Token 서명 키",
     )
     # Access Token 만료 (분). access 는 서버에서 폐기할 수 없으므로 짧게 둔다 — 즉시 폐기의
-    # 대안이 짧은 만료 + refresh 폐기다(service-hardening ADR-014).
+    # 대안이 짧은 만료 + refresh 폐기다.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
         default=15,
         gt=0,
@@ -987,7 +987,7 @@ class JWTSettings(BaseSettings):
         description="JWT 시각 검증 허용 오차(초)",
     )
 
-    # 레이트 리밋 (Redis 고정 창, service-hardening ADR-016·ADR-025)
+    # 레이트 리밋 (Redis 고정 창)
     # 로그인: 같은 IP + 사용자명(소문자) 조합의 시도 수. 성공하면 이 카운터는 지운다.
     AUTH_LOGIN_MAX_ATTEMPTS: int = Field(
         default=5,
@@ -1037,7 +1037,7 @@ class SessionSettings(BaseSettings):
     Note:
         API 인증은 JWT(Bearer) 기반이다. 쿠키 세션은 ``/admin`` 로그인만 쓴다 — 관리 세션은
         Redis 서버 세션이고 쿠키(``admin_session``)에는 무작위 세션 ID 만 있다
-        (``app/core/security/admin_session.py``, admin-session-hardening ADR-001). ``SESSION_SECRET_KEY``
+        (``app/core/security/admin_session.py``). ``SESSION_SECRET_KEY``
         는 세션 ID 를 Redis 키로 바꾸는 HMAC 키다 — 바꾸면 모든 관리 세션이 무효가 된다.
         관리 세션 만료는 ``ADMIN_SESSION_*`` 가 정한다. ``SESSION_COOKIE_NAME`` 은 관리 화면
         쿠키에 쓰지 않고, 접속 로그 미들웨어가 ``session_id`` 로 기록할 쿠키 이름으로 읽는다.
@@ -1160,7 +1160,7 @@ session_settings = get_session_settings()
 
 
 # =============================================================================
-# 로그에서 원문을 가릴 설정 (logging-overhaul L7)
+# 로그에서 원문을 가릴 설정
 # =============================================================================
 # 새 비밀 설정(이름이 *_USER·*_PASSWORD·*_KEY 이거나 SECRET 을 담는 것)은 여기 넣는다 —
 # tests/utils/test_log_redaction.py 의 계약 테스트가 이름 규칙으로 빠진 것을 잡는다.
@@ -1190,12 +1190,12 @@ def log_secret_values() -> tuple[str, ...]:
 
 
 # =============================================================================
-# 설정 검사 (ADR-027 · ADR-028 · ADR-045)
+# 설정 검사
 # =============================================================================
 # 값의 **출처**(.env 또는 환경 변수)와 **내용**(예시 값·약한 키·배포 금지 조합)을 import
 # 시점에 본다. 잘못된 설정은 조용히 넘어가지 않고 기동 실패로 드러나야 한다 — 개발자는
 # 오류 메시지를 보고 `.env` 를 고친다. test 는 검사하지 않는다(pytest 가 ENV=test 를 준다).
-# SERVER_HOST 등 그 밖의 운영 조합은 여전히 막지 않는다(C-8).
+# SERVER_HOST 등 그 밖의 운영 조합은 여전히 막지 않는다.
 DEPLOYED_ENVS = frozenset({"staging", "production"})
 
 # 서명·세션 키의 최소 길이. `secrets.token_urlsafe(48)` 은 64자다.
@@ -1221,7 +1221,7 @@ def validate_env_source(
     env_file: Path = Path(".env"),
     environ: Mapping[str, str] = os.environ,
 ) -> None:
-    """`.env` 가 없고 필수 값이 환경 변수로도 오지 않았으면 기동을 멈춘다 (ADR-045 ①).
+    """`.env` 가 없고 필수 값이 환경 변수로도 오지 않았으면 기동을 멈춘다.
 
     `env_file` 은 Settings 들의 ``env_file=".env"`` 와 같은 기준(작업 디렉터리)이다.
     메시지에는 빠진 설정 **이름**만 담는다.
@@ -1246,7 +1246,7 @@ def validate_no_legacy_admin(
     env_file: Path = Path(".env"),
     environ: Mapping[str, str] = os.environ,
 ) -> None:
-    """예전 설정 `ADMIN` 이 환경 변수나 `.env` 에 남아 있으면 기동을 멈춘다 (admin-login ADR-005).
+    """예전 설정 `ADMIN` 이 환경 변수나 `.env` 에 남아 있으면 기동을 멈춘다.
 
     `ADMIN`(true=켬)은 `ADMIN_DISABLED`(true=끔)로 바뀌었다. 뜻이 뒤집힌 이름이라 조용히 무시하면
     `ADMIN=false` 로 꺼 두었던 배포가 관리 화면이 **켜진 채** 뜬다. Settings 처럼 대소문자를 가리지
@@ -1285,10 +1285,10 @@ def validate_deployment_safety(
 ) -> None:
     """설정 내용을 검사해 위반을 모두 모아 RuntimeError 하나로 올린다.
 
-    - test 를 뺀 **모든 ENV**: 예시 비밀 키·비밀번호, 짧은 키, access==refresh (ADR-045 ②).
+    - test 를 뺀 **모든 ENV**: 예시 비밀 키·비밀번호, 짧은 키, access==refresh.
       기본값·예시 값 그대로는 개발 환경에서도 오류다 — `.env` 를 채우라는 신호다.
-    - staging/production 만: DEBUG, LOG_LEVEL=DEBUG(ADR-028). 켜진 관리 화면은 더 이상 막지 않는다 —
-      ADR-045 ③ 의 확인 플래그는 관리 화면 로그인이 붙어 없앴다(admin-login ADR-004).
+    - staging/production 만: DEBUG, LOG_LEVEL=DEBUG. 켜진 관리 화면은 막지 않는다 —
+      관리 화면은 슈퍼유저 로그인이 지킨다.
 
     메시지에는 설정 **이름**만 담는다(값 금지).
     """
@@ -1326,12 +1326,12 @@ def validate_deployment_safety(
         violations.append("ACCESS_TOKEN_SECRET_KEY 와 REFRESH_TOKEN_SECRET_KEY 가 같습니다")
     if app.ENV in DEPLOYED_ENVS:
         # debug 모드는 배포 환경에서 켜지면 안 된다 — 유효 로그 레벨이 DEBUG 가 되고,
-        # 롤백 상세 로그가 실행된 SQL 과 바인딩된 값을 그대로 남긴다(NFR-001).
+        # 롤백 상세 로그가 실행된 SQL 과 바인딩된 값을 그대로 남긴다.
         if app.DEBUG:
             violations.append("DEBUG 가 켜져 있습니다")
         if (log.LOG_LEVEL or "").strip().upper() == "DEBUG":
             violations.append("LOG_LEVEL 이 디버그 레벨입니다")
-        # 관리 화면을 켜 둔 배포는 막지 않는다 — 슈퍼유저 로그인이 필요하다(admin-login ADR-004).
+        # 관리 화면을 켜 둔 배포는 막지 않는다 — 슈퍼유저 로그인이 필요하다.
     if violations:
         raise RuntimeError(
             f"ENV={app.ENV} 설정 검사 실패 — " + "; ".join(violations) + ". "

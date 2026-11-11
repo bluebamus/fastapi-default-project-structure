@@ -1,6 +1,6 @@
 {% extends "sqladmin/filters/base_filter.html" %}
-{# app/core/admin_filters.py 의 LocalDateFilter — 업무 시간대 날짜 + 연산, 빠른 선택(security-ops-hardening ADR-005),
-   기간(시작일~종료일, 양 끝 포함 — admin-session-hardening ADR-005): 아래 두 번째 폼이 날짜 두 개를
+{# app/core/admin_filters.py 의 LocalDateFilter — 업무 시간대 날짜 + 연산, 빠른 선택,
+   기간(시작일~종료일, 양 끝 포함): 아래 두 번째 폼이 날짜 두 개를
    "YYYY-MM-DD~YYYY-MM-DD" 하나로 합쳐 {name}=값, {name}_op=between 으로 보낸다. #}
 
 {% block filter_body %}

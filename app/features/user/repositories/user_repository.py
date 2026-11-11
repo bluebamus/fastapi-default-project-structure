@@ -18,7 +18,7 @@ class UserRepository(BaseRepository[User]):
         """사용자명으로 단건 조회한다.
 
         문자열 컬럼명을 받는 범용 필터가 아니라 SQLAlchemy 속성으로 쓴다 —
-        컬럼 이름이 바뀌면 실행 전에 드러난다(ORM-REP-005).
+        컬럼 이름이 바뀌면 실행 전에 드러난다.
         """
         statement = select(User).where(User.username == username)
         result = await self._execute(statement, "get_by_username")

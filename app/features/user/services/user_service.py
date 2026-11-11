@@ -5,13 +5,13 @@ User Service
 트랜잭션 경계는 쓰기 핸들러(View)가 닫는다 — 응답 DTO 검증 뒤 ``await service.commit()`` 한 번.
 요청 밖에서는 ``background_db_session`` 을 연 쪽이 커밋한다. Service 메서드는 스스로 커밋하지 않는다.
 
-인가(service-hardening ADR-018): 목록·생성·삭제는 라우트가 슈퍼유저로 막고, 단건 조회·수정은
+인가: 목록·생성·삭제는 라우트가 슈퍼유저로 막고, 단건 조회·수정은
 여기서 주입된 ``OwnershipPolicy`` 로 **본인 또는 슈퍼유저**만 허용한다. ``is_active``·``is_superuser``
 변경은 슈퍼유저만 할 수 있다. 비활성화·삭제는 그 사용자의 refresh 토큰 family 를 모두 폐기한다
 (``RefreshTokenStore.revoke_user``) — Redis 폐기는 커밋 전에 일어나므로, 커밋이 실패해도 토큰이
 살아남는 쪽이 아니라 폐기된 쪽(안전한 쪽)으로 어긋난다.
 
-관리 세션(admin-session-hardening ADR-002): 비활성화·슈퍼유저 강등·삭제는 그 사용자의 ``/admin`` 서버
+관리 세션: 비활성화·슈퍼유저 강등·삭제는 그 사용자의 ``/admin`` 서버
 세션도 모두 지운다(``AdminSessionStore.revoke_user``, 다른 브라우저 포함). 관리 화면을 끈 앱이면 저장소가
 ``None`` 이다. 비밀번호 변경 경로는 아직 없다 — 생기면 같은 자리에서 두 저장소를 함께 폐기한다.
 """

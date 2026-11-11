@@ -1,13 +1,13 @@
 """Report Service — 매출 리포트 유스케이스.
 
 기간 규칙(종료일 포함, 최대 조회 범위)은 비즈니스 규칙이므로 여기 있고,
-SQL 과 컬럼 alias 는 Repository 가 소유한다(docs/guides/DEVELOPMENT.md §6.5).
-Raw 결과는 **여기서** Pydantic DTO 로 검증해 밖으로 내보낸다(RAW-REP-005).
+SQL 과 컬럼 alias 는 Repository 가 소유한다.
+Raw 결과는 **여기서** Pydantic DTO 로 검증해 밖으로 내보낸다.
 
 읽기(``get_daily_sales``)와 쓰기(``refresh_daily_snapshots``)가 같은 규칙을 따른다 —
 기간 해석은 이 계층, SQL 은 Repository, 커밋은 View 본문.
 
-영업일은 **로컬 날짜**(설정 TIME_ZONE)다(service-hardening ADR-010). 저장 시각은 UTC 라서,
+영업일은 **로컬 날짜**(설정 TIME_ZONE)다. 저장 시각은 UTC 라서,
 로컬 날짜 범위를 aware 순간 구간으로 바꿔 넘긴다(``local_day_bounds``).
 """
 
@@ -29,10 +29,10 @@ from app.features.reports.schemas.report_schema import (
 )
 from config import timezone_settings
 
-# 한 번에 집계할 수 있는 최대 일수. 무제한 범위는 실행 계획이 급격히 나빠진다(NFR-002).
+# 한 번에 집계할 수 있는 최대 일수. 무제한 범위는 실행 계획이 급격히 나빠진다.
 MAX_REPORT_DAYS = 366
 
-# 받을 수 있는 날짜 범위(service-hardening ADR-008 ③). 상한은 ``date.max``(9999-12-31) 보다
+# 받을 수 있는 날짜 범위. 상한은 ``date.max``(9999-12-31) 보다
 # 하루 앞이다 — "종료일 포함" 을 ``end_date + 1일`` 로 바꾸는 계산이 overflow 로 500 을 냈다.
 # 하한은 이 서비스의 데이터가 있을 수 없는 과거를 잘라 의미 없는 스캔을 막는다.
 MIN_REPORT_DATE = date(1970, 1, 1)
@@ -114,7 +114,7 @@ class ReportService(BaseService):
         멱등이다: 같은 기간을 두 번 불러도 결과가 같다. 기존 행을 지우고 다시 넣기
         때문이며, 두 문장이 한 트랜잭션이라 중간 상태가 밖에서 보이지 않는다.
 
-        **커밋하지 않는다.** 호출자(View 본문)가 응답 직전에 한 번 커밋한다(TX-001).
+        **커밋하지 않는다.** 호출자(View 본문)가 응답 직전에 한 번 커밋한다.
         """
         self._validate_range(start_date, end_date)
 

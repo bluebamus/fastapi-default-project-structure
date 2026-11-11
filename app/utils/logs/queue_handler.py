@@ -1,11 +1,11 @@
-"""요청 event loop 를 막지 않는 bounded queue 로그 핸들러 (NFR-009).
+"""요청 event loop 를 막지 않는 bounded queue 로그 핸들러.
 
 표준 ``logging`` 에는 await 기반 파일/스트림 API 가 없다. 그래서 요청 스레드에서
 직접 출력하면 write/flush/rotation 이 event loop 를 그대로 막는다. 일반적인 해법인
 ``QueueHandler``/``QueueListener`` 를 쓰되, **queue 를 무한으로 두지 않는다** —
 출력이 느려지면 무한 queue 는 메모리로 장애를 옮길 뿐이다.
 
-queue 가 가득 찼을 때의 정책 (확정 정책 9)::
+queue 가 가득 찼을 때의 정책::
 
     DEBUG/INFO/WARNING  ->  drop + counter (관측 신호는 rate limit)
     ERROR/CRITICAL      ->  최소 포맷 stderr fallback
@@ -26,7 +26,7 @@ from logging import LogRecord
 from logging.handlers import QueueHandler, QueueListener
 from typing import IO
 
-# worker 프로세스별 queue 상한 (확정 정책 8).
+# worker 프로세스별 queue 상한.
 LOG_QUEUE_MAX_SIZE = 10_000
 
 # 종료 sentinel 을 넣을 때 기다리는 시간. queue 가 잠깐 가득 차 있어도 종료가
@@ -37,7 +37,7 @@ SENTINEL_ENQUEUE_TIMEOUT_SECONDS = 2.0
 # 않을 때 join 이 영원히 대기하고, atexit 훅에 물려 있으면 프로세스 종료가 막힌다.
 LISTENER_JOIN_TIMEOUT_SECONDS = 5.0
 
-# 쌓인 로그가 전부 기록되기를 기다리는 시간 (ADR-023). 종료 예산의 일부다.
+# 쌓인 로그가 전부 기록되기를 기다리는 시간. 종료 예산의 일부다.
 LOG_FLUSH_TIMEOUT_SECONDS = 2.0
 
 # 포화 알림을 남기는 최소 간격(초). 포화 상태에서는 알림 자체가 폭주한다.
@@ -124,12 +124,12 @@ class TimeoutSentinelListener(QueueListener):
     표준 구현은 두 곳이 무방비다.
 
     1. ``enqueue_sentinel()`` 이 ``put_nowait`` 을 써서, bounded queue 가 포화면
-       ``queue.Full`` 로 종료 자체가 실패한다(F-030). 표준 라이브러리가 이 메서드의
+       ``queue.Full`` 로 종료 자체가 실패한다. 표준 라이브러리가 이 메서드의
        독스트링에서 *"timeout 을 쓰고 싶으면 오버라이드하라"* 고 확장 지점을 지정하고
        있으므로 그대로 따른다.
     2. ``stop()`` 의 ``thread.join()`` 에 timeout 이 없다. sentinel 이 다른 소비자에게
        가로채이면 영원히 기다린다 — 그리고 ``atexit`` 훅은 daemon 스레드 정리보다
-       **먼저** 실행되므로, 그 join 이 프로세스 종료를 그대로 막는다(F-037, 실측).
+       **먼저** 실행되므로, 그 join 이 프로세스 종료를 그대로 막는다(실측).
 
     실패는 삼키지 않고 ``TimeoutError`` 로 알린다. 호출자가 참조를 유지한 채 재시도할
     수 있어야 하기 때문이다 — 조용히 넘어가면 살아 있는 스레드를 잃는다.
@@ -162,7 +162,7 @@ def wait_until_written(
     log_queue: queue.Queue,
     timeout: float = LOG_FLUSH_TIMEOUT_SECONDS,
 ) -> bool:
-    """큐에 넣은 record 가 **전부 기록될 때까지** 기다린다 (ADR-023).
+    """큐에 넣은 record 가 **전부 기록될 때까지** 기다린다.
 
     listener 를 멈추지 않는다 — 소비가 끝나기를 기다리기만 한다. 종료 직전에 이걸
     한 번 해 두면, 그 뒤 프로세스가 갑자기 죽어도 잃을 것이 남지 않는다.
@@ -171,7 +171,7 @@ def wait_until_written(
     을 부른다. 그래서 "unfinished_tasks 가 0" 이 곧 "넣은 걸 전부 썼다" 는 뜻이다.
     ``Queue.join()`` 이 기다리는 조건과 **같은 조건**을 기다리되, ``join()`` 에는
     timeout 이 없어서 여기서 직접 조건을 본다 — listener 가 죽어 있으면 ``join()``
-    은 영원히 매달린다(F-037 이 그 함정이었다).
+    은 영원히 매달린다.
 
     Args:
         log_queue: 확인할 로그 큐.

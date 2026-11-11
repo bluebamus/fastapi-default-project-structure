@@ -1,6 +1,6 @@
-"""관리 화면(/admin) 서버 세션과 CSRF — admin-session-hardening ADR-001~004.
+"""관리 화면(/admin) 서버 세션과 CSRF.
 
-세션 (ADR-001·002):
+세션:
     쿠키 ``admin_session`` 에는 무작위 세션 ID(``secrets.token_urlsafe(32)``)만 있고, 내용은 Redis 에 있다.
 
     - ``admin:sess:{HMAC-SHA256(SESSION_SECRET_KEY, sid)}`` → JSON ``{"data", "user_id", "created_at"}``.
@@ -13,7 +13,7 @@
       새 sid 발급 + 이전 키 삭제를 요청한다(세션 고정 방지).
     - Redis 장애는 fail-closed — 503 을 내고 요청을 통과시키지 않는다.
 
-CSRF (ADR-003·004):
+CSRF:
     synchronizer token. 세션의 ``csrf_token`` 과 요청의 토큰(헤더 ``X-CSRF-Token`` 또는 폼 필드
     ``csrf_token``)을 ``hmac.compare_digest`` 로 대조한다. ``AdminCsrfMiddleware`` 가 ``/admin`` 의
     POST·PUT·PATCH·DELETE 전부(로그인·로그아웃 포함)를 검사한다. 폼 본문은 버퍼링해 읽고 같은 바이트를
@@ -360,7 +360,7 @@ class AdminCsrfMiddleware:
                 ("application/x-www-form-urlencoded", "multipart/form-data")
             )
         ):
-            # 413 판정은 Content-Length 로 먼저(읽지 않고), 없거나 거짓이면 읽는 도중 누적 크기로 (integration-e2e ADR-015).
+            # 413 판정은 Content-Length 로 먼저(읽지 않고), 없거나 거짓이면 읽는 도중 누적 크기로.
             declared = request.headers.get("content-length", "")
             try:
                 if declared.isdigit() and int(declared) > MAX_FORM_BODY_BYTES:
@@ -378,9 +378,7 @@ class AdminCsrfMiddleware:
                 async with request.form(max_part_size=MAX_FORM_FIELD_BYTES) as form:
                     value = form.get(CSRF_FORM_FIELD)
                     submitted = value if isinstance(value, str) else None
-            except (
-                HTTPException
-            ) as exc:  # 필드 1 MiB 초과·깨진 multipart — 400 (integration-e2e ADR-015)
+            except HTTPException as exc:  # 필드 1 MiB 초과·깨진 multipart — 400
                 await PlainTextResponse(
                     "요청 폼이 올바르지 않거나 필드가 너무 큽니다.", status_code=exc.status_code
                 )(scope, receive, send)

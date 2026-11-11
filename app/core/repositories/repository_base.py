@@ -1,4 +1,4 @@
-"""ORM Repository 의 안정적인 최소 공개 CRUD (ORM-REP-002).
+"""ORM Repository 의 안정적인 최소 공개 CRUD.
 
 정식 공개 API 는 아래 8개다. 이 목록이 Base 의 계약 전부이며, 여기 없는 쿼리는
 **기능 Repository 가 명시적 메서드로 소유한다**::
@@ -17,18 +17,18 @@
     오타를 실행 시점에만 드러내고, "무엇이든 할 수 있는" Base 는 도메인 지식이
     Base 로 새어 들어오는 통로가 된다. 실제로 이 저장소의 고급 메서드 20개는
     호출처가 0건이었다(Phase 0 조사, `baseline/survey.txt`). 공통성이 **두 개
-    이상의 기능에서 실제로** 확인되면 그때 별도 Mixin 으로 올린다(ORM-REP-005).
+    이상의 기능에서 실제로** 확인되면 그때 별도 Mixin 으로 올린다.
 
 트랜잭션:
     이 계층은 ``flush`` 까지만 한다. 커밋은 쓰기 View 본문이 응답 직전에
-    정확히 한 번 수행한다(TX-004).
+    정확히 한 번 수행한다.
 
-예외 정책 (ORM-REP-006 · service-hardening ADR-022):
+예외 정책:
     모든 공개 경로가 같은 변환을 거친다 — 표는 ``app/core/repositories/db_errors.py`` 의
     ``DatabaseErrorTranslator`` 하나다(중복 409, NOT NULL·참조 대상 없음 422, 참조 중 409,
     그 밖 500). 기능 Repository 의 추가 쿼리도 ``_translated_errors`` 로 감싼다.
     원본 예외는 chaining 으로 보존하되, **detail 과 로그에 원문·바인딩 파라미터를
-    싣지 않는다** — 드라이버 메시지에 입력값과 SQL 이 들어 있다(NFR-001). 로그에는
+    싣지 않는다** — 드라이버 메시지에 입력값과 SQL 이 들어 있다. 로그에는
     예외 타입과 드라이버 코드만 남는다. 원문은 debug 레벨 트레이스백에만 있다.
 """
 
@@ -52,7 +52,7 @@ from app.utils.logs import get_logger
 logger = get_logger("repository")
 
 # PK 타입 계약. 이 저장소의 모델은 문자열 UUID 를 쓰므로 기본값을 str 로 둔다 —
-# 덕분에 기존 ``BaseRepository[Model]`` 선언이 그대로 유효하다(ORM-MDL-003).
+# 덕분에 기존 ``BaseRepository[Model]`` 선언이 그대로 유효하다.
 PrimaryKeyT = TypeVar("PrimaryKeyT", default=str)
 
 # ``_execute`` 가 문장의 행 타입을 그대로 돌려주게 한다(``AsyncSession.execute`` 와 같은 타입).
@@ -108,8 +108,8 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
         """기능 Repository 의 추가 쿼리를 실행한다 — 공개 경로와 같은 오류 변환을 거친다.
 
         기능 Repository 가 ``self.db_session.execute`` 를 직접 부르면 드라이버 예외가
-        변환 없이 새어 나가 500 응답 detail(DEBUG)·로그에 SQL 이 실린다
-        (service-hardening ADR-022). 그래서 추가 쿼리는 모두 이 메서드로 실행한다.
+        변환 없이 새어 나가 500 응답 detail(DEBUG)·로그에 SQL 이 실린다.
+        그래서 추가 쿼리는 모두 이 메서드로 실행한다.
         """
         with self._translated_errors(operation):
             result: Result[_RowT] = await self.db_session.execute(statement)
@@ -121,7 +121,7 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
     async def create(self, data: dict[str, Any]) -> ModelType:
         """레코드를 생성한다.
 
-        호출자가 넘긴 ``data`` 를 **변경하지 않는다**(ORM-REP-003). 예전 구현은
+        호출자가 넘긴 ``data`` 를 **변경하지 않는다**. 예전 구현은
         여기서 ``data["id"]`` 를 채워 호출자 dict 를 오염시켰다. 이제 id 기본값은
         모델의 ``UUIDPrimaryKeyMixin`` 이 만든다.
 
@@ -155,12 +155,12 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
     async def list(self, skip: int = 0, limit: int = 100) -> Sequence[ModelType]:
         """페이지 단위로 조회한다. 정렬은 최신순 — ``created_at DESC, <PK> DESC``.
 
-        ``limit`` 기본값이 있는 이유는 무제한 조회를 막기 위해서다(NFR-002).
+        ``limit`` 기본값이 있는 이유는 무제한 조회를 막기 위해서다.
         상한은 호출하는 View 의 Query 제약이 강제한다.
 
         ORDER BY 없는 offset 페이지는 순서를 DB 가 정한다 — MySQL 에서는 실행 계획에 따라
         페이지가 겹치거나 행이 빠진다. ``created_at`` 만으로는 같은 시각의 행끼리 순서가
-        정해지지 않으므로 PK 를 보조 키로 붙인다(service-hardening ADR-005).
+        정해지지 않으므로 PK 를 보조 키로 붙인다.
         """
         with self._translated_errors("list"):
             statement = (
@@ -188,7 +188,7 @@ class BaseRepository(CRUDBase[ModelType], Generic[ModelType, PrimaryKeyT]):
         """PK 존재 여부.
 
         ``COUNT(*)`` 는 조건에 맞는 행을 전부 세지만, ``EXISTS`` 는 첫 행에서
-        멈춘다. 존재 확인의 의도와도 맞고 실행 계획도 낫다(ORM-REP-004).
+        멈춘다. 존재 확인의 의도와도 맞고 실행 계획도 낫다.
         """
         with self._translated_errors("exists"):
             statement = select(exists().where(self.model.id == pk))

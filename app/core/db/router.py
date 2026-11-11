@@ -209,8 +209,8 @@ def _is_locking_select(clause: Any) -> bool:
 
     text SQL 의 ``FOR UPDATE``·``FOR SHARE`` 는 문자열 스캔(`_LOCKING_READ`)이 잡지만, ORM 의
     잠금은 문자열이 아니라 ``Select._for_update_arg`` 에 들어 있다. 이것을 보지 않으면 같은
-    개념이 경로에 따라 갈려 ORM 잠금 읽기만 replica 로 가고 read-only 가드를 통과한다
-    (service-hardening ADR-005). ``with_for_update(read=True)``(공유 잠금)도 같다.
+    개념이 경로에 따라 갈려 ORM 잠금 읽기만 replica 로 가고 read-only 가드를 통과한다.
+    ``with_for_update(read=True)``(공유 잠금)도 같다.
     """
     return isinstance(clause, Select) and clause._for_update_arg is not None
 
@@ -267,7 +267,7 @@ def make_routing_session_class(router: DatabaseRouter) -> type[Session]:
 
     @event.listens_for(RoutingSession, "do_orm_execute")
     def _retry_unreachable_replica_on_writer(state: ORMExecuteState) -> Any:
-        """읽기 전용 세션의 replica **연결** 오류 → 같은 읽기를 primary 로 한 번 (ADR-010, R-004).
+        """읽기 전용 세션의 replica **연결** 오류 → 같은 읽기를 primary 로 한 번.
 
         읽기 전용 세션만 — 쓰기와 한 트랜잭션에 섞일 수 없어 다른 서버에서 다시 읽어도 안전하다.
         재시도 뒤 세션을 primary 에 고정해 같은 세션의 다음 읽기가 죽은 replica 를 다시 두드리지 않는다.
@@ -460,7 +460,6 @@ def _text_is_readable(sql: str) -> bool:
     문법이고 MySQL 에서는 문법 오류라 이 저장소의 위협이 아니다.
 
     fail-closed: 따옴표가 닫히지 않거나 괄호가 맞지 않아 스캔이 무너지면 거부한다.
-    판정을 넓히거나 좁히는 절차는 `docs/guides/DEVELOPMENT.md` §7.2 에 있다.
     """
     stripped = _SQL_COMMENT.sub(" ", sql).strip()
     head, separator, tail = stripped.partition(";")

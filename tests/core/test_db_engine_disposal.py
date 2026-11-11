@@ -1,4 +1,4 @@
-"""DB engine 정리의 실패 격리 (F-032 / REQ-010).
+"""DB engine 정리의 실패 격리.
 
 ``dispose_engine()`` 은 writer·read replica·background 세 종류의 커넥션 풀을 닫는다.
 하나가 실패했다고 뒤따르는 engine 을 건너뛰면 그 풀은 열린 채 프로세스가 죽고, DB 쪽에
@@ -84,7 +84,7 @@ async def test_all_engines_are_disposed_on_the_happy_path(engines):
 
 
 async def test_writer_failure_still_disposes_the_rest(engines):
-    """writer dispose 가 실패해도 reader 와 background 는 전부 시도된다 (F-032)."""
+    """writer dispose 가 실패해도 reader 와 background 는 전부 시도된다."""
     calls, _ = engines(writer_fails=True)
 
     await db_session.dispose_engine()
@@ -96,7 +96,7 @@ async def test_writer_failure_still_disposes_the_rest(engines):
 
 
 async def test_middle_reader_failure_does_not_stop_the_rest(engines):
-    """중간 reader 가 실패해도 후속 reader 와 background 는 시도된다 (F-032)."""
+    """중간 reader 가 실패해도 후속 reader 와 background 는 시도된다."""
     calls, _ = engines(failing_reader=0)
 
     await db_session.dispose_engine()

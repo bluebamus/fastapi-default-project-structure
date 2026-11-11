@@ -4,9 +4,9 @@ in-memory SQLite 로 실제 SQL 을 돌린다. Raw 계층의 계약은 "결과 �
 파라미터가 정말 바인딩되는가"이므로 mock 으로는 검증되지 않는다.
 
 가장 중요한 두 가지:
-    · **named bind parameter** — 값이 SQL 문자열에 보간되면 안 된다(RAW-REP-003).
+    · **named bind parameter** — 값이 SQL 문자열에 보간되면 안 된다.
     · **ORM Base 와 상속 관계 없음** — 하나의 Base 가 ORM 객체와 Raw row 를 동시에
-      반환하면 호출자가 무엇을 받는지 시그니처로 알 수 없다(AR-003).
+      반환하면 호출자가 무엇을 받는지 시그니처로 알 수 없다.
 """
 
 from __future__ import annotations
@@ -98,14 +98,14 @@ def test_raw_base_does_not_inherit_orm_base():
 
 
 def test_raw_base_has_no_transaction_control():
-    """commit/rollback 은 Raw Base 의 책임도 아니다 (RAW-REP-001/007)."""
+    """commit/rollback 은 Raw Base 의 책임도 아니다."""
     for base in (RawCRUDBase, RawRepositoryBase):
         for forbidden in ("commit", "rollback"):
             assert not hasattr(base, forbidden), f"{base.__name__} 에 {forbidden} 이 있다"
 
 
 def test_raw_base_offers_no_arbitrary_sql_entry_point():
-    """``execute(sql: str)`` 같은 만능 메서드를 제공하지 않는다 (RAW-REP-001).
+    """``execute(sql: str)`` 같은 만능 메서드를 제공하지 않는다.
 
     문자열을 그대로 받는 진입점이 하나라도 있으면 f-string 보간이 그리로 몰린다.
     """
@@ -158,7 +158,7 @@ async def test_execute_returns_affected_row_count(repository):
 
 
 async def test_execute_does_not_commit(repository):
-    """Raw DML 도 커밋하지 않는다 — 트랜잭션 경계는 쓰기 View 의 몫이다 (RAW-REP-007)."""
+    """Raw DML 도 커밋하지 않는다 — 트랜잭션 경계는 쓰기 View 의 몫이다."""
     committed: list[str] = []
     original_commit = repository.db_session.commit
 

@@ -1,4 +1,4 @@
-"""Raw ``text()`` DML 의 쓰기 판정 — RAW-REP-007 (F-011).
+"""Raw ``text()`` DML 의 쓰기 판정 — RAW-REP-007.
 
 ``TextClause`` 는 ``UpdateBase`` 가 아니라서, 타입만 보면 Raw DML 이 읽기로 분류된다.
 그러면 복제가 켜져 있을 때 **UPDATE 가 replica 로 나간다** — 조용히 잘못된 서버로

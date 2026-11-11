@@ -4,9 +4,9 @@ User v1 API 엔드포인트 — 사용자 CRUD.
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
 트랜잭션 경계는 쓰기 핸들러 본문이 닫는다 — 응답 DTO 검증 → ``await service.commit()`` → 반환
-(UnitOfWork 없음, docs/guides/ARCHITECTURE.md §3.2).
+(UnitOfWork 없음).
 
-인가(service-hardening ADR-018): 목록·생성·삭제는 슈퍼유저(``SuperuserRequired``), 단건 조회·수정은
+인가: 목록·생성·삭제는 슈퍼유저(``SuperuserRequired``), 단건 조회·수정은
 본인 또는 슈퍼유저(서비스의 ``OwnershipPolicy``), ``is_active``·``is_superuser`` 변경은 슈퍼유저만.
 """
 

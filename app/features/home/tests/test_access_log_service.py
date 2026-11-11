@@ -75,7 +75,7 @@ async def test_same_created_at_is_ordered_by_id(session, query):
     """created_at 이 같은 로그도 순서가 정해진다 — 보조 키 ``id DESC``.
 
     초 단위 저장에서 같은 시각은 흔하다. 보조 키가 없으면 offset 페이지가 실행마다
-    겹치거나 빠진다(service-hardening ADR-005). 삽입 순서는 기대 순서와 다르게 둔다.
+    겹치거나 빠진다. 삽입 순서는 기대 순서와 다르게 둔다.
     """
     repository = UserAccessLogRepository(session)
     for pk in ["m", "z", "a"]:
@@ -94,7 +94,7 @@ async def test_same_created_at_is_ordered_by_id(session, query):
 
 
 # =============================================================================
-# 길이 초과 값 절단 — service-hardening ADR-007 (F-009)
+# 길이 초과 값 절단 — service-hardening ADR-007
 # =============================================================================
 def _string_columns() -> dict[str, int]:
     return {
@@ -125,7 +125,7 @@ def test_fit_to_columns_cuts_every_bounded_string_to_its_column_length():
 
 
 async def test_long_values_are_stored_cut_to_column_length(session):
-    """MySQL strict 모드에서 길이 초과 INSERT 는 실패하고 조용히 버려졌다(R-08)."""
+    """MySQL strict 모드에서 길이 초과 INSERT 는 실패하고 조용히 버려졌다."""
     service = UserAccessLogService(session)
     created = await service.create_access_log(
         {

@@ -1,4 +1,4 @@
-"""날짜 + 크기로 회전하고 보관 일수를 넘긴 파일을 지우는 파일 핸들러 (logging-overhaul L6).
+"""날짜 + 크기로 회전하고 보관 일수를 넘긴 파일을 지우는 파일 핸들러.
 
 - 매일 자정(로그 시각과 **같은 시간대** — ``TzFormatter`` 의 UTC/로컬 결정과 같다)에 ``app.log`` 를
   ``app.log.2026-10-19`` 로 넘긴다.
@@ -7,7 +7,7 @@
 
 교체 대상 이름이 이미 있으면 **덮지 않고** 다음 번호로 넘긴다 — 표준 ``TimedRotatingFileHandler`` 는
 지우고 덮는데, 여러 프로세스가 같은 파일을 쓰면 그것이 곧 유실이다. 그래도 다중 프로세스 회전은
-안전하지 않다(README "여러 워커"). 쓰기는 queue listener 스레드에서 일어난다(NFR-009).
+안전하지 않다(docs/ARCHITECTURE.md "로깅"). 쓰기는 queue listener 스레드에서 일어난다.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Redis 클라이언트 주입 provider (service-hardening ADR-011).
+"""Redis 클라이언트 주입 provider.
 
 클라이언트의 생성·검증·종료는 lifespan(``app/core/resources.py`` 의 ``_redis``)이 소유하고
 ``app.state.redis`` 에 둔다. 요청 경로는 그 객체를 이 provider 하나로만 받는다 — 라우트·의존성이
@@ -21,8 +21,8 @@ from app.utils.logs import get_logger
 
 logger = get_logger("redis")
 
-# 이 앱이 요구하는 Redis 서버 최소 버전 — 코드가 실제로 보내는 명령 중 가장 높은 요구치다
-# (log-redaction ADR-003). 명령 → 도입 버전:
+# 이 앱이 요구하는 Redis 서버 최소 버전 — 코드가 실제로 보내는 명령 중 가장 높은 요구치다.
+# 명령 → 도입 버전:
 #   GETDEL                              6.2.0   security/refresh_store.py (refresh 회전)
 #   SET key v EX n NX                   2.6.12  security/rate_limit.py (첫 hit 에만 만료)
 #   MULTI·INCR·TTL·EXPIRE·SADD·SMEMBERS·EXISTS·DEL·PING  2.6 이하
@@ -46,7 +46,7 @@ async def ensure_redis_version(client: Redis) -> None:
 
     Raises:
         RedisVersionError: 보고된 버전이 ``REDIS_MIN_VERSION`` 미만일 때. Redis 는 필수 자원이라
-            (service-hardening ADR-011) 쓰는 명령이 없는 서버로 뜨는 대신 기동을 멈춘다.
+            쓰는 명령이 없는 서버로 뜨는 대신 기동을 멈춘다.
 
     ``INFO`` 를 막아 둔 관리형 Redis 나 버전을 알 수 없는 응답이면 WARNING 을 남기고 계속한다 —
     확인할 수 없다는 사실만으로 기동을 막지는 않는다.

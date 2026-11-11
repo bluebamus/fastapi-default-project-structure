@@ -1,4 +1,4 @@
-"""접속 로그 보존 정책 — 보존 기간이 지난 행을 배치로 지운다 (security-ops-hardening ADR-002).
+"""접속 로그 보존 정책 — 보존 기간이 지난 행을 배치로 지운다.
 
 보존 일수와 기준 시각(시계)은 주입받는다. 조립은 ``build_access_log_retention_service``
 (``ACCESS_LOG_RETENTION_DAYS``·``timezone_settings.utc_now``)가 하고, 실행은 Celery beat 의

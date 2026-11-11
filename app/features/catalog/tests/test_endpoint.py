@@ -79,7 +79,7 @@ async def test_create_returns_201_with_generated_id(client):
 
 
 async def test_timestamps_are_rendered_with_utc_offset(client):
-    """응답의 시각은 UTC 오프셋(``Z`` 또는 ``+00:00``)을 가진다 (service-hardening ADR-010).
+    """응답의 시각은 UTC 오프셋(``Z`` 또는 ``+00:00``)을 가진다.
 
     오프셋이 없으면 클라이언트는 그 값이 어느 시간대인지 알 수 없다.
     """
@@ -175,7 +175,7 @@ async def test_invalid_payload_returns_422(client, payload):
 
 
 async def test_limit_upper_bound_is_enforced(client):
-    """무제한 조회를 허용하지 않는다 (NFR-002)."""
+    """무제한 조회를 허용하지 않는다."""
     http_client, _ = client
     response = await http_client.get(BASE, params={"limit": 1000})
     assert response.status_code == 422

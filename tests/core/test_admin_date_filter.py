@@ -1,4 +1,4 @@
-"""관리 목록 날짜 필터 ``LocalDateFilter`` — 로컬 자정 경계·연산·잘못된 입력 (security-ops-hardening ADR-005).
+"""관리 목록 날짜 필터 ``LocalDateFilter`` — 로컬 자정 경계·연산·잘못된 입력.
 
 실제 SQLite 와 ``UTCDateTime`` 컬럼(접속 로그)으로 질의해 본다. 시간대는 Asia/Seoul(UTC+9)로 고정한다.
 """
@@ -126,7 +126,7 @@ def test_operation_options_and_quick_ranges():
 
 
 # =============================================================================
-# 기간 (admin-session-hardening ADR-005)
+# 기간
 # =============================================================================
 @pytest.mark.parametrize(
     ("value", "expected"),

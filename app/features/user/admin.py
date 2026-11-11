@@ -77,9 +77,9 @@ class UserAdmin(ModelView, model=User):
         User.email,
     ]
 
-    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다(admin-login F-005).
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다.
     # 생성 시각은 LocalDateFilter(업무 시간대 날짜 → UTC 범위)로 거른다 — sqladmin 연산 필터는 UTCDateTime 을
-    # 날짜형으로 보지 못해 500 이었다(security-ops-hardening ADR-005).
+    # 날짜형으로 보지 못해 500 이었다.
     column_filters = [BooleanFilter(User.is_active), LocalDateFilter(User.created_at)]
 
     # =========================================================================
@@ -130,9 +130,9 @@ class UserAdmin(ModelView, model=User):
     }
 
     # =========================================================================
-    # 관리 세션·refresh 토큰 폐기 (admin-session-hardening ADR-002·ADR-007·ADR-008)
+    # 관리 세션·refresh 토큰 폐기
     # =========================================================================
-    # 판정은 ``revocations(user, data)`` 하나가 두 집합을 돌려준다(ADR-009):
+    # 판정은 ``revocations(user, data)`` 하나가 두 집합을 돌려준다:
     #   - API refresh 토큰: 비활성화·비밀번호 해시 변경·삭제 — UserService 와 같은 집합.
     #   - 관리 세션: 위 + 슈퍼유저 해제(관리 화면은 슈퍼유저 전용).
     # 강등만 된 사용자는 일반 사용자로 API 를 계속 쓴다 — refresh 회전 때 DB 값으로 su=false 가 재발급된다.

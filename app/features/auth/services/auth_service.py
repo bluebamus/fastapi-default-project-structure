@@ -4,7 +4,7 @@ user 도메인의 `User` 모델·`UserRepository` 에 대해 인증한다(자격
 auth 는 횡단 관심사라 user 식별 모델에 의존하는 것을 허용한다.
 
 협력 객체(해시·토큰·회전 저장소)는 생성자로 받는다 — 조립은 ``get_auth_service`` provider 가
-한다(service-hardening C-1). 커밋은 핸들러가 한다.
+한다. 커밋은 핸들러가 한다.
 """
 
 import uuid

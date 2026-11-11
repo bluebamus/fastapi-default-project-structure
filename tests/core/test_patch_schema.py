@@ -1,4 +1,4 @@
-"""null PATCH 거부 — service-hardening ADR-008 ① (F-010).
+"""null PATCH 거부 — service-hardening ADR-008 ①.
 
 ``{"title": null}`` 처럼 **보낸** null 이 NOT NULL 컬럼으로 내려가 500 이 났다. 모든 Update
 스키마는 ``PatchSchema`` 를 상속하고, nullable 로 선언한 필드만 null 을 받는다.

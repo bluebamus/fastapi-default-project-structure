@@ -1,4 +1,4 @@
-"""Raw SQL Repository 의 공통 정책 (RAW-REP-002).
+"""Raw SQL Repository 의 공통 정책.
 
 ``RawCRUDBase`` 의 primitive 위에 **안정적인 public API + 예외 변환 + 쿼리 이름
 중심 로깅**을 얹는다. 도메인 SQL 은 여기 두지 않는다 — 기능 Repository 가 SQL 과
@@ -13,7 +13,7 @@
                 query_name="sales_report.daily_sales",
             )
 
-관측성 (NFR-004):
+관측성:
     로그에는 ``query_name`` 과 소요 시간, 성공/실패만 남긴다. **SQL 본문과
     파라미터는 남기지 않는다** — Raw SQL 의 파라미터에는 사용자 식별자·검색어 등
     민감한 값이 그대로 들어 있고, 로그는 보통 외부 collector 로 흘러간다.
@@ -44,7 +44,7 @@ _SORT_DIRECTIONS = {"ASC", "DESC"}
 
 
 def resolve_identifier(requested: str, allowed: Mapping[str, str]) -> str:
-    """요청된 키를 **코드가 소유한** SQL 식별자로 바꾼다 (RAW-REP-004).
+    """요청된 키를 **코드가 소유한** SQL 식별자로 바꾼다.
 
     테이블명·컬럼명·정렬 방향은 bind parameter 로 넘길 수 없다. 그렇다고 요청값을
     SQL 에 그대로 넣으면 injection 이 된다. 그래서 요청값은 **키로만** 쓰고 실제
@@ -67,7 +67,7 @@ def resolve_identifier(requested: str, allowed: Mapping[str, str]) -> str:
 
 
 def resolve_sort_direction(requested: str) -> str:
-    """정렬 방향을 ASC/DESC 중 하나로 확정한다 (RAW-REP-004)."""
+    """정렬 방향을 ASC/DESC 중 하나로 확정한다."""
     direction = requested.strip().upper()
     if direction not in _SORT_DIRECTIONS:
         raise ValueError(f"허용되지 않은 정렬 방향입니다: {requested!r} (가능: ASC, DESC)")
@@ -77,7 +77,7 @@ def resolve_sort_direction(requested: str) -> str:
 class RawRepositoryBase(RawCRUDBase):
     """Raw SQL 기능 Repository 의 공통 기반.
 
-    ``BaseRepository`` 를 상속하지 않는다 — ORM 계층과 평행한 독립 계층이다(AR-003).
+    ``BaseRepository`` 를 상속하지 않는다 — ORM 계층과 평행한 독립 계층이다.
     """
 
     @contextmanager
@@ -85,14 +85,14 @@ class RawRepositoryBase(RawCRUDBase):
         """실행을 감싸 소요 시간을 남기고 SQLAlchemy 오류를 변환한다.
 
         detail 에는 쿼리 이름만 넣는다. 드라이버 오류 원문에는 SQL 과 값이 함께
-        들어 있어 그대로 응답에 실으면 유출된다(NFR-001).
+        들어 있어 그대로 응답에 실으면 유출된다.
         """
         started = time.perf_counter()
         try:
             yield
         except SQLAlchemyError as error:
             elapsed = (time.perf_counter() - started) * 1000
-            # 변환 표는 ORM 과 같다(service-hardening ADR-022). 로그에는 예외 타입과
+            # 변환 표는 ORM 과 같다. 로그에는 예외 타입과
             # 드라이버 코드만 — SQL·바인딩 값은 남기지 않는다.
             translated = DatabaseErrorTranslator.translate(error, detail={"query": query_name})
             logger.log(

@@ -1,4 +1,4 @@
-"""예외 핸들러의 로그 레벨 — service-hardening ADR-008 ④ (F-013).
+"""예외 핸들러의 로그 레벨 — service-hardening ADR-008 ④.
 
 4xx 는 클라이언트 입력이 원인이라 WARNING 이고 detail(요청 값이 들어 있을 수 있다)을
 싣지 않는다. ERROR 로 쌓으면 경보가 흐려진다. 5xx 만 ERROR.
@@ -64,7 +64,7 @@ async def test_server_errors_log_error_with_detail(caplog):
 
 
 def test_redis_connection_error_is_503_logged_once(caplog):
-    """Redis 연결 오류 → 503 ``SERVICE_UNAVAILABLE``, traceback 한 번 (integration-e2e F-004).
+    """Redis 연결 오류 → 503 ``SERVICE_UNAVAILABLE``, traceback 한 번.
 
     ``Exception`` 핸들러는 Starlette 의 ``ServerErrorMiddleware`` 에 걸려 응답 뒤 예외를 다시
     던진다 — uvicorn 이 traceback 을 한 번 더 남기고 연결을 닫는다. TestClient 는 그 재전파를

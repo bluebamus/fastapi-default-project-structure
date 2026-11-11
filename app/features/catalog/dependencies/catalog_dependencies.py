@@ -1,4 +1,4 @@
-"""Catalog 기능 의존성 — 세션 선택과 객체 조립만 담당한다 (TX-001).
+"""Catalog 기능 의존성 — 세션 선택과 객체 조립만 담당한다.
 
 Dependency 는 Service 유스케이스를 실행하지 않고 커밋하지도 않는다.
 teardown commit 패턴도 쓰지 않는다 — yield 이후 코드는 **응답 전송 후**에 실행되어

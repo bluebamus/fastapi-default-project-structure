@@ -1,4 +1,4 @@
-"""``TokenService`` — claim 구성과 검증 규칙 (service-hardening ADR-014).
+"""``TokenService`` — claim 구성과 검증 규칙.
 
 검증 실패는 무엇이든 ``InvalidTokenException``(401) 하나다. 여기서는 각 거부 사유를 따로 만들어
 그 하나하나가 실제로 거부되는지 본다 — 검사 하나가 빠져도 다른 테스트가 통과해 버리지 않게.
@@ -134,7 +134,7 @@ def test_foreign_issuer_or_audience_is_rejected(tokens, overrides):
 
 
 def test_superuser_flag_is_carried_in_su_claim(tokens):
-    """인가는 토큰의 ``su`` 로 정해진다 — DB 조회 없이 Principal 을 만든다(service-hardening ADR-017)."""
+    """인가는 토큰의 ``su`` 로 정해진다 — DB 조회 없이 Principal 을 만든다."""
     claims = tokens.decode(tokens.issue_access("user-1", "root", True).token, TokenType.ACCESS)
 
     assert claims["su"] is True

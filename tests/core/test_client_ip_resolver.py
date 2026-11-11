@@ -1,4 +1,4 @@
-"""클라이언트 IP 결정 — service-hardening ADR-006·ADR-021 (F-006).
+"""클라이언트 IP 결정 — service-hardening ADR-006·ADR-021.
 
 ``X-Forwarded-For`` 는 클라이언트가 마음대로 적는다. 신뢰 프록시 홉 수(기본 0) 밖의
 값은 믿지 않아야 헤더 한 줄로 접속 로그의 IP 를 위조할 수 없다.

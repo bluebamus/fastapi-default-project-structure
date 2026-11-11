@@ -1,4 +1,4 @@
-"""공통 ORM 모델 기반 — Declarative Base 와 공통 필드 Mixin (ORM-MDL-001/002).
+"""공통 ORM 모델 기반 — Declarative Base 와 공통 필드 Mixin.
 
 모든 테이블에 같은 컬럼을 강제하지 않는다. 대신 **작은 Mixin 을 조합**한다.
 접속 로그처럼 생성 후 변하지 않는 테이블에 ``updated_at`` 을 억지로 붙이면
@@ -56,7 +56,7 @@ class Base(DeclarativeBase):
         # 타입 체크를 위한 선언만 둔다(TYPE_CHECKING 가드로 런타임 매핑에 영향 없음).
         id: Mapped[str]
 
-    # 모든 ``Mapped[datetime]`` 은 UTC 로 저장된다(service-hardening ADR-010). 모델이 타입을
+    # 모든 ``Mapped[datetime]`` 은 UTC 로 저장된다. 모델이 타입을
     # 따로 적지 않아도 naive 값이 거부되고, 읽은 값은 UTC aware 다.
     type_annotation_map = {
         datetime: UTCDateTime(),
@@ -83,7 +83,7 @@ class UUIDPrimaryKeyMixin:
 
 
 class CreatedAtMixin:
-    """생성 시각(UTC). 표시용 로컬 변환은 읽는 쪽이 한다(ADR-010)."""
+    """생성 시각(UTC). 표시용 로컬 변환은 읽는 쪽이 한다."""
 
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),

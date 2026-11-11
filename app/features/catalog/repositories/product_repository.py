@@ -2,7 +2,7 @@
 
 Base 의 최소 CRUD 로 표현되지 않는 조회만 **명시적 메서드**로 추가한다.
 문자열 컬럼명을 받는 범용 필터를 Base 에 두지 않는 이유는 오타가 실행 시점에만
-드러나기 때문이다(ORM-REP-005).
+드러나기 때문이다.
 """
 
 from collections.abc import Sequence

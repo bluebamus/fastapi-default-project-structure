@@ -1,4 +1,4 @@
-"""라우트 인가 정책 — 401·403·소유권·슈퍼유저 우회 (service-hardening ADR-017·018, ledger F-022~F-024).
+"""라우트 인가 정책 — 401·403·소유권·슈퍼유저 우회 (ledger F-022~F-024).
 
 앱 전체를 in-memory sqlite + fakeredis 로 띄우고, 실제 ``TokenService`` 로 발급한 토큰(``tests.auth_headers``)
 을 싣는다 — 의존성을 가짜로 바꾸지 않으므로 ``OAuth2PasswordBearer`` → ``TokenService`` → ``Principal`` →
@@ -6,7 +6,7 @@
 
 접근 수준의 정본은 뷰의 선언(``app/core/security/access.py``)이고, 선언이 빠진 뷰는 기동 검사가 막는다.
 여기 ``EXPECTED_ACCESS`` 는 예시 정책이 의도대로인지 고정하는 **유일한** 기대 표다 — 401/403 실요청
-테스트의 대상 경로도 이 표에서 뽑는다(access-policy ADR-004). 작성자·본인 판정(``OwnershipPolicy``)은
+테스트의 대상 경로도 이 표에서 뽑는다. 작성자·본인 판정(``OwnershipPolicy``)은
 접근 수준이 아니라 서비스 규칙이라 아래 소유권 테스트가 따로 고정한다.
 """
 
@@ -337,7 +337,7 @@ async def test_superuser_can_modify_and_delete_any(client, case):
 
 
 async def test_row_without_owner_is_modifiable_only_by_superuser(env):
-    """인가 도입 전 행(author_id NULL)은 슈퍼유저만 고친다(residual-risk R-006)."""
+    """인가 도입 전 행(author_id NULL)은 슈퍼유저만 고친다."""
     client, maker, _ = env
     async with maker() as session:
         legacy = Post(title="legacy", content="c", author="someone")

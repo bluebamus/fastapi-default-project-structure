@@ -4,18 +4,18 @@
 ``get_logger()`` 는 그 설정을 공유하는 자식 로거를 돌려준다(핸들러는 root 에만).
 
 root 에 붙는 유일한 핸들러는 ``BoundedQueueHandler`` 이며, 실제 stdout/stderr 쓰기는
-``QueueListener`` 스레드가 맡는다(NFR-009). listener 는 여기서 시작한다 — Celery
+``QueueListener`` 스레드가 맡는다. listener 는 여기서 시작한다 — Celery
 worker·Alembic·테스트처럼 FastAPI lifespan 이 돌지 않는 프로세스에서도 로그가
 나가야 하기 때문이다.
 
-**종료(flush/stop) 소유자는 프로세스다** (ADR-018). 여기서 ``atexit`` 훅을 프로세스당
+**종료(flush/stop) 소유자는 프로세스다**. 여기서 ``atexit`` 훅을 프로세스당
 한 번 등록하고, FastAPI lifespan 은 listener 를 멈추지 않는다. lifespan 이 멈추면 그
 **뒤에** uvicorn 이 남기는 최종 로그와 startup 실패 traceback 이 소비자 없는 큐에 갇혀
 사라진다 — DB 가 꺼진 채 ``python main.py`` 를 실행하면 오류 원인이 한 글자도 나오지
-않았다(F-029). listener 는 자신을 쓰는 모든 것보다 오래 살아야 한다.
+않았다. listener 는 자신을 쓰는 모든 것보다 오래 살아야 한다.
 
 listener 인스턴스는 ``dictConfig`` 가 queue 핸들러와 **함께** 만들어
-``handler.listener`` 에 붙여 준다(ADR-021). 여기서는 시작·정지만 관리한다.
+``handler.listener`` 에 붙여 준다. 여기서는 시작·정지만 관리한다.
 
 핸들러 참조를 ``logging.getHandlerByName()`` 으로 나중에 다시 찾지 않고 여기 모듈
 상태에 붙잡아 둔다. ``dictConfig`` 는 호출될 때마다 기존 핸들러 이름 레지스트리를
@@ -78,7 +78,7 @@ def _write_listener_lifecycle_status(message: str) -> None:
 
     이 메시지는 listener 를 멈추는 과정에 대한 것이라, 평소 logger 로 남기면 지금
     멈추는 중인 바로 그 listener 의 queue 로 들어간다 — 자기 죽음을 자기가 보고하려다
-    아무 데도 못 남기는 구조다(F-026·F-029 가 같은 함정이었다).
+    아무 데도 못 남기는 구조다.
 
     ``sys.stderr`` 가 아니라 ``sys.__stderr__`` 를 쓰는 이유는, 종료 시점에 누군가
     ``sys.stderr`` 를 이미 갈아끼웠거나 닫았을 수 있기 때문이다.
@@ -102,7 +102,7 @@ _DEADLY_DEFAULT_SIGNALS = ("SIGTERM", "SIGBREAK")
 
 
 def _drain_logs_then_default(signum: int, frame: object) -> None:
-    """로그를 마저 내보낸 뒤 **원래 종료 동작으로 돌아간다** (ADR-022 / F-038).
+    """로그를 마저 내보낸 뒤 **원래 종료 동작으로 돌아간다**.
 
     정리만 하고 신호를 삼키면 안 된다 — 삼키면 ``docker stop`` 이 종료되지 않는
     컨테이너를 만나 결국 SIGKILL 로 끌려 죽는다. 기본 동작으로 되돌린 뒤 같은 신호를
@@ -119,7 +119,7 @@ def _drain_logs_then_default(signum: int, frame: object) -> None:
 
 
 def _install_signal_drain() -> None:
-    """즉시 종료형 신호에 "로그를 비우고 죽는" 핸들러를 건다 (ADR-022 / F-038).
+    """즉시 종료형 신호에 "로그를 비우고 죽는" 핸들러를 건다.
 
     uvicorn 은 정상 종료를 마친 뒤 원래 핸들러를 복구하고 **잡았던 신호를 다시 올린다**
     (``capture_signals()``). 복구된 것이 ``SIG_DFL`` 이면 프로세스는 그 자리에서 끝나고
@@ -143,7 +143,7 @@ def _install_signal_drain() -> None:
 
 
 def _register_process_exit_hook() -> None:
-    """프로세스 종료 시 listener 를 멈추도록 **한 번만** 등록한다 (ADR-018 · ADR-022).
+    """프로세스 종료 시 listener 를 멈추도록 **한 번만** 등록한다.
 
     두 경로를 함께 덮는다.
 
@@ -164,7 +164,7 @@ def _register_process_exit_hook() -> None:
 
 
 def adopt_foreign_handlers(logger: logging.Logger) -> None:
-    """**남이 만든** 핸들러(uvicorn CLI·Celery worker)를 프로젝트 출력으로 바꾼다 (logging-overhaul L1).
+    """**남이 만든** 핸들러(uvicorn CLI·Celery worker)를 프로젝트 출력으로 바꾼다.
 
     - 콘솔 핸들러(파일이 아닌 것)는 떼고 공유 queue 핸들러를 단다 — 그러면 앱과 **같은** 콘솔·파일
       출력처·필터(마스킹·헤더·헤더별 레벨)·``TzFormatter`` 를 쓴다. ``LOG_CONSOLE_ENABLED=false`` 면
@@ -185,12 +185,12 @@ def adopt_foreign_handlers(logger: logging.Logger) -> None:
 
 
 # 프로세스 종류 → (주 파일, 에러 파일). 에러 파일도 프로세스별로 나눈다 — 웹과 워커가 한 파일을
-# 회전시키면 서로의 회전이 엇갈린다(logging-overhaul ADR).
+# 회전시키면 서로의 회전이 엇갈린다.
 LOG_FILES = {"app": ("app.log", "error.log"), "celery": ("celery.log", "celery-error.log")}
 
 
 def entry_process(argv0: str) -> str | None:
-    """실행 프로그램(``sys.argv[0]``)으로 프로세스 종류를 정한다 (integration-e2e ADR-011, F-003).
+    """실행 프로그램(``sys.argv[0]``)으로 프로세스 종류를 정한다.
 
     ``python main.py``·``uvicorn``(``-m uvicorn`` 포함) → ``app``, ``celery``(``-m celery``, worker·beat)
     → ``celery``. 그 밖의 프로그램(pytest·alembic·스크립트)은 ``None`` — 파일을 열지 않는다.
@@ -201,13 +201,13 @@ def entry_process(argv0: str) -> str | None:
 
 
 def attach_log_files(process: str) -> None:
-    """``LOG_FILE_ENABLED`` 면 프로세스별 파일 핸들러를 listener 에 더한다 (logging-overhaul L5).
+    """``LOG_FILE_ENABLED`` 면 프로세스별 파일 핸들러를 listener 에 더한다.
 
     ``configure_logging()`` 이 설정 로드 직후 ``entry_process(sys.argv[0])`` 로 먼저 부른다 — 그래야
-    import 중 줄(DB 라우팅 구성 등)도 파일에 남는다(integration-e2e ADR-011 이 logging-overhaul ADR-002
-    를 대체). 진입점(``main.py``, Celery ``after_setup_logger`` 수신자)의 호출은 그 판정을 못 하는
+    import 중 줄(DB 라우팅 구성 등)도 파일에 남는다.
+    진입점(``main.py``, Celery ``after_setup_logger`` 수신자)의 호출은 그 판정을 못 하는
     실행(``python -c``·테스트)을 위한 것이다. 쓰기는 listener 스레드에서 일어나 요청 event loop 를
-    막지 않는다(NFR-009). 여러 번 불러도 처음 한 번만 붙는다.
+    막지 않는다. 여러 번 불러도 처음 한 번만 붙는다.
     """
     listener = getattr(_queue_handler, "listener", None)
     if not log_settings.LOG_FILE_ENABLED or listener is None:
@@ -277,7 +277,7 @@ def configure_logging(force: bool = False) -> None:
     _warn_if_no_output()
     unknown = sorted(set(log_settings.app_levels()) - known_app_names())
     if unknown:
-        # 나중에 생길 기능일 수 있어 기동은 막지 않는다(logging-overhaul L4).
+        # 나중에 생길 기능일 수 있어 기동은 막지 않는다.
         logging.getLogger(__name__).warning(
             "LOG_APP_LEVELS 에 모르는 헤더가 있습니다: %s", ", ".join(unknown)
         )
@@ -293,11 +293,11 @@ def configure_logging(force: bool = False) -> None:
     # 핸들러로 나간다. "Exception in ASGI application"·startup 실패 traceback 을 내는
     # 로거에 직접 붙여 그 경로도 가린다. 로거 필터는 어느 쪽 dictConfig 가 나중에 돌아도
     # 지워지지 않는다(dictConfig 는 필터를 더하기만 한다). access 로거도 붙인다 — 접속 줄의
-    # 쿼리 비밀값을 가리고, 필터가 args 모양을 지켜 AccessFormatter 가 깨지지 않는다(config-cleanup F-008).
+    # 쿼리 비밀값을 가리고, 필터가 args 모양을 지켜 AccessFormatter 가 깨지지 않는다.
     for name in UVICORN_LOGGERS:
         add_redacting_filter(logging.getLogger(name))
     # 같은 CLI 경로(``uvicorn main:app``·``fastapi dev``)의 uvicorn 핸들러를 공유 queue 로 바꾼다 —
-    # 앱과 같은 형식·출력처(logging-overhaul L1). ``python main.py`` 경로에서는 이 로거들이 이미
+    # 앱과 같은 형식·출력처. ``python main.py`` 경로에서는 이 로거들이 이미
     # 공유 queue 핸들러를 쓰므로 바뀌는 것이 없다.
     for name in UVICORN_LOGGERS:
         adopt_foreign_handlers(logging.getLogger(name))
@@ -320,7 +320,7 @@ def start_log_listener() -> QueueListener | None:
     """queue listener 를 시작한다(이미 살아 있으면 그대로 둔다).
 
     listener 를 여기서 만들지 않는다 — ``dictConfig`` 가 queue 핸들러와 함께 만들어
-    ``handler.listener`` 에 붙여 준다(ADR-021).
+    ``handler.listener`` 에 붙여 준다.
     """
     global _listener
     if _listener is not None:
@@ -364,8 +364,8 @@ def stop_log_listener() -> None:
     try:
         listener.stop()
     except Exception as exc:
-        # 참조를 **버리지 않는다.** 버리면 스레드는 살아 있는데 회수할 손잡이가 없다
-        # (F-030). 여기서 유지해야 호출자가 재시도할 수 있다.
+        # 참조를 **버리지 않는다.** 버리면 스레드는 살아 있는데 회수할 손잡이가 없다.
+        # 여기서 유지해야 호출자가 재시도할 수 있다.
         _write_listener_lifecycle_status(f"stop 실패({exc!r}) — 참조 유지, 재시도 가능")
         raise
     _listener = None
@@ -373,11 +373,11 @@ def stop_log_listener() -> None:
 
 
 async def flush_log_queue(timeout: float = LOG_FLUSH_TIMEOUT_SECONDS) -> bool:
-    """쌓인 로그가 전부 기록될 때까지 기다린다. listener 는 **멈추지 않는다** (ADR-023).
+    """쌓인 로그가 전부 기록될 때까지 기다린다. listener 는 **멈추지 않는다**.
 
-    ``uvicorn main:app`` 경로에서는 ADR-022 의 신호 핸들러가 효력이 없다 — uvicorn 이
+    ``uvicorn main:app`` 경로에서는 ``python main.py`` 용 신호 핸들러가 효력이 없다 — uvicorn 이
     원래 핸들러를 스냅샷한 **뒤에** 앱을 import 하므로, 우리 핸들러는 늦게 걸려 종료 시
-    복구되는 ``SIG_DFL`` 에 덮인다(F-039). 신호가 온 뒤에는 손쓸 방법이 없으므로,
+    복구되는 ``SIG_DFL`` 에 덮인다. 신호가 온 뒤에는 손쓸 방법이 없으므로,
     **오기 전에** 비워 둔다.
 
     기다림 자체는 동기 작업이라 그대로 await 하면 종료 중 event loop 를 막는다.

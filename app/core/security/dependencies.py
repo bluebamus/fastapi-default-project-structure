@@ -1,6 +1,6 @@
-"""인증·인가 의존성 — 모든 기능이 쓰는 provider 와 ``Principal`` 주입 (service-hardening ADR-017·026).
+"""인증·인가 의존성 — 모든 기능이 쓰는 provider 와 ``Principal`` 주입.
 
-기능은 서로 import 하지 않으므로(C-2) 여러 기능이 쓰는 협력 객체의 provider 는 core 에 둔다:
+기능은 서로 import 하지 않으므로 여러 기능이 쓰는 협력 객체의 provider 는 core 에 둔다:
 
 - ``get_password_hasher`` — auth(가입·로그인)와 user(관리자의 사용자 생성)가 함께 쓴다.
 - ``get_token_service`` — auth 는 발급, 여기 ``get_current_principal`` 은 검증.
@@ -14,7 +14,7 @@
     async def create(..., principal: CurrentPrincipal): ...         # 로그인 사용자(인자로 선언)
     @router.post(..., dependencies=[SuperuserRequired])             # 슈퍼유저 전용
 
-핸들러 본문은 토큰을 직접 파싱하지 않는다(C-7). 테스트는 ``app.dependency_overrides`` 로
+핸들러 본문은 토큰을 직접 파싱하지 않는다. 테스트는 ``app.dependency_overrides`` 로
 provider 를 바꾸거나, 실제 ``TokenService`` 로 발급한 토큰을 헤더에 싣는다.
 """
 

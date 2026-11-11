@@ -1,4 +1,4 @@
-"""공용 세션 override 헬퍼의 계약 (service-hardening ADR-009, ledger F-014).
+"""공용 세션 override 헬퍼의 계약 (ledger F-014).
 
 1. read-only override 로 받은 세션에서 쓰면 운영과 같이 ``ReadOnlyRoutingError`` 로 실패한다.
    예전 override 는 표시 없는 세션이라 GET 경로의 실수 쓰기가 테스트를 통과했다(검수 R-15).

@@ -25,7 +25,7 @@ from config import log_secret_values
 _REPO_ROOT = str(Path(__file__).resolve().parents[3]).replace("\\", "/").rstrip("/").lower() + "/"
 
 
-# 저장소 밖 코드의 출처 — **로거 이름** 첫 조각 → 헤더 (logging-overhaul L2). 표에 없으면 ``ext``.
+# 저장소 밖 코드의 출처 — **로거 이름** 첫 조각 → 헤더. 표에 없으면 ``ext``.
 _EXTERNAL_LOGGER_APPS = {
     "celery": "celery",
     "kombu": "celery",
@@ -102,9 +102,9 @@ class ContextFilter(logging.Filter):
 
 
 class AppLevelFilter(logging.Filter):
-    """헤더(``app=``)별 최소 레벨로 거른다 — ``LOG_APP_LEVELS`` (logging-overhaul L4).
+    """헤더(``app=``)별 최소 레벨로 거른다 — ``LOG_APP_LEVELS``.
 
-    Django 의 ``LOGGING["loggers"][name]["level"]`` 자리다. 로거를 등록하지 않는 설계(ADR-019)를
+    Django 의 ``LOGGING["loggers"][name]["level"]`` 자리다. 로거를 등록하지 않는 설계를
     지키려고 로거가 아니라 **필터 하나**로 한다. ``ContextFilter`` 바로 뒤에 둔다(appname 이 필요).
     지정이 없는 헤더는 ``default``(``LOG_LEVEL``)를 따른다.
     """
@@ -138,14 +138,14 @@ _SQL_NOISE_MIN_LEVEL = logging.WARNING
 
 
 class SqlNoiseFilter(logging.Filter):
-    """SQL 본문·파라미터가 로그로 새는 것을 막는다 (NFR-001).
+    """SQL 본문·파라미터가 로그로 새는 것을 막는다.
 
     이 프로젝트의 기본값은 ``DEBUG=true`` 이고 그러면 유효 로그 레벨이 DEBUG 다.
     그 상태에서 SQLAlchemy 와 드라이버는 실행한 SQL 과 **바인딩된 값**을 그대로
     찍는다. 값에는 비밀번호 해시·토큰·검색어가 들어 있고 로그는 보통 외부
     collector 로 흘러간다.
 
-    ``loggers`` 키를 추가해 레벨을 조정하는 대신 필터를 쓰는 이유는 ADR-019
+    ``loggers`` 키를 추가해 레벨을 조정하는 대신 필터를 쓰는 이유는 설계
     (앱별 로거를 등록하지 않고 경로로 appname 을 판별한다)를 깨지 않기 위해서다.
     핸들러는 여전히 root 에만 붙는다.
 
@@ -165,7 +165,7 @@ class SqlNoiseFilter(logging.Filter):
 
 
 # =============================================================================
-# 비밀값 마스킹 — 규칙의 정본 (log-redaction ADR-001)
+# 비밀값 마스킹 — 규칙의 정본
 # =============================================================================
 REDACTED = "***"
 
@@ -176,7 +176,7 @@ _SECRET_PATTERNS = (
     # DSN 의 비밀번호: scheme://user:<password>@host — 사용자명은 비어도 된다(redis://:pw@h).
     # 인코딩하지 않은 `@` 가 든 비밀번호도 덮도록 **마지막** `@` 까지 잡는다(탐욕 + 되돌림).
     re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)[^\s/]+(?=@)"),
-    # DSN 의 사용자명: scheme://<user>[:password]@host (logging-overhaul L7)
+    # DSN 의 사용자명: scheme://<user>[:password]@host
     re.compile(r"(?P<keep>\b[a-zA-Z][a-zA-Z0-9+.\-]*://)[^\s:/@]+(?=(?::[^\s@/]*)?@)"),
     # Authorization 헤더 값: "Authorization: Bearer <token>" · "authorization=<token>"
     re.compile(
@@ -220,7 +220,7 @@ _TRACEBACK_FORMATTER = logging.Formatter()
 
 
 class RedactingFilter(logging.Filter):
-    """record 의 메시지·traceback·stack_info 에서 비밀값을 가린다 (log-redaction ADR-001).
+    """record 의 메시지·traceback·stack_info 에서 비밀값을 가린다.
 
     traceback 은 보통 **포매터**가 나중에 ``exc_info`` 에서 만든다. 그때는 필터가 이미 지나간
     뒤라 가릴 기회가 없다. 그래서 여기서 ``exc_info`` 를 미리 ``exc_text`` 로 포맷해 가려
@@ -230,7 +230,7 @@ class RedactingFilter(logging.Filter):
     메시지는 **가릴 것이 있을 때만** 바꾼다. 평소에는 ``msg``/``args`` 를 건드리지 않는다 —
     uvicorn 의 access 포매터처럼 ``args`` 를 직접 읽는 포매터가 있다. 가릴 것이 있어도 비밀값이
     **인자 안에만** 있으면 그 인자만 가리고 ``args`` 모양을 지킨다(그 포매터가 ``args`` 를 풀다
-    실패해 줄이 사라지지 않게 — config-cleanup F-008). 틀·인자에 걸치면 합친 문자열로 바꾸고
+    실패해 줄이 사라지지 않게). 틀·인자에 걸치면 합친 문자열로 바꾸고
     ``args`` 를 비운다.
     """
 

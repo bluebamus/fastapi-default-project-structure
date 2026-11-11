@@ -1,12 +1,12 @@
 """Home 기능 Celery 태스크.
 
 워커는 ``app/core/db/models_registry.py`` 의 ``iter_task_modules()`` 로 이 모듈을 찾아 include 한다
-(service-hardening ADR-012) — 중앙 목록에 적을 곳이 없다. 이 기능을 지우면 이 태스크도 함께 빠진다.
+— 중앙 목록에 적을 곳이 없다. 이 기능을 지우면 이 태스크도 함께 빠진다.
 
 요청 밖 세션은 ``background_db_session`` 으로 열고, 서비스 조립은 HTTP 경로와 같은 provider
 (``build_user_access_log_service``)를 재사용한다. 쓰기 태스크라면 태스크가 직접 커밋한다.
 
-주기 실행은 이 모듈이 ``celery_app.conf.beat_schedule`` 에 **스스로** 등록한다(security-ops-hardening ADR-003) —
+주기 실행은 이 모듈이 ``celery_app.conf.beat_schedule`` 에 **스스로** 등록한다 —
 중앙 Celery 앱은 기능을 모르고, beat 도 기동 시 include 모듈을 import 하므로 여기 등록이 보인다.
 """
 

@@ -1,11 +1,11 @@
-"""애플리케이션 프로세스 수명 자원의 생성·해제 단일 지점 (AR-005~008).
+"""애플리케이션 프로세스 수명 자원의 생성·해제 단일 지점.
 
 ``main.py`` 의 lifespan 은 이 컨텍스트를 열고 yield 하는 **조립만** 담당한다.
 자원별 startup/shutdown 코드를 main 에 나열하면 종료 순서가 암묵적이 되고,
 startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생긴다.
 
 자원마다 작은 async context manager 를 두고 **획득 순서대로 중첩**한다. 정리는 파이썬이
-그 **역순**으로 실행하므로, 순서를 따로 강제할 장치가 필요 없다 (ADR-017)::
+그 **역순**으로 실행하므로, 순서를 따로 강제할 장치가 필요 없다::
 
     async with _log_queue(), _database(...), _redis(...), _background_tasks():
         ...
@@ -14,20 +14,20 @@ startup 중간에 실패했을 때 이미 만든 자원이 새는 경로가 생�
 이 순서인 이유는 의존 관계다. 외부 자원을 쓰는 주체(background task)를 먼저 멈춰야
 Redis client와 DB 커넥션 풀을 닫는 것이 안전하다.
 
-**logging listener 는 여기서 멈추지 않는다** (ADR-018). 소유자는 프로세스이고
-``app/utils/logs/setup.py`` 의 ``atexit`` 훅과 신호 핸들러(ADR-022)가 정리한다.
+**logging listener 는 여기서 멈추지 않는다**. 소유자는 프로세스이고
+``app/utils/logs/setup.py`` 의 ``atexit`` 훅과 신호 핸들러가 정리한다.
 lifespan 이 멈추면 그 뒤에 uvicorn 이 남기는 최종 로그와 startup 실패 traceback 이
-소비자 없는 큐에 갇혀 사라진다 (F-029).
+소비자 없는 큐에 갇혀 사라진다.
 
-**멈추지는 않지만 "다 나갈 때까지 기다리기" 는 한다** (ADR-023). 가장 바깥 컨텍스트인
+**멈추지는 않지만 "다 나갈 때까지 기다리기" 는 한다**. 가장 바깥 컨텍스트인
 ``_log_queue()`` 가 그 일을 한다. ``uvicorn main:app`` 으로 띄우면 종료 신호가 오는 순간
-프로세스가 그 자리에서 죽어(F-039) 큐에 남은 줄을 구할 방법이 없기 때문이다. 기다리기는
-멈추기가 아니므로 F-029 와 충돌하지 않는다 — listener 는 그대로 살아 있다.
+프로세스가 그 자리에서 죽어 큐에 남은 줄을 구할 방법이 없기 때문이다. 기다리기는
+멈추기가 아니다 — listener 는 그대로 살아 있다.
 
 **이 중첩을 평평한 ``finally`` 안의 연속 ``await`` 로 되돌리지 말 것.**
 ``asyncio.CancelledError`` 는 ``Exception`` 이 아니라 ``BaseException`` 이라
 ``_run_cleanup()`` 의 그물을 통과한다. 연속 ``await`` 였을 때는 첫 cleanup 에서 취소를
-맞으면 **뒤 단계가 통째로 건너뛰어졌다**(F-028 — DB 커넥션 풀이 닫히지 않고
+맞으면 **뒤 단계가 통째로 건너뛰어졌다**(DB 커넥션 풀이 닫히지 않고
 ``app.state.resources`` 가 닫힌 객체를 계속 가리켰다). 중첩 컨텍스트는 바깥
 ``__aexit__`` 가 반드시 실행되므로 그 경로 자체가 없다.
 회귀 테스트: ``tests/core/test_resources.py::test_manager_cancellation_still_runs_remaining_cleanup``.
@@ -37,10 +37,10 @@ lifespan 이 멈추면 그 뒤에 uvicorn 이 남기는 최종 로그와 startup
 
 테이블 자동 생성은 **파일 존재 여부가 아니라** 모델 import 후
 ``Base.metadata.tables`` 의 실제 개수로 판정한다. 모델이 0개면 DB 에 접속조차 하지
-않는다(AR-007).
+않는다.
 
 자원 소유권은 FastAPI API 프로세스가 만든 것으로 한정한다. startup 검증용 Redis client는
-여기서 닫지만, Celery worker의 별도 broker/backend 연결은 worker가 소유한다(AR-006).
+여기서 닫지만, Celery worker의 별도 broker/backend 연결은 worker가 소유한다.
 """
 
 from __future__ import annotations
@@ -66,12 +66,12 @@ from config import app_settings, redis_settings
 
 logger = get_logger("resources")
 
-# 자원별 shutdown 예산 (확정 정책 6). 합이 전체 예산을 넘지 않아야 한다.
+# 자원별 shutdown 예산. 합이 전체 예산을 넘지 않아야 한다.
 BACKGROUND_DRAIN_TIMEOUT_SECONDS = 5.0
 DB_DISPOSE_TIMEOUT_SECONDS = 10.0
 REDIS_TIMEOUT_SECONDS = 5.0
 SHUTDOWN_TOTAL_TIMEOUT_SECONDS = 20.0
-# logging listener 의 종료 예산은 여기 없다 — 프로세스 종료 훅의 몫이다 (ADR-018).
+# logging listener 의 종료 예산은 여기 없다 — 프로세스 종료 훅의 몫이다.
 
 # drain 예산 중 "완료를 기다리는" 몫. 나머지는 timeout 이후 pending 을 취소하고
 # 회수(gather)하는 데 쓴다. 바깥 guard 와 같은 값을 주면 취소 회수 도중 잘려,
@@ -105,8 +105,8 @@ async def _run_cleanup(
     **삼키는 범위는 ``Exception`` 까지다.** ``asyncio.CancelledError`` 는
     ``BaseException`` 이라 이 그물을 통과해 밖으로 나간다 — 그래야 취소가 호출자에게
     재전파된다. 취소돼도 **뒤따르는 cleanup 이 실행되는 것은 이 함수가 아니라 중첩
-    context manager 구조가 보장한다**(ADR-017). 둘을 혼동해 "실패 격리는 여기서 다
-    책임진다" 고 읽으면 구조를 평평하게 되돌리게 되고, 그 순간 F-028 이 재발한다.
+    context manager 구조가 보장한다**. 둘을 혼동해 "실패 격리는 여기서 다
+    책임진다" 고 읽으면 구조를 평평하게 되돌리게 되고, 그 순간 취소 시 뒤 단계가 건너뛰어지는 결함이 재발한다.
     """
     started = time.perf_counter()
     try:
@@ -195,8 +195,8 @@ async def _database(app: FastAPI) -> AsyncIterator[None]:
         # 닫힌 자원을 다음 lifespan/테스트가 재사용하지 않도록 참조도 지운다.
         app.state.resources = None
         # 이 줄이 실제로 출력되려면 큐를 소비할 listener 가 아직 살아 있어야 한다.
-        # 그 보장은 ADR-018(프로세스 소유)이 준다 — lifespan 은 listener 를 멈추지
-        # 않는다. 예전에는 여기서 멈춰 이 줄이 한 번도 안 나왔다(F-026).
+        # 그 보장은 listener 를 프로세스가 소유하는 구조가 준다 — lifespan 은 listener 를 멈추지
+        # 않는다. 예전에는 여기서 멈춰 이 줄이 한 번도 안 나왔다.
         logger.info("[shutdown] 애플리케이션 요청 처리 자원 해제 완료")
 
 
@@ -204,12 +204,12 @@ async def _database(app: FastAPI) -> AsyncIterator[None]:
 async def _log_queue() -> AsyncIterator[None]:
     """**가장 바깥** 자원 — 다른 정리가 남긴 로그까지 전부 기록되고 나서 끝난다.
 
-    listener 를 멈추지 않는다. 멈추는 것은 여전히 프로세스의 몫이다(ADR-018) —
-    여기서 멈추면 그 뒤 uvicorn 이 남기는 최종 로그가 소비자 없는 큐에 갇힌다(F-029).
-    여기서는 **이미 쌓인 것이 다 나가기를 기다리기만** 한다 (ADR-023).
+    listener 를 멈추지 않는다. 멈추는 것은 여전히 프로세스의 몫이다 —
+    여기서 멈추면 그 뒤 uvicorn 이 남기는 최종 로그가 소비자 없는 큐에 갇힌다.
+    여기서는 **이미 쌓인 것이 다 나가기를 기다리기만** 한다.
 
     ``uvicorn main:app`` 경로가 이걸 필요로 한다. 그 경로에서는 종료 신호가 오는 순간
-    프로세스가 그 자리에서 죽어(F-039) 큐에 남은 줄을 구할 방법이 없다.
+    프로세스가 그 자리에서 죽어 큐에 남은 줄을 구할 방법이 없다.
     """
     try:
         yield

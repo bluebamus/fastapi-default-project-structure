@@ -1,7 +1,7 @@
 """Reports 도메인 스키마 — Raw 집계 결과의 외부 계약 (Pydantic v2).
 
 Raw 결과는 ORM 객체가 아니므로 ``from_attributes`` 에 의존하지 않는다.
-``RowMapping`` 을 명시적으로 ``dict`` 로 바꿔 검증한다(RAW-REP-005).
+``RowMapping`` 을 명시적으로 ``dict`` 로 바꿔 검증한다.
 """
 
 from datetime import date, datetime

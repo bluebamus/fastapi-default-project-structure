@@ -18,7 +18,7 @@ def test_main_app_boots_and_serves_health():
 
 
 def test_run_server_passes_the_project_log_config(monkeypatch):
-    """진입점이 uvicorn 에 프로젝트 log_config 를 넘긴다 (ADR-020).
+    """진입점이 uvicorn 에 프로젝트 log_config 를 넘긴다.
 
     ``log_config`` 은 uvicorn 이 문서화한 공식 파라미터다. 이 배선이 끊겨도 서버는
     정상 기동하므로 다른 어떤 테스트도 잡지 못한다 — uvicorn 로그만 조용히 기본

@@ -8,20 +8,20 @@ ENV(development/test/staging/production)에 따라 레벨·출력·타임존을 
 포맷·시각 형식·콘솔 출력 여부는 ``LogSettings`` 의 ``LOG_CONSOLE_FORMAT``·``LOG_DATE_FORMAT``·
 ``LOG_CONSOLE_ENABLED`` 가 정한다. 콘솔 출력 여부는 ``console_enabled()`` **한 곳**에서 판단하고,
 앱 dictConfig 가 그것을 보고, uvicorn CLI·Celery 의 콘솔 핸들러는 ``setup.adopt_foreign_handlers`` 가
-공유 queue 로 바꿔 같은 결정을 따르게 한다(logging-overhaul L1).
+공유 queue 로 바꿔 같은 결정을 따르게 한다.
 
-**출력 경로는 항상 queue 를 거친다** (NFR-009). root 로거에는
+**출력 경로는 항상 queue 를 거친다**. root 로거에는
 ``BoundedQueueHandler`` 하나만 붙고, 실제 stdout/stderr 쓰기는 ``QueueListener``
 스레드가 수행한다. 요청 event loop 에서 동기 write/flush 가 일어나지 않게 하려는
 것이다. 기본은 콘솔뿐이고(저장·rotation 은 Docker/Kubernetes/운영 agent), ``LOG_FILE_ENABLED``
 면 진입점이 ``setup.attach_log_files()`` 로 파일 핸들러를 **listener** 에 더한다 — 파일 쓰기·회전도
-listener 스레드에서 일어난다(logging-overhaul L5·L6).
+listener 스레드에서 일어난다.
 
 ``context`` 필터는 **queue 핸들러에** 붙는다. ``ContextFilter`` 가 호출 스택에서
 classname 을 뽑기 때문에, listener 스레드에서 돌리면 스택이 이미 사라져 값이 항상
 '-' 가 된다. 필터는 record 를 적재하기 전 요청 스레드에서 실행돼야 한다.
 
-Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 확정했다):
+Django 와 같은 점 / 다른 점:
     같다   — 설정이 한 곳에 모인다. Django 의 ``settings.LOGGING`` 자리를
              ``build_dictconfig()`` 가 맡고, ``configure_logging()`` 이 1회 적용한다.
     다르다 — **앱별 로거를 등록하지 않는다.** 아래 dict 에 ``loggers`` 키가 없고
@@ -36,7 +36,7 @@ Django 와 같은 점 / 다른 점 (ADR-019 — 이 설계를 유지하기로 �
     판별은 등록 누락이라는 실패 모드 자체를 없앤다. 로거 이름을 잘못 줘도(복사·붙여넣기)
     ``app=`` 라벨은 항상 맞다.
 
-앱별·서드파티별 레벨 (logging-overhaul L4):
+앱별·서드파티별 레벨:
     ``loggers`` 키 대신 **필터 하나**(``AppLevelFilter``)로 준다. ``LOG_APP_LEVELS`` 의 키는 로거 이름이
     아니라 헤더(``app=``)다 — 서드파티는 로거 이름으로 ``celery``·``uvicorn``·``sqlalchemy``·``alembic``·
     ``ext`` 헤더가 붙는다. 로거·queue 레벨은 전체 최솟값(``lowest_level()``)으로 내려 레코드가 필터까지 온다.
@@ -72,7 +72,7 @@ def lowest_level() -> str:
     """``LOG_LEVEL`` 과 ``LOG_APP_LEVELS`` 중 가장 낮은 레벨 — 로거·queue 레벨.
 
     로거 레벨이 높으면 ``AppLevelFilter`` 가 보기 전에 레코드가 버려진다. 로거는 최솟값까지 열고
-    헤더별 판단은 필터가 한다(logging-overhaul L4).
+    헤더별 판단은 필터가 한다.
     """
     names = [_level(), *(logging.getLevelName(n) for n in log_settings.app_levels().values())]
     return min(names, key=lambda name: logging.getLevelNamesMapping()[name.upper()])
@@ -125,7 +125,7 @@ def build_dictconfig() -> dict:
         QUEUE_HANDLER: {
             # ``class`` 로 선언해야 dictConfig 의 QueueHandler 특수 처리 경로를 탄다.
             # ``()`` 팩토리를 쓰면 그 경로를 통째로 우회하게 되어 queue·listener·대상
-            # 핸들러 연결을 전부 손으로 해야 한다 (ADR-021).
+            # 핸들러 연결을 전부 손으로 해야 한다.
             "class": "app.utils.logs.queue_handler.BoundedQueueHandler",
             "queue": {"()": "app.utils.logs.queue_handler.build_log_queue"},
             "listener": "app.utils.logs.queue_handler.TimeoutSentinelListener",
@@ -135,8 +135,8 @@ def build_dictconfig() -> dict:
             # 적재 전에 요청 스레드에서 컨텍스트를 채운다(listener 스레드에서는 늦다).
             # sql_noise 는 SQL 본문·바인딩 파라미터가 로그로 새는 것을 막는다.
             # redact 는 메시지·traceback·stack 의 비밀값을 적재 **전에** 가린다 — queue 가 가득 찬
-            # ERROR 의 stderr fallback 도 이 뒤라 가려진 값을 쓴다(log-redaction ADR-001).
-            # app_levels 는 헤더가 채워진 뒤 LOG_APP_LEVELS 로 거른다(logging-overhaul L4).
+            # ERROR 의 stderr fallback 도 이 뒤라 가려진 값을 쓴다.
+            # app_levels 는 헤더가 채워진 뒤 LOG_APP_LEVELS 로 거른다.
             "filters": ["sql_noise", "redact", "context", "app_levels"],
             "level": level,
         },

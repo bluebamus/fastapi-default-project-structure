@@ -29,7 +29,7 @@ def build_access_log_retention_service(db_session: AsyncSession) -> AccessLogRet
 def build_user_access_log_service(db_session: AsyncSession) -> UserAccessLogService:
     """세션으로 UserAccessLogService 를 조립한다 — HTTP provider 와 Celery 태스크가 함께 쓴다.
 
-    조립 규칙을 한 곳에 둔다(service-hardening ADR-012). 태스크는 요청 밖이라 ``Depends`` 를 쓸 수
+    조립 규칙을 한 곳에 둔다. 태스크는 요청 밖이라 ``Depends`` 를 쓸 수
     없으므로, 세션을 인자로 받는 일반 함수로 둔다.
     """
     return UserAccessLogService(db_session)

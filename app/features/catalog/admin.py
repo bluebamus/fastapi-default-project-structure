@@ -32,9 +32,9 @@ class ProductAdmin(ModelView, model=Product):
     page_size_options = [25, 50, 100, 200]
 
     column_searchable_list = [Product.name]
-    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다(admin-login F-005).
+    # 필터는 sqladmin.filters 객체로 준다 — 컬럼을 그대로 넣으면 목록 화면이 500 이다.
     # 생성 시각은 LocalDateFilter(업무 시간대 날짜 → UTC 범위)로 거른다 — sqladmin 연산 필터는 UTCDateTime 을
-    # 날짜형으로 보지 못해 500 이었다(security-ops-hardening ADR-005).
+    # 날짜형으로 보지 못해 500 이었다.
     column_filters = [BooleanFilter(Product.is_active), LocalDateFilter(Product.created_at)]
 
     column_details_list = [

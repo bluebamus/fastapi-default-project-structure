@@ -1,4 +1,4 @@
-"""고정 창 레이트 리밋 — ``RateLimiter`` (service-hardening ADR-016·ADR-025).
+"""고정 창 레이트 리밋 — ``RateLimiter``.
 
 키마다 창(``window`` 초) 동안의 요청 수를 센다. 창은 그 키의 첫 hit 에 시작한다.
 ``MULTI`` 안에서 ``SET key 0 EX window NX`` → ``INCR`` → ``TTL`` 을 한 번에 실행한다 — 첫 hit 만
@@ -7,7 +7,7 @@
 이 클래스만 보면 2.6.12 면 되지만 앱 전체의 최소 버전은 ``GETDEL`` 때문에 6.2 다(``app/core/redis.py`` 의
 ``REDIS_MIN_VERSION``).
 
-ponytail: 고정 창은 창 경계에서 최대 2배 버스트를 허용한다(residual-risk R-004). 막아야 하면
+ponytail: 고정 창은 창 경계에서 최대 2배 버스트를 허용한다. 막아야 하면
 슬라이딩 로그(ZSET)로 바꾼다.
 """
 

@@ -9,7 +9,7 @@ SQLAlchemy 세션을 제공하는 이름에 ``db_session`` 을 넣는 이유는 
 (callable 자체)가 갈라져 한 요청에서 세션이 둘로 열린다.
 
 모듈 레벨 이름만 보면 놓치는 것이 있다 — Base 클래스의 ``session`` **속성 별칭**이
-그랬다(F-021). 사용처 0건인 채로 두 클래스에 남아 "어느 쪽이 정식인가"를 계속
+그랬다. 사용처 0건인 채로 두 클래스에 남아 "어느 쪽이 정식인가"를 계속
 열어두고 있었다. 그래서 이 파일은 클래스 속성까지 함께 본다.
 """
 
@@ -104,7 +104,7 @@ SESSION_HOLDING_BASES = (CRUDBase, BaseService)
 
 
 def test_session_holding_bases_expose_only_db_session():
-    """Base 클래스가 ``db_session`` 만 공개하고 옛 ``session`` 별칭은 없어야 한다 (F-021).
+    """Base 클래스가 ``db_session`` 만 공개하고 옛 ``session`` 별칭은 없어야 한다.
 
     별칭이 있으면 두 이름이 같은 객체를 가리켜도 읽는 사람은 "무엇이 정식인가"를
     매번 다시 판단해야 한다. 참조 예제로 읽히는 파일일수록 비용이 크다.

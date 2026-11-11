@@ -38,7 +38,7 @@ target_metadata = Base.metadata
 #
 # 비밀번호까지 펼친 문자열을 넘긴다(가린 값으로는 접속할 수 없다). `%` 는 `%%` 로 바꾼다 —
 # Alembic Config 는 ConfigParser 라 `%` 를 보간 문법으로 읽는다. 퍼센트 인코딩된 비밀번호
-# (`p%40ss`)나 경로의 `%` 가 그대로 들어가면 여기서 터진다(service-hardening ADR-004).
+# (`p%40ss`)나 경로의 `%` 가 그대로 들어가면 여기서 터진다.
 # ---------------------------------------------------------------------------
 config.set_main_option(
     "sqlalchemy.url",
@@ -90,7 +90,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             # UTCDateTime 의 MySQL 소수 초 자릿수 비교와 앱 import 없는 렌더링
-            # (service-hardening ADR-010, app/core/models/types.py).
+            # (app/core/models/types.py).
             compare_type=compare_type,
             render_item=render_item,
         )

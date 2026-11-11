@@ -19,7 +19,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """사용자 생성 요청(슈퍼유저 전용).
 
-    비밀번호는 필수다 — 로그인할 수 없는 계정을 만들지 않는다(service-hardening ADR-020).
+    비밀번호는 필수다 — 로그인할 수 없는 계정을 만들지 않는다.
     저장은 Argon2 해시로만 한다.
     """
 

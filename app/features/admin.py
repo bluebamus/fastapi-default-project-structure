@@ -7,7 +7,7 @@
 수집은 **명시적 import** 로 한다 — 디렉터리 스캔이나 ``getattr(module, "admin_views", [])``
 같은 관용적 수집은 쓰지 않는다. 과거 그 방식이었을 때 기능의 ``admin.py`` 가 0바이트
 빈 파일이어도 조용히 건너뛰어져, ``/admin`` 은 정상 마운트된 채 등록 뷰만 1개인 상태를
-아무도 눈치채지 못했다(ADMIN-1). 명시 import 는 파일이 없거나 ``admin_views`` 가 빠지면
+아무도 눈치채지 못했다. 명시 import 는 파일이 없거나 ``admin_views`` 가 빠지면
 기동 시점에 ImportError 로 즉시 터진다.
 
 새 기능의 관리 화면을 추가하려면:
@@ -43,20 +43,20 @@ URL 등록:
     등록은 필요하지 않다 — 찾아도 안 나오는 이유가 이것이다.
 
 Note:
-    SQLAdmin 은 ADMIN_DISABLED 설정으로 끈다 (DEBUG 와 독립적, admin-login ADR-005).
+    SQLAdmin 은 ADMIN_DISABLED 설정으로 끈다 (DEBUG 와 독립적).
     기본(false): /admin 마운트, true: 마운트·sqladmin import·세션 미들웨어·인증 백엔드가
     모두 없다(404) — 앱 응답·기동 로그에도 관리 화면 경로가 나오지 않는다.
 
-로그인 (admin-login ADR-001~003):
+로그인:
     ``/admin`` 은 **활성 슈퍼유저** 로그인이 필요하다 — ``AdminAuthBackend``
     (``app/features/auth/admin_backend.py``)를 ``create_admin_interface()`` 가 주입한다.
     계정은 ``scripts/create_superuser.py`` 로 만든다. 세션은 Redis 서버 세션이고 쿠키
     ``admin_session`` 에는 세션 ID 만 있다(path ``/admin``, SameSite=Strict, HttpOnly, 절대 만료 8시간·
-    미사용 30분, staging/production 은 Secure — admin-session-hardening ADR-001). 로그인 화면은 ``app/templates/admin/sqladmin/login.html``
+    미사용 30분, staging/production 은 Secure). 로그인 화면은 ``app/templates/admin/sqladmin/login.html``
     (Bootstrap) 이 SQLAdmin 기본 화면을 덮어쓴다 — ``templates_dir`` 의 FileSystemLoader 가
     SQLAdmin 패키지 템플릿보다 먼저 찾아진다.
 
-CSRF (admin-session-hardening ADR-003·004):
+CSRF:
     ``/admin`` 의 POST·PUT·PATCH·DELETE 전부를 ``AdminCsrfMiddleware`` 가 검사한다. 로그인 이후 화면은
     ``app/templates/admin/sqladmin/base.html`` 이 SQLAdmin 원본 base 를 확장해 ``<meta name="csrf-token">``
     과 작은 인라인 스크립트(POST 폼에 hidden 토큰, 같은 출처 fetch/XHR 에 ``X-CSRF-Token``, 로그아웃 링크를
@@ -136,7 +136,7 @@ def _app_redis(app: FastAPI) -> Redis:
 def build_admin_auth_backend(
     app: FastAPI, session_factory: SessionFactory = background_db_session
 ) -> AdminAuthBackend:
-    """기존 provider 로 ``AdminAuthBackend`` 를 조립한다(service-hardening C-1).
+    """기존 provider 로 ``AdminAuthBackend`` 를 조립한다.
 
     Args:
         app: Redis 를 ``app.state`` 에 들고 있는 바깥 FastAPI 앱.
@@ -206,7 +206,7 @@ def create_admin_interface(
 
 
 def _logout_post_only(admin: Admin) -> None:
-    """sqladmin 의 GET 로그아웃 라우트를 같은 엔드포인트의 POST 전용 라우트로 바꾼다(ADR-004).
+    """sqladmin 의 GET 로그아웃 라우트를 같은 엔드포인트의 POST 전용 라우트로 바꾼다.
 
     POST 이므로 ``AdminCsrfMiddleware`` 가 토큰을 요구하고, GET 은 405 라 아무것도 바뀌지 않는다.
     sqladmin 이 라우트 이름을 바꾸면 여기서 기동이 멈춘다(조용히 GET 로그아웃이 남지 않게).

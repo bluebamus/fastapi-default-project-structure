@@ -1,4 +1,4 @@
-"""``scripts/create_superuser.py`` — 첫 관리자 만들기·승격 (service-hardening ADR-020, ledger F-024).
+"""``scripts/create_superuser.py`` — 첫 관리자 만들기·승격 (ledger F-024).
 
 ``main()`` 을 sqlite 파일 DB 세션으로 직접 부른다(``session_factory`` 주입). ``main`` 이 ``asyncio.run`` 으로
 자기 이벤트 루프를 돌리므로 테스트는 동기 함수이고, 엔진은 루프마다 새 연결을 여는 ``NullPool`` 을 쓴다.

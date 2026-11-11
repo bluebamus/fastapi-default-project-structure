@@ -131,7 +131,7 @@ PROJECT_LINE = (
 
 
 def test_every_path_uses_the_project_format(tmp_path):
-    """앱·``uvicorn main:app`` CLI·Celery 가 모두 같은 프로젝트 형식으로 쓴다(logging-overhaul L1).
+    """앱·``uvicorn main:app`` CLI·Celery 가 모두 같은 프로젝트 형식으로 쓴다.
 
     예전 테스트는 "기본값이면 도구 기본 출력 불변"을 고정했다 — 사용자 결정(포맷 C)으로 의도해서 바꿨다.
     """
@@ -183,7 +183,7 @@ def test_custom_formats_apply_to_celery_console_and_logfile(tmp_path):
 
 
 def test_redaction_holds_with_custom_format(tmp_path):
-    """사용자 포맷에서도 메시지·traceback·stack_info 의 비밀값이 가려진다(log-redaction ADR-001)."""
+    """사용자 포맷에서도 메시지·traceback·stack_info 의 비밀값이 가려진다."""
     proc = _run(
         PIPELINE_PROBE,
         tmp_path,
@@ -269,7 +269,7 @@ def test_valid_custom_format_is_accepted():
 
 @pytest.mark.parametrize("key", ["LOG_CONSOLE_FORMAT", "LOG_FILE_FORMAT"])
 def test_format_missing_required_fields_is_a_settings_error(key):
-    """모든 줄에 시각·레벨·헤더·모듈·클래스·함수·메시지가 있어야 한다(logging-overhaul L3)."""
+    """모든 줄에 시각·레벨·헤더·모듈·클래스·함수·메시지가 있어야 한다."""
     with pytest.raises(ValidationError, match=key) as exc:
         LogSettings(_env_file=None, **{key: "{asctime} {levelname} {message}"})
     for missing in ("appname", "module", "classname", "funcName"):
@@ -282,7 +282,7 @@ def test_default_formats_have_every_required_field():
 
 
 # =============================================================================
-# LOG_APP_LEVELS (logging-overhaul L4)
+# LOG_APP_LEVELS
 # =============================================================================
 def test_app_levels_parse_to_a_mapping():
     s = LogSettings(_env_file=None, LOG_APP_LEVELS=" blog=debug, celery=INFO ,sqlalchemy=WARNING")
@@ -318,7 +318,7 @@ def test_bad_app_levels_are_a_settings_error(raw):
 
 
 # =============================================================================
-# 파일 로그 설정 (logging-overhaul L5·L6)
+# 파일 로그 설정
 # =============================================================================
 def test_file_settings_defaults():
     s = LogSettings(_env_file=None)

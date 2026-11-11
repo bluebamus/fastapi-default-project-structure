@@ -1,6 +1,6 @@
 """Core Repositories 패키지.
 
-ORM 계층과 Raw SQL 계층은 **서로 상속하지 않는 평행 구조**다(AR-003)::
+ORM 계층과 Raw SQL 계층은 **서로 상속하지 않는 평행 구조**다::
 
     BaseRepository     -> CRUDBase        (ORM 모델 반환)
     RawRepositoryBase  -> RawCRUDBase     (RowMapping/scalar/rowcount 반환)

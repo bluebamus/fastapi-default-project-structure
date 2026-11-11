@@ -1,19 +1,19 @@
 """SalesReport Raw Repository — 일별 매출 집계 SQL 을 소유한다.
 
 Base(``RawRepositoryBase``)에는 도메인 SQL 을 두지 않는다. SQL 과 컬럼 alias,
-그리고 안정적인 ``query_name`` 상수는 이 파일이 소유한다(RAW-REP-002).
+그리고 안정적인 ``query_name`` 상수는 이 파일이 소유한다.
 
 이 파일에는 Raw 의 **읽기**(``daily_sales``)와 **쓰기**(``delete_daily_snapshots`` /
 ``insert_daily_snapshots``)가 나란히 있다. 쓰기 쪽은 커밋하지 않는다 — ``execute`` 는
-영향 행 수만 돌려주고, 트랜잭션 경계는 View 본문이 닫는다(TX-001/C-2).
+영향 행 수만 돌려주고, 트랜잭션 경계는 View 본문이 닫는다.
 
 기간 경계에 관하여:
     "종료일 포함" 은 비즈니스 규칙이라 Service 가 해석하고, 여기에는 이미 계산된
     **반열린 구간** ``[start_at, end_at)`` 이 들어온다. ``DATE_ADD(:end, INTERVAL 1 DAY)``
     같은 방언 함수를 SQL 에 넣지 않은 이유이기도 하다 — 규칙이 SQL 에 숨으면
-    단위 테스트가 DB 방언에 묶인다(docs/guides/DEVELOPMENT.md §6.4).
+    단위 테스트가 DB 방언에 묶인다.
 
-시각과 영업일에 관하여 (service-hardening ADR-010):
+시각과 영업일에 관하여:
     ``created_at`` 은 UTC 로 저장된다. 구간 경계는 Service 가 로컬 영업일(TIME_ZONE)을 UTC
     순간으로 바꿔 넘기고, 시각 바인드는 ``UTCDateTime`` 타입을 거친다(naive 거부 · UTC 변환).
     일자 묶음만은 SQL 이 로컬 날짜로 바꿔야 해서 방언 함수가 필요하다 — MySQL 은
@@ -43,7 +43,7 @@ QUERY_INSERT_SNAPSHOTS = "sales_report.insert_daily_snapshots"
 # 이 매핑이 이 파일에 있는 이유는 alias 를 이 파일이 소유하기 때문이다. View 의
 # 쿼리 파라미터에 enum 을 박아도 되지만 그건 UX 이고, 실제 방어선은 SQL 을 만드는
 # 여기여야 한다 — Celery 태스크나 스크립트가 이 Repository 를 직접 부를 때도
-# 같은 제약이 걸려야 하기 때문이다(RAW-REP-004).
+# 같은 제약이 걸려야 하기 때문이다.
 SORTABLE_COLUMNS: Mapping[str, str] = {
     "sales_date": "sales_date",
     "order_count": "order_count",
@@ -57,8 +57,8 @@ DEFAULT_SORT_DIRECTION = "ASC"
 #
 # ponytail: 고정 오프셋 — 구간 시작 시점의 TIME_ZONE 오프셋 하나로 모든 행을 묶는다. DST 가 있는
 # 지역은 전환일 앞뒤가 하루 어긋난다. 그런 TIME_ZONE 이 필요해지면 행마다 바꾸는 named time zone
-# (``CONVERT_TZ(col, '+00:00', 'Europe/Berlin')`` + MySQL 시간대 테이블 적재)으로 올린다
-# (residual-risk R-003). 기본 Asia/Seoul 은 DST 가 없다.
+# (``CONVERT_TZ(col, '+00:00', 'Europe/Berlin')`` + MySQL 시간대 테이블 적재)으로 올린다.
+# 기본 Asia/Seoul 은 DST 가 없다.
 _LOCAL_DATE_SQL: Mapping[str, str] = {
     "mysql": "DATE(CONVERT_TZ(o.created_at, '+00:00', :tz_offset))",
     "sqlite": "DATE(o.created_at, :tz_offset)",
@@ -70,9 +70,9 @@ _START_AT = bindparam("start_at", type_=UTCDateTime())
 _END_AT = bindparam("end_at", type_=UTCDateTime())
 _GENERATED_AT = bindparam("generated_at", type_=UTCDateTime())
 
-# 일별 집계. 값은 전부 named bind parameter 로 들어간다(RAW-REP-003).
+# 일별 집계. 값은 전부 named bind parameter 로 들어간다.
 # 일자 묶음 식만 방언 함수다(위 ``_LOCAL_DATE_SQL``) — MySQL 실제 동작은
-# 통합 테스트(@pytest.mark.mysql)가 확인한다(RAW-REP-006).
+# 통합 테스트(@pytest.mark.mysql)가 확인한다.
 #
 # ORDER BY 와 일자 식만 f-string 자리다. 컬럼명과 정렬 방향은 bind parameter 가 될 수 없어서
 # 문자열로 끼워 넣을 수밖에 없는데, **끼워 넣는 값이 요청값이면 injection 이다**.
@@ -91,7 +91,7 @@ _DAILY_SALES_SQL_TEMPLATE = """
 
 
 # ---------------------------------------------------------------------------
-# 쓰기 — 집계 결과를 스냅샷 테이블에 적재한다 (SCN-RAW-003)
+# 쓰기 — 집계 결과를 스냅샷 테이블에 적재한다
 # ---------------------------------------------------------------------------
 # 왜 Raw 인가:
 #     집합 연산이 **서버 안에서 끝나기 때문**이다. ORM 이면 집계 N 행을 파이썬으로
@@ -116,9 +116,9 @@ _DELETE_SNAPSHOTS_SQL = text("""
 # generated_at 을 바인드 파라미터로 넣는 이유: 모델의 default 는 ORM/Core 가 발행하는
 # 문장에서만 동작한다. Raw DML 은 그것을 우회하므로 값을 SQL 이 명시해야 한다.
 # NOW()/CURRENT_TIMESTAMP 를 쓰지 않은 것도 같은 맥락이다 — 시각을 파이썬이 정하면
-# 테스트가 시계에 묶이지 않고, 저장 시각이 UTC 라는 규칙(ADR-010)이 그대로 적용된다.
+# 테스트가 시계에 묶이지 않고, 저장 시각이 UTC 라는 규칙이 그대로 적용된다.
 #
-# ponytail: 고정 오프셋 — 조회 SQL 과 같은 한계다(``_LOCAL_DATE_SQL`` 주석, residual-risk R-003).
+# ponytail: 고정 오프셋 — 조회 SQL 과 같은 한계다(``_LOCAL_DATE_SQL`` 주석).
 _INSERT_SNAPSHOTS_SQL_TEMPLATE = """
     INSERT INTO sales_daily_snapshots
         (sales_date, order_count, gross_amount, generated_at)

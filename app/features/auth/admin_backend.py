@@ -1,24 +1,24 @@
-"""SQLAdmin 로그인 — ``AdminAuthBackend`` (admin-login ADR-001~003).
+"""SQLAdmin 로그인 — ``AdminAuthBackend``.
 
 ``/admin`` 은 **활성 슈퍼유저**만 쓴다. 자격 확인은 API 로그인과 같은 ``AuthService.authenticate``
 (사용자명 + 비밀번호, 레거시 bcrypt → Argon2 재해시 포함)를 그대로 쓰고, 레이트 리밋도 같은
 ``RateLimiter`` 와 한도 설정(``AUTH_LOGIN_*``)을 쓰되 키 접두사만 ``admin:rl:login:`` 으로 나눈다 —
 API 로그인 실패가 관리 화면 한도를 깎지 않게.
 
-세션은 Redis 서버 세션이다(admin-session-hardening ADR-001) — 쿠키 ``admin_session`` 에는 무작위 세션 ID 만
+세션은 Redis 서버 세션이다 — 쿠키 ``admin_session`` 에는 무작위 세션 ID 만
 있고, 내용(사용자 id·CSRF 토큰)은 Redis 에 있다. 저장소·미들웨어는 ``app/core/security/admin_session.py``
 (``AdminSessionStore``·``RedisSessionMiddleware``)이고 ``request.session`` 인터페이스는 그대로다.
 ``authenticate`` 는 **요청마다** DB 에서 그 사용자를 다시 읽어, 강등·비활성화·삭제가 다음 요청부터 바로
-반영된다(access 토큰의 R-014 와 다르다). 그와 별도로 강등·비활성화·삭제는 그 사용자의 관리 세션을 서버에서
-지운다(이중 방어, ADR-002).
+반영된다(만료 전까지 유효한 access 토큰과 다르다). 그와 별도로 강등·비활성화·삭제는 그 사용자의 관리 세션을 서버에서
+지운다(이중 방어).
 
-협력 객체는 생성자로 받는다(service-hardening C-1). 조립은 ``app/features/admin.py`` 의
+협력 객체는 생성자로 받는다. 조립은 ``app/features/admin.py`` 의
 ``build_admin_auth_backend`` 가 기존 provider(``get_password_hasher``·``get_token_service``·
 ``get_refresh_token_store``·``get_rate_limiter``·``new_admin_session_store``)로 한다. 이 모듈은 sqladmin 을
 import 하므로 ``ADMIN=false`` 에서 로드되지 않도록 auth 패키지 ``__init__`` 으로 재노출하지 않는다.
 
-CSRF (admin-session-hardening ADR-003): ``/admin`` 의 POST·PUT·PATCH·DELETE 전부(로그인·로그아웃 포함)를
-``AdminCsrfMiddleware`` 하나가 검사한다 — 로그인 폼 검사(security-ops-hardening ADR-004)도 그 미들웨어로
+CSRF: ``/admin`` 의 POST·PUT·PATCH·DELETE 전부(로그인·로그아웃 포함)를
+``AdminCsrfMiddleware`` 하나가 검사한다 — 로그인 폼 검사도 그 미들웨어로
 옮겨 한 곳에서만 한다. 미들웨어는 엔드포인트보다 먼저라 위조 요청은 레이트 리밋·자격 확인에 닿지 않는다.
 거부 화면은 이 백엔드의 ``csrf_rejected`` 가 그린다(로그인 POST 는 로그인 화면, 그 밖은 오류 화면, 403).
 로그인 성공은 ``session.clear()`` + ``rotate_session`` 으로 세션 ID 와 토큰을 함께 회전한다.

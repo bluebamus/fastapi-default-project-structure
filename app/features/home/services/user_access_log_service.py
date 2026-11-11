@@ -30,7 +30,7 @@ def fit_to_columns(data: dict[str, Any]) -> dict[str, Any]:
 
     헤더·경로·쿼리는 클라이언트가 길이를 정한다. MySQL strict 모드에서 길이 초과
     INSERT 는 실패하고, 접속 로그는 백그라운드라 그 실패가 조용히 버려진다 — 긴 헤더
-    하나로 감사 기록을 피할 수 있었다(service-hardening ADR-007). 길이는 모델 컬럼에서
+    하나로 감사 기록을 피할 수 있었다. 길이는 모델 컬럼에서
     읽는다(숫자를 두 번 적지 않는다). ``Text`` 처럼 길이가 없는 컬럼은 그대로 둔다.
     """
     columns = UserAccessLog.__table__.c

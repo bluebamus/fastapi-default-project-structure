@@ -46,7 +46,7 @@ def test_composed_bases_are_abstract():
 
 
 def test_immutable_log_has_no_updated_at():
-    """불변 로그 모델은 updated_at 을 강제받지 않는다 (ORM-MDL-002)."""
+    """불변 로그 모델은 updated_at 을 강제받지 않는다."""
     import_all_models()
 
     for table_name in IMMUTABLE_LOG_TABLES:
@@ -83,7 +83,7 @@ def test_no_independent_declarative_base_in_features():
 
 
 def test_all_models_inherit_the_shared_base():
-    """모든 기능 모델이 공통 Base 계층을 쓴다 (ORM-MDL-001)."""
+    """모든 기능 모델이 공통 Base 계층을 쓴다."""
     import_all_models()
 
     mapped_tables = set(Base.metadata.tables)

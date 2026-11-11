@@ -1,4 +1,4 @@
-"""파일 로그 — 프로세스별 + 에러 (logging-overhaul L5) 와 비밀값 원문 차단 (L7) 의 실제 출력.
+"""파일 로그 — 프로세스별 + 에러 와 비밀값 원문 차단 의 실제 출력.
 
 실제 로깅 구성을 저장소 밖 tmp 작업 디렉터리의 자식 프로세스에 적용해 본다(이 프로세스의 로깅은
 바꾸지 않는다). 파일은 그 tmp 아래 ``LOG_DIR`` 에 생긴다.
@@ -90,7 +90,7 @@ setup.stop_log_listener()
 
 
 def test_import_time_lines_reach_the_process_file(tmp_path):
-    """import 중 찍힌 줄(DB 라우팅 구성)도 프로세스 파일에 한 번 남는다 (integration-e2e F-003, ADR-011)."""
+    """import 중 찍힌 줄(DB 라우팅 구성)도 프로세스 파일에 한 번 남는다."""
     for i, (argv0, module, process, own, other) in enumerate(
         (
             ("main.py", "main", "app", "app.log", "celery.log"),

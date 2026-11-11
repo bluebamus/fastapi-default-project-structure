@@ -1,4 +1,4 @@
-"""중앙 Celery 앱 계약 — service-hardening ADR-012 (F-018).
+"""중앙 Celery 앱 계약 — service-hardening ADR-012.
 
 태스크는 기능별 ``tasks.py`` 에 있고, 워커의 include 는 모델 등록과 같은 기능 패키지 탐색
 (``models_registry.iter_task_modules``)이 만든다. 중앙 패키지(app/celery)가 기능을 import 하면
@@ -112,7 +112,7 @@ def test_removing_a_feature_removes_its_tasks_from_include(fake_features):
 def test_every_include_module_imports_and_registers_its_tasks():
     """include 의 모든 ``tasks.py`` 를 워커처럼 실제로 import 하고, 각 모듈이 태스크를 등록하는지 본다.
 
-    탐색(``find_spec``)은 존재만 확인하고 import 하지 않는다(ADR-024 ③). 그래서 ``tasks.py`` 의 import
+    탐색(``find_spec``)은 존재만 확인하고 import 하지 않는다. 그래서 ``tasks.py`` 의 import
     오류·오타는 워커 기동 때에야 드러난다 — 여기서 같은 import 를 해 CI 에서 먼저 터지게 한다(admin-login).
     """
     from app.celery.app import celery_app
@@ -130,7 +130,7 @@ def test_every_include_module_imports_and_registers_its_tasks():
 
 
 def test_celery_uses_utc_internally():
-    """Celery 내부 시각은 UTC 다 — DB 저장 시각과 같은 기준(service-hardening ADR-010)."""
+    """Celery 내부 시각은 UTC 다 — DB 저장 시각과 같은 기준."""
     from app.celery.app import celery_app
     from config import timezone_settings
 

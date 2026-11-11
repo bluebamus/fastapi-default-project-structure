@@ -30,7 +30,7 @@ class SalesOrderAdmin(ModelView, model=SalesOrder):
     page_size_options = [25, 50, 100, 200]
 
     column_searchable_list = [SalesOrder.customer]
-    # 주문 시각은 LocalDateFilter(업무 시간대 날짜 → UTC 범위)로 거른다(security-ops-hardening ADR-005).
+    # 주문 시각은 LocalDateFilter(업무 시간대 날짜 → UTC 범위)로 거른다.
     column_filters = [LocalDateFilter(SalesOrder.created_at)]
 
     column_details_list = [

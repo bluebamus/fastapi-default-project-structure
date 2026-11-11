@@ -1,4 +1,4 @@
-"""Celery worker 프로세스의 자원 수명 관리 (AR-010).
+"""Celery worker 프로세스의 자원 수명 관리.
 
 FastAPI 의 lifespan 은 **worker 프로세스에서 실행되지 않는다.** worker 는 첫 async
 태스크에서 영속 event loop 를 만들고 그 루프에 DB 커넥션 pool 을 바인딩하는데,
@@ -14,7 +14,7 @@ FastAPI 의 lifespan 은 **worker 프로세스에서 실행되지 않는다.** w
 
 FastAPI Resource Manager 와는 **소유권이 다른 프로세스**다. 공통 cleanup
 primitive(``dispose_engine``)만 재사용하고, FastAPI lifespan 이 Celery 자원을
-닫거나 그 반대를 하지 않는다(AR-006).
+닫거나 그 반대를 하지 않는다.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from app.utils.logs.setup import adopt_foreign_handlers, attach_log_files
 
 logger = get_logger("celery.lifecycle")
 
-# worker cleanup 전용 예산 (확정 정책 7). FastAPI 의 20초와 별개다.
+# worker cleanup 전용 예산. FastAPI 의 20초와 별개다.
 CELERY_CLEANUP_TIMEOUT_SECONDS = 10.0
 
 
@@ -85,13 +85,13 @@ def _on_worker_process_shutdown(**_kwargs: object) -> None:
 @after_setup_logger.connect
 @after_setup_task_logger.connect
 def _redact_celery_log_handlers(logger: logging.Logger, **_kwargs: object) -> None:
-    """Celery 가 root·task 로거에 단 핸들러를 프로젝트 출력으로 바꾼다 (logging-overhaul L1).
+    """Celery 가 root·task 로거에 단 핸들러를 프로젝트 출력으로 바꾼다.
 
     worker 는 기본값(``worker_hijack_root_logger``)으로 root 의 핸들러를 **지우고** 자기
     핸들러를 단다 — 우리 queue 핸들러와 그 필터(마스킹·헤더·헤더별 레벨)가 함께 사라진다.
     ``adopt_foreign_handlers`` 가 콘솔 핸들러를 공유 queue 로 바꾸고, ``--logfile`` 파일 핸들러는
-    남겨 같은 포맷·필터를 입힌다(log-redaction ADR-001 의 마스킹 포함).
+    남겨 같은 포맷·필터를 입힌다(마스킹 포함).
     """
-    # `celery` 실행이면 설정 로드 직후 이미 붙었다(integration-e2e ADR-011) — 그 밖의 경로용(멱등).
+    # `celery` 실행이면 설정 로드 직후 이미 붙었다 — 그 밖의 경로용(멱등).
     attach_log_files("celery")
     adopt_foreign_handlers(logger)
