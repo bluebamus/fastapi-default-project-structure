@@ -8,7 +8,7 @@
   증가해 백그라운드 풀(pool_timeout) 대기가 누적된다.
 - **Drain**: 앱 종료(lifespan shutdown)에서 in-flight 태스크를 기다린 뒤
   엔진을 정리하도록 ``drain()`` 을 제공한다. 이걸 빠뜨리면 진행 중이던 로그
-  쓰기가 ``dispose_engine()`` 과 경합해 유실될 수 있다(검수 W1/REQ-009).
+  쓰기가 ``dispose_engine()`` 과 경합해 유실될 수 있다.
 
 전역 싱글턴 ``access_log_tasks`` 를 미들웨어(spawn)와 main lifespan(drain)이
 공유한다.
@@ -72,7 +72,7 @@ class BackgroundTaskRunner:
 
         회수하지 않으면 태스크가 GC 될 때 asyncio 가 직접
         ``Task exception was never retrieved`` 를 찍는다 — 우리 로그 포맷·필터 밖에서
-        나오므로 어느 요청에서 비롯됐는지 따라가기 어렵다 (F-033).
+        나오므로 어느 요청에서 비롯됐는지 따라가기 어렵다.
 
         취소는 오류가 아니다. 종료 drain 이 timeout 후 스스로 취소한 것이므로, 이것을
         error 로 남기면 정상 종료마다 오류가 쌓인다.
@@ -88,7 +88,7 @@ class BackgroundTaskRunner:
         """in-flight 태스크를 기다리고, timeout 후 남은 것은 취소·회수한다.
 
         timeout 이 지났다고 태스크를 그대로 두면 곧이어 실행되는 DB engine
-        dispose 이후에도 태스크가 살아 돌아 이미 닫힌 pool 을 만진다(AR-009).
+        dispose 이후에도 태스크가 살아 돌아 이미 닫힌 pool 을 만진다.
         취소만 하고 반환해도 부족하다 — ``cancel()`` 은 다음 await 지점에
         ``CancelledError`` 를 넣을 뿐이라, 취소한 태스크를 다시 await 해야
         ``finally`` 의 session rollback/close 가 실제로 실행된다.

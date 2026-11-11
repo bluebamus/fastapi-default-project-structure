@@ -79,7 +79,7 @@ def test_installed_packages_are_external():
     ],
 )
 def test_external_code_is_labeled_by_logger_name(logger_name, expected):
-    """저장소 밖 코드는 **로거 이름**으로 출처를 붙인다(logging-overhaul L2)."""
+    """저장소 밖 코드는 **로거 이름**으로 출처를 붙인다."""
     site = "/opt/py/lib/python3.14/site-packages/pkg/mod.py"
     assert _app_from_path(site, logger_name) == expected
 
@@ -171,7 +171,7 @@ def _build_with(monkeypatch, tmp_path, **overrides):
 
 
 def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
-    """root 에는 queue 핸들러 하나만 붙는다 (NFR-009).
+    """root 에는 queue 핸들러 하나만 붙는다.
 
     요청 event loop 에서 동기 write/flush 가 일어나지 않으려면 root 에 출력
     핸들러가 직접 붙어서는 안 된다. stdout/stderr 쓰기는 listener 스레드의 몫이다.
@@ -182,18 +182,18 @@ def test_root_uses_queue_handler_only(monkeypatch, tmp_path):
             "queue"
         ], f"ENV={env} 의 root 에 queue 외 핸들러가 붙었다 — event loop 를 막는다"
         queue_handler = cfg["handlers"]["queue"]
-        # dictConfig 네이티브 경로를 타려면 ``class`` 여야 한다 (ADR-021).
+        # dictConfig 네이티브 경로를 타려면 ``class`` 여야 한다.
         # 선언 세부는 test_dictconfig_declares_the_queue_listener_natively 가 본다.
         assert queue_handler["class"] == "app.utils.logs.queue_handler.BoundedQueueHandler"
         # 컨텍스트는 **적재 전** 요청 스레드에서 채워야 classname 이 살아 있다.
-        # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다(NFR-001). redact 는 메시지·traceback·
-        # stack 의 비밀값을 적재 전에 가린다(log-redaction ADR-001).
-        # app_levels 는 헤더가 채워진 **뒤**(context 바로 뒤)에 헤더별 레벨로 거른다(logging-overhaul L4).
+        # sql_noise 는 SQL 본문·바인딩 파라미터 유출을 막는다. redact 는 메시지·traceback·
+        # stack 의 비밀값을 적재 전에 가린다.
+        # app_levels 는 헤더가 채워진 **뒤**(context 바로 뒤)에 헤더별 레벨로 거른다.
         assert queue_handler["filters"] == ["sql_noise", "redact", "context", "app_levels"]
 
 
 def test_no_file_handlers_in_any_environment(monkeypatch, tmp_path):
-    """dictConfig 에는 파일 핸들러가 없다 (NFR-009).
+    """dictConfig 에는 파일 핸들러가 없다.
 
     파일 로그(``LOG_FILE_ENABLED``)는 진입점이 ``attach_log_files()`` 로 **listener** 에 더한다
     (logging-overhaul L5) — 요청 스레드가 동기 rotation 을 하지 않게. dictConfig 에 파일 핸들러가
@@ -299,14 +299,14 @@ def test_dictconfig_has_no_per_app_loggers(monkeypatch, tmp_path):
 
     uvicorn 3종 로거는 여기서 걸리지 않는다 — ``setup_uvicorn_logging()`` 이 만들어
     ``uvicorn.run(log_config=...)`` 으로 **uvicorn 에게 넘기는 별도 설정**이고, 앱
-    ``build_dictconfig()`` 에는 들어가지 않는다 (ADR-020).
+    ``build_dictconfig()`` 에는 들어가지 않는다.
     """
     for env in ("development", "test", "staging", "production"):
         cfg = _build_with(monkeypatch, tmp_path, env=env)
         assert "loggers" not in cfg, (
             f"ENV={env} 의 dictConfig 에 loggers 키가 생겼습니다. "
             "앱별 로거 등록은 charter §2-4 의 비목표입니다 — 코드보다 그 조항을 먼저 "
-            "개정하세요. uvicorn 로거가 필요하면 setup_uvicorn_logging() 쪽입니다(ADR-020)."
+            "개정하세요. uvicorn 로거가 필요하면 setup_uvicorn_logging() 쪽입니다."
         )
         assert cfg["root"]["handlers"], "root 에 핸들러가 없으면 아무 로그도 나가지 않는다"
 
@@ -315,7 +315,7 @@ def test_uvicorn_shares_the_app_queue(monkeypatch):
     """uvicorn 3종 로거가 앱과 **같은** queue 로 나가고 root 로 전파하지 않는다.
 
     propagate=True 면 앱 root 핸들러가 같은 줄을 한 번 더 찍어 중복 출력이 된다.
-    ``app=uvicorn`` 라벨은 로거 이름으로 판별 함수가 붙인다(logging-overhaul L2) — 별도 필터가 없다.
+    ``app=uvicorn`` 라벨은 로거 이름으로 판별 함수가 붙인다 — 별도 필터가 없다.
     """
     cfg = setup_uvicorn_logging()
 
@@ -365,13 +365,13 @@ def test_configure_logging_applies_once(monkeypatch):
 
 
 # =============================================================================
-# 프로세스 수명 listener (ADR-018 / F-029)
+# 프로세스 수명 listener
 #
 # listener 의 소유자는 FastAPI lifespan 이 아니라 프로세스다. lifespan 이 멈추면
 # 그 뒤에 나오는 uvicorn 최종 로그와 startup 실패 traceback 이 큐에 갇혀 사라진다.
 # =============================================================================
 def test_process_exit_hook_is_registered_once(monkeypatch):
-    """로깅 구성 시 프로세스당 **한 번만** 종료 훅을 등록한다 (ADR-018).
+    """로깅 구성 시 프로세스당 **한 번만** 종료 훅을 등록한다.
 
     여러 번 등록되면 종료 때 stop 이 여러 번 불리고, 등록이 아예 없으면 프로세스가
     listener 를 남긴 채 죽는다. 실제 스레드를 만들지 않도록 dictConfig 와 listener
@@ -434,7 +434,7 @@ def test_stop_reports_lifecycle_outside_the_queue_and_is_idempotent(monkeypatch)
 # stdlib 의 QueueListener 는 두 곳이 무방비다.
 #   · enqueue_sentinel() 이 put_nowait 이라 bounded queue 가 포화면 종료가 실패한다.
 #   · stop() 의 thread.join() 에 timeout 이 없어, sentinel 이 소비되지 않으면 영원히
-#     기다린다. atexit 훅에 물려 있으면 그대로 프로세스 종료가 막힌다(F-037, 실측).
+#     기다린다. atexit 훅에 물려 있으면 그대로 프로세스 종료가 막힌다(실측).
 # 둘 다 stdlib 이 지정한 확장 지점(enqueue_sentinel 오버라이드)으로 닫는다.
 # =============================================================================
 def _isolated_listener(maxsize: int = 0):
@@ -448,7 +448,7 @@ def _isolated_listener(maxsize: int = 0):
 
 
 def test_enqueue_sentinel_waits_for_a_slot_instead_of_failing_immediately(monkeypatch):
-    """queue 가 잠깐 가득 차 있어도 종료 sentinel 을 넣을 수 있어야 한다 (F-030).
+    """queue 가 잠깐 가득 차 있어도 종료 sentinel 을 넣을 수 있어야 한다.
 
     기본 구현(``put_nowait``)이면 이 지점에서 ``queue.Full`` 로 죽고, 그 여파로
     listener 손잡이를 잃는다.
@@ -469,7 +469,7 @@ def test_enqueue_sentinel_waits_for_a_slot_instead_of_failing_immediately(monkey
 
 
 def test_stop_is_bounded_when_the_sentinel_never_arrives(monkeypatch):
-    """소비 스레드가 sentinel 을 못 받아도 stop 은 예산 안에 반환한다 (F-037).
+    """소비 스레드가 sentinel 을 못 받아도 stop 은 예산 안에 반환한다.
 
     Wave 3 에서 실제로 관측한 상황이다 — 같은 queue 에 소비자가 둘이면 sentinel 을
     다른 쪽이 가져가고 이쪽 join 이 영원히 대기한다. atexit 훅은 daemon 스레드 정리보다
@@ -494,7 +494,7 @@ def test_stop_is_bounded_when_the_sentinel_never_arrives(monkeypatch):
 
 
 def test_stop_keeps_the_handle_when_stopping_fails(monkeypatch):
-    """stop 이 실패하면 전역 참조를 **유지**한다 — 버리면 회수할 손잡이가 없다 (F-030)."""
+    """stop 이 실패하면 전역 참조를 **유지**한다 — 버리면 회수할 손잡이가 없다."""
 
     class _FailingListener:
         def stop(self) -> None:
@@ -512,7 +512,7 @@ def test_stop_keeps_the_handle_when_stopping_fails(monkeypatch):
 
 
 def test_dictconfig_declares_the_queue_listener_natively(monkeypatch, tmp_path):
-    """queue/listener 구성을 손으로 하지 않고 dictConfig 에 맡긴다 (ADR-021).
+    """queue/listener 구성을 손으로 하지 않고 dictConfig 에 맡긴다.
 
     ``()`` 커스텀 팩토리를 쓰면 stdlib 의 QueueHandler 특수 처리 경로를 통째로
     우회하게 되고, 그 결과 listener 생성·대상 핸들러 연결을 전부 손으로 해야 한다.
@@ -555,7 +555,7 @@ def test_restart_revives_the_listener_after_its_thread_is_gone(monkeypatch):
     assert stub.starts == 1, "fork 후 listener 를 다시 세우지 못했다"
 
 
-# ── 신호 종료 경로 (F-038) ──────────────────────────────────────────────────
+# ── 신호 종료 경로 ──────────────────────────────────────────────────
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # uvicorn 이 정상 종료를 마친 뒤 하는 일을 그대로 재현하는 관찰 스크립트.
@@ -577,7 +577,7 @@ print("SURVIVED_THE_SIGNAL", flush=True)
 
 
 def test_signal_shutdown_still_drains_the_log_listener():
-    """신호로 죽는 경로에서도 listener 가 flush 되고 멈춘다 (F-038 / ADR-022).
+    """신호로 죽는 경로에서도 listener 가 flush 되고 멈춘다.
 
     ``docker stop``·k8s 의 SIGTERM 과 Windows 의 CTRL_BREAK 는 기본 핸들러가
     ``SIG_DFL`` 이라 **프로세스를 그 자리에서 끝낸다.** uvicorn 은 정상 종료를 마친 뒤
@@ -610,7 +610,7 @@ def test_signal_shutdown_still_drains_the_log_listener():
 
     assert "[log-lifecycle] stop 완료" in out, (
         "신호로 종료되는 경로에서 listener 가 flush·정지되지 않았다 — 큐에 남은 "
-        f"종료 로그가 유실된다 (F-038). 출력:\n{out}"
+        f"종료 로그가 유실된다. 출력:\n{out}"
     )
     assert "SURVIVED_THE_SIGNAL" not in out, (
         "신호를 삼켰다. 정리 후에는 원래 종료 동작으로 돌아가야 한다 — 삼키면 "
@@ -620,7 +620,7 @@ def test_signal_shutdown_still_drains_the_log_listener():
 
 
 def test_wait_until_written_is_bounded_when_nothing_consumes():
-    """소비자가 없으면 예산만큼만 기다리고 False 를 돌려준다 (ADR-023).
+    """소비자가 없으면 예산만큼만 기다리고 False 를 돌려준다.
 
     ``Queue.join()`` 에는 timeout 이 없다. 그대로 썼다면 listener 가 죽어 있을 때
     종료가 영원히 매달렸을 것이다 — F-037 과 정확히 같은 함정이다.

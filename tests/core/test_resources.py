@@ -88,8 +88,8 @@ def wiring(monkeypatch):
     monkeypatch.setattr(resources, "import_all_models", fake_import)
     monkeypatch.setattr(resources, "access_log_tasks", _FakeRunner(calls))
     monkeypatch.setattr(resources, "Redis", _FakeRedisFactory)
-    # listener 를 **멈추는** 것은 여전히 lifespan 소유가 아니다 (ADR-018).
-    # 다만 쌓인 로그가 다 나가기를 **기다리는** 것은 lifespan 의 마지막 일이다 (ADR-023).
+    # listener 를 **멈추는** 것은 여전히 lifespan 소유가 아니다.
+    # 다만 쌓인 로그가 다 나가기를 **기다리는** 것은 lifespan 의 마지막 일이다.
     monkeypatch.setattr(resources, "flush_log_queue", fake_flush)
     return calls, state
 
@@ -147,7 +147,7 @@ async def test_models_without_debug_never_creates_tables(monkeypatch, wiring):
 
 
 async def test_model_discovery_runs_once_per_startup(monkeypatch, wiring):
-    """같은 startup 에서 모델 discovery/import 를 두 번 수행하지 않는다 (AR-007)."""
+    """같은 startup 에서 모델 discovery/import 를 두 번 수행하지 않는다."""
     _, state = wiring
     _use_tables(monkeypatch, 2)
     _set_debug(monkeypatch, True)
@@ -169,7 +169,7 @@ async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
     """lifespan 종료 순서는 background drain → DB dispose 다.
 
     DB 를 쓰는 주체를 먼저 멈춰야 커넥션 풀을 닫는 것이 안전하다. logging listener
-    stop 은 이 순서에 **없다** — 소유자가 프로세스로 옮겨갔다(ADR-018).
+    stop 은 이 순서에 **없다** — 소유자가 프로세스로 옮겨갔다.
     """
     calls, _ = wiring
     _use_tables(monkeypatch, 1)
@@ -183,7 +183,7 @@ async def test_shutdown_order_is_drain_then_dispose(monkeypatch, wiring):
 
 
 async def test_process_log_listener_survives_lifespan_shutdown(monkeypatch, wiring):
-    """lifespan 이 끝나도 프로세스 listener 는 살아 있다 (ADR-018 / F-029).
+    """lifespan 이 끝나도 프로세스 listener 는 살아 있다.
 
     listener 를 lifespan 이 멈추면, 그 **뒤에** uvicorn 이 남기는 최종 로그와
     startup 실패 traceback 이 큐에 갇혀 사라진다. 실측 증상은 "DB 가 꺼진 채
@@ -205,7 +205,7 @@ async def test_process_log_listener_survives_lifespan_shutdown(monkeypatch, wiri
 
     assert (
         logs_setup._listener is sentinel
-    ), "lifespan 종료 뒤 프로세스 listener 가 사라졌다 — 이후 로그가 유실된다 (F-029)"
+    ), "lifespan 종료 뒤 프로세스 listener 가 사라졌다 — 이후 로그가 유실된다"
 
 
 async def test_cleanup_failure_does_not_skip_remaining(monkeypatch, wiring):
@@ -276,7 +276,7 @@ async def test_redis_connection_failure_stops_startup_and_cleans_up(monkeypatch,
 
 
 async def test_state_resources_cleared_after_shutdown(monkeypatch, wiring):
-    """cleanup 후 app.state.resources 가 닫힌 자원을 참조하지 않는다 (AR-005)."""
+    """cleanup 후 app.state.resources 가 닫힌 자원을 참조하지 않는다."""
     _use_tables(monkeypatch, 1)
     _set_debug(monkeypatch, False)
 
@@ -332,7 +332,7 @@ async def test_slow_cleanup_is_bounded_by_timeout(monkeypatch, wiring):
 
 
 async def test_drain_gets_headroom_to_finish_cancellation(monkeypatch, wiring):
-    """drain 에 준 시간은 바깥 예산보다 짧아야 한다 (F-001).
+    """drain 에 준 시간은 바깥 예산보다 짧아야 한다.
 
     같은 값을 주면 drain 이 timeout 에 도달해 pending 을 취소하고 회수(gather)하려는
     순간 바깥 timeout 이 끊는다. 그러면 취소된 태스크의 finally — 세션 rollback/close
@@ -396,7 +396,7 @@ async def test_cancelled_task_cleanup_survives_the_outer_timeout(monkeypatch, wi
 
 
 async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wiring):
-    """관리자 **자신**이 취소돼도 남은 cleanup 을 전부 시도한다 (F-028 / REQ-010).
+    """관리자 **자신**이 취소돼도 남은 cleanup 을 전부 시도한다.
 
     바로 위 ``test_cancelled_task_cleanup_survives_the_outer_timeout`` 과 헷갈리면
     안 된다. 그것은 **자식 background 태스크**가 취소되는 경우이고, 이것은 lifespan
@@ -442,7 +442,7 @@ async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wi
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    # listener stop 은 이 순서에 없다 — 소유자가 프로세스다(ADR-018). 생존 여부는
+    # listener stop 은 이 순서에 없다 — 소유자가 프로세스다. 생존 여부는
     # test_process_log_listener_survives_lifespan_shutdown 이 본다.
     assert calls == [
         "drain",
@@ -456,9 +456,9 @@ async def test_manager_cancellation_still_runs_remaining_cleanup(monkeypatch, wi
 
 def test_shutdown_timeout_budget_fits_total():
     """자원별 timeout 합이 전체 shutdown 예산을 넘지 않는다 (확정 정책 6)."""
-    # listener 를 **멈추는** 시간은 lifespan 예산에 없다 — 프로세스 종료 훅의 몫이다
-    # (ADR-018). 대신 쌓인 로그가 다 나가기를 **기다리는** 시간은 lifespan 의 마지막
-    # 단계이므로 합계에 든다 (ADR-023).
+    # listener 를 **멈추는** 시간은 lifespan 예산에 없다 — 프로세스 종료 훅의 몫이다.
+    # 대신 쌓인 로그가 다 나가기를 **기다리는** 시간은 lifespan 의 마지막
+    # 단계이므로 합계에 든다.
     per_resource = (
         resources.BACKGROUND_DRAIN_TIMEOUT_SECONDS
         + resources.DB_DISPOSE_TIMEOUT_SECONDS

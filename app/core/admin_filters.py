@@ -1,4 +1,4 @@
-"""관리 화면 목록의 날짜 필터 — ``LocalDateFilter`` (security-ops-hardening ADR-005).
+"""관리 화면 목록의 날짜 필터 — ``LocalDateFilter``.
 
 sqladmin 의 ``OperationColumnFilter`` 는 ``UTCDateTime``(TypeDecorator)을 날짜형으로 보지 못해 입력 문자열을
 그대로 바인딩하고, ``UTCDateTime`` 이 그것을 거부해 목록이 500 이 됐다. 이 필터는 sqladmin 0.32 의 연산 필터
@@ -7,7 +7,7 @@ sqladmin 의 ``OperationColumnFilter`` 는 ``UTCDateTime``(TypeDecorator)을 날
 범위 조건으로 질의한다.
 
 - 연산: ``on``(그날 하루), ``on_or_after``(그날 0시 이후, 포함), ``before``(그날 0시 이전, 미포함),
-  ``between``(기간, admin-session-hardening ADR-005) — 값 ``YYYY-MM-DD~YYYY-MM-DD``, **양 끝 포함**
+  ``between``(기간) — 값 ``YYYY-MM-DD~YYYY-MM-DD``, **양 끝 포함**
   (시작일 0시 ≤ t < 종료일 다음날 0시). 한쪽만 주면 열린 구간(``2026-10-01~`` 이후, ``~2026-10-19`` 까지).
   sqladmin 은 필터 값 하나만 넘기므로 필터 템플릿이 날짜 입력 두 개를 이 형식으로 합쳐 보낸다.
 - 형식이 틀린 입력·시작일 > 종료일·모르는 연산은 필터를 적용하지 않고 WARNING 로그만 남긴다(500 이 아니다).

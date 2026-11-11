@@ -1,4 +1,4 @@
-"""DB 오류 문자열·로그에 바인드 값이 실리지 않는다 — ``hide_parameters=True`` 회귀 (security-ops-hardening ADR-001).
+"""DB 오류 문자열·로그에 바인드 값이 실리지 않는다 — ``hide_parameters=True`` 회귀.
 
 앱의 엔진 생성 지점(writer·replica·background)은 모두 ``app/core/db/session.py`` 에 있고 셋 다
 ``hide_parameters=True`` 다. 여기서는 (a) 실제 SQLite 무결성 오류의 예외 문자열, (b) 앱 엔진 객체의 계약,

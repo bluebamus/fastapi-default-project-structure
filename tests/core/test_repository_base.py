@@ -272,7 +272,7 @@ async def test_unexpected_db_errors_become_database_exception(repository, monkey
 
 
 async def test_error_detail_does_not_leak_sql_parameters(repository):
-    """사용자에게 가는 detail 에 바인딩 파라미터가 실려서는 안 된다 (NFR-001)."""
+    """사용자에게 가는 detail 에 바인딩 파라미터가 실려서는 안 된다."""
     await repository.create({"name": "secret-value"})
 
     with pytest.raises(DuplicateException) as exc_info:
@@ -308,7 +308,7 @@ def test_single_parameter_form_still_works():
 # ORM-REP-001 — CRUDBase 는 primitive 만
 # =============================================================================
 def test_crud_base_has_no_transaction_control():
-    """commit/rollback 은 Base 의 책임이 아니다 (TX-004)."""
+    """commit/rollback 은 Base 의 책임이 아니다."""
     from app.core.repositories.crud_base import CRUDBase
 
     for forbidden in ("commit", "rollback"):

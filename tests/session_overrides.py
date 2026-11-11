@@ -1,4 +1,4 @@
-"""엔드포인트 테스트의 DB 세션 override — 한 곳에서만 만든다 (service-hardening ADR-009).
+"""엔드포인트 테스트의 DB 세션 override — 한 곳에서만 만든다.
 
 운영 의존성은 읽기 세션에 ``mark_read_only``, 쓰기 세션에 ``using_writer`` 를 건다.
 예전 테스트들은 두 의존성을 **표시 없는 같은 세션**으로 바꿔 끼워, GET 경로가 몰래 써도

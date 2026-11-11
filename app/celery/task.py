@@ -9,7 +9,7 @@ process**.
 그러나 async DB 커넥션(aiomysql)은 자신을 생성한 루프에 바인딩되고,
 ``background_engine`` 의 커넥션 풀은 그 커넥션을 태스크 간 캐시·재사용한다.
 루프가 매번 닫히면 두 번째 태스크가 '종료된 루프에 묶인' 커넥션을 재사용하며
-``RuntimeError: Event loop is closed`` 로 확정 실패한다(검수 C1/REQ-008).
+``RuntimeError: Event loop is closed`` 로 확정 실패한다.
 
 Celery 기본 prefork 워커는 태스크를 프로세스 안에서 순차 실행하므로,
 프로세스당 단일 영속 루프를 유지하면 재사용 커넥션이 살아있는 루프를 참조해

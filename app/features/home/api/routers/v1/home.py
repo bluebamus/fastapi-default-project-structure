@@ -4,7 +4,7 @@ Home v1 API 엔드포인트 — 접속 로그 조회/통계.
 view 는 HTTP 역할만 한다: 파라미터 수신 → 의존성으로 주입된 Service 호출 → 응답 변환.
 비즈니스 로직은 services 가, 세션 선택·Service 조립은 dependencies 가 맡는다.
 이 파일의 엔드포인트는 전부 조회라 읽기 세션을 쓰고 커밋하지 않는다(UnitOfWork 없음).
-접속 로그는 IP·User-Agent·경로 같은 개인정보라 전부 슈퍼유저 전용이다(service-hardening ADR-018).
+접속 로그는 IP·User-Agent·경로 같은 개인정보라 전부 슈퍼유저 전용이다.
 """
 
 from typing import Any
@@ -22,7 +22,7 @@ from app.features.home.schemas.user_access_log_schema import (
 )
 from app.features.home.services.user_access_log_service import UserAccessLogService
 
-# 접근 수준은 뷰마다 선언한다(access-policy ADR-002). 401/403 문서는 라우터 단위로 공유한다.
+# 접근 수준은 뷰마다 선언한다. 401/403 문서는 라우터 단위로 공유한다.
 router = APIRouter(responses=FORBIDDEN_RESPONSES)
 
 _ERR: dict[int | str, dict[str, Any]] = {

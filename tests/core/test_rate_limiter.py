@@ -1,4 +1,4 @@
-"""``RateLimiter`` — Redis 고정 창 (service-hardening ADR-016)."""
+"""``RateLimiter`` — Redis 고정 창."""
 
 from __future__ import annotations
 

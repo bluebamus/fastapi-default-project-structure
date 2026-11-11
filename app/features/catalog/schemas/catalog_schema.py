@@ -1,6 +1,6 @@
 """Catalog 도메인 스키마 — 상품 CRUD 요청/응답 모델 (Pydantic v2).
 
-ORM 모델은 DB 매핑 계약이고, **Scalar 문서의 계약은 이 파일**이다(요구 §4.3).
+ORM 모델은 DB 매핑 계약이고, **Scalar 문서의 계약은 이 파일**이다.
 컬럼 comment 는 DB 도구용이며 API 설명을 대체하지 않는다.
 """
 

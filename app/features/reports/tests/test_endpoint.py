@@ -41,7 +41,7 @@ from tests.session_overrides import override_db_sessions
 
 BASE = "/api/v1/reports/sales/daily"
 
-# 시드 시각은 **로컬 영업일**(설정 TIME_ZONE) 기준으로 적는다 — 저장은 UTC 로 되고(ADR-010),
+# 시드 시각은 **로컬 영업일**(설정 TIME_ZONE) 기준으로 적는다 — 저장은 UTC 로 되고,
 # 리포트는 로컬 날짜로 묶는다. naive 값은 저장 경로에서 거부된다.
 LOCAL = timezone_settings.tz
 
@@ -165,7 +165,7 @@ async def test_empty_range_returns_empty_items(client):
 
 
 # =============================================================================
-# 동적 정렬 — 식별자 allowlist (RAW-REP-004)
+# 동적 정렬 — 식별자 allowlist
 # =============================================================================
 async def test_default_sort_is_date_ascending(client):
     """정렬을 지정하지 않으면 일자 오름차순이다."""
@@ -285,7 +285,7 @@ async def test_repository_allowlist_holds_without_the_view(sales_engine):
 
 
 # =============================================================================
-# Raw 쓰기 — 스냅샷 적재 (SCN-RAW-003)
+# Raw 쓰기 — 스냅샷 적재
 # =============================================================================
 SNAPSHOTS = "/api/v1/reports/sales/daily/snapshots"
 LOAD_RANGE = {"start_date": "2026-08-01", "end_date": "2026-08-07"}
@@ -356,7 +356,7 @@ async def test_snapshot_load_does_not_touch_the_ledger(client, sales_engine):
 
 
 async def test_snapshot_load_commits_exactly_once(client):
-    """DELETE·INSERT 두 문장이지만 커밋은 한 번이다 (TX-001)."""
+    """DELETE·INSERT 두 문장이지만 커밋은 한 번이다."""
     http_client, counter = client
     counter["commits"] = 0
 
@@ -502,7 +502,7 @@ async def test_raw_dml_rolls_back_without_commit(sales_engine):
 
 
 async def test_raw_dml_is_blocked_on_a_read_only_session(sales_engine):
-    """read-only 세션에서 Raw DML 은 즉시 실패해야 한다 (RAW-REP-007).
+    """read-only 세션에서 Raw DML 은 즉시 실패해야 한다.
 
     쓰기 차단은 ``Session`` 이벤트 리스너가 집행하므로 ``DB_ROUTER_ENABLED`` 와
     무관하게 동작한다. 여기서는 라우터를 켠 구성으로 검증하고, 라우터 off 를 포함한
@@ -543,7 +543,7 @@ async def test_raw_dml_is_blocked_on_a_read_only_session(sales_engine):
     ids=["date-max", "crosses-max", "before-min"],
 )
 async def test_dates_outside_the_supported_range_are_422(client, start_date, end_date):
-    """날짜 범위 상·하한(service-hardening ADR-008 ③) — 조회와 적재 모두 같은 규칙."""
+    """날짜 범위 상·하한 — 조회와 적재 모두 같은 규칙."""
     http_client, counter = client
     params = {"start_date": start_date, "end_date": end_date}
 
@@ -571,7 +571,7 @@ async def test_boundary_dates_are_accepted(client):
 
 
 # =============================================================================
-# 로컬 영업일 · UTC 저장 (service-hardening ADR-010, F-016)
+# 로컬 영업일 · UTC 저장
 # =============================================================================
 def test_local_day_bounds_are_local_midnights_as_utc_instants():
     """로컬 날짜 범위(종료일 포함)는 로컬 자정 두 개의 반열린 구간이다 — UTC 로는 전날 15:00."""

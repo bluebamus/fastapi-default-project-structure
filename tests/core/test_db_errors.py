@@ -1,4 +1,4 @@
-"""DB 오류 변환 표 — service-hardening ADR-008 ②·ADR-022 (F-011·F-025).
+"""DB 오류 변환 표 — service-hardening ADR-008 ②·ADR-022.
 
 예전에는 ORM 이 모든 ``IntegrityError`` 를 409 DUPLICATE 로 보냈고(NOT NULL·FK 위반의 원인이
 가려졌다), 기능 Repository 의 추가 쿼리는 변환을 거치지 않았으며, 실패 로그에 드라이버
@@ -206,7 +206,7 @@ def test_feature_repositories_do_not_execute_directly():
 
 
 # =============================================================================
-# 로그 — 타입과 코드만 (R-07)
+# 로그 — 타입과 코드만
 # =============================================================================
 async def test_failure_log_has_no_sql_or_parameters(db_session, caplog):
     repository = ParentRepository(db_session)

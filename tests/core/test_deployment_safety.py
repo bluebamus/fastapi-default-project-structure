@@ -163,7 +163,7 @@ def test_short_secret_key_is_rejected(env):
 def _import_config(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     # DEBUG·LOG_LEVEL·비밀번호 2종은 배포 안전 검사 대상이다. 개발자 `.env` 값에
     # 좌우되지 않도록 기본을 고정하고, 해당 검사를 보는 테스트만 extra_env 로 덮어쓴다.
-    # MYSQL_HOST·USER·DATABASE 는 `.env` 가 없는 환경(CI)에서 출처 검사(ADR-045 ①)를 통과시킨다.
+    # MYSQL_HOST·USER·DATABASE 는 `.env` 가 없는 환경(CI)에서 출처 검사를 통과시킨다.
     env = {
         **os.environ,
         "DEBUG": "false",
@@ -209,7 +209,7 @@ def test_import_succeeds_in_production_with_strong_secrets():
 
 # ---------------------------------------------------------------------------
 # debug 모드 거부 — 롤백 상세 로그가 debug 에서 SQL·바인딩 값을 남기므로,
-# 배포 환경에서 debug 가 켜지지 못하게 같은 검사에서 막는다 (NFR-001).
+# 배포 환경에서 debug 가 켜지지 못하게 같은 검사에서 막는다.
 # ---------------------------------------------------------------------------
 
 
@@ -349,7 +349,7 @@ def test_import_fails_in_production_with_example_passwords():
 
 # ---------------------------------------------------------------------------
 # admin-login ADR-004 — 관리 화면은 슈퍼유저 로그인이 필요하므로 배포 환경에서 켜 두어도 막지 않는다.
-# 예전 확인 플래그(ADR-045 ③)는 설정·검사·기동 WARNING 에서 모두 빠졌다.
+# 예전 확인 플래그는 설정·검사·기동 WARNING 에서 모두 빠졌다.
 # admin-login ADR-005 — 예전 설정 `ADMIN` 이 남아 있으면 조용히 무시하지 않고 기동을 멈춘다.
 # ---------------------------------------------------------------------------
 

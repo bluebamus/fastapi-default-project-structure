@@ -88,7 +88,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         """쿼리스트링을 민감 키의 값만 ``***`` 로 바꿔 다시 인코딩한다.
 
         토큰·비밀번호를 쿼리로 보내는 클라이언트가 있다 — 그대로 저장하면 접속 로그가
-        비밀 저장소가 된다(service-hardening ADR-007). 키는 남겨 무엇이 왔는지는 보인다.
+        비밀 저장소가 된다. 키는 남겨 무엇이 왔는지는 보인다.
         """
         if not request.query_params:
             return None
@@ -226,7 +226,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         request_info = self._collect_request_info(request)
 
         # 요청 처리. 처리되지 않은 예외는 바깥 ServerErrorMiddleware 가 500 으로 바꾸므로
-        # 여기서는 예외로 보인다 — 500 으로 기록한 뒤 그대로 다시 던진다(ADR-007).
+        # 여기서는 예외로 보인다 — 500 으로 기록한 뒤 그대로 다시 던진다.
         try:
             response: Response = await call_next(request)
         except Exception:
@@ -256,7 +256,7 @@ class UserInfoMiddleware(BaseHTTPMiddleware):
         )
 
         # 백그라운드에서 로그 저장 (요청 처리를 블로킹하지 않음).
-        # 상한 초과 시 드롭·집계되고, 앱 종료 시 lifespan 이 drain 한다(W1).
+        # 상한 초과 시 드롭·집계되고, 앱 종료 시 lifespan 이 drain 한다.
         access_log_tasks.spawn(self._save_access_log(request_info))
 
 

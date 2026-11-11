@@ -1,11 +1,11 @@
-"""UTC 저장 시각 타입 — ``UTCDateTime`` (service-hardening ADR-010, C-5).
+"""UTC 저장 시각 타입 — ``UTCDateTime``.
 
 DB 에는 **UTC 벽시계를 오프셋 없이** 넣고, 꺼낼 때 UTC 를 붙여 aware 로 돌려준다.
 MySQL 의 ``DATETIME`` 은 오프셋을 저장하지 않으므로 "무엇을 기준으로 적었는가" 는 코드가
 정해야 한다 — 그 규칙을 이 타입 하나가 강제한다.
 
 - bind: aware → UTC 로 바꾼 뒤 tzinfo 를 뗀다. **naive 는 ``ValueError``** — naive 값은
-  KST 인지 UTC 인지 알 수 없어, 조용히 받으면 9시간 어긋난 값이 저장된다(검수 R-05 의 원인).
+  KST 인지 UTC 인지 알 수 없어, 조용히 받으면 9시간 어긋난 값이 저장된다.
 - result: DB 가 돌려준 naive 값에 UTC 를 붙인다. 응답 JSON 은 ``Z`` 오프셋을 갖는다.
 - MySQL 은 ``DATETIME(6)`` — 기본 ``DATETIME`` 은 소수 초를 반올림해 자정 직전 값이 다음 날로
   넘어갈 수 있다. 다른 방언은 ``DateTime()``(SQLite 는 문자열로 마이크로초까지 보존한다).

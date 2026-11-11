@@ -1,6 +1,6 @@
 {% extends "sqladmin_original/base.html" %}
 {#
-  SQLAdmin 원본 base.html 을 확장한다(복사하지 않는다) — admin-session-hardening ADR-004.
+  SQLAdmin 원본 base.html 을 확장한다(복사하지 않는다).
   원본 대비 바꾼 것은 두 블록뿐이다(둘 다 super() 로 원본 내용을 유지):
     head_meta : <meta name="csrf-token"> 추가
     tail      : CSRF 인라인 스크립트 추가

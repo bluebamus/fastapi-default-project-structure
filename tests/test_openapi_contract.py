@@ -1,14 +1,14 @@
-"""OpenAPI 문서 계약 검사 (DOC-001 / DOC-004 / DOC-005).
+"""OpenAPI 문서 계약 검사.
 
 라우트 인벤토리 골든 스냅샷(`test_route_inventory.py`)이 **무엇이 노출되는가**를 고정한다면,
 여기서는 노출된 것들이 **문서로서 쓸 만한가**를 규칙으로 검사한다. 스냅샷이 아니라 규칙이므로
 새 엔드포인트가 추가돼도 골든 파일을 갱신할 필요 없이 자동으로 검사 대상이 된다.
 
 규칙 자체가 요구사항이다:
-    - operation_id 는 존재하고 프로젝트 전역에서 고유하다      (DOC-001, DOC-005)
+    - operation_id 는 존재하고 프로젝트 전역에서 고유하다      (DOC-001)
     - 모든 operation 에 summary·description·tag 가 있다        (DOC-001)
-    - 204 는 본문이 없고, 그 외 2xx 는 응답 스키마가 있다      (DOC-001, DOC-005)
-    - 선언된 태그 집합과 사용된 태그 집합이 정확히 일치한다    (DOC-004, DOC-005)
+    - 204 는 본문이 없고, 그 외 2xx 는 응답 스키마가 있다      (DOC-001)
+    - 선언된 태그 집합과 사용된 태그 집합이 정확히 일치한다    (DOC-004)
     - 공개 스키마 이름이 모듈 경로로 뭉개지지 않는다           (F-015)
     - 프로젝트가 소유한 스키마의 필드에 description 이 있다    (DOC-003)
 
@@ -117,7 +117,7 @@ def test_success_responses_have_a_schema_except_204(schema):
 
 
 def test_declared_and_used_tags_match_exactly(schema):
-    """tags_metadata 와 실제 라우터 태그가 정확히 일치해야 한다 (DOC-004).
+    """tags_metadata 와 실제 라우터 태그가 정확히 일치해야 한다.
 
     선언만 있고 안 쓰이면 Scalar 에 빈 섹션이 남고(과거 `Analytics`),
     선언 없이 쓰이면 설명 없는 태그가 나타난다(과거 `Auth`).
@@ -136,7 +136,7 @@ def test_declared_and_used_tags_match_exactly(schema):
 
 
 def test_tag_descriptions_do_not_claim_unimplemented(schema):
-    """구현이 끝난 기능의 태그 설명에 '미구현/예정' 문구가 남으면 안 된다 (DOC-004).
+    """구현이 끝난 기능의 태그 설명에 '미구현/예정' 문구가 남으면 안 된다.
 
     설명이 코드보다 오래된 것은 문서가 없는 것보다 나쁘다 — 읽는 사람이 잘못 믿는다.
     """
@@ -173,7 +173,7 @@ def test_schema_names_are_not_module_qualified(schema):
 
 
 def test_project_schema_fields_have_descriptions(schema):
-    """프로젝트가 소유한 스키마의 필드에는 description 이 있어야 한다 (DOC-003).
+    """프로젝트가 소유한 스키마의 필드에는 description 이 있어야 한다.
 
     FastAPI 가 자동 생성하는 스키마는 우리가 손댈 수 없으므로 제외한다.
     """
@@ -195,7 +195,7 @@ def test_project_schema_fields_have_descriptions(schema):
 
 
 def test_reference_example_dtos_are_published(schema):
-    """ORM/Raw 참조 예제의 DTO 가 실제로 OpenAPI 에 실려야 한다 (DOC-005).
+    """ORM/Raw 참조 예제의 DTO 가 실제로 OpenAPI 에 실려야 한다.
 
     예제 라우터가 통째로 빠져도 위 규칙 검사들은 전부 통과한다 — 검사 대상이 사라질 뿐이다.
     이 테스트가 "예제가 문서에 존재한다"를 따로 못 박는다.
@@ -248,7 +248,7 @@ def _resolve(schema: dict, node: dict) -> dict:
 
 
 def test_422_documents_the_body_the_app_actually_sends(schema):
-    """모든 operation 의 422 문서가 실제 422 본문(``ErrorResponse``)을 설명한다 (integration-e2e ADR-012).
+    """모든 operation 의 422 문서가 실제 422 본문(``ErrorResponse``)을 설명한다.
 
     FastAPI 는 422 를 기본 ``HTTPValidationError``(``{"detail": [...]}``)로 광고하지만, 전역
     ``RequestValidationError`` 핸들러는 ``ErrorResponse``(``error_code``·``message``·``detail``)를 보낸다.

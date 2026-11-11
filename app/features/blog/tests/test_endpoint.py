@@ -81,14 +81,14 @@ async def test_update_post(client):
 
 
 async def test_patch_with_explicit_null_on_required_field_is_422(client):
-    """보낸 null 이 NOT NULL 컬럼으로 내려가 500 이 났다(service-hardening ADR-008 ①)."""
+    """보낸 null 이 NOT NULL 컬럼으로 내려가 500 이 났다."""
     created = await client.post("/api/v1/blog/posts", json={"title": "t", "content": "c"})
     post_id = created.json()["id"]
 
     resp = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"title": None})
     assert resp.status_code == 422, resp.text
 
-    # author 는 수정 스키마에 없다 — 보내도 무시되고 서버가 채운 작성자가 남는다(service-hardening ADR-018).
+    # author 는 수정 스키마에 없다 — 보내도 무시되고 서버가 채운 작성자가 남는다.
     ignored = await client.patch(f"/api/v1/blog/posts/{post_id}", json={"author": None})
     assert ignored.status_code == 200, ignored.text
     assert ignored.json()["author"] == "admin"

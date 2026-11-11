@@ -11,7 +11,7 @@ SQLAlchemy 비동기 엔진과 세션 팩토리를 설정합니다.
     - AsyncSessionLocal: 메인 세션 팩토리
     - BackgroundSessionLocal: 백그라운드 세션 팩토리
 
-DB 세션 Dependency (정식 이름 — TX-005):
+DB 세션 Dependency (정식 이름):
     - get_read_only_db_session():  GET/HEAD 및 변경 없는 조회 (쓰기 시도 시 실패)
     - get_writer_db_session():     쓰기·조회 후 쓰기 (첫 쿼리부터 primary 고정)
     - get_routed_db_session():     승인된 특수 경로의 동적 라우팅
@@ -97,7 +97,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_reset_on_return="rollback",  # 반환 시 롤백으로 세션 초기화
     # 드라이버 예외의 str() 과 echo 로그에서 바인딩 값을 빼낸다 — 예외 문자열이 로그·DEBUG
-    # 응답으로 흘러도 비밀번호 해시·토큰이 실리지 않는다(service-hardening ADR-022).
+    # 응답으로 흘러도 비밀번호 해시·토큰이 실리지 않는다.
     hide_parameters=True,
     connect_args={
         "connect_timeout": 10,  # DB 연결 타임아웃 (초)
@@ -234,7 +234,7 @@ async def create_db_tables(import_models: bool = True) -> None:
         import_models: 모델 모듈을 여기서 import 할지 여부. 호출자가 이미
             ``import_all_models()`` 를 실행해 ``Base.metadata`` 를 채웠다면
             ``False`` 를 준다. 같은 startup 에서 discovery 를 두 번 돌리면
-            로그의 모듈 수·소요 시간이 실제와 어긋난다(AR-007).
+            로그의 모듈 수·소요 시간이 실제와 어긋난다.
 
     Note:
         모델 import 목록은 app/core/db/models_registry.py 가 디렉터리에서
@@ -375,7 +375,7 @@ async def get_background_db_session() -> AsyncGenerator[AsyncSession]:
             raise e
 
 
-# readiness 검사 예산 (확정 정책 5). 넘기면 준비되지 않은 것으로 본다 —
+# readiness 검사 예산. 넘기면 준비되지 않은 것으로 본다 —
 # 오케스트레이터를 기다리게 하는 것보다 503 을 빨리 돌려주는 편이 낫다.
 READINESS_TIMEOUT_SECONDS = 2.0
 
@@ -406,7 +406,7 @@ async def dispose_engine() -> None:
     engine 하나의 dispose 실패가 나머지를 막으면 그 풀은 열린 채 프로세스가 죽고 DB 에
     좀비 연결이 남는다. 그래서 전부 동시에 시도하고(``asyncio.gather`` 의
     ``return_exceptions=True``) 실패는 **engine 이름과 함께** 기록만 한다. 여기서 예외를
-    올리면 원래의 종료 원인이 dispose 실패로 덮인다 (F-032).
+    올리면 원래의 종료 원인이 dispose 실패로 덮인다.
 
     Note:
         이 함수가 호출되지 않으면 커넥션이 정리되지 않아 DB 에 좀비 연결이 남는다.

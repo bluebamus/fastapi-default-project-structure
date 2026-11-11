@@ -10,7 +10,7 @@ OpenAPI 메타데이터는 동일하다.
 
 커밋이 View 본문에 있는 이유는 FastAPI 의 yield 의존성 정리(teardown)가 **응답을
 보낸 뒤에** 돌기 때문이다. 커밋을 거기에 두면 실패해도 이미 성공 응답이 나간 뒤라
-클라이언트는 저장됐다고 믿는다(TX-001).
+클라이언트는 저장됐다고 믿는다.
 """
 
 from datetime import date
@@ -35,8 +35,8 @@ from app.features.reports.schemas.report_schema import (
 )
 from app.features.reports.services.report_service import ReportService
 
-# 매출 집계는 운영 데이터다 — 이 라우터의 모든 경로는 슈퍼유저 전용(service-hardening ADR-018).
-# 접근 수준은 뷰마다 선언한다(access-policy ADR-002). 401/403 문서는 라우터 단위로 공유한다.
+# 매출 집계는 운영 데이터다 — 이 라우터의 모든 경로는 슈퍼유저 전용.
+# 접근 수준은 뷰마다 선언한다. 401/403 문서는 라우터 단위로 공유한다.
 router = APIRouter(responses=FORBIDDEN_RESPONSES)
 
 

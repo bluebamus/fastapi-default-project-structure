@@ -1,4 +1,4 @@
-"""접속 로그 미들웨어의 수집 규칙 — service-hardening ADR-006·ADR-007 (F-006·F-007·F-008).
+"""접속 로그 미들웨어의 수집 규칙 — service-hardening ADR-006·ADR-007.
 
 작은 FastAPI 앱에 미들웨어만 달고, sink 를 기록용 가짜로 바꿔 저장될 dict 를 본다.
 """
@@ -73,7 +73,7 @@ async def call(sink):
 
 
 async def test_unhandled_exception_is_logged_as_500_and_reraised(call, sink):
-    """예외로 끝난 요청도 기록한다 — 예전에는 500 이 접속 로그에서 빠졌다(R-09)."""
+    """예외로 끝난 요청도 기록한다 — 예전에는 500 이 접속 로그에서 빠졌다."""
     response = await call("/boom")
 
     assert response.status_code == 500  # 예외는 삼키지 않고 바깥 500 처리로 간다
@@ -135,7 +135,7 @@ async def test_injected_resolver_is_used(call, sink):
 
 
 async def test_authenticated_request_records_user_id(call, sink):
-    """인증 의존성이 채운 ``request.state.user_id`` 가 접속 로그에 남는다(service-hardening ADR-017).
+    """인증 의존성이 채운 ``request.state.user_id`` 가 접속 로그에 남는다.
 
     미들웨어가 요청 시작 시점에 읽으면 라우트 의존성이 아직 돌지 않아 항상 None 이다 — 응답 뒤에 읽는다.
     """

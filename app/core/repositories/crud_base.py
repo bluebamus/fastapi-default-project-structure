@@ -1,10 +1,10 @@
-"""ORM 영속성 primitive (ORM-REP-001).
+"""ORM 영속성 primitive.
 
 이 클래스가 갖는 책임은 **네 가지뿐**이다: 세션 보관, PK 조회, 인스턴스
 추가/삭제, flush/refresh. 공개 CRUD 계약은 ``BaseRepository`` 가 담당한다.
 
 여기에 두지 않는 것:
-    · ``commit`` / ``rollback`` — 트랜잭션 경계는 쓰기 View 본문의 몫이다(TX-004).
+    · ``commit`` / ``rollback`` — 트랜잭션 경계는 쓰기 View 본문의 몫이다.
       Base 가 커밋하면 한 요청에 커밋 주체가 둘이 되어 부분 저장이 생긴다.
     · HTTP 예외 생성 — Repository 는 HTTP 를 알지 않는다.
     · eager loading·도메인 전용 쿼리 — 기능 Repository 가 소유한다.

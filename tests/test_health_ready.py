@@ -6,7 +6,7 @@ DB 가 잠깐 흔들릴 때 /health 까지 실패하면 **살아 있는 프로�
 
     /health : 프로세스 생존만. 외부 연결을 검사하지 않는다.
     /ready  : writer DB 에 SELECT 1 + Redis PING (각 2초 timeout, 동시에). 둘 다 성공 200,
-              하나라도 실패·timeout 503 (service-hardening ADR-011).
+              하나라도 실패·timeout 503.
 
 503 응답에 DSN 이나 내부 DB 오류 문구가 실려서는 안 된다 — 헬스 엔드포인트는 보통
 인증 없이 열려 있다. 로그에도 대상과 예외 타입만 남긴다.

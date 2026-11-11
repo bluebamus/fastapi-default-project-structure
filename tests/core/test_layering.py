@@ -1,7 +1,7 @@
-"""계층 규칙 — core 는 기능을 모르고, 기능끼리는 문서화된 auth→user 만 import 한다 (service-hardening C-2).
+"""계층 규칙 — core 는 기능을 모르고, 기능끼리는 문서화된 auth→user 만 import 한다.
 
 ``PasswordHasher`` 를 user 기능도 쓰게 되면서 이 규칙이 실제로 시험대에 올랐다 — auth 의 해시기를 user 가
-import 하는 대신 core 로 올렸다(ADR-026). 같은 지름길이 다시 생기면 여기서 막힌다. AST 로 import 문만 본다.
+import 하는 대신 core 로 올렸다. 같은 지름길이 다시 생기면 여기서 막힌다. AST 로 import 문만 본다.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ Reply Service
 요청 밖에서는 ``background_db_session`` 을 연 쪽이 커밋한다. Service 메서드는 스스로 커밋하지 않는다.
 
 작성자는 인증 주체(``Principal``)로 서버가 채우고, 수정·삭제는 주입된 ``OwnershipPolicy`` 가
-소유자 또는 슈퍼유저만 허용한다(service-hardening ADR-018).
+소유자 또는 슈퍼유저만 허용한다.
 """
 
 from collections.abc import Sequence

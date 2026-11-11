@@ -1,4 +1,4 @@
-"""home 태스크 — 기능별 tasks.py 와 provider 재사용 (service-hardening ADR-012)."""
+"""home 태스크 — 기능별 tasks.py 와 provider 재사용."""
 
 from __future__ import annotations
 

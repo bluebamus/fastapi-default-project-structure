@@ -1,8 +1,8 @@
-"""JWT 발급·검증 — ``TokenService`` (service-hardening ADR-014·ADR-025).
+"""JWT 발급·검증 — ``TokenService``.
 
 claims: ``sub, type, iat, nbf, exp, jti, iss, aud`` + access 는 ``username``·``su``(슈퍼유저 여부),
 refresh 는 ``fam``(회전 family). access 의 ``username``·``su`` 는 필수다 — ``Principal`` 을 DB 조회 없이
-토큰만으로 만들기 때문이다(service-hardening ADR-017·ADR-026). ``su`` 가 없는 토큰(F2 이전 발급분)은
+토큰만으로 만들기 때문이다. ``su`` 가 없는 토큰(``su`` 도입 이전 발급분)은
 거부되고 다시 로그인하면 된다(access 유효 시간은 기본 15분). 검증은 알고리즘을 설정 하나로 고정하고, ``iss``·``aud`` 일치와 필수 claim 존재를
 요구하며, ``type`` 이 기대와 다르면 거부한다. access 와 refresh 는 서명 키도 다르다 — 종류를
 바꿔 끼우면 서명 단계에서 먼저 실패하고, ``type`` 검사가 두 번째 벽이다.

@@ -1,4 +1,4 @@
-"""엔드포인트 테스트의 인증 헤더 — 실제 ``TokenService`` 로 발급한 access 토큰 (service-hardening ADR-017).
+"""엔드포인트 테스트의 인증 헤더 — 실제 ``TokenService`` 로 발급한 access 토큰.
 
 의존성을 가짜로 바꾸지 않고 진짜 토큰을 싣는다. 그래야 라우트의 인증 경로(``OAuth2PasswordBearer`` →
 ``TokenService.decode`` → ``Principal``)가 테스트에서도 그대로 돈다. 인가와 무관한 CRUD 테스트는

@@ -1,4 +1,4 @@
-"""DB 오류 → 프로젝트 예외 변환의 단일 출처 (service-hardening ADR-008 ②·ADR-022).
+"""DB 오류 → 프로젝트 예외 변환의 단일 출처.
 
 ORM(``BaseRepository``)과 Raw(``RawRepositoryBase``) 두 계층이 **같은 표**로 변환한다.
 예전에는 ORM 이 모든 ``IntegrityError`` 를 409 DUPLICATE 로 보내 NOT NULL·외래 키 위반의

@@ -1,4 +1,4 @@
-"""ProductRepository 의 정렬 — 같은 created_at 의 상품도 순서가 정해진다 (service-hardening ADR-005)."""
+"""ProductRepository 의 정렬 — 같은 created_at 의 상품도 순서가 정해진다."""
 
 from __future__ import annotations
 

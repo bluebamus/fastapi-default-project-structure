@@ -1,4 +1,4 @@
-"""관리 세션 = Redis 서버 세션 (admin-session-hardening ADR-001·002·007).
+"""관리 세션 = Redis 서버 세션.
 
 쿠키에는 무작위 세션 ID 만, 내용은 Redis(``admin:sess:{HMAC}``). 로그아웃·강등·비활성화·삭제는 서버에서 바로
 폐기하고, 이전 쿠키 사본은 다시 쓸 수 없다. 미사용·절대 만료, Redis 장애 fail-closed, 설정 검증.
@@ -376,7 +376,7 @@ async def _target_with_two_sessions(app, maker, redis):
         assert await _index_status(browser) == 200
     keys = [k.decode() for k in await redis.smembers(f"admin:user_sessions:{other}")]
     assert len(keys) == 2
-    # API 로그인으로 받은 refresh 토큰 family 하나(관리 화면 폐기가 함께 지워야 한다, ADR-008).
+    # API 로그인으로 받은 refresh 토큰 family 하나(관리 화면 폐기가 함께 지워야 한다).
     await get_refresh_token_store(redis).register("jti-other", other, REFRESH_FAMILY)
     return other, actor, targets, keys
 
@@ -401,7 +401,7 @@ USER_FORM = {"username": "other", "email": "other@example.com"}
     [
         # 체크박스는 빼면 해제다.
         pytest.param({**USER_FORM, "is_superuser": "y"}, True, True, id="deactivate"),
-        # 강등만 — 관리 세션은 폐기, refresh 는 유지(일반 사용자로 API 를 계속 쓴다, ADR-009).
+        # 강등만 — 관리 세션은 폐기, refresh 는 유지(일반 사용자로 API 를 계속 쓴다).
         pytest.param({**USER_FORM, "is_active": "y"}, True, False, id="demote"),
         pytest.param(
             {
@@ -553,7 +553,7 @@ async def test_first_request_without_cookie_is_503_when_the_session_cannot_be_sa
     client, server, path
 ):
     """쿠키 없는 첫 요청은 Redis 를 읽지 않고 들어가 응답 직전에 세션(CSRF 토큰)을 저장한다 — 그 저장이
-    실패해도 다른 Redis 장애와 같은 503 이다(integration-e2e REQ-008 결정 6). 500 이나 끊긴 연결이 아니다."""
+    실패해도 다른 Redis 장애와 같은 503 이다. 500 이나 끊긴 연결이 아니다."""
     server.connected = False
     response = await client.get(path, follow_redirects=True)
 

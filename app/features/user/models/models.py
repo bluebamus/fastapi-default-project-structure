@@ -18,7 +18,7 @@ class User(UUIDTimestampModel):
         username: 사용자명(고유)
         email: 이메일
         is_active: 활성 여부
-        is_superuser: 슈퍼유저 여부(관리 경로·타인 리소스 수정 허용 — service-hardening ADR-018)
+        is_superuser: 슈퍼유저 여부(관리 경로·타인 리소스 수정 허용)
         created_at: 생성 시각 (CreatedAtMixin)
         updated_at: 수정 시각 (UpdatedAtMixin)
     """

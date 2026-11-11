@@ -1,4 +1,4 @@
-"""refresh 토큰 회전 기록 — ``RefreshTokenStore`` (service-hardening ADR-015·ADR-025).
+"""refresh 토큰 회전 기록 — ``RefreshTokenStore``.
 
 키 구조:
 

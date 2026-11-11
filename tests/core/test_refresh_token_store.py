@@ -1,6 +1,6 @@
-"""``RefreshTokenStore`` — 1회 소비·family 폐기·사용자 폐기 (service-hardening ADR-015, INV-6).
+"""``RefreshTokenStore`` — 1회 소비·family 폐기·사용자 폐기.
 
-실물 클래스를 fakeredis 로 시험한다(가짜 Protocol 없음, C-1).
+실물 클래스를 fakeredis 로 시험한다(가짜 Protocol 없음).
 """
 
 from __future__ import annotations

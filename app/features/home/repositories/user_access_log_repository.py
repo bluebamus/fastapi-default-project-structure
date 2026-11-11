@@ -220,7 +220,7 @@ class UserAccessLogRepository(BaseRepository[UserAccessLog]):
 
         id 를 먼저 고르고 그 id 로 지운다 — MySQL 의 ``DELETE ... LIMIT`` 는 SQLite 에 없고, MySQL 은
         ``IN (SELECT ... LIMIT)`` 를 받지 않는다. 두 방언에서 같은 쿼리로 동작하고, 고르는 쪽은
-        ``ix_user_access_logs_created_at`` 을 탄다(security-ops-hardening ADR-002).
+        ``ix_user_access_logs_created_at`` 을 탄다.
         """
         ids_stmt = (
             select(self.model.id)

@@ -59,7 +59,7 @@ def _assert_redacted_traceback(text: str) -> None:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        # DSN 은 사용자명도 가린다(logging-overhaul L7) — 계정명도 공격 표면이다.
+        # DSN 은 사용자명도 가린다 — 계정명도 공격 표면이다.
         (DSN, "mysql+asyncmy://***:***@h/db"),
         ("mysql://admin@h/db", "mysql://***@h/db"),
         ("redis://:p%40ss@cache:6379/0", "redis://:***@cache:6379/0"),
@@ -148,7 +148,7 @@ ACCESS_SECRET_ARGS = ("127.0.0.1:5000", "GET", "/x?token=tok-9f3e7a&password=sec
 
 
 def test_filter_masks_inside_one_argument_and_keeps_args_shape():
-    """비밀값이 인자 하나 안에 있으면 그 인자만 가리고 ``args`` 모양을 지킨다(config-cleanup F-008).
+    """비밀값이 인자 하나 안에 있으면 그 인자만 가리고 ``args`` 모양을 지킨다.
 
     uvicorn ``AccessFormatter`` 는 ``args`` 5개를 직접 푼다 — 비우면 접속 줄이 logging 오류와 함께 사라진다.
     """
@@ -168,7 +168,7 @@ def test_filter_falls_back_when_secret_spans_template_and_argument():
 
 
 # =============================================================================
-# 설정 비밀값 원문 (logging-overhaul L7)
+# 설정 비밀값 원문
 # =============================================================================
 def test_configured_secret_values_are_masked_anywhere(monkeypatch):
     """설정된 비밀번호·사용자명·키의 **원문**은 형태와 무관하게 가린다."""
@@ -337,7 +337,7 @@ def test_uvicorn_cli_loggers_are_masked():
 def test_celery_worker_handlers_are_masked(tmp_path):
     """Celery worker 가 남긴 ``--logfile`` 핸들러에도 필터가 붙는다(``after_setup_logger``).
 
-    콘솔 핸들러는 공유 queue 로 바뀌어 queue 의 필터를 탄다(logging-overhaul L1).
+    콘솔 핸들러는 공유 queue 로 바뀌어 queue 의 필터를 탄다.
     """
     from celery.app.log import ColorFormatter
     from celery.signals import after_setup_logger, after_setup_task_logger
@@ -402,9 +402,9 @@ setup.stop_log_listener()
 
 
 def test_uvicorn_cli_access_line_is_masked_and_not_lost(tmp_path):
-    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 요청 줄은 남는다(config-cleanup F-008).
+    """``uvicorn main:app`` 의 접속 줄: 비밀값은 가려지고 요청 줄은 남는다.
 
-    시각·헤더는 프로젝트 형식이다(logging-overhaul L1).
+    시각·헤더는 프로젝트 형식이다.
     """
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("LOG_")}
     env.update(PYTHONPATH=str(PROJECT_ROOT), PYTHONIOENCODING="utf-8")

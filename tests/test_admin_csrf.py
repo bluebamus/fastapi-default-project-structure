@@ -1,4 +1,4 @@
-"""로그인 이후 관리 화면 CSRF — 생성·수정·삭제·일괄 삭제·로그아웃 (admin-session-hardening ADR-003·004).
+"""로그인 이후 관리 화면 CSRF — 생성·수정·삭제·일괄 삭제·로그아웃.
 
 ``AdminCsrfMiddleware`` 가 ``/admin`` 의 POST·PUT·PATCH·DELETE 전부에서 세션 토큰과 요청 토큰(헤더
 ``X-CSRF-Token`` 또는 폼 필드 ``csrf_token``)을 대조한다. 화면은 ``base.html`` 덮어쓰기가 meta 토큰과
@@ -356,7 +356,7 @@ def test_no_view_registers_a_custom_get_action():
 
 
 # =============================================================================
-# 버퍼링 상한 — 본문 10 MiB 초과 413, 필드 1 MiB 초과 400 (integration-e2e ADR-015)
+# 버퍼링 상한 — 본문 10 MiB 초과 413, 필드 1 MiB 초과 400
 # =============================================================================
 MIB = 1024 * 1024
 FORM = "application/x-www-form-urlencoded"

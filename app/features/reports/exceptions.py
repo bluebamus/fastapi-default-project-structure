@@ -27,8 +27,8 @@ class InvalidSortException(ValidationException):
     """정렬 키 또는 방향이 허용 목록에 없는 경우.
 
     Raw SQL 에서 컬럼명·정렬 방향은 bind parameter 로 넘길 수 없다. 그래서 요청값을
-    그대로 SQL 에 넣는 대신 **allowlist 조회에 실패시키고** 422 로 돌려준다
-    (RAW-REP-004). 허용 목록을 응답 detail 에 실어 호출자가 고칠 수 있게 한다 —
+    그대로 SQL 에 넣는 대신 **allowlist 조회에 실패시키고** 422 로 돌려준다.
+    허용 목록을 응답 detail 에 실어 호출자가 고칠 수 있게 한다 —
     이 값은 코드 상수라서 노출해도 새어나갈 정보가 없다.
     """
 

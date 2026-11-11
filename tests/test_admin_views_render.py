@@ -1,4 +1,4 @@
-"""로그인한 슈퍼유저에게 등록된 **모든** ModelView 화면이 실제로 그려진다 (admin-login F-005).
+"""로그인한 슈퍼유저에게 등록된 **모든** ModelView 화면이 실제로 그려진다.
 
 sqladmin 0.32 의 ``column_filters`` 는 필터 **객체**(``sqladmin.filters``)를 받는다. 모델 컬럼을 그대로 넘기면
 목록 화면이 ``filter_.parameter_name`` 에서 ``AttributeError`` 로 500 이 된다 — 로그인이 없던 시절엔 아무도
@@ -127,7 +127,7 @@ async def test_detail_page_renders(logged_in):
 
 
 # =============================================================================
-# created_at 날짜 필터 (security-ops-hardening ADR-005)
+# created_at 날짜 필터
 # =============================================================================
 DATE_FILTER_VIEWS = [
     view
@@ -180,7 +180,7 @@ async def test_date_filter_narrows_the_list_and_renders_quick_ranges(logged_in):
 
 
 # =============================================================================
-# 기간 필터 (admin-session-hardening ADR-005) — created_at 이 있는 모든 뷰
+# 기간 필터 — created_at 이 있는 모든 뷰
 # =============================================================================
 def _seed_values(model, created_at: datetime) -> dict:
     """NOT NULL·기본값 없는 컬럼을 타입별 아무 값으로 채운다(SQLite 는 FK 를 강제하지 않는다)."""

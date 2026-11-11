@@ -22,7 +22,7 @@ Scalar 문서에서 각 태그별로 그룹화되어 표시됩니다.
 정합성:
     여기 선언한 태그 집합과 실제 라우터가 쓰는 태그 집합은 **정확히 일치**해야 한다.
     선언만 있고 안 쓰이는 태그는 Scalar 문서에 빈 섹션으로 남고, 선언 없이 쓰인 태그는
-    설명 없이 나타난다. 둘 다 `tests/test_openapi_contract.py` 가 자동으로 잡는다(DOC-004).
+    설명 없이 나타난다. 둘 다 `tests/test_openapi_contract.py` 가 자동으로 잡는다.
 """
 
 tags_metadata = [

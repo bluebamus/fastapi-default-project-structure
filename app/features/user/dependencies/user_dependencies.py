@@ -1,8 +1,8 @@
 """User 기능 의존성 (인터페이스 집합체).
 
 services 의 기능 클래스를 session 으로 생성·결합하여 view 에 제공한다.
-커밋은 **핸들러 본문**이 `await service.commit()` 으로 수행한다(P1-3).
-해시기·회전 저장소·관리 세션 저장소·소유권 정책은 core 의 provider 로 받는다 — auth 기능을 import 하지 않는다(C-2).
+커밋은 **핸들러 본문**이 `await service.commit()` 으로 수행한다.
+해시기·회전 저장소·관리 세션 저장소·소유권 정책은 core 의 provider 로 받는다 — auth 기능을 import 하지 않는다.
 읽기 provider 도 같은 협력 객체로 조립한다(객체 생성뿐, Redis 왕복은 없다) — 클래스가 하나라 생성자도 하나다.
 예외 시에는 get_writer_db_session 의 teardown 이 롤백을 수행한다.
 """

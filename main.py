@@ -40,14 +40,14 @@ from app.utils.logs.setup import attach_log_files
 from config import app_settings
 
 logger = get_logger("main")
-# LOG_FILE_ENABLED 면 app.log·error.log (logging-overhaul L5). `python main.py`·`uvicorn` 은 설정 로드 직후
-# 이미 붙었다(integration-e2e ADR-011) — 이 호출은 실행 프로그램으로 판정하지 못한 경우(`python -c`·테스트)용이다.
+# LOG_FILE_ENABLED 면 app.log·error.log. `python main.py`·`uvicorn` 은 설정 로드 직후
+# 이미 붙었다 — 이 호출은 실행 프로그램으로 판정하지 못한 경우(`python -c`·테스트)용이다.
 attach_log_files("app")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """애플리케이션 수명 주기 — 자원 관리자 호출만 담당한다 (AR-005).
+    """애플리케이션 수명 주기 — 자원 관리자 호출만 담당한다.
 
     무엇을 어떤 순서로 만들고 해제하는지는 전부
     ``app/core/resources.py`` 의 ``manage_application_resources()`` 에 있다.
@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 def _with_bearer_challenge(
     status_code: int, headers: Mapping[str, str] | None
 ) -> dict[str, str] | None:
-    """401 이면 ``WWW-Authenticate: Bearer`` 를 보탠다 — 로그인·refresh·logout·보호 라우트 전부 (integration-e2e ADR-013).
+    """401 이면 ``WWW-Authenticate: Bearer`` 를 보탠다 — 로그인·refresh·logout·보호 라우트 전부.
 
     RFC 9110 §15.5.2: 401 은 challenge 를 하나 이상 실어야 한다. 예외가 이미 실은 값은 그대로 둔다.
     """
@@ -80,7 +80,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
         AppException 및 하위 예외들을 처리하여 일관된 에러 응답을 반환합니다.
 
-        로그 레벨은 상태 코드로 정한다(service-hardening ADR-008 ④). 4xx 는 클라이언트
+        로그 레벨은 상태 코드로 정한다. 4xx 는 클라이언트
         입력이 원인이라 WARNING 이고 detail(요청 값이 들어 있을 수 있다)을 싣지 않는다 —
         ERROR 로 쌓으면 경보가 흐려진다. 5xx 만 ERROR 로 detail 과 함께 남긴다.
         """
@@ -169,7 +169,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
         )
 
     async def redis_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Redis 연결 오류 → 503 ``SERVICE_UNAVAILABLE`` (integration-e2e ADR-009, F-004).
+        """Redis 연결 오류 → 503 ``SERVICE_UNAVAILABLE``.
 
         레이트 리밋·refresh 회전·토큰 폐기는 Redis 가 없으면 진행할 수 없다 — fail-closed 로 요청을
         거부하되 일시 장애임을 503 으로 알린다(관리 화면의 Redis 장애 503 과 같은 의미). 아래
@@ -210,7 +210,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
             },
         )
         # DEBUG 모드에서만 상세 정보 노출 (운영 환경에서는 민감 정보 유출 방지)
-        # 응답은 클라이언트로 나간다 — 로그와 같은 규칙으로 비밀값을 가린다(log-redaction ADR-001).
+        # 응답은 클라이언트로 나간다 — 로그와 같은 규칙으로 비밀값을 가린다.
         detail = redact(str(exc)) if app_settings.DEBUG else None
         return JSONResponse(
             status_code=500,
@@ -225,7 +225,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
     async def unhandled_exception_middleware(
         request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받는다 (integration-e2e ADR-016).
+        """처리기가 없는 예외를 ``ServerErrorMiddleware`` 바로 안쪽에서 받는다.
 
         위 ``Exception`` 처리기만 두면 Starlette 가 그것을 ``ServerErrorMiddleware`` 에서 부르고 응답 뒤 예외를
         다시 던진다 — uvicorn 이 traceback 을 한 번 더 남기고 keep-alive 연결을 닫는다. 여기서 같은 처리기로
@@ -298,7 +298,7 @@ def _add_health_and_docs(app: FastAPI) -> None:
         },
     )
     async def readiness_check(redis: Redis = Depends(get_redis)) -> ReadyResponse:
-        """writer DB 와 Redis 를 동시에 확인하고 준비 상태를 반환한다 (ADR-011)."""
+        """writer DB 와 Redis 를 동시에 확인하고 준비 상태를 반환한다."""
 
         async def ping_redis() -> None:
             async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
@@ -396,7 +396,7 @@ _add_health_and_docs(app)
 
 
 def _openapi_with_actual_422() -> dict:
-    """422 문서를 실제 본문(``ErrorResponse``)으로 바꾼 OpenAPI (integration-e2e ADR-012).
+    """422 문서를 실제 본문(``ErrorResponse``)으로 바꾼 OpenAPI.
 
     FastAPI 는 매개변수가 있는 operation 마다 422 를 기본 ``HTTPValidationError`` 로 광고하지만, 실제 응답은
     ``validation_exception_handler`` 가 만드는 ``ErrorResponse`` 다. 생성된 문서를 한 번 고쳐 캐시한다.
@@ -423,24 +423,24 @@ def _openapi_with_actual_422() -> dict:
 
 app.openapi = _openapi_with_actual_422  # type: ignore[method-assign]
 
-# SQLAdmin 관리 화면 (ADMIN_DISABLED=true 면 끈다 — admin-login ADR-005).
+# SQLAdmin 관리 화면 (ADMIN_DISABLED=true 면 끈다).
 # 끈 경우 sqladmin·인증 백엔드·세션 미들웨어를 import 하지도 만들지도 않고, 로그에도 경로를 싣지 않는다.
 if not app_settings.ADMIN_DISABLED:
     from app.features.admin import register_admin
 
-    # 슈퍼유저 로그인이 필요하다(admin-login ADR-001) — 계정은 scripts/create_superuser.py.
+    # 슈퍼유저 로그인이 필요하다 — 계정은 scripts/create_superuser.py.
     admin = register_admin(app, engine)
     logger.info("SQLAdmin 관리 화면 활성화 (슈퍼유저 로그인 필요): /admin")
 else:
     logger.info("관리 화면 비활성화 (ADMIN_DISABLED=true)")
 
 # 기본 거부 — 조립이 끝난 앱의 모든 API 뷰가 접근 수준을 정확히 하나 선언했는지 검사하고,
-# 아니면 위반 목록과 함께 기동을 멈춘다(access-policy ADR-003). 새 라우터 include 는 이 줄 위에 둔다.
+# 아니면 위반 목록과 함께 기동을 멈춘다. 새 라우터 include 는 이 줄 위에 둔다.
 AccessPolicyGuard().verify(app)
 
 
 def run_server(target: str = "main:app") -> None:
-    """개발용 서버 진입점 (ADR-020).
+    """개발용 서버 진입점.
 
     ``log_config`` 은 uvicorn 이 문서화한 공식 파라미터다. 이걸로 넘겨야 uvicorn 3종
     로거가 앱과 **같은 queue·포맷**을 쓴다. 앱 쪽 ``build_dictconfig()`` 에 uvicorn
@@ -448,13 +448,13 @@ def run_server(target: str = "main:app") -> None:
     적용된다* 는 uvicorn 내부 순서에 기대는 것이라 이 파일만 봐서는 검증할 수 없다.
 
     ``uvicorn main:app`` CLI 로 띄워도 uvicorn 로그는 같은 포맷으로 나온다 — 앱 import 때
-    ``configure_logging()`` 이 uvicorn 이 단 콘솔 핸들러를 공유 큐 핸들러로 바꾼다(logging-overhaul L1).
-    오류·traceback 도 그대로 다 보인다(로그 유실은 listener 를 프로세스가 소유하게 한 ADR-018 에서
-    해결했다). 두 경로의 차이는 SIGTERM 때 로그를 비우는 경로뿐이다.
+    ``configure_logging()`` 이 uvicorn 이 단 콘솔 핸들러를 공유 큐 핸들러로 바꾼다.
+    오류·traceback 도 그대로 다 보인다(listener 를 프로세스가 소유해
+    로그가 유실되지 않는다). 두 경로의 차이는 SIGTERM 때 로그를 비우는 경로뿐이다.
 
     Args:
-        target: 기동할 ASGI 앱의 import 문자열. Wave 7 의 subprocess 테스트가 정상
-            앱과 startup 실패 앱을 **같은 경로로** 띄우기 위해 갈아끼운다.
+        target: 기동할 ASGI 앱의 import 문자열. 다른 앱을 **같은 경로로** 띄울 때
+            갈아끼운다.
     """
     import uvicorn
 

@@ -56,9 +56,7 @@ async def test_create_and_get_post(client):
 
     got = await client.get(f"/api/v1/sns/posts/{post_id}")
     assert got.status_code == 200
-    assert (
-        got.json()["author"] == "admin"
-    )  # 요청의 author 가 아니라 인증 주체(service-hardening ADR-018)
+    assert got.json()["author"] == "admin"  # 요청의 author 가 아니라 인증 주체
 
 
 async def test_list_posts(client):

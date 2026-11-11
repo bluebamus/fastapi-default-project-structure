@@ -1,7 +1,7 @@
 """Catalog Service — 상품 유스케이스.
 
 비즈니스 규칙은 여기, SQL 은 Repository, HTTP 계약은 View 가 담당한다.
-트랜잭션 경계는 쓰기 View 본문이 응답 직전에 닫는다(TX-004).
+트랜잭션 경계는 쓰기 View 본문이 응답 직전에 닫는다.
 """
 
 from collections.abc import Sequence

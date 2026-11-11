@@ -1,7 +1,7 @@
 """Reply 기능 의존성 (인터페이스 집합체).
 
 services 의 기능 클래스를 session 으로 생성·결합하여 view 에 제공한다.
-커밋은 **핸들러 본문**이 `await service.commit()` 으로 수행한다(P1-3).
+커밋은 **핸들러 본문**이 `await service.commit()` 으로 수행한다.
 예외 시에는 get_writer_db_session 의 teardown 이 롤백을 수행한다.
 """
 

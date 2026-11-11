@@ -370,7 +370,7 @@ def test_main_app_admin_requires_login():
 
 
 # =============================================================================
-# 로그인 폼 CSRF — synchronizer token (security-ops-hardening ADR-004)
+# 로그인 폼 CSRF — synchronizer token
 # =============================================================================
 def _refuse_credentials(backend: AdminAuthBackend) -> None:
     """자격 확인에 닿으면 실패하게 한다 — CSRF 거부는 그보다 먼저여야 한다."""

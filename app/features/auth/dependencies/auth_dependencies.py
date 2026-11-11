@@ -1,6 +1,6 @@
 """Auth 의존성 — 협력 객체 조립(provider) · 레이트 리밋 · 현재 사용자(DB 엔티티) 해석.
 
-모든 협력 객체는 여기 provider 함수가 만들어 생성자로 넘긴다(service-hardening C-1). 테스트는
+모든 협력 객체는 여기 provider 함수가 만들어 생성자로 넘긴다. 테스트는
 ``app.dependency_overrides`` 로 provider 를 바꿔 끼운다 — Redis 는 ``get_redis`` 하나만 바꾸면
 회전 저장소·레이트 리밋이 함께 따라온다.
 """
@@ -35,7 +35,7 @@ from config import jwt_settings, middleware_settings
 
 # =============================================================================
 # 협력 객체 provider — 해시·토큰·회전 저장소 provider 는 user 기능도 쓰므로 core
-# (``app/core/security/dependencies.py``)에 있다(service-hardening ADR-026).
+# (``app/core/security/dependencies.py``)에 있다.
 # =============================================================================
 def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
     """lifespan 의 Redis 로 레이트 리밋을 만든다."""
@@ -43,7 +43,7 @@ def get_rate_limiter(redis: Redis = Depends(get_redis)) -> RateLimiter:
 
 
 def get_client_ip_resolver() -> ClientIPResolver:
-    """접속 로그와 같은 신뢰 프록시 홉 설정으로 클라이언트 IP 를 정한다(ADR-006)."""
+    """접속 로그와 같은 신뢰 프록시 홉 설정으로 클라이언트 IP 를 정한다."""
     return ClientIPResolver(middleware_settings.TRUSTED_PROXY_HOPS)
 
 
@@ -57,13 +57,13 @@ async def get_auth_service(
 
     이전에는 `yield` 이후 커밋했으나, FastAPI 상위 버전에서 yield dependency 의
     종료 코드가 **응답 전송 후에** 실행되도록 바뀌어 커밋 실패가 201 로 둔갑했다.
-    커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다(P1-3).
+    커밋을 핸들러 본문으로 옮겨 응답 생성 전에 끝나도록 보장한다.
     """
     return AuthService(db_session, password_hasher, token_service, refresh_store)
 
 
 # =============================================================================
-# 레이트 리밋 (라우트 의존성 — 핸들러 본문이 아니라 주입으로 건다, ADR-016)
+# 레이트 리밋 (라우트 의존성 — 핸들러 본문이 아니라 주입으로 건다)
 # =============================================================================
 def _raise_if_denied(*results: tuple[bool, int]) -> None:
     denied = [retry_after for allowed, retry_after in results if not allowed]
@@ -125,11 +125,11 @@ async def get_current_user(
 
     토큰 검증·``request.state.user_id`` 설정은 core 의 ``get_current_principal`` 이 한다. 이
     의존성은 사용자 **엔티티**가 필요한 곳(``/me``)에서만 쓴다 — 삭제·비활성화된 사용자를 즉시
-    401 로 돌려보낸다. 인가만 필요한 라우트는 DB 를 보지 않는 ``CurrentPrincipal`` 을 쓴다
-    (service-hardening ADR-017). 회전 저장소(Redis)·해시기가 필요 없으므로 ``AuthService`` 를
+    401 로 돌려보낸다. 인가만 필요한 라우트는 DB 를 보지 않는 ``CurrentPrincipal`` 을 쓴다.
+    회전 저장소(Redis)·해시기가 필요 없으므로 ``AuthService`` 를
     조립하지 않는다 — 조회 하나를 위해 Redis 를 요청 경로에 끌어들이지 않는다.
 
-    세션은 읽기 전용(쓰기 차단, P4-3)이지만 조회는 **primary** 에서 한다(integration-e2e ADR-014). replica 에서
+    세션은 읽기 전용(쓰기 차단)이지만 조회는 **primary** 에서 한다. replica 에서
     읽으면 복제 지연 동안 막 가입한 사용자의 유효한 토큰이 401 이 되고, 비활성화·삭제가 지연만큼 늦게
     반영된다. 요청마다 1건이라 primary 부하는 작다. 다른 읽기 라우팅은 그대로다.
 

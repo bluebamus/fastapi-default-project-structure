@@ -1,4 +1,4 @@
-"""관리 화면 테스트가 함께 쓰는 CSRF·세션 도우미 (security-ops-hardening ADR-004, admin-session-hardening).
+"""관리 화면 테스트가 함께 쓰는 CSRF·세션 도우미 (admin-session-hardening).
 
 - 로그인 화면의 hidden 토큰을 읽어 로그인한다.
 - 로그인 이후 화면의 ``<meta name="csrf-token">`` 토큰을 읽는다.

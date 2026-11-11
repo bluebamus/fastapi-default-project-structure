@@ -1,7 +1,7 @@
-"""관리 세션은 /admin 전용이다 — API 인증과 섞이지 않는다 (admin-login ADR-006).
+"""관리 세션은 /admin 전용이다 — API 인증과 섞이지 않는다.
 
 API 인증은 JWT Bearer(``get_current_principal``)뿐이고 앱 전역 세션 미들웨어는 없다. 관리 세션 쿠키
-(``admin_session`` — Redis 서버 세션의 ID, admin-session-hardening ADR-001)는 SQLAdmin 하위 앱의
+(``admin_session`` — Redis 서버 세션의 ID)는 SQLAdmin 하위 앱의
 ``RedisSessionMiddleware`` 만 읽고 쓴다. ``SESSION_COOKIE_NAME`` 은 접속 로그가
 쿠키 값을 기록용으로 읽을 뿐 인증에 쓰지 않는다.
 """

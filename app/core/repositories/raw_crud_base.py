@@ -1,6 +1,6 @@
-"""Raw SQL 실행 primitive (RAW-REP-001).
+"""Raw SQL 실행 primitive.
 
-ORM Base 와 **상속 관계를 만들지 않는다**(AR-003). 하나의 Base 가 ORM 객체와 Raw
+ORM Base 와 **상속 관계를 만들지 않는다**. 하나의 Base 가 ORM 객체와 Raw
 row 를 동시에 반환하면 호출자가 무엇을 받는지 시그니처로 알 수 없고, 두 계층의
 예외·로딩 정책이 서로 새어 든다. 공유하는 것은 ``AsyncSession`` 과 공통 예외·로깅
 정책뿐이다.
@@ -9,11 +9,11 @@ row 를 동시에 반환하면 호출자가 무엇을 받는지 시그니처로 
 
 설계 제약:
     · 입력은 문자열이 아니라 미리 만든 ``TextClause`` 다. 문자열을 받는 진입점이
-      하나라도 있으면 f-string 보간이 그리로 몰린다(RAW-REP-003).
+      하나라도 있으면 f-string 보간이 그리로 몰린다.
     · 반환은 ORM 객체가 아니라 ``RowMapping``·scalar·affected row count 다.
     · ``execute(sql: str)`` 같은 만능 메서드를 제공하지 않는다.
     · 예외를 삼키지 않고 커밋하지 않는다 — 변환은 ``RawRepositoryBase``,
-      커밋은 쓰기 View 본문의 몫이다(TX-004).
+      커밋은 쓰기 View 본문의 몫이다.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""``OwnershipPolicy`` · ``get_current_principal`` · ``require_superuser`` 단위 규칙 (service-hardening ADR-017·018)."""
+"""``OwnershipPolicy`` · ``get_current_principal`` · ``require_superuser`` 단위 규칙."""
 
 from __future__ import annotations
 

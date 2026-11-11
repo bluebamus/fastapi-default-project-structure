@@ -1,4 +1,4 @@
-"""접속 로그 보존 — 경계·배치·0=보존·설정 검증·beat 등록·provider 조립 (security-ops-hardening ADR-002·ADR-003)."""
+"""접속 로그 보존 — 경계·배치·0=보존·설정 검증·beat 등록·provider 조립."""
 
 from __future__ import annotations
 

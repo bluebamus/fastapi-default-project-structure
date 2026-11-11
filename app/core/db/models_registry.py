@@ -10,7 +10,7 @@ Alembic autogenerate 와 DEBUG 모드 테이블 생성은 둘 다 `Base.metadata
 models/models.py` 가 있으면 등록 대상이고, 없으면(예: 모델이 없는 `auth`) 건너뛴다.
 새 기능을 추가할 때 모델 등록 때문에 손댈 곳이 없다.
 
-Celery 태스크도 같은 규칙으로 찾는다(service-hardening ADR-012). `app/features/<name>/tasks.py` 가
+Celery 태스크도 같은 규칙으로 찾는다. `app/features/<name>/tasks.py` 가
 있으면 워커의 include 에 들어가고, 기능 디렉터리를 지우면 그 태스크도 함께 빠진다 — 중앙 목록이
 기능을 import 하지 않으므로 기능 제거가 워커를 깨뜨리지 않는다.
 """

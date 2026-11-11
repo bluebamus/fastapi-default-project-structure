@@ -1,4 +1,4 @@
-"""설정 필드 사용처 계약 (config-cleanup ADR-002·ADR-003).
+"""설정 필드 사용처 계약.
 
 1. **읽히지 않는 설정은 두지 않는다.** config.py 의 모든 Settings 필드는 app·scripts·migrations·
    main.py·config.py(파생 property·검사 함수) 어딘가에서 **속성으로 읽혀야** 한다. 정의만 있고
@@ -33,7 +33,7 @@ REMOVED_KEYS = {
     "UPLOAD_IMAGE_QUALITY": "999",
     "SESSION_EXPIRE_SECONDS": "not-a-number",
     "API_VERSION": "v9",
-    # 옛 파일 로그 키 — 프로세스별 고정 이름과 LOG_RETENTION_DAYS 로 바뀌었다(logging-overhaul L5·L6).
+    # 옛 파일 로그 키 — 프로세스별 고정 이름과 LOG_RETENTION_DAYS 로 바뀌었다.
     "LOG_APP_FILENAME": "{date}_app.log",
     "LOG_ERROR_FILENAME": "{date}_error.log",
     "LOG_BACKUP_COUNT": "not-a-number",

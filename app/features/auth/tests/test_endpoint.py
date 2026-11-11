@@ -197,7 +197,7 @@ async def test_login_rate_limit_ignores_username_case(client):
 
 
 async def test_login_rate_limit_is_not_bypassed_by_forwarded_for(client, monkeypatch):
-    """신뢰 프록시 홉이 0 이면 X-Forwarded-For 를 바꿔도 같은 IP 로 센다(ADR-006)."""
+    """신뢰 프록시 홉이 0 이면 X-Forwarded-For 를 바꿔도 같은 IP 로 센다."""
     # 전제(홉 0)를 못 박는다 — 로컬 .env 가 홉을 1 이상으로 두면 XFF 가 신뢰돼 결과가 바뀐다.
     monkeypatch.setattr(middleware_settings, "TRUSTED_PROXY_HOPS", 0)
     await _register(client)
@@ -312,7 +312,7 @@ async def test_logout_with_invalid_token_401(client):
 
 
 # =============================================================================
-# 인증 사용자 조회는 primary (integration-e2e ADR-014)
+# 인증 사용자 조회는 primary
 # =============================================================================
 async def test_current_user_is_read_from_primary_not_a_lagging_replica():
     """replica 에 아직 없는(복제 지연) 사용자의 유효한 토큰이 401 이 되지 않는다.

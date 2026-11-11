@@ -16,7 +16,7 @@
 
 4번이 따로 필요한 이유: 커밋은 의존성 teardown 이 아니라 핸들러 본문에서 해야
 한다. FastAPI 상위 버전은 yield dependency 의 종료 코드를 **응답 전송 후에**
-실행하므로, teardown 에서 커밋하면 실패해도 클라이언트는 201 을 받는다(P1-3).
+실행하므로, teardown 에서 커밋하면 실패해도 클라이언트는 201 을 받는다.
 """
 
 import inspect
@@ -55,7 +55,7 @@ _WRITER_SESSION_BY_DESIGN: dict[str, str] = {}
 
 # 쓰기 메서드지만 실제로 DB에 쓰지 않는 라우트. 커밋할 것이 없다.
 _WRITE_METHOD_BUT_READ_ONLY: dict[str, str] = {
-    # login 은 여기 없다 — 레거시 해시 재해시를 저장할 때 커밋한다(service-hardening ADR-013).
+    # login 은 여기 없다 — 레거시 해시 재해시를 저장할 때 커밋한다.
     "refresh": "refresh 회전 기록은 Redis 에만 남는다 — DB 변경 없음",
     "logout": "refresh family 폐기는 Redis 에만 남는다 — DB 변경 없음",
 }
@@ -166,7 +166,7 @@ def test_write_routes_use_write_dependencies():
 
 
 def test_write_routes_commit_inside_handler():
-    """쓰기 라우트는 핸들러 본문에서 커밋한다 (P1-3).
+    """쓰기 라우트는 핸들러 본문에서 커밋한다.
 
     의존성 teardown 커밋은 FastAPI 상위 버전에서 응답 전송 후에 실행되어, 커밋이
     실패해도 클라이언트가 성공 응답을 받는다. 커밋은 반드시 핸들러 안에 있어야 한다.
