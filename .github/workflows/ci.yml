@@ -104,7 +104,7 @@ jobs:
           echo "SKIP·xfail 0건"
 
       # ── 구조 무결성 ──────────────────────────────────────────────────────
-      # 마이그레이션 체인은 tests/core/test_migration_chain.py 가 이미 검증한다(INV-5).
+      # 마이그레이션 결과와 모델의 일치는 tests/core/test_migrations.py 가 검증한다.
       # 여기서는 head 가 갈라지지 않았는지만 본다 — 리비전 병합 실수는 테스트로 안 잡힌다.
       - name: alembic 단일 head
         run: |
