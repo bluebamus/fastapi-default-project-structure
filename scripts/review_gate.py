@@ -361,6 +361,29 @@ def check_test_port_single_source() -> None:
     )
 
 
+def empty_python_files(root: Path = REPO_ROOT) -> list[Path]:
+    """git 이 추적하는 내용 없는 ``.py`` — ``__init__.py`` 는 패키지 표식이라 비어 있어도 된다."""
+    return [
+        path
+        for path in repo_files(".", ".py", root=root)
+        if path.name != "__init__.py" and path.stat().st_size == 0
+    ]
+
+
+def check_no_empty_python_files() -> None:
+    """빈 모듈·빈 테스트 파일이 없는지.
+
+    빈 ``test_db.py`` 는 테스트가 있는 것처럼 보이게 하고, 빈 모듈은 "여기 뭔가 있어야 하나"
+    를 묻게 한다 — 2026-11-11 에 기능 자리채움으로 남은 12개를 지우며 재발을 막으려 둔다.
+    """
+    empty = [path.relative_to(REPO_ROOT).as_posix() for path in empty_python_files()]
+    report(
+        "빈 .py 파일 없음 (__init__.py 제외)",
+        not empty,
+        f"내용 없는 파일 {len(empty)}건 — 쓰지 않으면 지운다: {empty}" if empty else "",
+    )
+
+
 def check_no_table_drop_in_app() -> None:
     """운영 코드에 테이블 삭제 경로가 없는지 — C-6 (AR-006).
 
@@ -721,6 +744,7 @@ def main() -> int:
     check_public_api_unchanged()
     check_test_port_single_source()
     check_no_table_drop_in_app()
+    check_no_empty_python_files()
     check_cited_commits_reachable()
     check_cited_requirement_ids_exist()
     check_async_path_operations()
