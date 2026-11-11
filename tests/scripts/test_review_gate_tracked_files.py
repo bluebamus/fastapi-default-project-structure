@@ -42,3 +42,15 @@ def test_falls_back_to_rglob_without_git(tmp_path: Path, monkeypatch) -> None:
     _write(tmp_path / "app" / "notes.md")
 
     assert repo_files("app", ".py", root=tmp_path) == [first, second]
+
+
+def test_root_under_a_skipped_directory_is_still_listed(tmp_path: Path) -> None:
+    """게이트는 --basetemp .pytest_tmp 로 돈다 — 루트의 **상위** 경로는 걸러내기 대상이 아니다."""
+    root = tmp_path / ".pytest_tmp" / "repo"
+    root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)  # noqa: S607
+    tracked = _write(root / "app" / "tracked.py")
+    _write(root / "app" / "__pycache__" / "cached.py")
+    subprocess.run(["git", "add", "-f", "app"], cwd=root, check=True)  # noqa: S607
+
+    assert repo_files("app", ".py", root=root) == [tracked]

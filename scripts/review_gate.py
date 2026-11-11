@@ -163,7 +163,10 @@ def repo_files(rel: str, suffix: str, *, root: Path = REPO_ROOT) -> list[Path]:
     return sorted(
         path
         for path in candidates
-        if path.suffix == suffix and path.is_file() and not SKIP_PARTS & set(path.parts)
+        # 루트 기준 상대 경로만 본다 — 루트 자체가 `.pytest_tmp` 아래(게이트의 --basetemp)면 전부 걸러졌다.
+        if path.suffix == suffix
+        and path.is_file()
+        and not SKIP_PARTS & set(path.relative_to(root).parts)
     )
 
 
