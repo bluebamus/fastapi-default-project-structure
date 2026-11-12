@@ -72,7 +72,7 @@ _GENERATED_AT = bindparam("generated_at", type_=UTCDateTime())
 
 # 일별 집계. 값은 전부 named bind parameter 로 들어간다.
 # 일자 묶음 식만 방언 함수다(위 ``_LOCAL_DATE_SQL``) — MySQL 실제 동작은
-# 통합 테스트(@pytest.mark.mysql)가 확인한다.
+# CI 전용 MySQL 테스트(tests/mysql)가 확인한다.
 #
 # ORDER BY 와 일자 식만 f-string 자리다. 컬럼명과 정렬 방향은 bind parameter 가 될 수 없어서
 # 문자열로 끼워 넣을 수밖에 없는데, **끼워 넣는 값이 요청값이면 injection 이다**.
