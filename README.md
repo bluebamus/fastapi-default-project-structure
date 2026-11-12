@@ -81,7 +81,8 @@ uv run python -m scripts.review_gate             # 위 전부 + pip-audit + 구�
 uv run python -m scripts.review_gate --fast      # pytest 제외 (CI 가 쓰는 형태)
 ```
 
-`skipped`·`xfailed` 가 하나라도 있으면 CI 가 실패합니다. 자세한 규칙은
+`skipped`·`xfailed` 가 하나라도 있으면 CI 가 실패합니다. MySQL 테스트(`tests/mysql/`)는 CI 전용입니다 — 로컬에서
+돌리려면 자기 소유의 빈 MySQL 을 `MYSQL_TEST_URL` 로 줍니다. 자세한 규칙은
 [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## 라이선스

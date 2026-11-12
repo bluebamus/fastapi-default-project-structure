@@ -79,6 +79,10 @@ package = false
 # 테스트 파일 경로
 testpaths = ["tests", "app"]
 
+# tests/mysql 은 실제 MySQL 이 필요해 CI 의 mysql 잡만 경로를 직접 주고 돌린다(`pytest tests/mysql`).
+# skip·deselect 로 빼면 게이트가 실패로 본다 — 수집 자체를 하지 않는다. 나머지는 pytest 기본값.
+norecursedirs = ["tests/mysql", "*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}"]
+
 # 테스트 파일 패턴
 python_files = ["test_*.py", "*_test.py"]
 

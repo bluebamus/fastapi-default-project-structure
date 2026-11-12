@@ -101,3 +101,57 @@ jobs:
             uv run alembic heads
             exit 1
           fi
+
+  # ── MySQL 전용 동작 ────────────────────────────────────────────────────
+  # SQLite 로는 드러나지 않는 것만 실제 MySQL 8.4 에서 본다(tests/mysql — 평소 pytest 는 수집하지 않는다):
+  # baseline 마이그레이션·DATETIME(6) 왕복·드라이버 오류 코드 번역·읽기 전용 경로·CONVERT_TZ 집계·
+  # caching_sha2_password 인증. compose 는 쓰지 않는다 — 서비스 컨테이너 하나로 끝난다.
+  mysql:
+    name: mysql
+    runs-on: ubuntu-24.04  # gate 와 같은 이유로 고정
+    timeout-minutes: 15
+    services:
+      mysql:
+        # shortcut: 태그 고정 — digest 를 확인할 수 있으면 mysql:8.4@sha256:... 로 바꾼다.
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password  # CI 일회용 컨테이너의 값이라 비밀이 아니다
+        ports:
+          - 3306:3306
+        # 초기화 중의 임시 서버는 TCP 를 열지 않는다 — 127.0.0.1 로 물어야 본 서버가 뜬 뒤에 healthy 가 된다.
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-password --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      ENV: test
+      # root: 테스트마다 DB 를 CREATE/DROP 하고, 인증 플러그인 확인에 mysql.user 를 읽는다.
+      MYSQL_TEST_URL: mysql+aiomysql://root:ci-root-password@127.0.0.1:3306/mysql
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 의존성 설치
+        run: uv sync --locked
+
+      # 경로를 직접 줘야 수집된다(pyproject norecursedirs). MYSQL_TEST_URL 이 없으면 skip 이 아니라 실패한다.
+      - name: pytest (MySQL)
+        run: |
+          set -o pipefail
+          uv run python -m pytest tests/mysql -q -rsxX | tee pytest-mysql.log
+
+      - name: SKIP·xfail 0건 확인
+        run: |
+          if grep -qE '[1-9][0-9]* (skipped|xfailed|xpassed)' pytest-mysql.log; then
+            echo "::error::조용한 SKIP/xfail 이 있습니다. 요약을 확인하세요."
+            grep -E '(skipped|xfailed|xpassed)' pytest-mysql.log || true
+            exit 1
+          fi
+          echo "SKIP·xfail 0건"

@@ -56,6 +56,10 @@ uv run python -m pytest --cov=app --cov-branch --cov-report=term-missing
   Redis 는 `fakeredis.FakeAsyncRedis` 를 `get_redis` 의존성에 끼웁니다. 테스트는 lifespan 을 돌리지 않습니다
   (`httpx.ASGITransport`).
 - skip·xfail 을 남기지 않습니다 — CI 가 요약에서 찾아 실패시킵니다.
+- **MySQL 테스트(`tests/mysql/`)는 CI 전용입니다.** 평소 `pytest` 는 수집하지 않고(`norecursedirs`), CI 의
+  `mysql` 잡이 MySQL 8.4 서비스 컨테이너로 `pytest tests/mysql` 을 돌립니다. 로컬에서 돌리려면 **자기 소유의 빈
+  MySQL** 을 `MYSQL_TEST_URL=mysql+aiomysql://user:pw@host:port/db` 로 줍니다(계정에 CREATE/DROP DATABASE 권한 —
+  테스트마다 DB 를 만들고 지웁니다). 변수가 없으면 접속하지 않고 실패합니다.
 
 위치:
 
@@ -135,5 +139,5 @@ ENV=test uv run python -c "import json, pathlib, main; pathlib.Path('tests/opena
 
 CI(`.github/workflows/ci.yml`, job `gate`): `uv sync --locked` → ruff → mypy(콜드 캐시) → bandit(MEDIUM 이상,
 `app`·`main.py`·`config.py`) → `review_gate --fast` → `pytest -rsxX --cov` → skip·xfail 0건 확인 →
-`alembic heads` 단일 head. push·PR 과 매주 월요일 09:00(KST)에 돕니다. 배포·이미지 빌드는 이 저장소 범위
+`alembic heads` 단일 head. job `mysql`: MySQL 8.4 서비스로 `pytest tests/mysql` → skip·xfail 0건 확인. push·PR 과 매주 월요일 09:00(KST)에 돕니다. 배포·이미지 빌드는 이 저장소 범위
 밖입니다.
