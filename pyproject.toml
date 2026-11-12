@@ -102,6 +102,10 @@ addopts = [
     "-ra",                   # 실패/에러 요약 출력
     "--strict-markers",      # 등록되지 않은 마커 사용 시 에러
     "--tb=short",            # traceback 짧게 출력
+    # pytest-cov 기본값(.coveragerc)이 없으면 자식 프로세스는 **자기 cwd** 에서 설정을 찾는다 —
+    # cwd=tmp_path 로 띄운 subprocess 테스트가 omit 없이 app/ 의 미실행 파일(테스트·__init__)을
+    # 데이터에 넣어 TOTAL 이 오염된다. 절대 경로로 넘기도록 명시한다. --cov 없이는 효과가 없다.
+    "--cov-config=pyproject.toml",
 ]
 
 # 환경 변수 설정

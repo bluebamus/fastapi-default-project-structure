@@ -84,6 +84,9 @@ uv run python -m pytest --cov=app --cov-branch --cov-report=term-missing
 - 쓰기 경로는 커밋 횟수·실패 시 롤백을, 조회 경로는 커밋하지 않음을 확인합니다.
 - 커버리지 하한은 `pyproject.toml` 의 `[tool.coverage.report] fail_under` 하나가 정합니다(명령줄에
   `--cov-fail-under` 를 두지 않습니다).
+  측정 범위는 `app/` 운영 코드뿐입니다(`omit` 이 `*/tests/*`·`__init__.py`·`conftest.py` 를 뺍니다). addopts 의
+  `--cov-config=pyproject.toml` 이 이 설정을 subprocess 테스트의 자식 프로세스에도 넘깁니다 — 빼면 TOTAL 에
+  테스트 파일이 섞입니다.
 
 ## 3. 마이그레이션 (Alembic)
 
