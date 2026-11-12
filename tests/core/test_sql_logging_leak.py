@@ -176,7 +176,11 @@ async def test_debug_level_keeps_full_rollback_detail(caplog, dependency_name):
 
     details = [r for r in caplog.records if r.levelno == logging.DEBUG and r.exc_info is not None]
     assert details, "DEBUG 상세 레코드가 없다"
-    formatted = " ".join(logging.Formatter().format(r) for r in details)
+    # exc_text 가 아니라 exc_info 를 직접 포맷한다 — root 의 RedactingFilter 가 같은 record 의
+    # exc_text 를 가려 두므로(token=*** 는 출력 계층의 몫), 여기서는 세션 모듈이 싣는 전문만 본다.
+    formatted = " ".join(
+        r.getMessage() + logging.Formatter().formatException(r.exc_info) for r in details
+    )
     assert _LEAKY_PARAM in formatted, "debug 모드인데 바인딩 값이 없다"
     assert "IntegrityError" in formatted, "debug 모드인데 트레이스백이 없다"
 

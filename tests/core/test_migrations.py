@@ -18,6 +18,8 @@ def test_upgrade_matches_models_and_downgrade_is_clean(tmp_path, monkeypatch):
     url = f"sqlite:///{(tmp_path / 'migrations.db').as_posix()}"
     # env.py 는 db_settings.ALEMBIC_URL 을 읽는다 — 이 필드가 그 오버라이드다.
     monkeypatch.setattr(db_settings, "ALEMBIC_DATABASE_URL", url)
+    # env.py 의 fileConfig(alembic.ini) 는 root 핸들러를 갈아끼워 뒤 테스트의 로깅 구성을 바꾼다 — 프로세스 로깅은 건드리지 않는다.
+    monkeypatch.setattr("logging.config.fileConfig", lambda *args, **kwargs: None)
     import_all_models()
     alembic_cfg = Config("alembic.ini")
     engine = sa.create_engine(url)
