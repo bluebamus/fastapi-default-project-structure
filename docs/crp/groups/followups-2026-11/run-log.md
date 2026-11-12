@@ -5,10 +5,10 @@
 ### Round 1 — 2026-11-12 (base SHA: `6003ca9`)
 - **트리거:** 사용자 요청(지시서 2026-11-12)
 - **검수 범위:** REQ-001~003 인벤토리(charter §1)
-- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 □ (5 = CI `mysql` 잡 첫 실행 대기)
+- **GATE 통과:** 0 ■ 1 ■ 2 ■ 3 ■ 4 ■ 5 ■ (CI `ab8381a`: `mysql` 11 passed, `gate` 1211 passed)
 - **신규 finding(심각도별):** CRIT 0 · HIGH 0 · MED 1 · LOW 2
 - **신규 Fix(계약 위반):** 3 건 → ledger F-001 ~ F-003
-- **수렴 판정:** `NOT CONVERGED` — 로컬 인수기준은 전부 통과, CI 첫 실행만 남음(R-001)
+- **수렴 판정:** `CONVERGED` — CI `ab8381a` 두 잡 모두 success(R-001 해소)
 - **잔여 위험 변화:** R-001 ~ R-004 추가
 
 검증 실행(Windows, `ENV=test`, `-p no:cacheprovider`):
@@ -30,4 +30,4 @@
 ## 심각도 추세
 | Round | CRIT | HIGH | MED | LOW | 신규 Fix | 판정 |
 |---|---|---|---|---|---|---|
-| 1 | 0 | 0 | 1 | 2 | 3 | NOT CONVERGED (CI 대기) |
+| 1 | 0 | 0 | 1 | 2 | 3 | CONVERGED (CI 확인) |
